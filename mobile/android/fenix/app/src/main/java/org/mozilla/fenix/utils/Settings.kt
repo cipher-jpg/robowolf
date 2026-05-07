@@ -359,7 +359,10 @@ class Settings(
      */
     var customReviewPromptUiEnabled by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_custom_review_prompt_ui_enabled),
-        default = { FxNimbus.features.customReviewPromptUi.value().enabled },
+        default = {
+            !FeatureFlags.ROBOWOLF_DEBLOAT_PROMOS &&
+                FxNimbus.features.customReviewPromptUi.value().enabled
+        },
     )
 
     var lastCfrShownTimeInMillis by longPreference(
@@ -612,7 +615,7 @@ class Settings(
 
     var isTelemetryEnabled by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_telemetry),
-        default = true,
+        default = !FeatureFlags.ROBOWOLF_DEBLOAT_TELEMETRY,
     )
 
     var isMarketingTelemetryEnabled by booleanPreference(
@@ -1162,7 +1165,7 @@ class Settings(
 
     var shouldUseHttpsOnly by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_https_only),
-        default = false,
+        default = FeatureFlags.ROBOWOLF_HARDEN_PRIVACY_DEFAULTS,
     )
 
     var shouldUseHttpsOnlyInAllTabs by booleanPreference(
@@ -1238,12 +1241,12 @@ class Settings(
 
     val useStandardTrackingProtection by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_tracking_protection_standard_option),
-        true,
+        default = !FeatureFlags.ROBOWOLF_HARDEN_PRIVACY_DEFAULTS,
     )
 
     val useStrictTrackingProtection by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_tracking_protection_strict_default),
-        false,
+        default = FeatureFlags.ROBOWOLF_HARDEN_PRIVACY_DEFAULTS,
     )
 
     val useCustomTrackingProtection by booleanPreference(
@@ -2191,7 +2194,7 @@ class Settings(
      */
     var showContileFeature by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_contile),
-        default = true,
+        default = !FeatureFlags.ROBOWOLF_DEBLOAT_SPONSORED,
     )
 
     /**
@@ -2212,6 +2215,8 @@ class Settings(
         hasUserBeenOnboarded: Boolean,
         featureEnabled: Boolean = onboardingFeatureEnabled,
     ): Boolean {
+        if (FeatureFlags.ROBOWOLF_DEBLOAT_PROMOS) return false
+
         val shouldShowByDefaultConditions = featureEnabled && !hasUserBeenOnboarded
 
         val shouldShow = shouldShowByDefaultConditions || enablePersistentOnboarding
@@ -2261,7 +2266,10 @@ class Settings(
      */
     var continuousOnboardingFeatureEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_continuous_onboarding_enabled),
-        default = { FxNimbus.features.continuousOnboarding.value().enabled },
+        default = {
+            !FeatureFlags.ROBOWOLF_DEBLOAT_PROMOS &&
+                FxNimbus.features.continuousOnboarding.value().enabled
+        },
     )
 
     /**
@@ -2611,7 +2619,10 @@ class Settings(
     @Suppress("DEPRECATION")
     var enableFxSuggest by lazyFeatureFlagBooleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_fxsuggest),
-        defaultValue = { FxNimbus.features.fxSuggest.value().enabled },
+        defaultValue = {
+            !FeatureFlags.ROBOWOLF_DEBLOAT_SPONSORED &&
+                FxNimbus.features.fxSuggest.value().enabled
+        },
         featureFlag = FeatureFlags.FX_SUGGEST,
     )
 
@@ -2716,7 +2727,10 @@ class Settings(
      */
     var microsurveyFeatureEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_microsurvey_feature_enabled),
-        default = { FxNimbus.features.microsurveys.value().enabled },
+        default = {
+            !FeatureFlags.ROBOWOLF_DEBLOAT_PROMOS &&
+                FxNimbus.features.microsurveys.value().enabled
+        },
     )
 
     /**
@@ -2777,7 +2791,8 @@ class Settings(
      * The flag is backed by a Nimbus `ip-protection` feature, with an option to override it through secret settings.
      */
     val isIPProtectionAvailable: Boolean
-        get() = FxNimbus.features.ipProtection.value().enabled || isIPProtectionEnabled
+        get() = !FeatureFlags.ROBOWOLF_DEBLOAT_PROMOS &&
+            (FxNimbus.features.ipProtection.value().enabled || isIPProtectionEnabled)
 
     /**
      * Tracks how many times the summarize menu item has been shown.
@@ -2868,6 +2883,7 @@ class Settings(
     fun shouldShowSetAsDefaultPrompt(
         nimbusFeature: DefaultBrowserPrompt = FxNimbus.features.defaultBrowserPrompt.value(),
     ): Boolean {
+        if (FeatureFlags.ROBOWOLF_DEBLOAT_PROMOS) return false
         if (!nimbusFeature.enabled) return false
 
         val now = System.currentTimeMillis()
@@ -3075,7 +3091,10 @@ class Settings(
      */
     var suppressSponsoredTopSitesEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_suppress_sponsored_tiles),
-        default = { FxNimbus.features.suppressSponsoredTopSites.value().enabled },
+        default = {
+            FeatureFlags.ROBOWOLF_DEBLOAT_SPONSORED ||
+                FxNimbus.features.suppressSponsoredTopSites.value().enabled
+        },
     )
 
     /**
