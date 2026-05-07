@@ -7,4 +7,5 @@
     <item name="composable_toolbar" type="id"/>
     <item name="toolbar" type="id"/>
     <item name="homepageView" type="id"/>
+    <item name="group_tab_strip" type="id"/>
 </resources>
