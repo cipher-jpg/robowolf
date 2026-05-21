@@ -40,7 +40,6 @@ use crate::gecko_bindings::bindings::Gecko_GetUnvisitedLinkAttrDeclarationBlock;
 use crate::gecko_bindings::bindings::Gecko_GetVisitedLinkAttrDeclarationBlock;
 use crate::gecko_bindings::bindings::Gecko_IsSignificantChild;
 use crate::gecko_bindings::bindings::Gecko_MatchLang;
-use crate::gecko_bindings::bindings::Gecko_UnsetDirtyStyleAttr;
 use crate::gecko_bindings::bindings::Gecko_UpdateAnimations;
 use crate::gecko_bindings::structs;
 use crate::gecko_bindings::structs::nsChangeHint;
@@ -1219,22 +1218,11 @@ impl<'le> TElement for GeckoElement<'le> {
         }
     }
 
-    fn unset_dirty_style_attribute(&self) {
-        if !self.may_have_style_attribute() {
-            return;
-        }
-
-        unsafe { Gecko_UnsetDirtyStyleAttr(self.0) };
-    }
-
     fn smil_override(&self) -> Option<ArcBorrow<'_, Locked<PropertyDeclarationBlock>>> {
         unsafe {
             let slots = self.extended_slots()?;
-
-            let declaration: &structs::DeclarationBlock =
+            let raw: &structs::StyleLockedDeclarationBlock =
                 slots.mSMILOverrideStyleDeclaration.mRawPtr.as_ref()?;
-
-            let raw: &structs::StyleLockedDeclarationBlock = declaration.mRaw.mRawPtr.as_ref()?;
             Some(ArcBorrow::from_ref(raw))
         }
     }

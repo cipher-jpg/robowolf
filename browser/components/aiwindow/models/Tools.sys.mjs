@@ -13,6 +13,7 @@
  */
 
 import { searchBrowsingHistory as implSearchBrowsingHistory } from "moz-src:///browser/components/aiwindow/models/SearchBrowsingHistory.sys.mjs";
+import { WCSMerinoClient } from "moz-src:///browser/components/aiwindow/models/WCSMerinoClient.sys.mjs";
 import { PageExtractorParent } from "resource://gre/actors/PageExtractorParent.sys.mjs";
 import {
   ChatStore,
@@ -91,6 +92,13 @@ export const GET_PAGE_CONTENT = "get_page_content";
 export const RUN_SEARCH = "run_search";
 export const GET_USER_MEMORIES = "get_user_memories";
 export const GET_NAVIGATION_INFO = "get_navigation_info";
+export const WORLD_CUP_MATCHES = "world_cup_matches";
+export const WORLD_CUP_LIVE = "world_cup_live";
+
+// Tools gated behind a feature pref. Filtered out of the model's tool list
+// in Chat.sys.mjs when the pref is off.
+export const WORLD_CUP_TOOLS = new Set([WORLD_CUP_MATCHES, WORLD_CUP_LIVE]);
+export const WORLD_CUP_PREF = "browser.smartwindow.worldcup.enabled";
 
 export const TOOLS = [
   GET_OPEN_TABS,
@@ -99,6 +107,8 @@ export const TOOLS = [
   RUN_SEARCH,
   GET_USER_MEMORIES,
   GET_NAVIGATION_INFO,
+  WORLD_CUP_MATCHES,
+  WORLD_CUP_LIVE,
 ];
 
 export const RUN_SEARCH_VERBATIM_QUERY_DESCRIPTION =
@@ -248,6 +258,62 @@ export const toolsConfig = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: WORLD_CUP_MATCHES,
+      description:
+        "Retrieve World Cup soccer matches in a 14-day window centered on a date. " +
+        "Returns matches grouped into previous (older), current (on the date), and " +
+        "next (newer). Use this for questions about results, fixtures, schedules, " +
+        "scores from a recent or upcoming day, or how a specific team is doing. " +
+        "Prefer this over a web search for World Cup match data.",
+      parameters: {
+        type: "object",
+        properties: {
+          date: {
+            type: "string",
+            description:
+              "Center of the +/-7 day window as RFC date 'YYYY-MM-DD'. " +
+              "Omit to default to today (UTC).",
+          },
+          teams: {
+            type: "string",
+            description:
+              "Comma-separated 3-letter team keys to filter on, e.g. 'BRA,ARG'. " +
+              "Omit to include all teams.",
+          },
+          limit: {
+            type: "integer",
+            description:
+              "Maximum number of matches to return across the three buckets. " +
+              "Omit unless the user asks for a small number.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: WORLD_CUP_LIVE,
+      description:
+        "Retrieve World Cup soccer matches that are currently in progress. " +
+        "Use this when the user asks what's playing now, the live score, or " +
+        "what's happening right now in the World Cup.",
+      parameters: {
+        type: "object",
+        properties: {
+          teams: {
+            type: "string",
+            description:
+              "Comma-separated 3-letter team keys to filter on, e.g. 'BRA,ARG'. " +
+              "Omit to include all live matches.",
+          },
+        },
+      },
+    },
+  },
 ];
 
 /**
@@ -270,6 +336,8 @@ export const toolsConfig = [
 export async function getOpenTabs(conversation) {
   // No security check needed. The security checks prevent data exfiltration,
   // which requires external communication. This tool makes no external requests.
+
+  const startTime = ChromeUtils.now();
 
   /** @type {Array<TabInfo>} */
   const tabs = [];
@@ -306,6 +374,12 @@ export async function getOpenTabs(conversation) {
   lazy.console.log("[Tool] getOpenTabs", recentTabs);
 
   conversation.addSeenUrls(recentTabs.map(({ url }) => url));
+
+  ChromeUtils.addProfilerMarker(
+    "SmartWindow",
+    { startTime },
+    `Tool:get_open_tabs(${recentTabs.length})`
+  );
 
   return recentTabs;
 }
@@ -683,11 +757,17 @@ export class GetPageContent {
         if (!isAllowedURL(url)) {
           return "This URL is not allowed: " + url;
         }
+        const startTime = ChromeUtils.now();
         try {
           const text = await GetPageContent.#getPageContentsForSingleURL(
             url,
             mentionedUrls,
             conversation
+          );
+          ChromeUtils.addProfilerMarker(
+            "SmartWindow",
+            { startTime },
+            `Tool:get_page_content(${url})`
           );
           return text;
         } catch (error) {
@@ -697,6 +777,7 @@ export class GetPageContent {
       })
     );
     lazy.console.log("[Tool] getPageContent", results);
+
     return results;
   }
 
@@ -852,9 +933,107 @@ export async function getUserMemories(conversation) {
   return result;
 }
 
+/**
+ * Strips fields the language model doesn't need (icons, colors) from a
+ * single match payload.
+ *
+ * @param {object} match
+ * @returns {object}
+ */
+function trimWorldCupMatch(match) {
+  if (!match || typeof match !== "object") {
+    return match;
+  }
+  const trim = team => {
+    if (!team || typeof team !== "object") {
+      return team;
+    }
+    const out = { ...team };
+    delete out.icon_url;
+    delete out.colors;
+    return out;
+  };
+  return {
+    ...match,
+    home_team: trim(match.home_team),
+    away_team: trim(match.away_team),
+  };
+}
+
+/**
+ * Tool entrypoint for world_cup_matches. Returns the matches grouped by
+ * previous/current/next. Trims UI-only fields. On failure, returns an
+ * `{error}` object so the model can recover gracefully.
+ *
+ * @param {object} toolParams
+ * @param {string} [toolParams.date]
+ * @param {string} [toolParams.teams]
+ * @param {number} [toolParams.limit]
+ * @param {ChatConversation} conversation
+ * @returns {Promise<object>}
+ */
+export async function worldCupMatches(toolParams, conversation) {
+  const params = toolParams && typeof toolParams === "object" ? toolParams : {};
+  const { date, teams, limit } = params;
+
+  let result;
+  try {
+    result = await WCSMerinoClient.fetchMatches({ date, teams, limit });
+  } catch (error) {
+    lazy.console.log("[Tool] worldCupMatches error", error);
+    return { error: `Failed to retrieve World Cup matches: ${error.message}` };
+  }
+
+  const trimmed = {
+    previous: (result.previous || []).map(trimWorldCupMatch),
+    current: (result.current || []).map(trimWorldCupMatch),
+    next: (result.next || []).map(trimWorldCupMatch),
+  };
+
+  // Match data is public, server-provided, and not user data. We still
+  // mark it as untrusted because the response strings (team names, status
+  // text) flow into the model context.
+  conversation.securityProperties.setUntrustedInput();
+  lazy.console.log("[Tool] worldCupMatches", trimmed);
+  return trimmed;
+}
+
+/**
+ * Tool entrypoint for world_cup_live. Returns matches currently in play.
+ *
+ * @param {object} toolParams
+ * @param {string} [toolParams.teams]
+ * @param {ChatConversation} conversation
+ * @returns {Promise<object>}
+ */
+export async function worldCupLive(toolParams, conversation) {
+  const params = toolParams && typeof toolParams === "object" ? toolParams : {};
+  const { teams } = params;
+
+  let result;
+  try {
+    result = await WCSMerinoClient.fetchLive({ teams });
+  } catch (error) {
+    lazy.console.log("[Tool] worldCupLive error", error);
+    return {
+      error: `Failed to retrieve live World Cup matches: ${error.message}`,
+    };
+  }
+
+  const trimmed = {
+    matches: (result.matches || []).map(trimWorldCupMatch),
+  };
+
+  conversation.securityProperties.setUntrustedInput();
+  lazy.console.log("[Tool] worldCupLive", trimmed);
+  return trimmed;
+}
+
 export const toolFns = {
   getOpenTabs,
   searchBrowsingHistory,
   getUserMemories,
   getNavigationInfo,
+  worldCupMatches,
+  worldCupLive,
 };

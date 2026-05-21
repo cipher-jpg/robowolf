@@ -192,7 +192,7 @@ class EditorBase : public nsIEditor,
 
   PresShell* GetPresShell() const;
   nsPresContext* GetPresContext() const;
-  already_AddRefed<nsCaret> GetCaret() const;
+  already_AddRefed<nsCaret> GetCaretForSelection() const;
 
   already_AddRefed<nsIWidget> GetWidget() const;
 
@@ -2640,6 +2640,8 @@ class EditorBase : public nsIEditor,
   };
   MOZ_CAN_RUN_SCRIPT void NotifyEditorObservers(
       NotificationForEditorObservers aNotification);
+
+  virtual dom::EditContext* GetEditContext() const { return nullptr; }
 
   /**
    * HowToHandleCollapsedRange indicates how collapsed range should be treated.

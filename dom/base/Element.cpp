@@ -3237,12 +3237,13 @@ nsDOMCSSAttributeDeclaration* Element::SMILOverrideStyle() {
   return slots->mSMILOverrideStyle;
 }
 
-DeclarationBlock* Element::GetSMILOverrideStyleDeclaration() {
+StyleLockedDeclarationBlock* Element::GetSMILOverrideStyleDeclaration() {
   Element::nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
   return slots ? slots->mSMILOverrideStyleDeclaration.get() : nullptr;
 }
 
-void Element::SetSMILOverrideStyleDeclaration(DeclarationBlock& aDeclaration) {
+void Element::SetSMILOverrideStyleDeclaration(
+    StyleLockedDeclarationBlock& aDeclaration) {
   ExtendedDOMSlots()->mSMILOverrideStyleDeclaration = &aDeclaration;
 
   // Only need to request a restyle if we're in a document.  (We might not
@@ -3259,7 +3260,7 @@ bool Element::IsLabelable() const { return false; }
 
 bool Element::IsInteractiveHTMLContent() const { return false; }
 
-DeclarationBlock* Element::GetInlineStyleDeclaration() const {
+StyleLockedDeclarationBlock* Element::GetInlineStyleDeclaration() const {
   if (!MayHaveStyle()) {
     return nullptr;
   }
@@ -3267,14 +3268,14 @@ DeclarationBlock* Element::GetInlineStyleDeclaration() const {
   if (!attrVal || attrVal->Type() != nsAttrValue::eCSSDeclaration) {
     return nullptr;
   }
-  return attrVal->GetCSSDeclarationValue();
+  return attrVal->GetCSSDeclarationValue()->Raw();
 }
 
 void Element::InlineStyleDeclarationWillChange(MutationClosureData& aData) {
   MOZ_ASSERT_UNREACHABLE("Element::InlineStyleDeclarationWillChange");
 }
 
-nsresult Element::SetInlineStyleDeclaration(DeclarationBlock& aDeclaration,
+nsresult Element::SetInlineStyleDeclaration(StyleLockedDeclarationBlock&,
                                             MutationClosureData& aData) {
   MOZ_ASSERT_UNREACHABLE("Element::SetInlineStyleDeclaration");
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -3715,6 +3716,19 @@ nsresult Element::SetParsedAttr(int32_t aNamespaceID, nsAtom* aName,
                           document, updateBatch);
 }
 
+static MOZ_ALWAYS_INLINE void SetLifecycleCallbackNamespaceURI(
+    LifecycleCallbackArgs& aArgs, int32_t aNamespaceID) {
+  if (aNamespaceID == kNameSpaceID_None) {
+    aArgs.mNamespaceURI = VoidString();
+    return;
+  }
+  nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aNamespaceID,
+                                                     aArgs.mNamespaceURI);
+  if (aArgs.mNamespaceURI.IsEmpty()) {
+    aArgs.mNamespaceURI.SetIsVoid(true);
+  }
+}
+
 nsresult Element::SetAttrAndNotify(
     int32_t aNamespaceID, nsAtom* aName, nsAtom* aPrefix,
     const nsAttrValue* aOldValue, nsAttrValue& aParsedValue,
@@ -3785,9 +3799,6 @@ nsresult Element::SetAttrAndNotify(
     MOZ_ASSERT(definition, "Should have a valid CustomElementDefinition");
 
     if (definition->IsInObservedAttributeList(aName)) {
-      nsAutoString ns;
-      nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aNamespaceID, ns);
-
       LifecycleCallbackArgs args;
       args.mName = aName;
       if (aModType == AttrModType::Addition) {
@@ -3802,7 +3813,7 @@ nsresult Element::SetAttrAndNotify(
         }
       }
       valueForAfterSetAttr.ToString(args.mNewValue);
-      args.mNamespaceURI = ns.IsEmpty() ? VoidString() : ns;
+      SetLifecycleCallbackNamespaceURI(args, aNamespaceID);
 
       nsContentUtils::EnqueueLifecycleCallback(
           ElementCallbackType::eAttributeChanged, this, args, definition);
@@ -3977,15 +3988,12 @@ void Element::OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
     MOZ_ASSERT(definition, "Should have a valid CustomElementDefinition");
 
     if (definition->IsInObservedAttributeList(aName)) {
-      nsAutoString ns;
-      nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aNamespaceID, ns);
-
       nsAutoString value(aValue.String());
       LifecycleCallbackArgs args;
       args.mName = aName;
       args.mOldValue = value;
       args.mNewValue = std::move(value);
-      args.mNamespaceURI = ns.IsEmpty() ? VoidString() : std::move(ns);
+      SetLifecycleCallbackNamespaceURI(args, aNamespaceID);
 
       nsContentUtils::EnqueueLifecycleCallback(
           ElementCallbackType::eAttributeChanged, this, args, definition);
@@ -4097,13 +4105,11 @@ nsresult Element::UnsetAttr(int32_t aNameSpaceID, nsAtom* aName, bool aNotify) {
     CustomElementDefinition* definition = data->GetCustomElementDefinition();
     MOZ_ASSERT(definition, "Should have a valid CustomElementDefinition");
     if (definition->IsInObservedAttributeList(aName)) {
-      nsAutoString ns;
-      nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aNameSpaceID, ns);
       LifecycleCallbackArgs args;
       args.mName = aName;
       oldValue.ToString(args.mOldValue);
       args.mNewValue = VoidString();
-      args.mNamespaceURI = ns.IsEmpty() ? VoidString() : ns;
+      SetLifecycleCallbackNamespaceURI(args, aNameSpaceID);
       nsContentUtils::EnqueueLifecycleCallback(
           ElementCallbackType::eAttributeChanged, this, args, definition);
     }
@@ -4545,11 +4551,13 @@ void Element::GetLinkTargetImpl(nsAString& aTarget) { aTarget.Truncate(); }
 
 /* Part of https://dom.spec.whatwg.org/#concept-cloning-steps-for-a-single-node
    step 2 (if node is an element). */
-nsresult Element::CopyInnerTo(Element* aDst, ReparseAttributes aReparse) {
-  nsresult rv = aDst->mAttrs.EnsureCapacityToClone(mAttrs);
-  NS_ENSURE_SUCCESS(rv, rv);
+nsresult Element::CopyInnerTo(Element* aDst) {
+  MOZ_TRY(aDst->mAttrs.EnsureCapacityToClone(mAttrs));
 
-  const bool reparse = aReparse == ReparseAttributes::Yes;
+  // SVG attribute parsing has a lot of side effects, and some of its attributes
+  // don't even point to standalone data, see nsAttrValue::StoresOwnData().
+  // TODO(emilio): That set-up is kinda messed up.
+  const bool isSVG = IsSVGElement();
 
   // 2.5. For each attribute of node's attribute list:
   //      2.5.1. Let copyAttribute be the result of cloning a single node given
@@ -4561,27 +4569,21 @@ nsresult Element::CopyInnerTo(Element* aDst, ReparseAttributes aReparse) {
     const nsAttrName* name = info.mName;
     const nsAttrValue* value = info.mValue;
     if (value->Type() == nsAttrValue::eCSSDeclaration) {
-      MOZ_ASSERT(name->Equals(nsGkAtoms::style, kNameSpaceID_None));
-      // We still clone CSS attributes, even in the `reparse` (cross-document)
-      // case.  https://github.com/w3c/webappsec-csp/issues/212
-      nsAttrValue valueCopy(*value);
-      rv = aDst->SetParsedAttr(name->NamespaceID(), name->LocalName(),
-                               name->GetPrefix(), valueCopy, false);
-      NS_ENSURE_SUCCESS(rv, rv);
-
+      // We always clone CSS attributes, see
+      // https://github.com/w3c/webappsec-csp/issues/212
+      // Mark it as immutable, so that it gets deduplicated by CSSOM if needed.
       value->GetCSSDeclarationValue()->SetImmutable();
-    } else if (reparse) {
+    } else if (isSVG) {
       nsAutoString valStr;
       value->ToString(valStr);
-      rv = aDst->SetAttr(name->NamespaceID(), name->LocalName(),
-                         name->GetPrefix(), valStr, false);
-      NS_ENSURE_SUCCESS(rv, rv);
-    } else {
-      nsAttrValue valueCopy(*value);
-      rv = aDst->SetParsedAttr(name->NamespaceID(), name->LocalName(),
-                               name->GetPrefix(), valueCopy, false);
-      NS_ENSURE_SUCCESS(rv, rv);
+      MOZ_TRY(aDst->SetAttr(name->NamespaceID(), name->LocalName(),
+                            name->GetPrefix(), valStr, false));
+      continue;
     }
+    MOZ_ASSERT(value->StoresOwnData());
+    nsAttrValue valueCopy(*info.mValue);
+    MOZ_TRY(aDst->SetParsedAttr(name->NamespaceID(), name->LocalName(),
+                                name->GetPrefix(), valueCopy, false));
   }
 
   // https://dom.spec.whatwg.org/#clone-a-single-node
@@ -4794,6 +4796,10 @@ already_AddRefed<Promise> Element::RequestFullscreen(
 already_AddRefed<Promise> Element::RequestPointerLock(
     const PointerLockOptions& aOptions, CallerType aCallerType,
     ErrorResult& aRv) {
+  if (aOptions.mUnadjustedMovement) {
+    OwnerDoc()->SetUseCounter(
+        eUseCounter_custom_RequestedPointerLockUnadjustedMovement);
+  }
   RefPtr<Promise> promise = Promise::CreateInfallible(GetRelevantGlobal());
   PointerLockManager::RequestLock(this, aOptions, aCallerType, promise);
   return promise.forget();
@@ -5112,8 +5118,8 @@ void Element::GetAnimationsWithoutFlush(
       aError.ThrowSyntaxError("The pseudo-element selector cannot be empty.");
       return;
     }
-    Maybe<PseudoStyleRequest> request =
-        PseudoStyleRequest::Parse(aOptions.mPseudoElement);
+    Maybe<PseudoStyleRequest> request = PseudoStyleRequest::Parse(
+        aOptions.mPseudoElement, OwnerDoc()->DefaultStyleAttrURLData());
     if (request.isNothing()) {
       aError.ThrowSyntaxError("The pseudo-element selector is not valid.");
       return;
@@ -5696,101 +5702,29 @@ nsGenericHTMLElement* Element::GetAssociatedPopover() const {
 }
 
 // https://html.spec.whatwg.org/#topmost-popover-ancestor
-Element* Element::GetTopmostPopoverAncestor(PopoverAttributeState aMode,
-                                            const Element* aInvoker,
+Element* Element::GetTopmostPopoverAncestor(const Element* aInvoker,
                                             bool isPopover) const {
-  const Element* newPopover = this;
+  AutoTArray<RefPtr<Element>, 16> combinedPopovers;
+  combinedPopovers.AppendElements(
+      OwnerDoc()->PopoverListOf(PopoverAttributeState::Auto));
+  combinedPopovers.AppendElements(
+      OwnerDoc()->PopoverListOf(PopoverAttributeState::Hint));
 
-  // 1. Let popoverPositions be an empty ordered map.
-  nsTHashMap<nsPtrHashKey<const Element>, size_t> popoverPositions;
-  size_t index = 0;
-
-  // 2. For each index in the range from 0 to popoverList's size:
-  for (Element* popover : OwnerDoc()->PopoverListOf(aMode)) {
-    // 2.1. Set popoverPositions[popoverList[index]] to index.
-    popoverPositions.LookupOrInsert(popover, index++);
-  }
-
-  // 3. If isPopover is true, then set popoverPositions[newPopover] to
-  // popoverList's size.
-  if (isPopover) {
-    popoverPositions.LookupOrInsert(newPopover, index);
-  }
-
-  const auto* newPopoverHTMLEl = nsGenericHTMLElement::FromNode(newPopover);
-  PopoverAttributeState newPopoverAttribute =
-      newPopoverHTMLEl ? newPopoverHTMLEl->GetPopoverAttributeState()
-                       : PopoverAttributeState::None;
-
-  // 4. Let topmostPopoverAncestor be null.
-  Element* topmostPopoverAncestor = nullptr;
-
-  // 5. Let checkAncestor be an algorithm...
-  auto checkAncestor = [&](const Element* candidate) {
-    // 5. ...given a Node candidate:
-    // 5.1. If candidate is null, then return.
-    if (!candidate) {
-      return;
-    }
-
-    // 5.2. Let okNesting be false.
-    bool okNesting = false;
-    // 5.3. Let candidateAncestor be null.
-    Element* candidateAncestor = nullptr;
-
-    // 5.4. While okNesting is false:
-    while (!okNesting) {
-      // 5.4.1. Set candidateAncestor to candidate's nearest inclusive open
-      // popover.
-      candidateAncestor = candidate->GetNearestInclusiveOpenPopover();
-      // 5.4.2. If candidateAncestor is null, then return.
-      // 5.4.3. If popoverPositions[candidateAncestor] does not exist, then
-      // return.
-      if (!candidateAncestor || !popoverPositions.Contains(candidateAncestor)) {
-        return;
-      }
-
-      // 5.4.4. Assert: candidateAncestor's popover attribute is not in the No
-      // Popover state and is not in the Manual state.
-
-      // 5.4.5. If isPopover is false, or newPopover's popover attribute is in
-      // the Hint state, or candidateAncestor's popover attribute is in the Auto
-      // state, then set okNesting to true.
-      auto* candidateHTMLEl = nsGenericHTMLElement::FromNode(candidateAncestor);
-      okNesting =
-          !isPopover || newPopoverAttribute == PopoverAttributeState::Hint ||
-          (candidateHTMLEl && candidateHTMLEl->GetPopoverAttributeState() ==
-                                  PopoverAttributeState::Auto);
-
-      // 5.4.6. Otherwise, set candidate to candidateAncestor's flat tree
-      // parent element.
-      if (!okNesting) {
-        candidate = candidateAncestor->GetFlattenedTreeParentElement();
+  // Returns the index of the last item in combinedPopovers of which aNode is a
+  // flat tree descendant, or -1 if none.
+  auto lastAncestorIdx = [&](const nsINode* aNode) -> intptr_t {
+    for (intptr_t i = (intptr_t)combinedPopovers.Length() - 1; i >= 0; --i) {
+      if (aNode->IsInclusiveFlatTreeDescendantOf(combinedPopovers[i])) {
+        return i;
       }
     }
-
-    // 5.5. If topmostPopoverAncestor is null or
-    // popoverPositions[topmostPopoverAncestor] is less than
-    // popoverPositions[candidateAncestor], then set topmostPopoverAncestor to
-    // candidateAncestor.
-    size_t candidatePosition;
-    if (popoverPositions.Get(candidateAncestor, &candidatePosition)) {
-      size_t topmostPosition;
-      if (!topmostPopoverAncestor ||
-          (popoverPositions.Get(topmostPopoverAncestor, &topmostPosition) &&
-           topmostPosition < candidatePosition)) {
-        topmostPopoverAncestor = candidateAncestor;
-      }
-    }
+    return -1;
   };
 
-  // 6. Run checkAncestor given newPopover's flat tree parent element.
-  checkAncestor(newPopover->GetFlattenedTreeParentElement());
-  // 7. Run checkAncestor given invoker.
-  checkAncestor(aInvoker);
-
-  // 8. Return topmostPopoverAncestor.
-  return topmostPopoverAncestor;
+  intptr_t popoverAncestorIndex = lastAncestorIdx(this);
+  intptr_t sourceAncestorIndex = aInvoker ? lastAncestorIdx(aInvoker) : -1;
+  intptr_t ancestorIndex = std::max(popoverAncestorIndex, sourceAncestorIndex);
+  return ancestorIndex >= 0 ? combinedPopovers[ancestorIndex].get() : nullptr;
 }
 
 ElementAnimationData& Element::CreateAnimationData() {

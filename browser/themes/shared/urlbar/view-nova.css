@@ -23,6 +23,8 @@
 
   --urlbarView-row-padding-block: var(--space-small);
   --urlbarView-row-padding-inline: var(--urlbar-icon-padding);
+  --urlbarView-row-min-height: var(--size-item-large);
+  --urlbarView-row-inner-min-height: calc(var(--urlbarView-row-min-height) - var(--urlbarView-row-padding-block) * 2);
 
   --urlbarView-padding: calc(var(--space-large) - var(--urlbarView-row-gutter));
 
@@ -91,20 +93,16 @@
 }
 
 .urlbarView {
+  /* Compensate for the row's transparent border (gutter), so the selection rect
+     is flush with the input container's border edge. */
+  margin-inline: calc(-1 * var(--urlbarView-row-gutter));
+
   /* Don't handle window drag events in case we are overlapping a toolbar */
   -moz-window-dragging: no-drag;
 
   display: block;
   text-shadow: none;
   overflow: clip;
-  margin-inline: var(--urlbarView-padding);
-}
-
-/* TODO Bug 2019152: Replace this border-top with a border on the input. */
-.urlbarView-body-inner {
-  #urlbar[open] > .urlbarView > .urlbarView-body-outer > & {
-    border-top: 1px solid var(--urlbarview-separator-color);
-  }
 }
 
 .urlbarView-results {
@@ -150,7 +148,7 @@
 
   &:not([type="tip"], [type="dynamic"]) {
     :root:not([uidensity="compact"]) & {
-      min-height: 32px;
+      min-height: var(--urlbarView-row-min-height);
     }
     :root[uidensity="touch"] & {
       padding-block: 11px;
@@ -181,7 +179,7 @@
   padding-block: var(--urlbarView-row-padding-block);
 
   :root:not([uidensity="compact"]) & {
-    min-height: 20px; /* row min-height 32px - (2 * padding-block 6px) */
+    min-height: var(--urlbarView-row-inner-min-height);
   }
 }
 
@@ -735,8 +733,8 @@
     }
 
     &.urlbarView-tabGroup {
-      color: light-dark(var(--tab-group-color-pale), var(--tab-group-label-text-dark));
-      background-color: light-dark(var(--tab-group-color), var(--tab-group-color-invert));
+      color: var(--tab-group-text-color);
+      background-color: var(--tab-group-background-color);
     }
 
     -moz-context-properties: fill, fill-opacity;
@@ -870,7 +868,7 @@
   }
 
   > .urlbarView-row-inner {
-    min-height: 32px;
+    min-height: var(--urlbarView-row-min-height);
     align-items: center;
 
     /* Add space between the tip title (and the rest of row-inner) and its
@@ -1142,8 +1140,8 @@
   }
 
   &[data-action^="tabgroup-"] {
-    color: light-dark(var(--tab-group-color-pale), var(--tab-group-label-text-dark));
-    background-color: light-dark(var(--tab-group-color), var(--tab-group-color-invert));
+    color: var(--tab-group-text-color);
+    background-color: var(--tab-group-background-color);
     max-width: 30%;
 
     /* Add offset to the focus / selection indicator as the outline color could
@@ -1152,7 +1150,7 @@
     margin-inline-start: 1px;
 
     &:hover {
-      opacity: 0.8;
+      background-color: var(--tab-group-background-color-hover);
     }
 
     > .urlbarView-action-btn-label {
@@ -1305,9 +1303,13 @@
       text-align: start;
       grid-row-gap: var(--space-xsmall);
 
+      > .urlbarView-realtime-description-top,
       > .urlbarView-realtime-description-bottom {
         display: flex;
-        align-items: center;
+        align-items: baseline;
+      }
+
+      > .urlbarView-realtime-description-bottom {
         font-size: var(--urlbarView-small-font-size);
         color: var(--urlbarView-secondary-text-color);
       }
@@ -1561,6 +1563,11 @@
 /* Realtime sports suggestions */
 
 .urlbarView-row[dynamicType="realtime-sports"] > .urlbarView-realtime-root > .urlbarView-realtime-item {
+  > .urlbarView-realtime-image-container > .urlbarView-realtime-image {
+    width: 44px;
+    max-height: 44px;
+  }
+
   > .urlbarView-realtime-image-container[hidden] {
     display: none;
   }
@@ -1630,13 +1637,16 @@
 
   > .urlbarView-realtime-description {
     > .urlbarView-realtime-description-top {
-      > .urlbarView-sports-team-names {
+      > .urlbarView-sports-team-names,
+      > .urlbarView-sports-score {
         font-weight: var(--font-weight-bold);
       }
 
-      > .urlbarView-sports-score {
-        font-weight: var(--font-weight-bold);
-        margin-inline-start: var(--space-xsmall);
+      > .urlbarView-sports-score-home {
+        margin-inline-start: var(--space-small);
+      }
+      > .urlbarView-sports-score-away {
+        margin-inline-end: var(--space-small);
       }
     }
 

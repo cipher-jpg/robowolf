@@ -3078,6 +3078,31 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
+// Override NSResponder's default undo:/redo: implementations. The defaults
+// look up the responder's undoManager property and silently no-op when it is
+// nil, which it always is in Gecko (we use our own TransactionManager rather
+// than NSUndoManager). Without this override, clicking Edit > Undo or Edit >
+// Redo in the macOS system menu bar would dispatch through the responder
+// chain, be "claimed" by the default NSResponder implementation, and do
+// nothing. Forwarding via menuItemHit: routes the click through Gecko's
+// command system, which fires cmd_undo / cmd_redo on the focused editor
+// (bug 2040844).
+//
+// The standard Edit menu items have action=@selector(undo:)/(redo:) with
+// target=nil (see nsMenuItemX.mm) so that macOS 26+ injects SF Symbol icons
+// and so that native NSText fields inside NSSavePanel/NSOpenPanel sheets keep
+// receiving these actions natively when they are the first responder. Those
+// sheets are not in this view's responder chain, so the overrides below only
+// kick in when ChildView is the first responder -- i.e. when focus is in
+// Gecko content or chrome.
+- (void)undo:(id)aSender {
+  [nsMenuBarX::sNativeEventTarget menuItemHit:aSender];
+}
+
+- (void)redo:(id)aSender {
+  [nsMenuBarX::sNativeEventTarget menuItemHit:aSender];
+}
+
 - (void)unmarkText {
   NS_ENSURE_TRUE_VOID(mTextInputHandler);
   mTextInputHandler->CommitIMEComposition();
@@ -3234,6 +3259,18 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
 #endif  // #if !defined(RELEASE_OR_BETA) || defined(DEBUG)
 
   nsAutoRetainCocoaObject kungFuDeathGrip(self);
+
+  // Handle fn+f (Globe+F) to toggle fullscreen. We must intercept this before
+  // the TextInputHandler processes it, otherwise it gets treated as normal 'f'
+  // character input.
+  if ([theEvent keyCode] == kVK_ANSI_F &&
+      ([theEvent modifierFlags] &
+       NSEventModifierFlagDeviceIndependentFlagsMask) ==
+          NSEventModifierFlagFunction) {
+    [[self window] toggleFullScreen:nil];
+    return;
+  }
+
   if (mGeckoChild) {
     if (mTextInputHandler) {
       sUniqueKeyEventId++;
@@ -4020,6 +4057,36 @@ static NSURL* GetPasteLocation(NSPasteboard* aPasteboard, bool aUseFallback) {
       [aPasteboard setString:[pasteboardOutputDict valueForKey:aType]
                      forType:aType];
     } else if ([aType
+                   isEqualToString:
+                       [UTIHelper
+                           stringFromPboardType:
+                               (NSString*)kPasteboardTypeFilePromiseContent]]) {
+      // The Carbon file promise protocol requires that we provide the
+      // content type UTI so Finder can recognize this as a valid file
+      // promise and use the promise-based drop path (which positions
+      // the file icon at the drop coordinates on the desktop).
+      nsCOMPtr<nsISupports> mimeDataWrapper;
+      if (NS_SUCCEEDED(currentTransferable->GetTransferData(
+              kImageRequestMime, getter_AddRefs(mimeDataWrapper)))) {
+        nsCOMPtr<nsISupportsString> mimeStr =
+            do_QueryInterface(mimeDataWrapper);
+        if (mimeStr) {
+          nsAutoString mimeType;
+          mimeStr->GetData(mimeType);
+          if (!mimeType.IsEmpty()) {
+            NSString* nsMimeType = nsCocoaUtils::ToNSString(mimeType);
+            CFStringRef uti = UTTypeCreatePreferredIdentifierForTag(
+                kUTTagClassMIMEType, (CFStringRef)nsMimeType, nullptr);
+            if (uti) {
+              [aPasteboard setData:[(NSString*)uti
+                                       dataUsingEncoding:NSUTF8StringEncoding]
+                           forType:aType];
+              CFRelease(uti);
+            }
+          }
+        }
+      }
+    } else if ([aType
                    isEqualToString:[UTIHelper stringFromPboardType:
                                                   (NSString*)kUTTypeFileURL]] ||
                [aType isEqualToString:
@@ -4091,23 +4158,30 @@ static NSURL* GetPasteLocation(NSPasteboard* aPasteboard, bool aUseFallback) {
           continue;
         }
 
+        // Report the created file's URL back to the pasteboard. For
+        // kPasteboardTypeFileURLPromise, this is required by the Carbon
+        // file promise protocol — without it, Finder cannot associate
+        // the new file with the drop point and won't position it at
+        // the correct coordinates on the desktop.
+        nsCOMPtr<nsIFile> file = do_QueryInterface(fileDataPrimitive);
+        if (!file) {
+          continue;
+        }
+        nsAutoCString finalPath;
+        file->GetNativePath(finalPath);
+        NSString* filePath =
+            [NSString stringWithUTF8String:(const char*)finalPath.get()];
+        NSString* fileURLString =
+            [[NSURL fileURLWithPath:filePath] absoluteString];
         if ([aType
                 isEqualToString:[UTIHelper
                                     stringFromPboardType:(NSString*)
                                                              kUTTypeFileURL]]) {
-          // In case of a file URL we need to populate the pasteboard with the
-          // path to the file.
-          nsCOMPtr<nsIFile> file = do_QueryInterface(fileDataPrimitive);
-          if (!file) {
-            continue;
-          }
-          nsAutoCString finalPath;
-          file->GetNativePath(finalPath);
-          NSString* filePath =
-              [NSString stringWithUTF8String:(const char*)finalPath.get()];
+          [aPasteboard setString:fileURLString forType:aType];
+        } else {
           [aPasteboard
-              setString:[[NSURL fileURLWithPath:filePath] absoluteString]
-                forType:aType];
+              setData:[fileURLString dataUsingEncoding:NSUTF8StringEncoding]
+              forType:aType];
         }
       }
     } else if ([aType
@@ -4415,12 +4489,23 @@ nsresult nsCocoaWindow::RestoreHiDPIMode() {
 - (id<mozAccessible>)accessible {
   if (!mGeckoChild) return nil;
 
+  NSWindow* window = [self window];
+  if ([window isKindOfClass:[PopupWindow class]]) {
+    if (![(PopupWindow*)window usePopover]) {
+      // Don't create represented view relationship for non-native popovers.
+      // Rely on the gecko heirarchy instead.
+      return nil;
+    }
+  }
+
   id<mozAccessible> nativeAccessible = nil;
 
   nsAutoRetainCocoaObject kungFuDeathGrip(self);
   RefPtr<nsCocoaWindow> geckoChild(mGeckoChild);
   RefPtr<a11y::LocalAccessible> accessible = geckoChild->GetWindowAccessible();
-  if (!accessible) return nil;
+  if (!accessible) {
+    return nil;
+  }
 
   accessible->GetNativeInterface((void**)&nativeAccessible);
 
@@ -4607,10 +4692,18 @@ void ChildViewMouseTracker::OnDestroyWindow(NSWindow* aWindow) {
 
 void ChildViewMouseTracker::MouseEnteredWindow(NSEvent* aEvent) {
   NSWindow* window = aEvent.window;
-  if (!window.ignoresMouseEvents) {
-    sWindowUnderMouse = window;
-    ReEvaluateMouseEnterState(aEvent);
+  if (window.ignoresMouseEvents) {
+    return;
   }
+  // NSTrackingActiveAlways can deliver spurious mouseEntered: to windows on
+  // inactive Spaces. Accepting them clobbers the global sWindowUnderMouse and
+  // causes hover flicker when Firefox windows span multiple Spaces or
+  // displays (Bug 1854862).
+  if (!window.isOnActiveSpace) {
+    return;
+  }
+  sWindowUnderMouse = window;
+  ReEvaluateMouseEnterState(aEvent);
 }
 
 void ChildViewMouseTracker::MouseExitedWindow(NSEvent* aEvent) {
@@ -5114,6 +5207,36 @@ nsresult nsCocoaWindow::CreateNativeWindow(const NSRect& aRect,
     mWindow.collectionBehavior =
         mWindow.collectionBehavior | NSWindowCollectionBehaviorCanJoinAllSpaces;
   }
+
+  // Set an explicit fullscreen collection behavior before any display so
+  // that AppKit never needs to consult `_implicitlyAllowsFullScreenPrimary`
+  // while rendering. That internal heuristic has been observed to flip its
+  // return value mid-display on macOS 15.3 in background-only (LSUIElement)
+  // processes, which causes a `_NSThemeFullScreenButton` to be inserted
+  // into the titlebar while AppKit is enumerating the titlebar's subviews
+  // -- producing a "Collection was mutated while being enumerated" crash
+  // in `NSViewUpdateVibrancyForSubtree` (bug 2031249, bug 2038980).
+  //
+  // Default to FullScreenPrimary | FullScreenAllowsTiling for resizable
+  // titled top-level windows -- that matches what AppKit's heuristic
+  // returns for those windows today, so the green window-control button
+  // keeps its fullscreen-enter arrows. Non-resizable titled windows
+  // default to Auxiliary | DisallowsTiling, which gives them the "+"
+  // zoom glyph (they typically aren't fullscreen-capable anyway).
+  // SetSupportsNativeFullscreen() can later override based on the XUL
+  // `macnativefullscreen` attribute.
+  if ((mWindowType == WindowType::TopLevel ||
+       mWindowType == WindowType::Dialog) &&
+      (features & NSWindowStyleMaskTitled)) {
+    NSWindowCollectionBehavior fsBehavior =
+        (features & NSWindowStyleMaskResizable)
+            ? (NSWindowCollectionBehaviorFullScreenPrimary |
+               NSWindowCollectionBehaviorFullScreenAllowsTiling)
+            : (NSWindowCollectionBehaviorFullScreenAuxiliary |
+               NSWindowCollectionBehaviorFullScreenDisallowsTiling);
+    mWindow.collectionBehavior |= fsBehavior;
+  }
+
   mWindow.contentMinSize = NSMakeSize(60, 60);
 
   // Make the window use CoreAnimation from the start, so that we don't
@@ -5303,25 +5426,6 @@ void nsCocoaWindow::SetModal(bool aModal) {
 
 bool nsCocoaWindow::IsRunningAppModal() { return [NSApp _isRunningAppModal]; }
 
-static NSRectEdge AlignmentPositionToNSRectEdge(int8_t aPosition) {
-  switch (aPosition) {
-    case POPUPPOSITION_BEFORESTART:
-    case POPUPPOSITION_BEFOREEND:
-      return NSRectEdgeMaxY;
-    case POPUPPOSITION_AFTERSTART:
-    case POPUPPOSITION_AFTEREND:
-      return NSRectEdgeMinY;
-    case POPUPPOSITION_STARTBEFORE:
-    case POPUPPOSITION_STARTAFTER:
-      return NSRectEdgeMaxX;
-    case POPUPPOSITION_ENDBEFORE:
-    case POPUPPOSITION_ENDAFTER:
-      return NSRectEdgeMinX;
-    default:
-      return NSRectEdgeMinY;
-  }
-}
-
 static void SyncPopoverBounds(NSPopover* aPopover,
                               nsMenuPopupFrame* aPopupFrame) {
   if (!aPopover || !aPopover.shown || !aPopupFrame) {
@@ -5416,8 +5520,8 @@ void nsCocoaWindow::Show(bool aState) {
       NS_OBJC_END_TRY_IGNORE_BLOCK;
       if (ShouldShowAsNSPopover() && nativeParentWindow) {
         nsMenuPopupFrame* popupFrame = GetPopupFrame();
-        NSRectEdge preferredEdge =
-            AlignmentPositionToNSRectEdge(popupFrame->GetAlignmentPosition());
+        NSRectEdge preferredEdge = nsCocoaUtils::PopupPositionToNSRectEdge(
+            popupFrame->GetAlignmentPosition());
         nsRect anchorRectAppUnits = popupFrame->GetUntransformedAnchorRect();
         nsPresContext* pc = popupFrame->PresContext();
         int32_t appUnitsPerDevPixel = pc->AppUnitsPerDevPixel();
@@ -7183,11 +7287,24 @@ void nsCocoaWindow::SetSupportsNativeFullscreen(
     // want to do this for primary application windows. We'll set the
     // relevant macnativefullscreen attribute on those, which will lead to us
     // being called with aSupportsNativeFullscreen set to `true` here.
+    //
+    // Always set both the Primary/Auxiliary and AllowsTiling/DisallowsTiling
+    // bits explicitly, even when the resulting state matches the window's
+    // creation-time default. Leaving any of the four bits unset would let
+    // AppKit fall back to `_implicitlyAllowsFullScreenPrimary`, which is
+    // non-deterministic in background-only processes and triggers the
+    // mid-display titlebar mutation that caused bug 2031249.
     NSWindowCollectionBehavior newBehavior = [mWindow collectionBehavior];
+    newBehavior &= ~(NSWindowCollectionBehaviorFullScreenPrimary |
+                     NSWindowCollectionBehaviorFullScreenAuxiliary |
+                     NSWindowCollectionBehaviorFullScreenAllowsTiling |
+                     NSWindowCollectionBehaviorFullScreenDisallowsTiling);
     if (aSupportsNativeFullscreen) {
-      newBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
+      newBehavior |= NSWindowCollectionBehaviorFullScreenPrimary |
+                     NSWindowCollectionBehaviorFullScreenAllowsTiling;
     } else {
-      newBehavior &= ~NSWindowCollectionBehaviorFullScreenPrimary;
+      newBehavior |= NSWindowCollectionBehaviorFullScreenAuxiliary |
+                     NSWindowCollectionBehaviorFullScreenDisallowsTiling;
     }
     [mWindow setCollectionBehavior:newBehavior];
   }
@@ -7715,6 +7832,13 @@ LayoutDeviceIntPoint nsCocoaWindow::GetNativeLockedPoint() {
   }
   mGeckoWindow->FinishCurrentTransitionIfMatching(
       nsCocoaWindow::TransitionType::Deminiaturize);
+
+  // When deminiaturizing a window, the activation events that cause it to
+  // persist its size are not sent by default. This means that if you
+  // deminiaturize a window and then open a new window, the new window
+  // will not necessarily be the size of the deminiaturized window as you'd
+  // expect. See bug 429952.
+  [self sendToplevelActivateEvents];
 }
 
 - (BOOL)windowShouldZoom:(NSWindow*)window toFrame:(NSRect)proposedFrame {
@@ -8233,6 +8357,8 @@ static const NSString* kStateCollectionBehavior = @"collectionBehavior";
   [self tryToPerform:aSelector with:nil];
 }
 
+#ifdef ACCESSIBILITY
+
 - (id)accessibilityAttributeValue:(NSString*)attribute {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
@@ -8291,6 +8417,31 @@ static const NSString* kStateCollectionBehavior = @"collectionBehavior";
   NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
+- (id)accessibilityHitTest:(NSPoint)point {
+  if (!mozilla::a11y::ShouldA11yBeEnabled())
+    return [super accessibilityHitTest:point];
+
+  if ([self isKindOfClass:[PopupWindow class]] &&
+      ![(PopupWindow*)self usePopover]) {
+    // If this is a non-native popover we have to manually find
+    // the gecko accessible associated with this widget
+    // and call `accessibilityHitTest` on it.
+    id<mozAccessible> nativeAccessible = nil;
+
+    RefPtr<nsCocoaWindow> geckoChild =
+        static_cast<nsCocoaWindow*>([self.mainChildView widget]);
+    RefPtr<a11y::LocalAccessible> accessible =
+        geckoChild->GetWindowAccessible();
+    if (accessible) {
+      accessible->GetNativeInterface((void**)&nativeAccessible);
+    }
+
+    return [nativeAccessible accessibilityHitTest:point];
+  }
+
+  return [super accessibilityHitTest:point];
+}
+
 - (BOOL)isAccessibilityElement {
   if (!mozilla::a11y::ShouldA11yBeEnabled())
     return [super isAccessibilityElement];
@@ -8303,6 +8454,8 @@ static const NSString* kStateCollectionBehavior = @"collectionBehavior";
 - (void)releaseJSObjects {
   [mTouchBar releaseJSObjects];
 }
+
+#endif
 
 @end
 

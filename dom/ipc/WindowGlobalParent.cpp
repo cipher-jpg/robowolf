@@ -591,6 +591,10 @@ const nsACString& WindowGlobalParent::GetRemoteType() const {
   return NOT_REMOTE_TYPE;
 }
 
+void WindowGlobalParent::GetRemoteType(nsACString& aRemoteType) const {
+  aRemoteType = GetRemoteType();
+}
+
 void WindowGlobalParent::NotifyContentBlockingEvent(
     uint32_t aEvent, nsIRequest* aRequest, bool aBlocked,
     const nsACString& aTrackingOrigin,
@@ -806,9 +810,9 @@ class CheckPermitUnloadRequest final : public PromiseNativeHandler,
   // will _only_ run `DispatchBeforeUnloadToSubtree` for the content process of
   // the top level window. See further comments below in `Run` and in
   // `DispatchBeforeUnloadToSubtree`.
-  void RunTraversable(const SessionHistoryInfo& aInfo) {
+  void RunTraversable(nsDocShellLoadState* aDocShellLoadState) {
     MOZ_DIAGNOSTIC_ASSERT(mWGP->BrowsingContext()->IsTop());
-    Run(nullptr, 0, Some(aInfo));
+    Run(nullptr, 0, aDocShellLoadState);
   }
 
   // The complementing special case for `RunTraversable`, which is short hand
@@ -821,7 +825,7 @@ class CheckPermitUnloadRequest final : public PromiseNativeHandler,
   }
 
   void Run(ContentParent* aIgnoreProcess = nullptr, uint32_t aTimeout = 0,
-           const Maybe<SessionHistoryInfo>& aInfo = Nothing()) {
+           nsDocShellLoadState* aDocShellLoadState = nullptr) {
     MOZ_ASSERT(mState == State::UNINITIALIZED);
     mState = State::WAITING;
 
@@ -842,17 +846,20 @@ class CheckPermitUnloadRequest final : public PromiseNativeHandler,
     auto reject = [self](auto) { self->ResolveRequest(); };
     // If `aInfo` is passed, only dispatch to the content process of the top
     // level window.
-    if (aInfo) {
+    if (aDocShellLoadState) {
       MOZ_DIAGNOSTIC_ASSERT(Navigation::IsAPIEnabled());
       ContentParent* cp = mWGP->GetContentParent();
       mPendingRequests++;
       // Here eDontPromptAndUnload means that we ignore beforeunload handlers,
       // but we still need to handle the traversable navigate handler.
+      mozilla::NotNull<RefPtr<nsDocShellLoadState>> loadState =
+          WrapNotNull(aDocShellLoadState);
       if (mAction ==
           nsIDocumentViewer::PermitUnloadAction::eDontPromptAndUnload) {
-        cp->SendDispatchNavigateToTraversable(bc, aInfo, resolve, reject);
+        cp->SendDispatchNavigateToTraversable(bc, loadState, resolve, reject);
       } else {
-        cp->SendDispatchBeforeUnloadToSubtree(bc, aInfo, resolve, reject);
+        cp->SendDispatchBeforeUnloadToSubtree(bc, Some(loadState), resolve,
+                                              reject);
       }
     } else {
       bc->PreOrderWalk([&](dom::BrowsingContext* aBC) {
@@ -1072,8 +1079,12 @@ void WindowGlobalParent::PermitUnload(
   request->Run();
 }
 
-void WindowGlobalParent::PermitUnloadTraversable(
-    const SessionHistoryInfo& aInfo,
+// https://html.spec.whatwg.org/#checking-if-unloading-is-canceled
+// Implements the traversable-specific portion (step 4): fires beforeunload on
+// the traversable's active document (if needed) and fires the traverse
+// `navigate` event, which may intercept the load via `aDocShellLoadState`.
+void WindowGlobalParent::CheckIfUnloadingIsCanceledForTraversable(
+    nsDocShellLoadState* aDocShellLoadState,
     nsIDocumentViewer::PermitUnloadAction aAction,
     std::function<void(nsIDocumentViewer::PermitUnloadResult)>&& aResolver) {
   MOZ_DIAGNOSTIC_ASSERT(BrowsingContext()->IsTop());
@@ -1081,7 +1092,7 @@ void WindowGlobalParent::PermitUnloadTraversable(
       MakeRefPtr<CheckPermitUnloadRequest>(this,
                                            /* aHasInProcessBlocker */ false,
                                            aAction, std::move(aResolver));
-  request->RunTraversable(aInfo);
+  request->RunTraversable(aDocShellLoadState);
 }
 
 void WindowGlobalParent::PermitUnloadChildNavigables(
@@ -1675,26 +1686,25 @@ void WindowGlobalParent::ActorDestroy(ActorDestroyReason aWhy) {
     otherContent->SendDiscardWindowContext(InnerWindowId(), callback, callback);
   });
 
-  // Report content blocking log when destroyed.
-  // There shouldn't have any content blocking log when a document is loaded in
-  // the parent process(See NotifyContentBlockingEvent), so we could skip
-  // reporting log when it is in-process.
+  // Report content blocking log when destroyed. In addition to the regular
+  // content-blocking log flush (shared with the flush-on-query path via
+  // MaybeReportContentBlockingLog), the teardown path also emits the
+  // canvas/font/email fingerprinting Glean metrics that are only meaningful
+  // at end-of-page.
+  MaybeReportContentBlockingLog();
   if (!IsInProcess()) {
     RefPtr<BrowserParent> browserParent =
         static_cast<BrowserParent*>(Manager());
     if (browserParent) {
       nsCOMPtr<nsILoadContext> loadContext = browserParent->GetLoadContext();
       if (loadContext && !loadContext->UsePrivateBrowsing() &&
-          BrowsingContext()->IsTopContent()) {
-        GetContentBlockingLog()->ReportLog();
-
-        if (mDocumentURI && net::SchemeIsHttpOrHttps(mDocumentURI)) {
-          GetContentBlockingLog()->ReportCanvasFingerprintingLog(
-              DocumentPrincipal());
-          GetContentBlockingLog()->ReportFontFingerprintingLog(
-              DocumentPrincipal());
-          GetContentBlockingLog()->ReportEmailTrackingLog(DocumentPrincipal());
-        }
+          BrowsingContext()->IsTopContent() && mDocumentURI &&
+          net::SchemeIsHttpOrHttps(mDocumentURI)) {
+        GetContentBlockingLog()->ReportCanvasFingerprintingLog(
+            DocumentPrincipal());
+        GetContentBlockingLog()->ReportFontFingerprintingLog(
+            DocumentPrincipal());
+        GetContentBlockingLog()->ReportEmailTrackingLog(DocumentPrincipal());
       }
     }
   }
@@ -1716,6 +1726,56 @@ void WindowGlobalParent::ActorDestroy(ActorDestroyReason aWhy) {
 }
 
 WindowGlobalParent::~WindowGlobalParent() = default;
+
+void WindowGlobalParent::MaybeReportContentBlockingLog() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(NS_IsMainThread());
+
+  // No blocking is recorded for in-process (non-remote) documents — see
+  // NotifyContentBlockingEvent.
+  if (IsInProcess()) {
+    return;
+  }
+  RefPtr<BrowserParent> browserParent = static_cast<BrowserParent*>(Manager());
+  if (!browserParent) {
+    return;
+  }
+  nsCOMPtr<nsILoadContext> loadContext = browserParent->GetLoadContext();
+  if (!loadContext || loadContext->UsePrivateBrowsing()) {
+    return;
+  }
+  if (!BrowsingContext()->IsTopContent()) {
+    return;
+  }
+
+  GetContentBlockingLog()->ReportLog();
+}
+
+/* static */
+void WindowGlobalParent::FlushAllContentBlockingLogs() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsTArray<RefPtr<BrowsingContextGroup>> groups;
+  BrowsingContextGroup::GetAllGroups(groups);
+
+  for (const auto& group : groups) {
+    for (const auto& bc : group->Toplevels()) {
+      if (!bc) {
+        continue;
+      }
+      RefPtr<CanonicalBrowsingContext> canonical = bc->Canonical();
+      if (!canonical) {
+        continue;
+      }
+      RefPtr<WindowGlobalParent> wgp = canonical->GetCurrentWindowGlobal();
+      if (!wgp) {
+        continue;
+      }
+      wgp->MaybeReportContentBlockingLog();
+    }
+  }
+}
 
 JSObject* WindowGlobalParent::WrapObject(JSContext* aCx,
                                          JS::Handle<JSObject*> aGivenProto) {

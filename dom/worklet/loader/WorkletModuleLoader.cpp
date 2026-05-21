@@ -5,6 +5,7 @@
 #include "WorkletModuleLoader.h"
 
 #include "js/CompileOptions.h"  // JS::InstantiateOptions
+#include "js/Modules.h"
 #include "js/experimental/JSStencil.h"  // JS::CompileModuleScriptToStencil, JS::InstantiateModuleStencil
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/loader/ModuleLoadRequest.h"
@@ -128,8 +129,14 @@ nsresult WorkletModuleLoader::CompileJavaScriptOrWasmModule(
 #ifdef NIGHTLY_BUILD
   if (aRequest->HasWasmMimeTypeEssence()) {
     MOZ_ASSERT(aRequest->IsWasmBytes());
-    auto* wasmModule =
-        JS::CompileWasmModule(aCx, aOptions, aRequest->WasmBytes());
+    JS::Rooted<JSObject*> moduleReq(aCx, aRequest->mModuleRequestObj);
+    JSObject* wasmModule;
+    if (moduleReq && JS::ModuleRequestIsSourcePhase(aCx, moduleReq)) {
+      wasmModule =
+          JS::CompileWasmModuleAsSource(aCx, aOptions, aRequest->WasmBytes());
+    } else {
+      wasmModule = JS::CompileWasmModule(aCx, aOptions, aRequest->WasmBytes());
+    }
     if (!wasmModule) {
       return NS_ERROR_FAILURE;
     }
@@ -138,7 +145,7 @@ nsresult WorkletModuleLoader::CompileJavaScriptOrWasmModule(
     return NS_OK;
   }
 #endif
-  MOZ_ASSERT(aRequest->IsTextSource());
+  MOZ_ASSERT(aRequest->IsFetchedAsTextSource());
 
   MaybeSourceText maybeSource;
   nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource,
@@ -165,7 +172,7 @@ nsresult WorkletModuleLoader::CompileJavaScriptOrWasmModule(
 nsresult WorkletModuleLoader::CompileJsonModule(
     JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
     JS::MutableHandle<JSObject*> aModuleScript) {
-  MOZ_ASSERT(aRequest->IsTextSource());
+  MOZ_ASSERT(aRequest->IsFetchedAsTextSource());
 
   MaybeSourceText maybeSource;
   nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource,
@@ -188,7 +195,7 @@ nsresult WorkletModuleLoader::CompileJsonModule(
 nsresult WorkletModuleLoader::CreateTextModule(
     JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
     JS::MutableHandle<JSObject*> aModuleScript) {
-  MOZ_ASSERT(aRequest->IsTextSource());
+  MOZ_ASSERT(aRequest->IsFetchedAsTextSource());
 
   MaybeSourceText maybeSource;
   nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource,

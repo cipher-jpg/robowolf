@@ -5,13 +5,26 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   actionTypes: "resource://newtab/common/Actions.mjs",
+  SearchUIUtils: "moz-src:///browser/components/search/SearchUIUtils.sys.mjs",
   SportsFeed: "resource://newtab/lib/Widgets/SportsFeed.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
 const PREF_SPORTS_ENABLED = "widgets.sportsWidget.enabled";
+const PREF_SYSTEM_SPORTS_ENABLED = "widgets.system.sportsWidget.enabled";
 
-function makeFeed({ enabled = true } = {}) {
+// Stub SearchUIUtils.loadSearch so the openMatchSearch handler tests can
+// observe what we asked it to do without requiring a real chrome window,
+// browser, or search engine.
+let gLoadSearchStub;
+
+add_setup(async () => {
+  const sandbox = sinon.createSandbox();
+  gLoadSearchStub = sandbox.stub(SearchUIUtils, "loadSearch").resolves();
+  registerCleanupFunction(() => sandbox.restore());
+});
+
+function makeFeed({ enabled = true, systemEnabled = true } = {}) {
   const feed = new SportsFeed();
   feed.store = {
     getState() {
@@ -22,6 +35,8 @@ function makeFeed({ enabled = true } = {}) {
       Prefs: {
         values: {
           [PREF_SPORTS_ENABLED]: enabled,
+          [PREF_SYSTEM_SPORTS_ENABLED]: systemEnabled,
+          "discoverystream.endpoints": "https://merino.services.mozilla.com/",
         },
       },
     },
@@ -38,11 +53,27 @@ add_task(async function test_construction() {
 });
 
 add_task(async function test_enabled() {
-  info("SportsFeed.enabled returns true when the pref is on");
-  Assert.ok(makeFeed({ enabled: true }).enabled);
+  info(
+    "SportsFeed.enabled returns true when both the user pref and the system pref are on"
+  );
+  Assert.ok(makeFeed({ enabled: true, systemEnabled: true }).enabled);
 
-  info("SportsFeed.enabled returns false when the pref is off");
-  Assert.ok(!makeFeed({ enabled: false }).enabled);
+  info("SportsFeed.enabled returns false when the user pref is off");
+  Assert.ok(!makeFeed({ enabled: false, systemEnabled: true }).enabled);
+
+  info(
+    "SportsFeed.enabled returns false when the system pref is off and no trainhop experiment is set"
+  );
+  Assert.ok(!makeFeed({ enabled: true, systemEnabled: false }).enabled);
+
+  info(
+    "SportsFeed.enabled returns true when the system pref is off but the trainhop experiment is set"
+  );
+  const trainhopFeed = makeFeed({ enabled: true, systemEnabled: false });
+  trainhopFeed.store.state.Prefs.values.trainhopConfig = {
+    sports: { enabled: true },
+  };
+  Assert.ok(trainhopFeed.enabled);
 });
 
 add_task(async function test_onAction_INIT_when_enabled() {
@@ -75,6 +106,50 @@ add_task(async function test_onAction_PREF_CHANGED_initializes() {
   Assert.ok(
     feed.initialized,
     "feed.initialized should be true after pref enabled"
+  );
+});
+
+add_task(
+  async function test_onAction_PREF_CHANGED_initializes_on_system_pref() {
+    const feed = makeFeed({ enabled: true, systemEnabled: false });
+    Assert.ok(!feed.enabled, "feed starts disabled when system pref is off");
+
+    feed.store.state.Prefs.values[PREF_SYSTEM_SPORTS_ENABLED] = true;
+
+    info(
+      "SportsFeed.onAction PREF_CHANGED should initialize when the system pref turns on"
+    );
+    await feed.onAction({
+      type: actionTypes.PREF_CHANGED,
+      data: { name: PREF_SYSTEM_SPORTS_ENABLED, value: true },
+    });
+
+    Assert.ok(
+      feed.initialized,
+      "feed.initialized should be true after system pref enabled"
+    );
+  }
+);
+
+add_task(async function test_onAction_PREF_CHANGED_initializes_on_trainhop() {
+  const feed = makeFeed({ enabled: true, systemEnabled: false });
+  Assert.ok(!feed.enabled, "feed starts disabled when system pref is off");
+
+  feed.store.state.Prefs.values.trainhopConfig = {
+    sports: { enabled: true },
+  };
+
+  info(
+    "SportsFeed.onAction PREF_CHANGED should initialize when trainhopConfig turns the experiment on"
+  );
+  await feed.onAction({
+    type: actionTypes.PREF_CHANGED,
+    data: { name: "trainhopConfig", value: { sports: { enabled: true } } },
+  });
+
+  Assert.ok(
+    feed.initialized,
+    "feed.initialized should be true after trainhopConfig enabled"
   );
 });
 
@@ -114,6 +189,41 @@ add_task(async function test_syncState_broadcasts_selectedTeams() {
     "dispatches SET_SELECTED_TEAMS"
   );
   Assert.deepEqual(firstCall.args[0].data, ["CA", "AU"], "with correct teams");
+
+  getStub.restore();
+});
+
+add_task(async function test_syncState_broadcasts_cached_teams_and_matches() {
+  const feed = makeFeed();
+  const cachedTeams = [{ id: "team1", name: "Team 1" }];
+  const cachedMatches = {
+    previous: [{ id: "match0", query: "team0 vs team1" }],
+    current: [{ id: "match1", query: "team1 vs team2" }],
+    next: [{ id: "match2", query: "team2 vs team3" }],
+  };
+  const getStub = sinon.stub(feed.cache, "get").resolves({
+    sportsData: { teams: cachedTeams, matches: cachedMatches },
+  });
+
+  info("syncState should broadcast cached teams and matches to the UI");
+  await feed.syncState();
+
+  const [firstCall] = feed.store.dispatch.getCalls();
+  Assert.equal(
+    firstCall.args[0].type,
+    actionTypes.WIDGETS_SPORTS_WIDGET_SET,
+    "dispatches WIDGETS_SPORTS_WIDGET_SET"
+  );
+  Assert.deepEqual(
+    firstCall.args[0].data.teams,
+    cachedTeams,
+    "with correct cached teams"
+  );
+  Assert.deepEqual(
+    firstCall.args[0].data.matches,
+    cachedMatches,
+    "passes cached matches through unchanged"
+  );
 
   getStub.restore();
 });
@@ -206,4 +316,394 @@ add_task(async function test_CHANGE_SELECTED_TEAMS_saves_and_broadcasts() {
   Assert.deepEqual(firstDispatch.args[0].data, ["CA", "AU"]);
 
   setStub.restore();
+});
+
+add_task(async function test_fetchSportsData_dispatches_teams_and_matches() {
+  const feed = makeFeed();
+  const mockTeamsResponse = { teams: [{ id: "team1", name: "Team 1" }] };
+  const mockMatches = {
+    previous: [],
+    current: [],
+    next: [
+      { id: "match1", teams: ["team1", "team2"], query: "team1 vs team2" },
+    ],
+  };
+
+  sinon.stub(feed.merino, "fetchSportsTeams").resolves(mockTeamsResponse);
+  sinon.stub(feed.merino, "fetchSportsMatches").resolves(mockMatches);
+
+  feed.store.state.Prefs.values["sports.worldCup.teamsEndpoint"] =
+    "https://merino.services.mozilla.com/api/v1/wcs/teams";
+  feed.store.state.Prefs.values["sports.worldCup.matchesEndpoint"] =
+    "https://merino.services.mozilla.com/api/v1/wcs/matches";
+
+  info(
+    "fetchSportsData should dispatch WIDGETS_SPORTS_WIDGET_SET with teams and matches"
+  );
+  await feed.fetchSportsData();
+
+  Assert.ok(feed.store.dispatch.calledOnce, "dispatch called once");
+  const [dispatchedAction] = feed.store.dispatch.firstCall.args;
+  Assert.equal(
+    dispatchedAction.type,
+    actionTypes.WIDGETS_SPORTS_WIDGET_SET,
+    "dispatches WIDGETS_SPORTS_WIDGET_SET"
+  );
+  Assert.deepEqual(
+    dispatchedAction.data.teams,
+    mockTeamsResponse.teams,
+    "with correct teams"
+  );
+  Assert.deepEqual(
+    dispatchedAction.data.matches,
+    mockMatches,
+    "matches are passed through unchanged"
+  );
+});
+
+add_task(async function test_fetchSportsData_reads_endpoint_prefs() {
+  const feed = makeFeed();
+  const teamsEndpoint = "https://merino.services.mozilla.com/api/v1/wcs/teams";
+  const matchesEndpoint =
+    "https://merino.services.mozilla.com/api/v1/wcs/matches";
+
+  feed.store.state.Prefs.values["sports.worldCup.teamsEndpoint"] =
+    teamsEndpoint;
+  feed.store.state.Prefs.values["sports.worldCup.matchesEndpoint"] =
+    matchesEndpoint;
+
+  const teamsStub = sinon.stub(feed.merino, "fetchSportsTeams").resolves([]);
+  const matchesStub = sinon
+    .stub(feed.merino, "fetchSportsMatches")
+    .resolves([]);
+
+  info("fetchSportsData should pass the endpoint prefs to the merino client");
+  await feed.fetchSportsData();
+
+  Assert.ok(
+    teamsStub.calledWith({ source: "newtab", endpointUrl: teamsEndpoint }),
+    "fetchSportsTeams called with correct endpoint"
+  );
+  // TODO: remove the `?date=2026-06-15` query param 10 days before kickoff
+  // (June 1st 2026) once the backend no longer requires it.
+  Assert.ok(
+    matchesStub.calledWith({
+      source: "newtab",
+      endpointUrl: `${matchesEndpoint}?date=2026-06-15`,
+    }),
+    "fetchSportsMatches called with correct endpoint"
+  );
+});
+
+add_task(
+  async function test_fetchSportsData_prefers_trainhopConfig_endpoints() {
+    const feed = makeFeed();
+    const trainhopTeamsEndpoint = "https://trainhop.example.com/teams";
+    const trainhopMatchesEndpoint = "https://trainhop.example.com/matches";
+
+    feed.store.state.Prefs.values["discoverystream.endpoints"] =
+      "https://merino.services.mozilla.com/,https://trainhop.example.com/";
+    feed.store.state.Prefs.values["sports.worldCup.teamsEndpoint"] =
+      "https://pref.example.com/teams";
+    feed.store.state.Prefs.values["sports.worldCup.matchesEndpoint"] =
+      "https://pref.example.com/matches";
+    feed.store.state.Prefs.values.trainhopConfig = {
+      sports: {
+        teamsEndpoint: trainhopTeamsEndpoint,
+        matchesEndpoint: trainhopMatchesEndpoint,
+      },
+    };
+
+    const teamsStub = sinon.stub(feed.merino, "fetchSportsTeams").resolves([]);
+    const matchesStub = sinon
+      .stub(feed.merino, "fetchSportsMatches")
+      .resolves([]);
+
+    info(
+      "fetchSportsData should prefer trainhopConfig endpoints over pref endpoints"
+    );
+    await feed.fetchSportsData();
+
+    Assert.ok(
+      teamsStub.calledWith({
+        source: "newtab",
+        endpointUrl: trainhopTeamsEndpoint,
+      }),
+      "fetchSportsTeams called with trainhopConfig endpoint"
+    );
+    // TODO: remove the `?date=2026-06-15` query param 10 days before kickoff
+    // (June 1st 2026) once the backend no longer requires it.
+    Assert.ok(
+      matchesStub.calledWith({
+        source: "newtab",
+        endpointUrl: `${trainhopMatchesEndpoint}?date=2026-06-15`,
+      }),
+      "fetchSportsMatches called with trainhopConfig endpoint"
+    );
+  }
+);
+
+add_task(async function test_fetchSportsData_handles_null_responses() {
+  const feed = makeFeed();
+
+  sinon.stub(feed.merino, "fetchSportsTeams").resolves(null);
+  sinon.stub(feed.merino, "fetchSportsMatches").resolves(null);
+
+  info(
+    "fetchSportsData should dispatch empty fallbacks when endpoints return null"
+  );
+  await feed.fetchSportsData();
+
+  const [dispatchedAction] = feed.store.dispatch.firstCall.args;
+  Assert.deepEqual(
+    dispatchedAction.data.teams,
+    [],
+    "teams falls back to empty array"
+  );
+  Assert.deepEqual(
+    dispatchedAction.data.matches,
+    { previous: [], current: [], next: [] },
+    "matches falls back to an object with empty previous/current/next arrays"
+  );
+});
+
+add_task(async function test_fetchSportsData_caches_teams_and_matches() {
+  const feed = makeFeed();
+  const mockTeamsResponse = { teams: [{ id: "team1", name: "Team 1" }] };
+  const mockMatches = {
+    previous: [],
+    current: [],
+    next: [{ id: "match1", query: "a vs b" }],
+  };
+
+  sinon.stub(feed.merino, "fetchSportsTeams").resolves(mockTeamsResponse);
+  sinon.stub(feed.merino, "fetchSportsMatches").resolves(mockMatches);
+
+  feed.store.state.Prefs.values["sports.worldCup.teamsEndpoint"] =
+    "https://merino.services.mozilla.com/api/v1/wcs/teams";
+  feed.store.state.Prefs.values["sports.worldCup.matchesEndpoint"] =
+    "https://merino.services.mozilla.com/api/v1/wcs/matches";
+
+  const setStub = sinon.stub(feed.cache, "set").resolves();
+
+  info("fetchSportsData should save fetched teams and matches to cache");
+  await feed.fetchSportsData();
+
+  Assert.ok(
+    setStub.calledWith("sportsData", {
+      teams: mockTeamsResponse.teams,
+      matches: mockMatches,
+    }),
+    "caches teams and matches together under sportsData key"
+  );
+
+  setStub.restore();
+});
+
+add_task(async function test_fetchSportsData_blocks_disallowed_endpoints() {
+  const feed = makeFeed();
+  feed.store.state.Prefs.values["discoverystream.endpoints"] =
+    "https://allowed.example.com/";
+  feed.store.state.Prefs.values["sports.worldCup.teamsEndpoint"] =
+    "https://merino.services.mozilla.com/api/v1/wcs/teams";
+  feed.store.state.Prefs.values["sports.worldCup.matchesEndpoint"] =
+    "https://merino.services.mozilla.com/api/v1/wcs/matches";
+
+  const teamsStub = sinon.stub(feed.merino, "fetchSportsTeams").resolves([]);
+  const matchesStub = sinon
+    .stub(feed.merino, "fetchSportsMatches")
+    .resolves([]);
+
+  info(
+    "fetchSportsData should not fetch or dispatch when endpoints are not in the allowlist"
+  );
+  await feed.fetchSportsData();
+
+  Assert.ok(teamsStub.notCalled, "fetchSportsTeams should not be called");
+  Assert.ok(matchesStub.notCalled, "fetchSportsMatches should not be called");
+  Assert.ok(
+    feed.store.dispatch.notCalled,
+    "dispatch should not be called for disallowed endpoints"
+  );
+});
+
+add_task(async function test_init_calls_syncState_and_fetchSportsData() {
+  const feed = makeFeed();
+  sinon.stub(feed.cache, "get").resolves({});
+  sinon.stub(feed.merino, "fetchSportsTeams").resolves([]);
+  sinon.stub(feed.merino, "fetchSportsMatches").resolves([]);
+
+  const syncStateSpy = sinon.spy(feed, "syncState");
+  const fetchSportsDataSpy = sinon.spy(feed, "fetchSportsData");
+
+  info("init() should call both syncState and fetchSportsData");
+  await feed.init();
+
+  Assert.ok(syncStateSpy.calledOnce, "syncState was called");
+  Assert.ok(fetchSportsDataSpy.calledOnce, "fetchSportsData was called");
+});
+add_task(async function test_syncState_broadcasts_matchesTab() {
+  const feed = makeFeed();
+  const getStub = sinon.stub(feed.cache, "get").resolves({
+    matchesTab: "results",
+  });
+
+  info("syncState should broadcast matchesTab from cache to the UI");
+  await feed.syncState();
+
+  const [firstCall] = feed.store.dispatch.getCalls();
+  Assert.equal(
+    firstCall.args[0].type,
+    actionTypes.WIDGETS_SPORTS_SET_MATCHES_TAB,
+    "dispatches SET_MATCHES_TAB"
+  );
+  Assert.equal(firstCall.args[0].data, "results", "with correct tab");
+
+  getStub.restore();
+});
+
+add_task(async function test_CHANGE_MATCHES_TAB_saves_and_broadcasts() {
+  const feed = makeFeed();
+  const setStub = sinon.stub(feed.cache, "set").resolves();
+
+  info("CHANGE_MATCHES_TAB should save to cache and broadcast to the UI");
+  await feed.onAction({
+    type: actionTypes.WIDGETS_SPORTS_CHANGE_MATCHES_TAB,
+    data: "results",
+  });
+
+  Assert.ok(setStub.calledOnce, "cache.set called once");
+  Assert.equal(setStub.firstCall.args[0], "matchesTab");
+  Assert.equal(setStub.firstCall.args[1], "results");
+
+  const [firstDispatch] = feed.store.dispatch.getCalls();
+  Assert.equal(
+    firstDispatch.args[0].type,
+    actionTypes.WIDGETS_SPORTS_SET_MATCHES_TAB,
+    "dispatches SET_MATCHES_TAB"
+  );
+  Assert.equal(firstDispatch.args[0].data, "results");
+
+  setStub.restore();
+});
+
+add_task(async function test_OPEN_MATCH_SEARCH_calls_loadSearch() {
+  const feed = makeFeed();
+  gLoadSearchStub.resetHistory();
+  // Fake window object — only needs to be non-null; SearchUIUtils.loadSearch
+  // is stubbed, so it never reads window properties.
+  const fakeWindow = {};
+
+  info(
+    "OPEN_MATCH_SEARCH should call SearchUIUtils.loadSearch with the query, " +
+      "the source window, and the about_newtab SAP source"
+  );
+  await feed.onAction({
+    type: actionTypes.WIDGETS_SPORTS_OPEN_MATCH_SEARCH,
+    data: {
+      query: "Brazil vs Argentina",
+      eventInfo: { button: 0, shiftKey: false, ctrlKey: false, metaKey: false },
+    },
+    _target: { window: fakeWindow },
+  });
+
+  Assert.ok(gLoadSearchStub.calledOnce, "SearchUIUtils.loadSearch called once");
+  const [args] = gLoadSearchStub.firstCall.args;
+  Assert.equal(args.window, fakeWindow, "window propagated from action target");
+  Assert.equal(
+    args.searchText,
+    "Brazil vs Argentina",
+    "searchText comes from the match's query field"
+  );
+  Assert.equal(
+    args.sapSource,
+    "about_newtab",
+    "sapSource is about_newtab so telemetry attributes the search to newtab"
+  );
+  Assert.equal(
+    args.where,
+    "current",
+    "plain left-click (no modifiers) opens the SERP in the current tab"
+  );
+  Assert.ok(
+    args.triggeringPrincipal,
+    "triggeringPrincipal is set so loadSearch doesn't throw"
+  );
+});
+
+add_task(async function test_OPEN_MATCH_SEARCH_translates_modifier_clicks() {
+  const feed = makeFeed();
+  const fakeWindow = {};
+
+  info(
+    "OPEN_MATCH_SEARCH should pass the click's modifier/button state through " +
+      "BrowserUtils.whereToOpenLink to pick a new-tab destination"
+  );
+  gLoadSearchStub.resetHistory();
+  await feed.onAction({
+    type: actionTypes.WIDGETS_SPORTS_OPEN_MATCH_SEARCH,
+    data: {
+      query: "Brazil vs Argentina",
+      // Middle-click. whereToOpenLink reads `button === 1` and returns "tab".
+      eventInfo: { button: 1, shiftKey: false, ctrlKey: false, metaKey: false },
+    },
+    _target: { window: fakeWindow },
+  });
+  Assert.equal(
+    gLoadSearchStub.lastCall.args[0].where,
+    "tab",
+    "middle-click opens in a new tab"
+  );
+
+  gLoadSearchStub.resetHistory();
+  // Shift-click (no meta/ctrl). On both Mac and non-Mac, this is "new window".
+  await feed.onAction({
+    type: actionTypes.WIDGETS_SPORTS_OPEN_MATCH_SEARCH,
+    data: {
+      query: "Brazil vs Argentina",
+      eventInfo: { button: 0, shiftKey: true, ctrlKey: false, metaKey: false },
+    },
+    _target: { window: fakeWindow },
+  });
+  Assert.equal(
+    gLoadSearchStub.lastCall.args[0].where,
+    "window",
+    "shift-click opens in a new window"
+  );
+});
+
+add_task(async function test_OPEN_MATCH_SEARCH_ignores_missing_query() {
+  const feed = makeFeed();
+  gLoadSearchStub.resetHistory();
+
+  info("OPEN_MATCH_SEARCH should be a no-op if the match somehow has no query");
+  await feed.onAction({
+    type: actionTypes.WIDGETS_SPORTS_OPEN_MATCH_SEARCH,
+    data: { query: "", eventInfo: { button: 0 } },
+    _target: { window: {} },
+  });
+
+  Assert.ok(
+    gLoadSearchStub.notCalled,
+    "loadSearch is not called when there's no query"
+  );
+});
+
+add_task(async function test_OPEN_MATCH_SEARCH_ignores_missing_target_window() {
+  const feed = makeFeed();
+  gLoadSearchStub.resetHistory();
+
+  info(
+    "OPEN_MATCH_SEARCH should bail out if the action wasn't routed with a " +
+      "_target.window — we can't call loadSearch without it"
+  );
+  await feed.onAction({
+    type: actionTypes.WIDGETS_SPORTS_OPEN_MATCH_SEARCH,
+    data: { query: "Brazil vs Argentina", eventInfo: { button: 0 } },
+  });
+
+  Assert.ok(
+    gLoadSearchStub.notCalled,
+    "loadSearch is not called without a target window"
+  );
 });

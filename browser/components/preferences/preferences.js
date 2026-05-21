@@ -20,6 +20,18 @@
 /** @import {SettingGroup} from "chrome://browser/content/preferences/widgets/setting-group.mjs" */
 /** @import {SettingPane, SettingPaneConfig} from "chrome://browser/content/preferences/widgets/setting-pane.mjs" */
 
+/**
+ * @typedef {object} PaneShownEventDetail
+ * @property {string} category
+ * @property {string} subcategory
+ */
+
+/**
+ * @typedef {Omit<CustomEvent, 'detail'> & {
+ *   detail: PaneShownEventDetail
+ * }} PaneShownEvent
+ */
+
 "use strict";
 
 var { AppConstants } = ChromeUtils.importESModule(
@@ -187,6 +199,13 @@ var SettingGroupManager = ChromeUtils.importESModule(
   }
 ).SettingGroupManager;
 
+let resolveLegacyCategory = ChromeUtils.importESModule(
+  "chrome://browser/content/preferences/config/LegacyPaneMappings.mjs",
+  {
+    global: "current",
+  }
+).resolveLegacyCategory;
+
 /**
  * Register initial config-based setting panes here. If you need to register a
  * pane elsewhere, use {@link SettingPaneManager['registerPane']}.
@@ -199,8 +218,7 @@ const CONFIG_PANES = Object.freeze({
     iconSrc: "chrome://browser/skin/sidebar/firefox.svg",
     groupIds: ["updates", "support"],
     module: "chrome://browser/content/preferences/config/about-firefox.mjs",
-    visible: () =>
-      Services.prefs.getBoolPref("browser.settings-redesign.enabled", false),
+    visible: () => srdSectionPrefs.all,
   },
   accessibility: {
     l10nId: "preferences-accessibility-header",
@@ -213,8 +231,7 @@ const CONFIG_PANES = Object.freeze({
     ],
     module: "chrome://browser/content/preferences/config/accessibility.mjs",
     iconSrc: "chrome://browser/skin/preferences/category-accessibility.svg",
-    visible: () =>
-      Services.prefs.getBoolPref("browser.settings-redesign.enabled", false),
+    visible: () => srdSectionPrefs.all,
   },
   appearance: {
     l10nId: "preferences-appearance-header",
@@ -226,11 +243,10 @@ const CONFIG_PANES = Object.freeze({
     ],
     module: "chrome://browser/content/preferences/config/appearance.mjs",
     iconSrc: "chrome://global/skin/icons/eye.svg",
-    visible: () =>
-      Services.prefs.getBoolPref("browser.settings-redesign.enabled", false),
+    visible: () => srdSectionPrefs.all,
   },
   ai: {
-    l10nId: "preferences-ai-controls-header",
+    l10nId: "preferences-ai-controls-header2",
     iconSrc: "chrome://global/skin/icons/highlights.svg",
     groupIds: ["aiControlsDescription", "aiFeatures", "aiStatesDescription"],
     module: "chrome://browser/content/preferences/config/aiFeatures.mjs",
@@ -238,7 +254,7 @@ const CONFIG_PANES = Object.freeze({
       Services.prefs.getBoolPref("browser.preferences.aiControls", false),
   },
   downloads: {
-    l10nId: "pane-downloads",
+    l10nId: "pane-downloads2",
     iconSrc: "chrome://browser/skin/downloads/downloads.svg",
     groupIds: ["downloads", "applications"],
     module: "chrome://browser/content/preferences/config/downloads.mjs",
@@ -275,15 +291,16 @@ const CONFIG_PANES = Object.freeze({
     groupIds: ["etpCustomize", "etpReset"],
     replaces: "privacy",
   },
-  general: {
-    l10nId: "pane-general-title",
-    groupIds: [],
-  },
   experimental: {
     l10nId: "settings-pane-labs-header",
     iconSrc: "chrome://browser/skin/labs-16.svg",
     groupIds: ["firefoxLabsFeatures"],
     module: "chrome://browser/content/preferences/config/firefoxLabs.mjs",
+  },
+  general: {
+    l10nId: "pane-general-title",
+    groupIds: [],
+    visible: () => !srdSectionPrefs.all,
   },
   history: {
     parent: "privacy",
@@ -299,7 +316,7 @@ const CONFIG_PANES = Object.freeze({
     replaces: "home",
   },
   languages: {
-    l10nId: "preferences-languages-header",
+    l10nId: "preferences-languages-header2",
     iconSrc: "chrome://browser/skin/translations.svg",
     groupIds: [
       "browserLanguage",
@@ -356,7 +373,7 @@ const CONFIG_PANES = Object.freeze({
   passwordsAutofill: {
     l10nId: "preferences-passwords-autofill-header",
     iconSrc: "chrome://browser/skin/login.svg",
-    groupIds: ["passwords", "addresses", "payments"],
+    groupIds: ["passwords", "payments", "addresses"],
     module:
       "chrome://browser/content/preferences/config/passwords-autofill.mjs",
     visible: () => srdSectionEnabled("passwordsAutofill"),
@@ -484,7 +501,13 @@ function init_all() {
   // the entire document.
   Preferences.queueUpdateOfAllElements();
 
-  register_module("paneGeneral", gMainPane);
+  let redesignEnabled = srdSectionPrefs.all;
+
+  if (!redesignEnabled) {
+    register_module("paneGeneral", gMainPane);
+    document.getElementById("category-general").hidden = false;
+    document.getElementById("nav-separator").hidden = true;
+  }
   register_module("paneHome", gHomePane);
   register_module("paneSearch", gSearchPane);
   register_module("panePrivacy", gPrivacyPane);
@@ -505,15 +528,12 @@ function init_all() {
   // The Sync category needs to be the last of the "real" categories
   // registered and initialized since many tests wait for the
   // "sync-pane-loaded" observer notification before starting the test.
-  let redesignEnabled = Services.prefs.getBoolPref(
-    "browser.settings-redesign.enabled"
-  );
   let accountsEnabled = Services.prefs.getBoolPref(
     "identity.fxaccounts.enabled"
   );
   let categorySync = document.getElementById("category-sync");
   if (redesignEnabled) {
-    categorySync.setAttribute("data-l10n-id", "pane-account-sync-title");
+    categorySync.setAttribute("data-l10n-id", "pane-account-sync-title2");
     categorySync.iconSrc = "chrome://browser/skin/fxa/avatar-empty.svg";
     categorySync.hidden = false;
   } else if (accountsEnabled) {
@@ -618,19 +638,33 @@ async function gotoPref(
   aCategory,
   aShowReason = aCategory ? "Click" : "Initial"
 ) {
+  let redesignEnabled = srdSectionPrefs.all;
   let categories = document.getElementById("categories");
-  const kDefaultCategoryInternalName = "paneGeneral";
-  const kDefaultCategory = "general";
+  const kDefaultCategoryInternalName = redesignEnabled
+    ? "paneSync"
+    : "paneGeneral";
+  const kDefaultCategory = redesignEnabled ? "sync" : "general";
   let hash = document.location.hash;
   let category = aCategory || hash.substring(1) || kDefaultCategoryInternalName;
 
   let breakIndex = category.indexOf("-");
   // Subcategories allow for selecting smaller sections of the preferences
   // until proper search support is enabled (bug 1353954).
-  let subcategory = breakIndex != -1 && category.substring(breakIndex + 1);
+  let subcategory =
+    breakIndex != -1 ? category.substring(breakIndex + 1) : null;
   if (subcategory) {
     category = category.substring(0, breakIndex);
   }
+
+  // Subcategories could have new destinations when the settings-redesign pref
+  // is enabled. We need to resolve the legacy category and
+  // subcategory before getting the friendly name.
+  if (Services.prefs.getBoolPref("browser.settings-redesign.enabled")) {
+    let resolved = resolveLegacyCategory(category, subcategory);
+    category = resolved.category;
+    subcategory = resolved.subcategory;
+  }
+
   category = friendlyPrefCategoryNameToInternalName(category);
   if (category != "paneSearchResults") {
     gSearchResultsPane.query = null;
@@ -696,7 +730,24 @@ async function gotoPref(
   // the change-view event will re-enter the gotoPref codepath.
   gLastCategory.category = category;
   gLastCategory.subcategory = subcategory;
-  categories.currentView = item ? item.getAttribute("view") : category;
+
+  // For sub-panes, select the root parent navigation button so keyboard
+  // navigation works correctly.
+  let currentView = item ? item.getAttribute("view") : category;
+
+  try {
+    let paneLookupId = internalPrefCategoryNameToFriendlyName(currentView);
+    let parentPanes = SettingPaneManager.getWithParents(paneLookupId);
+    if (parentPanes.length > 1) {
+      // Get root parent (first in chain) for navigation selection
+      let rootParent = parentPanes[0];
+      currentView = friendlyPrefCategoryNameToInternalName(rootParent.id);
+    }
+  } catch (ex) {
+    // Pane not found in SettingPaneManager, use currentView
+  }
+
+  categories.currentView = currentView;
   window.history.replaceState(category, document.title);
 
   let categoryInfo = gCategoryInits.get(category);
@@ -748,13 +799,16 @@ async function gotoPref(
   });
 
   document.dispatchEvent(
-    new CustomEvent("paneshown", {
-      bubbles: true,
-      cancelable: true,
-      detail: {
-        category,
-      },
-    })
+    /** @type {PaneShownEvent} */ (
+      new CustomEvent("paneshown", {
+        bubbles: true,
+        cancelable: true,
+        detail: {
+          category,
+          subcategory,
+        },
+      })
+    )
   );
 }
 
@@ -787,6 +841,17 @@ function search(aQuery, aAttribute) {
       element.hidden = true;
     }
     element.classList.remove("visually-hidden");
+
+    // Also clean up visually-hidden from setting-group children inside
+    // setting-panes, which may have been hidden individually during search,
+    // and reset onSearchPane on the pane so its heading goes back to <h2>
+    // when we leave the search-results pane.
+    if (element.localName === "setting-pane") {
+      /** @type {SettingPane} */ (element).onSearchPane = false;
+      for (let group of element.querySelectorAll("setting-group")) {
+        group.classList.remove("visually-hidden");
+      }
+    }
   }
 }
 

@@ -593,6 +593,7 @@ STATIC_ATOMS = [
     Atom("integrity_violation", "integrity-violation"),
     Atom("interactive_widget", "interactive-widget"),
     Atom("internal", "internal"),
+    Atom("internalSelectButton", "internal-select-button"),
     Atom("internals", "internals"),
     Atom("intersection", "intersection"),
     Atom("is", "is"),
@@ -1180,6 +1181,7 @@ STATIC_ATOMS = [
     Atom("section", "section"),
     Atom("select", "select"),
     Atom("selected", "selected"),
+    Atom("selectedcontent", "selectedcontent"),
     Atom("selectedIndex", "selectedIndex"),
     Atom("selectedindex", "selectedindex"),
     Atom("selectmenu", "selectmenu"),
@@ -2460,6 +2462,7 @@ STATIC_ATOMS = [
     Atom("onboundary", "onboundary"),
     # Media Controller
     Atom("onactivated", "onactivated"),
+    Atom("onaudiblechange", "onaudiblechange"),
     Atom("ondeactivated", "ondeactivated"),
     Atom("onmetadatachange", "onmetadatachange"),
     Atom("onplaybackstatechange", "onplaybackstatechange"),

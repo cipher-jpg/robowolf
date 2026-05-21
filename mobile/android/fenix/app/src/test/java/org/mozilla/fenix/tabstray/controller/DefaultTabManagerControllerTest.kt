@@ -34,6 +34,7 @@ import mozilla.components.browser.storage.sync.Tab
 import mozilla.components.browser.storage.sync.TabEntry
 import mozilla.components.concept.base.profiler.Profiler
 import mozilla.components.concept.engine.EngineSession
+import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.storage.BookmarkNodeType
@@ -49,7 +50,6 @@ import mozilla.telemetry.glean.private.NoExtras
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -67,7 +67,9 @@ import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.TabCollectionStorage
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
 import org.mozilla.fenix.components.appstate.AppState
+import org.mozilla.fenix.components.share.ShareSource
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
+import org.mozilla.fenix.components.usecases.ShareUseCases
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.maxActiveTime
 import org.mozilla.fenix.helpers.FenixGleanTestRule
@@ -82,6 +84,7 @@ import org.mozilla.fenix.tabstray.ui.TabManagementFragmentDirections
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.TimeUnit
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class) // for gleanTestRule
 class DefaultTabManagerControllerTest {
@@ -116,6 +119,7 @@ class DefaultTabManagerControllerTest {
 
     private val appStore: AppStore = mockk(relaxed = true)
     private val settings: Settings = mockk(relaxed = true)
+    private val shareUseCases: ShareUseCases = mockk(relaxed = true)
 
     private val bookmarksStorage: BookmarksStorage = mockk(relaxed = true)
     private val closeSyncedTabsUseCases: CloseTabsUseCases = mockk(relaxed = true)
@@ -1168,17 +1172,50 @@ class DefaultTabManagerControllerTest {
     }
 
     @Test
-    fun `GIVEN one tab is selected WHEN the share button is clicked THEN report the telemetry and navigate away`() {
-        every { trayStore.state.mode.selectedTabs } returns setOf(TabsTrayItem.Tab(tab = createTab(url = "https://mozilla.org")))
+    fun `GIVEN one tab is selected WHEN the share button is clicked THEN report telemetry and invoke the share use case`() {
+        val tab = createTab(url = "https://mozilla.org", title = "Mozilla")
+        every { trayStore.state.mode.selectedTabs } returns setOf(TabsTrayItem.Tab(tab = tab))
 
         createController().handleShareSelectedTabsClicked()
 
-        verify(exactly = 1) { navController.navigate(any<NavDirections>()) }
+        verify {
+            shareUseCases.shareItems(
+                items = listOf(ShareData(url = tab.content.url, title = tab.content.title)),
+                source = ShareSource.TABS_TRAY,
+                isPrivate = false,
+                navigateToShareFragment = any(),
+            )
+        }
 
         assertNotNull(TabsTray.shareSelectedTabs.testGetValue())
         val snapshot = TabsTray.shareSelectedTabs.testGetValue()!!
         assertEquals(1, snapshot.size)
         assertEquals("1", snapshot.single().extra?.getValue("tab_count"))
+    }
+
+    @Test
+    fun `GIVEN multiple tabs are selected WHEN the share button is clicked THEN invoke the share use case with all tabs`() {
+        val tab1 = createTab(url = "https://mozilla.org", title = "Mozilla")
+        val tab2 = createTab(url = "https://firefox.com", title = "Firefox")
+        val tabs = setOf(TabsTrayItem.Tab(tab = tab1), TabsTrayItem.Tab(tab = tab2))
+        every { trayStore.state.mode.selectedTabs } returns tabs
+
+        createController().handleShareSelectedTabsClicked()
+
+        verify {
+            shareUseCases.shareItems(
+                items = listOf(
+                    ShareData(url = tab1.content.url, title = tab1.content.title),
+                    ShareData(url = tab2.content.url, title = tab2.content.title),
+                ),
+                source = ShareSource.TABS_TRAY,
+                isPrivate = false,
+                navigateToShareFragment = any(),
+            )
+        }
+
+        val snapshot = TabsTray.shareSelectedTabs.testGetValue()!!
+        assertEquals("2", snapshot.single().extra?.getValue("tab_count"))
     }
 
     @Test
@@ -1611,17 +1648,18 @@ class DefaultTabManagerControllerTest {
             profiler = profiler,
             tabsUseCases = tabsUseCases,
             fenixBrowserUseCases = fenixBrowserUseCases,
-            bookmarksStorage = bookmarksStorage,
+            shareUseCases = shareUseCases,
             closeSyncedTabsUseCases = closeSyncedTabsUseCases,
-            collectionStorage = collectionStorage,
+            bookmarksStorage = bookmarksStorage,
             ioDispatcher = testDispatcher,
             mainDispatcher = testDispatcher,
+            collectionStorage = collectionStorage,
             showUndoSnackbarForTab = showUndoSnackbarForTab,
             showUndoSnackbarForInactiveTab = showUndoSnackbarForInactiveTab,
             showUndoSnackbarForSyncedTab = showUndoSnackbarForSyncedTab,
             showCancelledDownloadWarning = showCancelledDownloadWarning,
-            showCollectionSnackbar = showCollectionSnackbar,
             showBookmarkSnackbar = showBookmarkSnackbar,
+            showCollectionSnackbar = showCollectionSnackbar,
         )
     }
 

@@ -108,6 +108,7 @@ import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.history.DefaultPagedHistoryProvider
 import org.mozilla.fenix.components.metrics.MetricsUtils
 import org.mozilla.fenix.components.search.HISTORY_SEARCH_ENGINE_ID
+import org.mozilla.fenix.components.share.ShareSource
 import org.mozilla.fenix.databinding.FragmentHistoryBinding
 import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.components
@@ -695,10 +696,17 @@ class HistoryFragment :
 
     private fun share(data: List<ShareData>) {
         GleanHistory.shared.record(NoExtras())
-        val directions = HistoryFragmentDirections.actionGlobalShareFragment(
-            data = data.toTypedArray(),
+
+        requireComponents.useCases.shareUseCases.shareItems(
+            items = data,
+            source = ShareSource.HISTORY,
+            navigateToShareFragment = {
+                val directions = HistoryFragmentDirections.actionGlobalShareFragment(
+                    data = data.toTypedArray(),
+                )
+                navigateToHistoryFragment(directions)
+            },
         )
-        navigateToHistoryFragment(directions)
     }
 
     private fun navigateToHistoryFragment(directions: NavDirections) {

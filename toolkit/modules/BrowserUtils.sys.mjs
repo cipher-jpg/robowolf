@@ -38,8 +38,13 @@ ChromeUtils.defineLazyGetter(lazy, "CatManListenerManager", () => {
       }
       let rv = Array.from(
         Services.catMan.enumerateCategory(categoryName),
-        ({ data: module, value }) => {
+        ({ data: entry, value }) => {
           try {
+            // Entry names are unique keys per category, so a `#…` suffix lets
+            // multiple consumers in the same module register without colliding.
+            // TODO bug 2038950: remove this once all common JS is ported to
+            // ES modules.
+            let module = entry.replace(/#.*$/, "");
             let [objName, method] = value.split(".");
             let fn = (jsGlobal, ...args) => {
               let obj;
@@ -81,7 +86,7 @@ ChromeUtils.defineLazyGetter(lazy, "CatManListenerManager", () => {
             return fn;
           } catch (ex) {
             console.error(
-              `Error processing category manifest for ${module}: ${value}`,
+              `Error processing category manifest for ${entry}: ${value}`,
               ex
             );
             return null;
@@ -766,20 +771,6 @@ export var BrowserUtils = {
     }
 
     return Promise.allSettled(allTasks);
-  },
-
-  /**
-   * Returns whether the build is a China repack.
-   *
-   * @returns {boolean} True if the distribution ID is 'MozillaOnline',
-   *                   otherwise false.
-   */
-  isChinaRepack() {
-    return (
-      Services.prefs
-        .getDefaultBranch("")
-        .getCharPref("distribution.id", "default") === "MozillaOnline"
-    );
   },
 
   /**

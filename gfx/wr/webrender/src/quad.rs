@@ -167,6 +167,7 @@ pub enum QuadRenderStrategy {
 pub fn prepare_quad(
     pattern_builder: &dyn PatternBuilder,
     local_rect: &LayoutRect,
+    local_clip_rect: &LayoutRect,
     aligned_aa_edges: EdgeMask,
     transfomed_aa_edges: EdgeMask,
     prim_instance_index: PrimitiveInstanceIndex,
@@ -214,7 +215,7 @@ pub fn prepare_quad(
         strategy,
         &pattern,
         local_rect,
-        &clip_chain.local_clip_rect,
+        local_clip_rect,
         aligned_aa_edges,
         transfomed_aa_edges,
         prim_instance_index,
@@ -235,6 +236,7 @@ pub fn prepare_quad(
 pub fn prepare_repeatable_quad(
     pattern_builder: &dyn PatternBuilder,
     local_rect: &LayoutRect,
+    local_clip_rect: &LayoutRect,
     stretch_size: LayoutSize,
     tile_spacing: LayoutSize,
     aligned_aa_edges: EdgeMask,
@@ -293,7 +295,7 @@ pub fn prepare_repeatable_quad(
         // the non-repeated quad code paths don't take a stretch_size, so
         // we bake it into the local rect and make sure that the local clip
         // prevents the primitive from overflowing its initial bounds.
-        let local_clip_rect = clip_chain.local_clip_rect.intersection_unchecked(&local_rect);
+        let local_clip_rect = local_clip_rect.intersection_unchecked(&local_rect);
         let local_rect = LayoutRect::from_origin_and_size(
             local_rect.min,
             stretch_size,
@@ -404,7 +406,7 @@ pub fn prepare_repeatable_quad(
             strategy,
             &repeat_pattern,
             local_rect,
-            &clip_chain.local_clip_rect,
+            local_clip_rect,
             aligned_aa_edges,
             transfomed_aa_edges,
             prim_instance_index,
@@ -430,13 +432,13 @@ pub fn prepare_repeatable_quad(
         frame_state.current_dirty_region().visibility_spatial_node,
         transform.prim_spatial_node_index(),
         frame_context.spatial_tree,
-    ).intersection_unchecked(&clip_chain.local_clip_rect);
+    ).intersection_unchecked(local_clip_rect);
 
     let stride = stretch_size + tile_spacing;
     let repetitions = crate::image_tiling::repetitions(&local_rect, &visible_rect, stride);
     for tile in repetitions {
         let tile_rect = LayoutRect::from_origin_and_size(tile.origin, stretch_size);
-        let clip_rect = clip_chain.local_clip_rect.intersection_unchecked(&tile_rect);
+        let clip_rect = local_clip_rect.intersection_unchecked(&tile_rect);
         let pattern_offset = tile.origin - local_rect.min;
         let pattern = pattern_builder.build(
             None,
@@ -689,6 +691,7 @@ fn prepare_quad_impl(
                 transform_id,
                 quad_flags,
                 aa_flags,
+                pattern.blend_mode,
             ),
             transform.prim_spatial_node_index(),
             targets,
@@ -762,6 +765,7 @@ fn prepare_quad_impl(
 
             add_composite_prim(
                 pattern.base_color,
+                pattern.blend_mode,
                 prim_instance_index,
                 &clipped_surface_rect,
                 frame_state,
@@ -1076,6 +1080,7 @@ fn prepare_nine_patch(
     if !scratch.frame.quad_indirect_segments.is_empty() {
         add_composite_prim(
             pattern.base_color,
+            pattern.blend_mode,
             prim_instance_index,
             &device_clip_rect,
             frame_state,
@@ -1325,6 +1330,7 @@ fn prepare_tiles(
     if !scratch.frame.quad_indirect_segments.is_empty() {
         add_composite_prim(
             pattern.base_color,
+            pattern.blend_mode,
             prim_instance_index,
             device_clip_rect,
             frame_state,
@@ -1614,6 +1620,7 @@ fn add_pattern_prim(
             quad_flags,
             // TODO(gw): No AA on composite, unless we use it to apply 2d clips
             EdgeMask::empty(),
+            pattern.blend_mode,
         ),
         targets,
     );
@@ -1621,6 +1628,7 @@ fn add_pattern_prim(
 
 fn add_composite_prim(
     base_color: ColorF,
+    blend_mode: BlendMode,
     prim_instance_index: PrimitiveInstanceIndex,
     rect: &DeviceRect,
     frame_state: &mut FrameBuildingState,
@@ -1667,6 +1675,7 @@ fn add_composite_prim(
             quad_flags,
             // TODO(gw): No AA on composite, unless we use it to apply 2d clips
             EdgeMask::empty(),
+            blend_mode,
         ),
         targets,
     );
@@ -2088,6 +2097,7 @@ pub fn add_to_batch<F>(
     segment_index: u8,
     src_task_id: RenderTaskId,
     z_id: ZBufferId,
+    blend_mode: BlendMode,
     render_tasks: &RenderTaskGraph,
     gpu_buffer_builder: &mut GpuBufferBuilder,
     mut f: F,
@@ -2132,22 +2142,24 @@ pub fn add_to_batch<F>(
         TextureSource::Invalid,
     );
 
-    let default_blend_mode = if quad_flags.contains(QuadFlags::IS_OPAQUE) {
+    let prim_blend_mode = if quad_flags.contains(QuadFlags::IS_OPAQUE)
+        && blend_mode == BlendMode::PremultipliedAlpha
+    {
         BlendMode::None
     } else {
-        BlendMode::PremultipliedAlpha
+        blend_mode
     };
 
     let edge_flags_bits = edge_flags.bits();
 
     let prim_batch_key = BatchKey {
-        blend_mode: default_blend_mode,
+        blend_mode: prim_blend_mode,
         kind: BatchKind::Quad(kind),
         textures,
     };
 
     let aa_batch_key = BatchKey {
-        blend_mode: BlendMode::PremultipliedAlpha,
+        blend_mode,
         kind: BatchKind::Quad(kind),
         textures,
     };

@@ -3470,7 +3470,7 @@ static ReturnAbortOnError HandleDetectedDowngrade(
     profileName.Append("-" MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL));
 #  endif
     nsCOMPtr<nsIToolkitProfile> newProfile;
-    rv = aProfileSvc->CreateUniqueProfile(nullptr, profileName,
+    rv = aProfileSvc->CreateUniqueProfile(nullptr, profileName, "downgrade"_ns,
                                           getter_AddRefs(newProfile));
     NS_ENSURE_SUCCESS(rv, rv);
     rv = aProfileSvc->SetDefaultProfile(newProfile);
@@ -4302,6 +4302,13 @@ int XREMain::XRE_mainInit(bool* aExitFlag,
   nsCOMPtr<nsIFile> xreBinDirectory;
   xreBinDirectory = mDirProvider.GetGREBinDir();
 
+  // Unconditionally set the ServerURL exception before we launch the crash
+  // helper or set the exception handler. This guarantees that the annotation
+  // will be populated when we need it.
+  if (mAppData->crashReporterURL) {
+    CrashReporter::SetServerURL(nsDependentCString(mAppData->crashReporterURL));
+  }
+
   if ((mAppData->flags & NS_XRE_ENABLE_CRASH_REPORTER) &&
       NS_FAILED(CrashReporter::OOPInit(xreBinDirectory))) {
     NS_WARNING("Could not launch the crash helper");
@@ -4313,10 +4320,6 @@ int XREMain::XRE_mainInit(bool* aExitFlag,
     rv = nsXREDirProvider::GetUserAppDataDirectory(getter_AddRefs(file));
     if (NS_SUCCEEDED(rv)) {
       CrashReporter::SetUserAppDataDirectory(file);
-    }
-    if (mAppData->crashReporterURL) {
-      CrashReporter::SetServerURL(
-          nsDependentCString(mAppData->crashReporterURL));
     }
 
     // We overwrite this once we finish starting up.
@@ -4935,7 +4938,10 @@ int XREMain::XRE_mainStartup(bool* aExitFlag,
       if (!disableWaylandProxy && XRE_IsParentProcess() && waylandEnabled) {
         auto* proxyLog = getenv("WAYLAND_PROXY_LOG");
         WaylandProxy::SetVerbose(proxyLog && *proxyLog);
-        WaylandProxy::SetCompositorCrashHandler(WlCompositorCrashHandler);
+        WaylandProxy::SetCompositorUnavailableHandler(
+            WlCompositorUnavailableHandler);
+        WaylandProxy::SetCompositorSilentDisconnectHandler(
+            WlCompositorSilentDisconnectHandler);
         WaylandProxy::AddState(WAYLAND_PROXY_ENABLED);
         gWaylandProxy = WaylandProxy::Create();
         if (gWaylandProxy) {
@@ -5915,6 +5921,13 @@ nsresult XREMain::XRE_mainRun() {
         tempArgv[i] = strdup(gArgv[i]);
       }
       CommandLineServiceMac::SetupMacCommandLine(gArgc, tempArgv, false);
+
+      // All startup URLs have been consumed by SetupMacCommandLine. From this
+      // point, any URLs received via Apple Events (application:openURLs:) will
+      // be handled immediately by nsICommandLineRunner instead of being
+      // buffered. See bug 2036237.
+      StartupURLCollectionComplete();
+
       rv = cmdLine->Init(gArgc, tempArgv, workingDir,
                          nsICommandLine::STATE_INITIAL_LAUNCH);
       free(tempArgv);

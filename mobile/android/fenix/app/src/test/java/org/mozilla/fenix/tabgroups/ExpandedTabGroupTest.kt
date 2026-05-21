@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.fenix.tabgroups
 
 import androidx.compose.material3.Surface
@@ -29,7 +33,6 @@ class ExpandedTabGroupTest {
 
     private val tabManagementFeatureHelper = object : TabManagementFeatureHelper {
         override val openingAnimationEnabled: Boolean = false
-        override val tabSearchEnabled: Boolean = false
         override val tabGroupsEnabled: Boolean = true
         override val tabGroupsDragAndDropEnabled: Boolean = false
         override val shareTabGroupEnabled: Boolean = true

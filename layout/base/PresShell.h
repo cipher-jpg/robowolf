@@ -656,20 +656,27 @@ class PresShell final : public nsStubDocumentObserver,
   already_AddRefed<AccessibleCaretEventHub> GetAccessibleCaretEventHub() const;
 
   /**
-   * Get the caret, if it exists. AddRefs it.
+   * Get the active caret, if it exists. This will return the
+   * drag & drop caret if a D&D operation is ongoing. AddRefs it.
    */
-  already_AddRefed<nsCaret> GetCaret() const;
+  already_AddRefed<nsCaret> GetActiveCaret() const;
 
   /**
-   * Set the current caret to a new caret. To undo this, call RestoreCaret.
+   * Get the original caret this PresShell was created with.
    */
-  void SetCaret(nsCaret* aNewCaret);
+  already_AddRefed<nsCaret> GetOriginalCaret() const;
+
+  /**
+   * Set the active caret to a new caret. To undo this, call
+   * RestoreOriginalCaret.
+   */
+  void SetActiveCaret(nsCaret* aNewCaret);
 
   /**
    * Restore the caret to the original caret that this pres shell was created
    * with.
    */
-  void RestoreCaret();
+  void RestoreOriginalCaret();
 
   dom::Selection* GetCurrentSelection(SelectionType aSelectionType);
 
@@ -727,9 +734,16 @@ class PresShell final : public nsStubDocumentObserver,
   nsIFrame* GetCurrentEventFrame();
 
   /**
-   * Gets the current target event frame from the PresShell
+   * Gets the explicit event target content of the current event target frame
    */
-  already_AddRefed<nsIContent> GetEventTargetContent(WidgetEvent* aEvent);
+  nsIContent* GetExplicitEventTargetContent(const WidgetEvent* = nullptr);
+
+  /**
+   * Gets the event target content from the current event target frame. If the
+   * event target should be an element node, this returns an inclusive ancestor
+   * element of the explicit event target content.
+   */
+  nsIContent* GetEventTargetContent(const WidgetEvent* = nullptr);
 
   /**
    * Get and set the history state for the current document
@@ -1888,6 +1902,9 @@ class PresShell final : public nsStubDocumentObserver,
   void MergeAnchorPosAnchorChanges();
 
   void CleanupFullscreenState();
+
+  void MaybeExitKeyboardLockedFullscreen(WidgetKeyboardEvent* aKeyboardEvent,
+                                         Document* aFullscreenRoot);
 
  private:
   ~PresShell();

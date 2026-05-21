@@ -18,11 +18,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.badge.StatusBadge
 import mozilla.components.compose.base.theme.information
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.store.SummarizationMenuState
 import org.mozilla.fenix.components.menu.store.TranslationInfo
-import org.mozilla.fenix.compose.StatusBadge
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
@@ -239,7 +239,7 @@ private fun MoveToNonPrivateTabMenuItem(
     if (isPrivate) {
         MenuItem(
             label = stringResource(id = R.string.browser_menu_move_to_non_private_tab),
-            beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_open_in),
+            beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_external_link_24),
             onClick = onMoveToNonPrivateTabMenuClick,
         )
     }

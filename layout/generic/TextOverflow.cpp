@@ -243,8 +243,8 @@ bool nsDisplayTextOverflowMarker::CreateWebRenderCommands(
   }
 
   // Run the rendering algorithm to capture the glyphs and shadows
-  RefPtr<TextDrawTarget> textDrawer =
-      new TextDrawTarget(aBuilder, aResources, aSc, aManager, this, bounds);
+  auto textDrawer = MakeRefPtr<TextDrawTarget>(aBuilder, aResources, aSc,
+                                               aManager, this, bounds);
   MOZ_ASSERT(textDrawer->IsValid());
   if (!textDrawer->IsValid()) {
     return false;
@@ -817,7 +817,7 @@ bool TextOverflow::CanHaveOverflowMarkers(nsBlockFrame* aBlockFrame,
   }
 
   // Inhibit the markers if a descendant content owns the caret.
-  RefPtr<nsCaret> caret = aBlockFrame->PresShell()->GetCaret();
+  RefPtr<nsCaret> caret = aBlockFrame->PresShell()->GetActiveCaret();
   if (caret && caret->IsVisible()) {
     RefPtr<dom::Selection> domSelection = caret->GetSelection();
     if (domSelection) {

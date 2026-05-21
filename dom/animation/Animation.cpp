@@ -5,7 +5,6 @@
 #include "Animation.h"
 
 #include "AnimationUtils.h"
-#include "ScrollTimelineAnimationTracker.h"
 #include "mozAutoDocUpdate.h"
 #include "mozilla/AnimationEventDispatcher.h"
 #include "mozilla/AnimationTarget.h"
@@ -356,9 +355,11 @@ void Animation::SetTimelineNoUpdate(AnimationTimeline* aTimeline,
   }
   mTimeline = aTimeline;
   mTimelineName = aTimelineName;
-  // Update the normalized timing because we are using the new timeline.
+  // Update the normalized timing and keyframe timeline range ofset because we
+  // are using the new timeline.
   if (mEffect) {
     mEffect->UpdateNormalizedTiming();
+    MaybeUpdateKeyframeComputedOffsets();
   }
 
   // 9. Perform the steps corresponding to the first matching condition from the
@@ -400,22 +401,22 @@ void Animation::SetTimelineNoUpdate(AnimationTimeline* aTimeline,
       case AnimationPlayState::Idle:
         break;
     }
-  } else if (fromFiniteTimeline && !previousProgress.IsNull()) {
-    // If from finite timeline and previous progress is resolved, run the
-    // procedure to set the current time to previous progress * end time.
-    SetCurrentTimeNoUpdate(
-        TimeDuration(EffectEnd().MultDouble(previousProgress.Value())));
-  }
-  if (fromFiniteTimeline && !aTimeline && mTimelineName) {
-    // Make sure to remove any pending playing task, if we stopped referring to
-    // an existing named timeline.
-    Document* doc = GetRenderedDocument();
-    auto* tracker = doc ? doc->GetScrollTimelineAnimationTracker() : nullptr;
-    if (tracker) {
-      tracker->RemovePending(*this);
+  } else if (fromFiniteTimeline) {
+    // mAutoAlignStartTime is only meaningful for finite timelines; clear it
+    // here. Transitioning into a new finite timeline is handled by the
+    // toFiniteTimeline branch above. This clearing is a deviation from spec
+    // [1], which only acts when previousProgress is resolved; without it the
+    // flag's invariant (true only while the timeline is finite) is violated
+    // and AutoAlignStartTime would later fire on a monotonic timeline.
+    // [1] https://drafts.csswg.org/web-animations-2/#setting-the-timeline
+    mAutoAlignStartTime = false;
+    if (!previousProgress.IsNull()) {
+      // If from finite timeline and previous progress is resolved, run the
+      // procedure to set the current time to previous progress * end time.
+      SetCurrentTimeNoUpdate(
+          TimeDuration(EffectEnd().MultDouble(previousProgress.Value())));
     }
   }
-
   // 10. If the start time of animation is resolved, make animation’s hold time
   // unresolved.
   if (!mStartTime.IsNull()) {
@@ -455,6 +456,7 @@ void Animation::SetTimelineRangeNoUpdate(AnimationRange&& aRange) {
 
   if (mEffect) {
     mEffect->UpdateNormalizedTiming();
+    MaybeUpdateKeyframeComputedOffsets();
   }
 }
 
@@ -1005,12 +1007,11 @@ void Animation::CommitStyles(ErrorResult& aRv) {
   mozAutoDocUpdate autoUpdate(target.mElement->OwnerDoc(), true);
 
   // Get the inline style to append to
-  RefPtr<DeclarationBlock> declarationBlock;
+  RefPtr<StyleLockedDeclarationBlock> declarationBlock;
   if (auto* existing = target.mElement->GetInlineStyleDeclaration()) {
-    declarationBlock = existing->EnsureMutable();
+    declarationBlock = nsDOMCSSDeclaration::EnsureBlockMutable(existing);
   } else {
-    declarationBlock = new DeclarationBlock();
-    declarationBlock->SetDirty();
+    declarationBlock = Servo_DeclarationBlock_CreateEmpty().Consume();
   }
 
   // Prepare the callback
@@ -1031,7 +1032,7 @@ void Animation::CommitStyles(ErrorResult& aRv) {
             .Consume();
     if (computedValue) {
       changed |= Servo_DeclarationBlock_SetPropertyToAnimationValue(
-          declarationBlock->Raw(), computedValue, beforeChangeClosure);
+          declarationBlock.get(), computedValue, beforeChangeClosure);
     }
   }
 
@@ -1086,11 +1087,14 @@ void Animation::Tick(AnimationTimeline::TickState& aTickState) {
   AutoAlignStartTime();
 
   if (Pending()) {
-    if (!mPendingReadyTime.IsNull()) {
+    if (!mPendingReadyTime.IsNull() || HasFiniteTimeline()) {
+      // mPendingReadyTime is only meaningful for monotonic timelines (see its
+      // declaration comment). For finite timelines, trigger directly using the
+      // timeline's current time.
       TryTriggerNow();
     } else if (MOZ_LIKELY(mTimeline)) {
-      // Makes sure that we trigger the animation on the next tick but,
-      // importantly, with this tick's timestamp.
+      // Monotonic timeline with no ready time yet — schedule the trigger for
+      // the next tick, but with this tick's timestamp.
       mPendingReadyTime = mTimeline->GetCurrentTimeAsTimeStamp();
     }
   }
@@ -1127,10 +1131,9 @@ bool Animation::TryTriggerNow() {
   }
   // FIXME: Bug 2017448. Force to use timeline current time for finite
   // timelines. We may have to figure out a more suitable way to handle it.
-  auto currentTime =
-      mPendingReadyTime.IsNull() || !mTimeline->IsMonotonicallyIncreasing()
-          ? mTimeline->GetCurrentTimeAsDuration()
-          : mTimeline->ToTimelineTime(mPendingReadyTime);
+  auto currentTime = (mPendingReadyTime.IsNull() || HasFiniteTimeline())
+                         ? mTimeline->GetCurrentTimeAsDuration()
+                         : mTimeline->ToTimelineTime(mPendingReadyTime);
   mPendingReadyTime = {};
   if (NS_WARN_IF(currentTime.IsNull())) {
     return false;
@@ -1674,12 +1677,6 @@ void Animation::PlayNoUpdate(ErrorResult& aRv, LimitBehavior aLimitBehavior) {
   mPendingState = PendingState::PlayPending;
   mPendingReadyTime = {};
   if (Document* doc = GetRenderedDocument()) {
-    if (HasFiniteTimeline()) {
-      // If there's no rendered document, we fail to track this animation, so
-      // let the scroll container to schedule the sampling of timelines and then
-      // tick the associated animations to trigger them.
-      doc->GetOrCreateScrollTimelineAnimationTracker()->AddPending(*this);
-    }
     mPendingReadyTime = EnsurePaintIsScheduled(*doc);
   }
 
@@ -1755,9 +1752,6 @@ void Animation::Pause(ErrorResult& aRv) {
   mPendingState = PendingState::PausePending;
   mPendingReadyTime = {};
   if (Document* doc = GetRenderedDocument()) {
-    if (HasFiniteTimeline()) {
-      doc->GetOrCreateScrollTimelineAnimationTracker()->AddPending(*this);
-    }
     mPendingReadyTime = EnsurePaintIsScheduled(*doc);
   }
 
@@ -1934,17 +1928,6 @@ void Animation::PostUpdate() {
 
 void Animation::CancelPendingTasks() {
   mPendingState = PendingState::NotPending;
-
-  // If we cancel the pending animation, we need to remove it from the pending
-  // scroll-driven animation tracker. Also, the caller should put this animation
-  // back into the pending animation tracker if needed, for scroll-timeline or
-  // view-timeline.
-  if (Document* doc = GetRenderedDocument()) {
-    if (auto* tracker = doc->GetScrollTimelineAnimationTracker()) {
-      // no-op if |this| is not in the tracker.
-      tracker->RemovePending(*this);
-    }
-  }
 }
 
 // https://drafts.csswg.org/web-animations/#reset-an-animations-pending-tasks
@@ -2016,6 +1999,15 @@ void Animation::UpdateNormalizedTimingForTimelineDataChange() {
   }
 
   mEffect->UpdateNormalizedTiming();
+}
+
+void Animation::MaybeUpdateKeyframeComputedOffsets() {
+  if (!mEffect || !mEffect->AsKeyframeEffect()) {
+    return;
+  }
+
+  mEffect->AsKeyframeEffect()->MaybeUpdateKeyframeComputedOffsets(
+      mTimeline, mTimelineRange);
 }
 
 StickyTimeDuration Animation::EffectEnd() const {
@@ -2196,6 +2188,11 @@ void Animation::AutoAlignStartTime() {
 
   MOZ_ASSERT(!mTimeline->IsMonotonicallyIncreasing(),
              "We shouldn't come here for monotonically increasing timeline");
+  // Bail out in release builds if we somehow get here with a monotonic
+  // timeline, to avoid dereferencing AsScrollTimeline() below.
+  if (mTimeline->IsMonotonicallyIncreasing()) {
+    return;
+  }
 
   // If play state is idle, abort this procedure.
   const AnimationPlayState playState = PlayState();

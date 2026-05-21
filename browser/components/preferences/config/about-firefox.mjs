@@ -475,6 +475,7 @@ SettingGroupManager.registerGroups({
   updates: {
     l10nId: "update-application-heading",
     iconSrc: "chrome://browser/skin/update-badge.svg",
+    subcategory: "update-state",
     headingLevel: 2,
     items: [
       {
@@ -521,7 +522,7 @@ SettingGroupManager.registerGroups({
               {
                 id: "autoDesktop",
                 value: true,
-                l10nId: "update-application-auto",
+                l10nId: "update-application-auto-2",
                 items: [
                   {
                     id: "backgroundUpdate",

@@ -544,7 +544,6 @@ export const SearchService = new (class SearchService {
     await this.#migrateLegacyEngines();
     await this.#checkWebExtensionEngines();
     await this.#addOpenSearchTelemetry();
-    await this.#removeAppProvidedExtensions();
   }
 
   /**
@@ -758,7 +757,7 @@ export const SearchService = new (class SearchService {
    * @param {object} extension
    *   An Extension object containing data about the extension.
    */
-  async addEnginesFromExtension(extension) {
+  async addEngineFromExtension(extension) {
     // Treat add-on upgrade and downgrades the same - either way, the search
     // engine gets updated, not added. Generally, we don't expect a downgrade,
     // but just in case...
@@ -776,14 +775,13 @@ export const SearchService = new (class SearchService {
     }
 
     if (extension.isAppProvided) {
-      this.#extensionsToRemove.add(extension.id);
-      lazy.logConsole.debug(
-        "addEnginesFromExtension: Queuing old app provided WebExtension for uninstall",
+      lazy.logConsole.error(
+        "Installing search engines from application provided webExtensions is no longer supported",
         extension.id
       );
       return;
     }
-    lazy.logConsole.debug("addEnginesFromExtension:", extension.id);
+    lazy.logConsole.debug("addEngineFromExtension:", extension.id);
 
     // If we haven't started the SearchService yet, store this extension
     // to install in SearchService.init().
@@ -1287,15 +1285,6 @@ export const SearchService = new (class SearchService {
    * @type {Set<object>}
    */
   #startupExtensions = new Set();
-
-  /**
-   * A Set of installed app provided search Web Extensions to be uninstalled by
-   * the AddonManager on idle. We no longer have app provided engines as
-   * web extensions after search-config-v2 enabled in Firefox version 128.
-   *
-   * @type {Set<object>}
-   */
-  #extensionsToRemove = new Set();
 
   /**
    * A Set of removed search extensions reported by AddonManager
@@ -3009,28 +2998,6 @@ export const SearchService = new (class SearchService {
     Glean.browserSearchinit.insecureOpensearchUpdateCount.set(
       totalWithInsecureUpdates
     );
-  }
-
-  /**
-   * Removes application-provided extensions with a specific identifier.
-   *
-   * After search-config-v2 (enabled in Firefox version 128), app-provided
-   * engines are no longer web extensions. This method iterates over the IDs
-   * in `#extensionsToRemove` and uninstalls extensions ending with
-   * `@search.mozilla.org`. Although the list should contain only app-provided
-   * engines (as per addEnginesFromExtension), the `@search.mozilla.org` is an
-   * additional safety check to ensure only the expected add-ons are removed.
-   */
-  async #removeAppProvidedExtensions() {
-    for (let id of this.#extensionsToRemove.values()) {
-      if (id.endsWith("@search.mozilla.org")) {
-        let addOn = await lazy.AddonManager.getAddonByID(id);
-        if (addOn) {
-          await addOn.uninstall();
-        }
-      }
-    }
-    this.#extensionsToRemove.clear();
   }
 
   /**

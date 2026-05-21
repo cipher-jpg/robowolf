@@ -7,31 +7,44 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector, batch } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { useIntersectionObserver } from "../../../lib/utils";
+import { SportsMatchRow } from "./SportsMatchRow";
+import { WIDGET_REGISTRY, resolveWidgetSize } from "common/WidgetsRegistry.mjs";
+import { useLocalizedTeamNames } from "./useLocalizedTeamNames.jsx";
+import { MoveSubmenu } from "../MoveSubmenu";
 
 const WIDGET_STATES = {
   INTRO: "sports-intro",
   FOLLOW_TEAMS: "sports-follow-state",
+  MATCHES: "sports-matches",
+  KEY_DATES: "sports-key-dates",
 };
 
-const COUNTRIES = [
-  { id: "CA", name: "Canada" },
-  { id: "AU", name: "Australia" },
-  { id: "DZ", name: "Algeria" },
-  { id: "IQ", name: "Iraq" },
-  { id: "IT", name: "Italy" },
-  { id: "ES", name: "Spain" },
-  { id: "NG", name: "Nigeria" },
-  { id: "MR", name: "Morocco" },
-  { id: "PT", name: "Portugal" },
-  { id: "DE", name: "Germany" },
-  { id: "SN", name: "Senegal" },
-];
+const MATCHES_TABS = {
+  RESULTS: "results",
+  NOW: "now",
+  UPCOMING: "upcoming",
+};
+
+function getVisibleMatchesTabs(hasLiveGames, hasPreviousResults) {
+  return (
+    Object.values(MATCHES_TABS)
+      // Only show the Now tab when there are live games.
+      .filter(id => id !== MATCHES_TABS.NOW || hasLiveGames)
+      .map(id => ({
+        id,
+        // Disable the Results tab until previous match data is available.
+        disabled: id === MATCHES_TABS.RESULTS && !hasPreviousResults,
+      }))
+  );
+}
 
 const USER_ACTION_TYPES = {
   FOLLOW_TEAMS: "follow_teams",
+  SAVE_TEAMS: "save_teams",
   VIEW_UPCOMING: "view_upcoming",
   VIEW_RESULTS: "view_results",
-  VIEW_SCHEDULE: "view_schedule",
+  VIEW_MATCHES: "view_matches",
+  VIEW_KEY_DATES: "view_key_dates",
   CHANGE_SIZE: "change_size",
   LEARN_MORE: "learn_more",
 };
@@ -40,17 +53,35 @@ const PREF_NOVA_ENABLED = "nova.enabled";
 const PREF_SPORTS_WIDGET_SIZE = "widgets.sportsWidget.size";
 const PREF_SPORTS_WIDGET_LIVE_ENABLED = "widgets.sportsWidget.live.enabled";
 
-function SportsWidget({ dispatch, handleUserInteraction }) {
+const SPORTS_WIDGET_REGISTRY_ENTRY = WIDGET_REGISTRY.find(
+  widget => widget.id === "sportsWidget"
+);
+
+function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
   const prefs = useSelector(state => state.Prefs.values);
   const sportsWidgetData = useSelector(state => state.SportsWidget);
 
-  const widgetSize = prefs[PREF_SPORTS_WIDGET_SIZE] || "medium";
+  const widgetSize = resolveWidgetSize(SPORTS_WIDGET_REGISTRY_ENTRY, prefs);
   const liveEnabled = prefs[PREF_SPORTS_WIDGET_LIVE_ENABLED];
   const widgetsMayBeMaximized = prefs["widgets.system.maximized"];
-  const widgetState = sportsWidgetData.widgetState || WIDGET_STATES.INTRO;
+  const hasLiveGames = sportsWidgetData?.data?.matches?.current?.length > 0;
+  const hasPreviousResults =
+    sportsWidgetData?.data?.matches?.previous?.length > 0;
+  const tournamentStarted = hasLiveGames || hasPreviousResults;
+  const savedWidgetState = sportsWidgetData.widgetState || WIDGET_STATES.INTRO;
+  // Once the tournament has started, skip the intro and open on the match schedule.
+  const widgetState =
+    tournamentStarted && savedWidgetState === WIDGET_STATES.INTRO
+      ? WIDGET_STATES.MATCHES
+      : savedWidgetState;
   const displaySize =
     widgetState === WIDGET_STATES.FOLLOW_TEAMS ? "large" : widgetSize;
   const selectedTeams = sportsWidgetData.selectedTeams || [];
+  const teams = sportsWidgetData?.data?.teams ?? [];
+  const { matchesTab } = sportsWidgetData;
+  const hasUserSelectedTab = useRef(false);
+  const activeTab =
+    hasLiveGames && !hasUserSelectedTab.current ? MATCHES_TABS.NOW : matchesTab;
   const impressionFired = useRef(false);
   const sizeSubmenuRef = useRef(null);
 
@@ -112,6 +143,18 @@ function SportsWidget({ dispatch, handleUserInteraction }) {
           },
         })
       );
+      dispatch(
+        ac.AlsoToMain({
+          type: at.WIDGETS_SPORTS_CHANGE_WIDGET_STATE,
+          data: WIDGET_STATES.MATCHES,
+        })
+      );
+      dispatch(
+        ac.AlsoToMain({
+          type: at.WIDGETS_SPORTS_CHANGE_MATCHES_TAB,
+          data: MATCHES_TABS.UPCOMING,
+        })
+      );
     });
     handleInteraction();
   }
@@ -127,6 +170,41 @@ function SportsWidget({ dispatch, handleUserInteraction }) {
             user_action: USER_ACTION_TYPES.VIEW_RESULTS,
             widget_size: widgetSize,
           },
+        })
+      );
+      dispatch(
+        ac.AlsoToMain({
+          type: at.WIDGETS_SPORTS_CHANGE_WIDGET_STATE,
+          data: WIDGET_STATES.MATCHES,
+        })
+      );
+      dispatch(
+        ac.AlsoToMain({
+          type: at.WIDGETS_SPORTS_CHANGE_MATCHES_TAB,
+          data: MATCHES_TABS.RESULTS,
+        })
+      );
+    });
+    handleInteraction();
+  }
+
+  function handleViewKeyDates(widgetSource) {
+    batch(() => {
+      dispatch(
+        ac.OnlyToMain({
+          type: at.WIDGETS_USER_EVENT,
+          data: {
+            widget_name: "sports_widget",
+            widget_source: widgetSource,
+            user_action: USER_ACTION_TYPES.VIEW_KEY_DATES,
+            widget_size: widgetSize,
+          },
+        })
+      );
+      dispatch(
+        ac.AlsoToMain({
+          type: at.WIDGETS_SPORTS_CHANGE_WIDGET_STATE,
+          data: WIDGET_STATES.KEY_DATES,
         })
       );
     });
@@ -197,18 +275,26 @@ function SportsWidget({ dispatch, handleUserInteraction }) {
     return () => el.removeEventListener("click", listener);
   }, [handleChangeSize]);
 
-  function handleViewSchedule() {
-    dispatch(
-      ac.OnlyToMain({
-        type: at.WIDGETS_USER_EVENT,
-        data: {
-          widget_name: "sports_widget",
-          widget_source: "widget",
-          user_action: USER_ACTION_TYPES.VIEW_SCHEDULE,
-          widget_size: widgetSize,
-        },
-      })
-    );
+  function handleViewMatches(widgetSource) {
+    batch(() => {
+      dispatch(
+        ac.OnlyToMain({
+          type: at.WIDGETS_USER_EVENT,
+          data: {
+            widget_name: "sports_widget",
+            widget_source: widgetSource,
+            user_action: USER_ACTION_TYPES.VIEW_MATCHES,
+            widget_size: widgetSize,
+          },
+        })
+      );
+      dispatch(
+        ac.AlsoToMain({
+          type: at.WIDGETS_SPORTS_CHANGE_WIDGET_STATE,
+          data: WIDGET_STATES.MATCHES,
+        })
+      );
+    });
     handleInteraction();
   }
 
@@ -249,6 +335,57 @@ function SportsWidget({ dispatch, handleUserInteraction }) {
     [dispatch]
   );
 
+  const handleSaveSelection = useCallback(
+    newSelectedTeams => {
+      if (newSelectedTeams.length) {
+        dispatch(
+          ac.OnlyToMain({
+            type: at.WIDGETS_USER_EVENT,
+            data: {
+              widget_name: "sports_widget",
+              widget_source: "widget",
+              user_action: USER_ACTION_TYPES.SAVE_TEAMS,
+              action_value: newSelectedTeams.length,
+              widget_size: widgetSize,
+            },
+          })
+        );
+      }
+      dispatch(
+        ac.AlsoToMain({
+          type: at.WIDGETS_SPORTS_CHANGE_SELECTED_TEAMS,
+          data: newSelectedTeams,
+        })
+      );
+      handleCancelSelection();
+    },
+    [dispatch, widgetSize, handleCancelSelection]
+  );
+
+  const handleViewIntro = useCallback(
+    () =>
+      dispatch(
+        ac.AlsoToMain({
+          type: at.WIDGETS_SPORTS_CHANGE_WIDGET_STATE,
+          data: WIDGET_STATES.INTRO,
+        })
+      ),
+    [dispatch]
+  );
+
+  const handleMatchesTabChange = useCallback(
+    tab => {
+      hasUserSelectedTab.current = true;
+      dispatch(
+        ac.AlsoToMain({
+          type: at.WIDGETS_SPORTS_CHANGE_MATCHES_TAB,
+          data: tab,
+        })
+      );
+    },
+    [dispatch]
+  );
+
   // @nova-cleanup(remove-gate): Remove this guard and PREF_NOVA_ENABLED after Nova ships
   if (!prefs[PREF_NOVA_ENABLED]) {
     return null;
@@ -271,6 +408,46 @@ function SportsWidget({ dispatch, handleUserInteraction }) {
             // If changing this number, also update isMaxSelected in SportsWidgetFollowTeams.
             data-l10n-args={JSON.stringify({ number: 3 })}
           />
+        )}
+        {widgetState === WIDGET_STATES.MATCHES && (
+          <moz-button
+            className="sports-back-button"
+            type="icon ghost"
+            iconsrc="chrome://global/skin/icons/arrow-left.svg"
+            data-l10n-id="newtab-sports-widget-back-button"
+            onClick={handleViewIntro}
+            style={{ visibility: tournamentStarted ? "hidden" : "visible" }}
+            aria-hidden={tournamentStarted}
+          />
+        )}
+        {widgetState === WIDGET_STATES.MATCHES && (
+          <div className="sports-matches-tabs" role="tablist">
+            {getVisibleMatchesTabs(hasLiveGames, hasPreviousResults).map(
+              ({ id, disabled }) => (
+                <button
+                  key={id}
+                  role="tab"
+                  aria-selected={activeTab === id}
+                  disabled={disabled}
+                  className={`sports-matches-tab${activeTab === id ? " is-active" : ""}${disabled ? " is-disabled" : ""}`}
+                  onClick={() => handleMatchesTabChange(id)}
+                  data-l10n-id={`newtab-sports-widget-${id}`}
+                />
+              )
+            )}
+          </div>
+        )}
+        {widgetState === WIDGET_STATES.KEY_DATES && (
+          <>
+            <moz-button
+              className="sports-back-button"
+              type="icon ghost"
+              iconsrc="chrome://global/skin/icons/arrow-left.svg"
+              data-l10n-id="newtab-sports-widget-back-button"
+              onClick={handleViewIntro}
+            />
+            <h3 data-l10n-id="newtab-sports-widget-key-dates"></h3>
+          </>
         )}
         {widgetState === WIDGET_STATES.INTRO && (
           <div className="sports-intro-wrapper">
@@ -304,12 +481,17 @@ function SportsWidget({ dispatch, handleUserInteraction }) {
                 onClick={() => handleFollowTeams("context_menu")}
               />
               <panel-item
+                data-l10n-id="newtab-sports-widget-menu-view-schedule"
+                onClick={() => handleViewKeyDates("context_menu")}
+              />
+              <panel-item
                 data-l10n-id="newtab-sports-widget-menu-view-upcoming"
                 onClick={handleViewUpcoming}
               />
               <panel-item
                 data-l10n-id="newtab-sports-widget-menu-view-results"
                 onClick={handleViewResults}
+                disabled={!hasPreviousResults}
               />
               {widgetsMayBeMaximized && (
                 <panel-item submenu="sports-size-submenu">
@@ -331,6 +513,10 @@ function SportsWidget({ dispatch, handleUserInteraction }) {
                   </panel-list>
                 </panel-item>
               )}
+              <MoveSubmenu
+                widgetId="sportsWidget"
+                widgetEnabledMap={widgetEnabledMap}
+              />
               <panel-item
                 data-l10n-id="newtab-widget-menu-hide"
                 onClick={handleSportsWidgetHide}
@@ -345,21 +531,36 @@ function SportsWidget({ dispatch, handleUserInteraction }) {
       </div>
 
       <div className="sports-body">
-        {widgetState === WIDGET_STATES.FOLLOW_TEAMS ? (
+        {widgetState === WIDGET_STATES.FOLLOW_TEAMS && (
           <SportsWidgetFollowTeams
+            teams={teams}
             initialSelectedTeams={selectedTeams}
-            dispatch={dispatch}
-            onClose={handleCancelSelection}
+            onSave={handleSaveSelection}
           />
-        ) : (
+        )}
+        {widgetState === WIDGET_STATES.MATCHES && (
+          <SportsMatchesView
+            matchesTab={activeTab}
+            hasLiveGames={hasLiveGames}
+            size={widgetSize}
+            previous={sportsWidgetData?.data?.matches?.previous ?? []}
+            current={sportsWidgetData?.data?.matches?.current ?? []}
+            next={sportsWidgetData?.data?.matches?.next ?? []}
+            handleInteraction={handleInteraction}
+          />
+        )}
+        {widgetState === WIDGET_STATES.KEY_DATES && (
+          <SportsWidgetKeyDates handleViewMatches={handleViewMatches} />
+        )}
+        {widgetState === WIDGET_STATES.INTRO && (
           <>
             <div className="sports-buttons-wrapper">
               <moz-button
                 type="primary"
                 size={widgetSize === "medium" ? "small" : undefined}
-                data-l10n-id="newtab-sports-widget-view-schedule"
-                className="sports-view-schedule"
-                onClick={handleViewSchedule}
+                data-l10n-id="newtab-sports-widget-view-matches"
+                className="sports-view-matches"
+                onClick={() => handleViewMatches("widget")}
               />
               <moz-button
                 type="secondary"
@@ -381,33 +582,30 @@ function SportsWidget({ dispatch, handleUserInteraction }) {
   );
 }
 
-function SportsWidgetFollowTeams({ onClose, initialSelectedTeams, dispatch }) {
+function SportsWidgetFollowTeams({ teams, initialSelectedTeams, onSave }) {
   const [selectedTeams, setSelectedTeams] = useState(initialSelectedTeams);
   const [searchQuery, setSearchQuery] = useState("");
+  const localizedNames = useLocalizedTeamNames(teams);
   const isMaxSelected = selectedTeams.length >= 3;
 
-  const filteredCountries = searchQuery
-    ? COUNTRIES.filter(c =>
-        c.name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : COUNTRIES;
-
-  function handleCountryToggle(countryId, isChecked) {
+  function handleTeamToggle(teamKey, isChecked) {
     setSelectedTeams(prev =>
-      isChecked ? [...prev, countryId] : prev.filter(id => id !== countryId)
+      isChecked ? [...prev, teamKey] : prev.filter(key => key !== teamKey)
     );
   }
 
-  // Save the selected teams and go back to the intro state.
-  function handleDoneSelection() {
-    dispatch(
-      ac.AlsoToMain({
-        type: at.WIDGETS_SPORTS_CHANGE_SELECTED_TEAMS,
-        data: selectedTeams,
-      })
-    );
-    onClose();
-  }
+  const sortedTeams = localizedNames
+    ? [...teams].sort((a, b) =>
+        localizedNames[a.key].localeCompare(localizedNames[b.key])
+      )
+    : [];
+  const filteredTeams = searchQuery
+    ? sortedTeams.filter(team =>
+        localizedNames[team.key]
+          .toLocaleLowerCase()
+          .includes(searchQuery.toLocaleLowerCase())
+      )
+    : sortedTeams;
 
   return (
     <div className="sports-follow-teams">
@@ -417,25 +615,280 @@ function SportsWidgetFollowTeams({ onClose, initialSelectedTeams, dispatch }) {
         onInput={e => setSearchQuery(e.target.value)}
       />
       <div className="sports-follow-teams-list">
-        {filteredCountries.map(country => {
-          const isSelected = selectedTeams.includes(country.id);
-          return (
-            <moz-checkbox
-              key={country.id}
-              label={country.name}
-              checked={isSelected || undefined}
-              disabled={!isSelected && isMaxSelected ? true : undefined}
-              onChange={e => handleCountryToggle(country.id, e.target.checked)}
-            />
-          );
-        })}
+        {/* Wait until names are localized so users in other locales don't see a flicker of content in English. */}
+        {localizedNames &&
+          filteredTeams.map(team => {
+            const isSelected = selectedTeams.includes(team.key);
+            const isRowDisabled = !isSelected && isMaxSelected;
+            const localizedName = localizedNames[team.key];
+            return (
+              <div
+                key={team.key}
+                className={`sports-follow-teams-row${isRowDisabled ? " is-disabled" : ""}`}
+                onClick={e => {
+                  // The checkbox already handles its own toggle; skip here so we don't toggle twice.
+                  if (e.target.localName === "moz-checkbox") {
+                    return;
+                  }
+                  if (isRowDisabled) {
+                    return;
+                  }
+                  handleTeamToggle(team.key, !isSelected);
+                }}
+              >
+                <moz-checkbox
+                  checked={isSelected || undefined}
+                  disabled={isRowDisabled ? true : undefined}
+                  onChange={e => handleTeamToggle(team.key, e.target.checked)}
+                  aria-label={localizedName}
+                />
+                <img
+                  className="sports-team-flag"
+                  src={team.icon_url}
+                  alt=""
+                  title={localizedName}
+                />
+                <span className="sports-team-name">{localizedName}</span>
+              </div>
+            );
+          })}
       </div>
       <moz-button
         className="sports-done-button"
         data-l10n-id="newtab-sports-widget-done-button"
         type="primary"
         size="small"
-        onClick={handleDoneSelection}
+        onClick={() => onSave(selectedTeams)}
+      />
+    </div>
+  );
+}
+
+function SportsMatchesView({
+  matchesTab,
+  hasLiveGames,
+  size,
+  previous,
+  current,
+  next,
+  handleInteraction,
+}) {
+  const [showResultsList, setShowResultsList] = useState(false);
+  const [showUpcomingList, setShowUpcomingList] = useState(false);
+  const resultsPanelRef = useRef(null);
+  const upcomingPanelRef = useRef(null);
+
+  // When the user expands a tab into list mode, move keyboard focus to the
+  // first match row in the just-revealed list. Without this, focus stays on
+  // the "View all" button, which sits at the bottom of the widget — pressing
+  // Tab from there moves focus *out* of the widget instead of into the new
+  // content, creating a keyboard trap for screen reader / keyboard users.
+  // We don't move focus when collapsing back to highlight view: focus
+  // naturally remains on the "Show less" button the user just activated,
+  // which is the expected behavior.
+  useEffect(() => {
+    if (showResultsList) {
+      resultsPanelRef.current?.querySelector(".sports-match-row")?.focus();
+    }
+  }, [showResultsList]);
+  useEffect(() => {
+    if (showUpcomingList) {
+      upcomingPanelRef.current?.querySelector(".sports-match-row")?.focus();
+    }
+  }, [showUpcomingList]);
+
+  return (
+    <div className="sports-matches-view">
+      <div
+        className="sports-matches-tab-panel"
+        hidden={matchesTab !== MATCHES_TABS.RESULTS}
+        ref={resultsPanelRef}
+      >
+        {showResultsList ? (
+          <ul className="sports-matches-list">
+            {previous.map(match => (
+              <li
+                key={`${match.home_team.key}-${match.away_team.key}-${match.date}`}
+              >
+                <SportsMatchRow
+                  match={match}
+                  variant="results"
+                  size="list"
+                  handleInteraction={handleInteraction}
+                />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          previous[0] && (
+            <div className="match-highlight-view">
+              <SportsMatchRow
+                match={previous[0]}
+                variant="results"
+                size={size}
+                handleInteraction={handleInteraction}
+              />
+            </div>
+          )
+        )}
+        {!!previous.length && (
+          <moz-button
+            type="secondary"
+            size={size === "medium" ? "small" : undefined}
+            data-l10n-id={
+              showResultsList
+                ? "newtab-sports-widget-show-less"
+                : "newtab-sports-widget-view-all"
+            }
+            onClick={() => setShowResultsList(v => !v)}
+          ></moz-button>
+        )}
+      </div>
+      {hasLiveGames && (
+        <div
+          className="sports-matches-tab-panel"
+          hidden={matchesTab !== MATCHES_TABS.NOW}
+        >
+          {current[0] && (
+            <>
+              <div className="match-highlight-view">
+                <SportsMatchRow
+                  match={current[0]}
+                  variant="now"
+                  size={size}
+                  handleInteraction={handleInteraction}
+                />
+              </div>
+              {/* TODO: Add onClick handler + play icon when we start implementing Watch dialog UI */}
+              <moz-button
+                type={size === "medium" ? "icon" : "default"}
+                size={size === "medium" ? "small" : undefined}
+                iconSrc="chrome://browser/skin/device-tv.svg"
+                data-l10n-id={
+                  size === "medium"
+                    ? "newtab-sports-widget-watch-icon"
+                    : "newtab-sports-widget-watch"
+                }
+              ></moz-button>
+            </>
+          )}
+        </div>
+      )}
+      <div
+        className="sports-matches-tab-panel"
+        hidden={matchesTab !== MATCHES_TABS.UPCOMING}
+        ref={upcomingPanelRef}
+      >
+        {showUpcomingList ? (
+          <ul className="sports-matches-list">
+            {next.map(match => (
+              <li
+                key={`${match.home_team.key}-${match.away_team.key}-${match.date}`}
+              >
+                <SportsMatchRow
+                  match={match}
+                  variant="upcoming"
+                  size="list"
+                  handleInteraction={handleInteraction}
+                />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          next[0] && (
+            <div className="match-highlight-view">
+              <SportsMatchRow
+                match={next[0]}
+                variant="upcoming"
+                size={size}
+                handleInteraction={handleInteraction}
+              />
+            </div>
+          )
+        )}
+        {!!next.length && (
+          <moz-button
+            type="secondary"
+            size={size === "medium" ? "small" : undefined}
+            data-l10n-id={
+              showUpcomingList
+                ? "newtab-sports-widget-show-less"
+                : "newtab-sports-widget-view-all"
+            }
+            onClick={() => setShowUpcomingList(v => !v)}
+          ></moz-button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const keyDatesList = [
+  {
+    stageL10nId: "newtab-sports-widget-group-stage",
+    start: "2026-06-11",
+    end: "2026-06-27",
+  },
+  {
+    stageL10nId: "newtab-sports-widget-round-32",
+    start: "2026-06-28",
+    end: "2026-07-03",
+  },
+  {
+    stageL10nId: "newtab-sports-widget-round-16",
+    start: "2026-07-04",
+    end: "2026-07-07",
+  },
+  {
+    stageL10nId: "newtab-sports-widget-quarter-finals",
+    start: "2026-07-09",
+    end: "2026-07-11",
+  },
+  {
+    stageL10nId: "newtab-sports-widget-semi-finals",
+    start: "2026-07-14",
+    end: "2026-07-15",
+  },
+  {
+    stageL10nId: "newtab-sports-widget-bronze-finals",
+    date: "2026-07-18",
+  },
+  {
+    stageL10nId: "newtab-sports-widget-final",
+    date: "2026-07-19",
+  },
+];
+
+function SportsWidgetKeyDates({ handleViewMatches }) {
+  return (
+    <div className="sports-key-dates">
+      <ul className="sports-key-dates-list">
+        {keyDatesList.map(({ stageL10nId, start, end, date }) => (
+          <li key={stageL10nId} className="sports-key-dates-item">
+            <span data-l10n-id={stageL10nId} />
+            <span
+              data-l10n-id={
+                date
+                  ? "newtab-sports-widget-key-date"
+                  : "newtab-sports-widget-key-date-range"
+              }
+              data-l10n-args={JSON.stringify(
+                date
+                  ? { date: new Date(date).getTime() }
+                  : {
+                      start: new Date(start).getTime(),
+                      end: new Date(end).getTime(),
+                    }
+              )}
+            />
+          </li>
+        ))}
+      </ul>
+      <moz-button
+        type="secondary"
+        size="small"
+        data-l10n-id="newtab-sports-widget-view-matches"
+        onClick={() => handleViewMatches("key_dates_state")}
       />
     </div>
   );

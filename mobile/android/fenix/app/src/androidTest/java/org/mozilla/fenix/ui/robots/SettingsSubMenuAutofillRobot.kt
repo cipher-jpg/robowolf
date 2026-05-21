@@ -180,11 +180,7 @@ class SettingsSubMenuAutofillRobot(private val composeTestRule: ComposeTestRule)
         Log.i(TAG, "verifyAddAddressView: Trying to perform \"Close soft keyboard\" action")
         // Closing the keyboard to ensure full visibility of the "Add address" view
         waitForKeyboardDismiss()
-        composeTestRule.waitForIdle()
         Log.i(TAG, "verifyAddAddressView: Performed \"Close soft keyboard\" action")
-        Log.i(TAG, "verifyAddAddressView: Waiting for address form to be ready")
-        composeTestRule.waitUntilAtLeastOneExists(hasTestTag(EditAddressTestTag.NAME_FIELD), waitingTime)
-        Log.i(TAG, "verifyAddAddressView: Trying to verify the \"Add address\" view items")
         listOf(
             composeTestRule.navigateBackButton(),
             composeTestRule.addAddressToolbarTitle(),
@@ -864,7 +860,12 @@ private fun waitForPopupToDismiss(composeTestRule: ComposeTestRule, timeoutMs: L
  * here prevents the IME animation from dismissing a dropdown popup that opens immediately after.
  */
 private fun waitForKeyboardDismiss(timeoutMs: Long = 15000L) {
+    Log.i(TAG, "waitForKeyboardDismiss: Trying to close the soft keyboard")
     closeSoftKeyboard()
+    Log.i(TAG, "waitForKeyboardDismiss: Successfully closed the soft keyboard")
+
+    waitForAppWindowToBeUpdated()
+
     val startTime = SystemClock.elapsedRealtime()
     var polled = 0
     while (SystemClock.elapsedRealtime() - startTime < timeoutMs) {

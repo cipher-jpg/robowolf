@@ -13,6 +13,7 @@ support-files = [
   "test_applied_memories_page.html",
   "test_chat_assistant_error.html",
   "test_chat_assistant_error.mjs",
+  "test_kit_mention_page.html",
   "test_memories_icon_button_page.html",
   "test_memories_icon_button.mjs",
   "test_smartwindow_panel_list_page.html",
@@ -36,6 +37,8 @@ support-files = [
 ["browser_aichat_content_message_event.js"]
 
 ["browser_aichat_content_overflow.js"]
+
+["browser_aichat_content_scrolling_position.js"]
 
 ["browser_aichat_message.js"]
 
@@ -68,6 +71,8 @@ skip-if = [
 
 ["browser_aiwindow_integration.js"]
 
+["browser_aiwindow_kit_mention.js"]
+
 ["browser_aiwindow_memories.js"]
 
 ["browser_aiwindow_memories_toggle_prefs.js"]
@@ -95,6 +100,8 @@ skip-if = [
 ["browser_aiwindow_smartbar_keyboard_navigation.js"]
 
 ["browser_aiwindow_smartbar_suggestions.js"]
+
+["browser_aiwindow_smartbar_tab_switch.js"]
 
 ["browser_aiwindow_smartbar_telemetry.js"]
 
@@ -144,6 +151,8 @@ skip-if = [
 ["browser_smartwindow_context_url.js"]
 
 ["browser_smartwindow_conversation_state.js"]
+
+["browser_smartwindow_default_startup.js"]
 
 ["browser_smartwindow_disclaimer.js"]
 

@@ -1637,8 +1637,11 @@ void ContentParent::Init() {
 
 #ifdef ACCESSIBILITY
   // If accessibility is running in chrome process then start it in content
-  // process.
-  if (GetAccService()) {
+  // process. We skip this when the only consumer is ePdfOutput. In that mode,
+  // the service exists purely to build the accessibility tree for a document
+  // being printed in some specific process and unrelated content processes
+  // shouldn't bring up accessibility.
+  if (GetAccService() && !nsAccessibilityService::IsOnlyForPdfOutput()) {
     (void)SendActivateA11y(nsAccessibilityService::GetActiveCacheDomains());
   }
 #endif  // #ifdef ACCESSIBILITY
@@ -3921,9 +3924,10 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
   else if (aData && !strcmp(aTopic, "a11y-init-or-shutdown")) {
     if (*aData == '1') {
       // Make sure accessibility is running in content process when
-      // accessibility gets initiated in chrome process.
+      // accessibility gets fully initiated in chrome process.
+      MOZ_ASSERT(!nsAccessibilityService::IsOnlyForPdfOutput());
       (void)SendActivateA11y(nsAccessibilityService::GetActiveCacheDomains());
-    } else {
+    } else if (*aData == '0') {
       // If possible, shut down accessibility in content process when
       // accessibility gets shutdown in chrome process.
       (void)SendShutdownA11y();
@@ -6589,7 +6593,7 @@ ContentParent::RecvStorageAccessPermissionGrantedForOrigin(
     uint64_t aTopLevelWindowId,
     const MaybeDiscarded<BrowsingContext>& aParentContext,
     nsIPrincipal* aTrackingPrincipal, const nsACString& aTrackingOrigin,
-    const int& aAllowMode,
+    const StorageAccessPromptChoices& aAllowMode,
     const Maybe<ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
         aReason,
     const bool& aFrameOnly,
@@ -6646,8 +6650,7 @@ mozilla::ipc::IPCResult ContentParent::RecvCompleteAllowAccessFor(
                      ResolveOrRejectValue&& aValue) {
                Maybe<StorageAccessPromptChoices> choice;
                if (aValue.IsResolve()) {
-                 choice.emplace(static_cast<StorageAccessPromptChoices>(
-                     aValue.ResolveValue()));
+                 choice.emplace(aValue.ResolveValue());
                }
                aResolver(choice);
              });
@@ -6708,13 +6711,14 @@ mozilla::ipc::IPCResult ContentParent::RecvNotifyMediaPlaybackChanged(
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvNotifyMediaAudibleChanged(
-    const MaybeDiscarded<BrowsingContext>& aContext, MediaAudibleState aState) {
+    const MaybeDiscarded<BrowsingContext>& aContext, MediaAudibleState aState,
+    ControlType aType) {
   if (aContext.IsNullOrDiscarded()) {
     return IPC_OK();
   }
   if (RefPtr<IMediaInfoUpdater> updater =
           aContext.get_canonical()->GetMediaController()) {
-    updater->NotifyMediaAudibleChanged(aContext.ContextId(), aState);
+    updater->NotifyMediaAudibleChanged(aContext.ContextId(), aState, aType);
   }
   return IPC_OK();
 }

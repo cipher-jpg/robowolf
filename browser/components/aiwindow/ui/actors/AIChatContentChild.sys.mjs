@@ -31,6 +31,9 @@ export class AIChatContentChild extends JSWindowActorChild {
     "AIChatContent:SeenUrls": {
       event: "aiChatContentActor:seen-urls",
     },
+    "AIChatContent:SetGenerating": {
+      event: "aiChatContentActor:set-generating",
+    },
   };
 
   static #VALID_EVENTS_FROM_CONTENT = new Set([
@@ -40,6 +43,7 @@ export class AIChatContentChild extends JSWindowActorChild {
     "AIChatContent:OpenLink",
     "AIChatContent:DispatchNewChat",
     "AIChatContent:AccountSignIn",
+    "AIChatContent:ToolUIUpdate",
   ]);
 
   /**
@@ -83,6 +87,10 @@ export class AIChatContentChild extends JSWindowActorChild {
 
       case "AIChatContent:AccountSignIn":
         this.sendAsyncMessage("AIChatContent:AccountSignIn", event.detail);
+        break;
+
+      case "AIChatContent:ToolUIUpdate":
+        this.sendAsyncMessage("AIChatContent:ToolUIUpdate", event.detail);
         break;
 
       default:

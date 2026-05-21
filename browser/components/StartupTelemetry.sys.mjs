@@ -529,7 +529,7 @@ export let StartupTelemetry = {
       [Ci.nsIGNOMEShellService.DESKTOP_ENTRY_VISIBLE]: "visible",
     };
     let status = lazy.ShellService.getDesktopEntryStatus(
-      Services.appinfo.remotingName + ".desktop"
+      lazy.ShellService.getGlibPrgname() + ".desktop"
     );
 
     Glean.osEnvironment.desktopEntryExists.set(labels[status] ?? "other");
@@ -548,10 +548,9 @@ export let StartupTelemetry = {
   },
 
   primaryPasswordEnabled() {
-    let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-      Ci.nsIPK11TokenDB
+    let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+      Ci.nsIPKCS11Token
     );
-    let token = tokenDB.getInternalKeyToken();
     Glean.primaryPassword.enabled.set(token.hasPassword);
   },
 

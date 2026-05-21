@@ -18,8 +18,7 @@ use crate::values::generics::length::GenericAnchorSizeFunction;
 use crate::values::generics::position::{
     AnchorSideKeyword, GenericAnchorFunction, GenericAnchorSide, TreeScoped,
 };
-use crate::values::specified::length::{AbsoluteLength, FontRelativeLength, NoCalcLength};
-use crate::values::specified::length::{ContainerRelativeLength, ViewportPercentageLength};
+use crate::values::specified::length::NoCalcLength;
 use crate::values::specified::{
     NoCalcAngle, NoCalcNumber, NoCalcPercentage, NoCalcResolution, NoCalcTime,
 };
@@ -130,11 +129,13 @@ impl ToCss for Leaf {
 
 impl ToTyped for Leaf {
     fn to_typed(&self, dest: &mut ThinVec<TypedValue>) -> Result<(), ()> {
-        // XXX Only supporting Length, Number,  Percentage and Time for now
+        // XXX Only supporting Length, Number, Percentage, Angle and Time for
+        // now
         match *self {
             Self::Length(ref l) => l.to_typed(dest),
             Self::Number(n) => n.to_typed(dest),
             Self::Percentage(p) => p.to_typed(dest),
+            Self::Angle(ref a) => a.to_typed(dest),
             Self::Time(t) => t.to_typed(dest),
             _ => Err(()),
         }
@@ -156,22 +157,6 @@ pub struct CalcNumeric {
 }
 
 impl CalcNumeric {
-    fn same_unit_length_as(a: &Self, b: &Self) -> Option<(CSSFloat, CSSFloat)> {
-        debug_assert_eq!(a.clamping_mode, b.clamping_mode);
-        debug_assert_eq!(a.clamping_mode, AllowedNumericType::All);
-
-        let a = a.node.as_leaf()?;
-        let b = b.node.as_leaf()?;
-
-        if a.sort_key() != b.sort_key() {
-            return None;
-        }
-
-        let a = a.as_length()?.unitless_value();
-        let b = b.as_length()?.unitless_value();
-        return Some((a, b));
-    }
-
     /// Returns a new CalcNumeric with the same expression but the specified clamping mode
     pub fn with_clamping_mode(&self, clamping_mode: AllowedNumericType) -> Self {
         Self {
@@ -186,6 +171,25 @@ impl CalcNumeric {
             clamping_mode: self.clamping_mode,
             node: CalcNode::Leaf(leaf),
         }
+    }
+
+    /// Resolves this calc expression given a computed context, applying clamping.
+    pub fn resolve(
+        &self,
+        context: &computed::Context,
+        leaf_to_f32: impl FnOnce(Result<Leaf, ()>) -> f32,
+    ) -> f32 {
+        let result = self.node.resolve_map(|leaf| {
+            Ok(match leaf {
+                // Lengths can contain relative units that can only resolve at computed value time
+                Leaf::Length(length) => Leaf::Length(NoCalcLength::from_px(
+                    length.to_computed_value(context).px(),
+                )),
+                // Other nodes have been resolved eagerly at parse time
+                _ => leaf.clone(),
+            })
+        });
+        self.clamping_mode.clamp(leaf_to_f32(result))
     }
 
     /// Gets this calc expression as a number
@@ -230,6 +234,30 @@ impl CalcNumeric {
 }
 
 impl SpecifiedValueInfo for CalcNumeric {}
+
+/// A `calc()` expression that is known to resolve to a `<length-percentage>`.
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss, ToShmem, ToTyped)]
+pub struct CalcLengthPercentage(pub CalcNumeric);
+
+impl CalcLengthPercentage {
+    fn same_unit_length_as(a: &Self, b: &Self) -> Option<(CSSFloat, CSSFloat)> {
+        debug_assert_eq!(a.0.clamping_mode, b.0.clamping_mode);
+        debug_assert_eq!(a.0.clamping_mode, AllowedNumericType::All);
+
+        let a = a.0.node.as_leaf()?;
+        let b = b.0.node.as_leaf()?;
+
+        if a.sort_key() != b.sort_key() {
+            return None;
+        }
+
+        let a = a.as_length()?.unitless_value();
+        let b = b.as_length()?.unitless_value();
+        Some((a, b))
+    }
+}
+
+impl SpecifiedValueInfo for CalcLengthPercentage {}
 
 /// Should parsing anchor-positioning functions in `calc()` be allowed?
 #[derive(Clone, Copy, PartialEq)]
@@ -372,66 +400,17 @@ impl generic::CalcNodeLeaf for Leaf {
             Self::Time(..) => SortKey::S,
             Self::Resolution(..) => SortKey::Dppx,
             Self::Angle(..) => SortKey::Deg,
-            Self::Length(ref l) => match *l {
-                NoCalcLength::Absolute(..) => SortKey::Px,
-                NoCalcLength::FontRelative(ref relative) => match *relative {
-                    FontRelativeLength::Em(..) => SortKey::Em,
-                    FontRelativeLength::Ex(..) => SortKey::Ex,
-                    FontRelativeLength::Rex(..) => SortKey::Rex,
-                    FontRelativeLength::Ch(..) => SortKey::Ch,
-                    FontRelativeLength::Rch(..) => SortKey::Rch,
-                    FontRelativeLength::Cap(..) => SortKey::Cap,
-                    FontRelativeLength::Rcap(..) => SortKey::Rcap,
-                    FontRelativeLength::Ic(..) => SortKey::Ic,
-                    FontRelativeLength::Ric(..) => SortKey::Ric,
-                    FontRelativeLength::Rem(..) => SortKey::Rem,
-                    FontRelativeLength::Lh(..) => SortKey::Lh,
-                    FontRelativeLength::Rlh(..) => SortKey::Rlh,
-                },
-                NoCalcLength::ViewportPercentage(ref vp) => match *vp {
-                    ViewportPercentageLength::Vh(..) => SortKey::Vh,
-                    ViewportPercentageLength::Svh(..) => SortKey::Svh,
-                    ViewportPercentageLength::Lvh(..) => SortKey::Lvh,
-                    ViewportPercentageLength::Dvh(..) => SortKey::Dvh,
-                    ViewportPercentageLength::Vw(..) => SortKey::Vw,
-                    ViewportPercentageLength::Svw(..) => SortKey::Svw,
-                    ViewportPercentageLength::Lvw(..) => SortKey::Lvw,
-                    ViewportPercentageLength::Dvw(..) => SortKey::Dvw,
-                    ViewportPercentageLength::Vmax(..) => SortKey::Vmax,
-                    ViewportPercentageLength::Svmax(..) => SortKey::Svmax,
-                    ViewportPercentageLength::Lvmax(..) => SortKey::Lvmax,
-                    ViewportPercentageLength::Dvmax(..) => SortKey::Dvmax,
-                    ViewportPercentageLength::Vmin(..) => SortKey::Vmin,
-                    ViewportPercentageLength::Svmin(..) => SortKey::Svmin,
-                    ViewportPercentageLength::Lvmin(..) => SortKey::Lvmin,
-                    ViewportPercentageLength::Dvmin(..) => SortKey::Dvmin,
-                    ViewportPercentageLength::Vb(..) => SortKey::Vb,
-                    ViewportPercentageLength::Svb(..) => SortKey::Svb,
-                    ViewportPercentageLength::Lvb(..) => SortKey::Lvb,
-                    ViewportPercentageLength::Dvb(..) => SortKey::Dvb,
-                    ViewportPercentageLength::Vi(..) => SortKey::Vi,
-                    ViewportPercentageLength::Svi(..) => SortKey::Svi,
-                    ViewportPercentageLength::Lvi(..) => SortKey::Lvi,
-                    ViewportPercentageLength::Dvi(..) => SortKey::Dvi,
-                },
-                NoCalcLength::ContainerRelative(ref cq) => match *cq {
-                    ContainerRelativeLength::Cqw(..) => SortKey::Cqw,
-                    ContainerRelativeLength::Cqh(..) => SortKey::Cqh,
-                    ContainerRelativeLength::Cqi(..) => SortKey::Cqi,
-                    ContainerRelativeLength::Cqb(..) => SortKey::Cqb,
-                    ContainerRelativeLength::Cqmin(..) => SortKey::Cqmin,
-                    ContainerRelativeLength::Cqmax(..) => SortKey::Cqmax,
-                },
-                NoCalcLength::ServoCharacterWidth(..) => unreachable!(),
-            },
+            Self::Length(ref l) => l.sort_key(),
             Self::ColorComponent(..) => SortKey::ColorComponent,
         }
     }
 
     fn simplify(&mut self) {
         match self {
-            Leaf::Length(NoCalcLength::Absolute(ref mut abs)) => {
-                *abs = AbsoluteLength::Px(abs.to_px())
+            Leaf::Length(ref mut l) => {
+                if let Some(px) = l.to_px_if_absolute() {
+                    *l = NoCalcLength::from_px(px);
+                }
             },
             Leaf::Resolution(ref mut r) => *r = NoCalcResolution::from_dppx(r.dppx()),
             Leaf::Time(ref mut t) => *t = NoCalcTime::from_seconds(t.seconds()),
@@ -615,7 +594,7 @@ fn parse_anchor_function_fallback<'i, 't>(
                 if value != 0.0 {
                     return Err(i.new_custom_error(StyleParseErrorKind::UnspecifiedError));
                 }
-                Leaf::Length(NoCalcLength::Absolute(AbsoluteLength::Px(0.0)))
+                Leaf::Length(NoCalcLength::from_px(0.0))
             },
             &Token::Dimension {
                 value, ref unit, ..
@@ -641,6 +620,7 @@ fn parse_anchor_function_fallback<'i, 't>(
     )?
     .into_length_or_percentage(AllowedNumericType::All)
     .map_err(|_| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))?
+    .0
     .node;
     Ok(Box::new(GenericAnchorFunctionFallback::new(true, node)))
 }
@@ -993,7 +973,7 @@ impl CalcNode {
 
                         let a = a.into_length_or_percentage(AllowedNumericType::All)?;
                         let b = b.into_length_or_percentage(AllowedNumericType::All)?;
-                        let (a, b) = CalcNumeric::same_unit_length_as(&a, &b).ok_or(())?;
+                        let (a, b) = CalcLengthPercentage::same_unit_length_as(&a, &b).ok_or(())?;
 
                         Ok(a.atan2(b))
                     })?;
@@ -1249,7 +1229,7 @@ impl CalcNode {
     pub fn into_length_or_percentage(
         mut self,
         clamping_mode: AllowedNumericType,
-    ) -> Result<CalcNumeric, ()> {
+    ) -> Result<CalcLengthPercentage, ()> {
         self.simplify_and_sort();
 
         // Although we allow numbers inside CalcNumeric, calculations that resolve to a
@@ -1258,10 +1238,10 @@ impl CalcNode {
         if !CalcUnits::LENGTH_PERCENTAGE.intersects(unit) {
             Err(())
         } else {
-            Ok(CalcNumeric {
+            Ok(CalcLengthPercentage(CalcNumeric {
                 clamping_mode,
                 node: self,
-            })
+            }))
         }
     }
 
@@ -1420,7 +1400,7 @@ impl CalcNode {
         clamping_mode: AllowedNumericType,
         function: MathFunction,
         allow_anchor: AllowAnchorPositioningFunctions,
-    ) -> Result<CalcNumeric, ParseError<'i>> {
+    ) -> Result<CalcLengthPercentage, ParseError<'i>> {
         let allowed = if allow_anchor == AllowAnchorPositioningFunctions::No {
             AllowParse::new(CalcUnits::LENGTH_PERCENTAGE)
         } else {
@@ -1465,7 +1445,7 @@ impl CalcNode {
         input: &mut Parser<'i, 't>,
         clamping_mode: AllowedNumericType,
         function: MathFunction,
-    ) -> Result<CalcNumeric, ParseError<'i>> {
+    ) -> Result<CalcLengthPercentage, ParseError<'i>> {
         Self::parse(context, input, function, AllowParse::new(CalcUnits::LENGTH))?
             .into_length_or_percentage(clamping_mode)
             .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
@@ -1525,18 +1505,5 @@ impl CalcNode {
         )?
         .into_resolution()
         .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
-    }
-
-    /// Constructs a new calculation tree that replaces leaf nodes with their computed values
-    /// if they can only be resolved at computed value time.
-    pub fn with_computed_context(&self, context: &computed::Context) -> Self {
-        self.map_leaves(|leaf| match leaf {
-            // Lengths can contain relative units that can only resolve at computed value time
-            Leaf::Length(length) => Leaf::Length(NoCalcLength::from_px(
-                length.to_computed_value(context).px(),
-            )),
-            // Other nodes have been resolved eagerly at parse time
-            _ => leaf.clone(),
-        })
     }
 }

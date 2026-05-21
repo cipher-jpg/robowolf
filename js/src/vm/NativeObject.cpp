@@ -1204,8 +1204,7 @@ static MOZ_ALWAYS_INLINE bool PreserveAnyUnpreservedWrapper(
     return true;
   }
 
-  JS::Value objectWrapperSlot =
-      JS::GetReservedSlot(obj, JS_OBJECT_WRAPPER_SLOT);
+  JS::Value objectWrapperSlot = obj->getReservedSlot(JS_OBJECT_WRAPPER_SLOT);
   if (objectWrapperSlot.isUndefined() || !objectWrapperSlot.toPrivate()) {
     return true;
   }
@@ -1221,6 +1220,17 @@ static MOZ_ALWAYS_INLINE bool CallAddPropertyHook(JSContext* cx,
                                                   Handle<NativeObject*> obj,
                                                   HandleId id,
                                                   HandleValue value) {
+  // Inline addProperty for array objects.
+  if (obj->is<ArrayObject>()) {
+    ArrayObject* arr = &obj->as<ArrayObject>();
+    uint32_t length = arr->length();
+    uint32_t index;
+    if (IdIsIndex(id, &index) && index >= length) {
+      arr->setLength(cx, index + 1);
+    }
+    return true;
+  }
+
   // Ensure any wrapper is preserved first.
   if (!PreserveAnyUnpreservedWrapper(cx, obj)) {
     return false;
@@ -1388,8 +1398,10 @@ static MOZ_ALWAYS_INLINE bool AddOrChangeProperty(
     }
     if (edResult == DenseElementResult::Success) {
       obj->setDenseElement(index, desc.value());
-      if (!CallAddPropertyHookDense(cx, obj, index, desc.value())) {
-        return false;
+      if constexpr (AddOrChange == IsAddOrChange::Add) {
+        if (!CallAddPropertyHookDense(cx, obj, index, desc.value())) {
+          return false;
+        }
       }
       return true;
     }
@@ -1465,16 +1477,29 @@ static MOZ_ALWAYS_INLINE bool AddOrChangeProperty(
       }
       if (edResult == DenseElementResult::Success) {
         MOZ_ASSERT(!desc.isAccessorDescriptor());
-        return CallAddPropertyHookDense(cx, obj, index, desc.value());
+        if constexpr (AddOrChange == IsAddOrChange::Add) {
+          if (!CallAddPropertyHookDense(cx, obj, index, desc.value())) {
+            return false;
+          }
+        }
+        return true;
       }
     }
   }
 
-  if (desc.isDataDescriptor()) {
-    return CallAddPropertyHook(cx, obj, id, desc.value());
+  if constexpr (AddOrChange == IsAddOrChange::Add) {
+    if (desc.isDataDescriptor()) {
+      if (!CallAddPropertyHook(cx, obj, id, desc.value())) {
+        return false;
+      }
+    } else {
+      if (!CallAddPropertyHook(cx, obj, id, UndefinedHandleValue)) {
+        return false;
+      }
+    }
   }
 
-  return CallAddPropertyHook(cx, obj, id, UndefinedHandleValue);
+  return true;
 }
 
 // Versions of AddOrChangeProperty optimized for adding a plain data property.

@@ -15,6 +15,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_intl.h"
 #include "mozilla/StaticPrefs_test.h"
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextControlElement.h"
@@ -668,7 +669,10 @@ void IMEContentObserver::ScrollPositionChanged() {
     return;
   }
 
-  MaybeNotifyIMEOfPositionChange();
+  // This may occur continuously. So, let's wait for some things to query the
+  // result because it'll require to flush the layout and compute the character
+  // rects with the expensive paths.
+  MaybeNotifyIMEOfPositionChange(Immediately::No);
 }
 
 NS_IMETHODIMP
@@ -678,7 +682,7 @@ IMEContentObserver::Reflow(DOMHighResTimeStamp aStart,
     return NS_OK;
   }
 
-  MaybeNotifyIMEOfPositionChange();
+  MaybeNotifyIMEOfPositionChange(Immediately::Yes);
   return NS_OK;
 }
 
@@ -689,7 +693,7 @@ IMEContentObserver::ReflowInterruptible(DOMHighResTimeStamp aStart,
     return NS_OK;
   }
 
-  MaybeNotifyIMEOfPositionChange();
+  MaybeNotifyIMEOfPositionChange(Immediately::Yes);
   return NS_OK;
 }
 
@@ -703,9 +707,8 @@ nsresult IMEContentObserver::HandleQueryContentEvent(
   // value.  Note that don't update selection cache here since if you update
   // selection cache here, IMENotificationSender won't notify IME of selection
   // change because it looks like that the selection isn't actually changed.
-  const bool isSelectionCacheAvailable = aEvent->mUseNativeLineBreak &&
-                                         mSelectionData.IsInitialized() &&
-                                         !mNeedsToNotifyIMEOfSelectionChange;
+  const bool isSelectionCacheAvailable =
+      mSelectionData.IsInitialized() && !mNeedsToNotifyIMEOfSelectionChange;
   if (isSelectionCacheAvailable && aEvent->mMessage == eQuerySelectedText &&
       aEvent->mInput.mSelectionType == SelectionType::eNormal) {
     aEvent->EmplaceReply();
@@ -791,15 +794,14 @@ nsresult IMEContentObserver::MaybeHandleSelectionEvent(
   NS_ASSERTION(!mNeedsToNotifyIMEOfSelectionChange,
                "Selection cache has not been updated yet");
 
-  MOZ_LOG(
-      sIMECOLog, LogLevel::Debug,
-      ("0x%p MaybeHandleSelectionEvent(aEvent={ "
-       "mMessage=%s, mOffset=%u, mLength=%u, mReversed=%s, "
-       "mExpandToClusterBoundary=%s, mUseNativeLineBreak=%s }), "
-       "mSelectionData=%s",
-       this, ToChar(aEvent->mMessage), aEvent->mOffset, aEvent->mLength,
-       ToChar(aEvent->mReversed), ToChar(aEvent->mExpandToClusterBoundary),
-       ToChar(aEvent->mUseNativeLineBreak), ToString(mSelectionData).c_str()));
+  MOZ_LOG(sIMECOLog, LogLevel::Debug,
+          ("0x%p MaybeHandleSelectionEvent(aEvent={ "
+           "mMessage=%s, mOffset=%u, mLength=%u, mReversed=%s, "
+           "mExpandToClusterBoundary=%s }), "
+           "mSelectionData=%s",
+           this, ToChar(aEvent->mMessage), aEvent->mOffset, aEvent->mLength,
+           ToChar(aEvent->mReversed), ToChar(aEvent->mExpandToClusterBoundary),
+           ToString(mSelectionData).c_str()));
 
   // When we have Selection cache, and the caller wants to set same selection
   // range, we shouldn't try to compute same range because it may be impossible
@@ -807,12 +809,8 @@ nsresult IMEContentObserver::MaybeHandleSelectionEvent(
   // serialized with line breaks like close tags of inline elements.  In that
   // case, inserting new text at different point may be different from intention
   // of users or web apps which set current selection.
-  // FIXME: We cache only selection data computed with native line breaker
-  // lengths.  Perhaps, we should improve the struct to have both data of
-  // offset and length.  E.g., adding line break counts for both offset and
-  // length.
-  if (!mNeedsToNotifyIMEOfSelectionChange && aEvent->mUseNativeLineBreak &&
-      mSelectionData.IsInitialized() && mSelectionData.HasRange() &&
+  if (!mNeedsToNotifyIMEOfSelectionChange && mSelectionData.IsInitialized() &&
+      mSelectionData.HasRange() &&
       mSelectionData.StartOffset() == aEvent->mOffset &&
       mSelectionData.Length() == aEvent->mLength) {
     if (RefPtr<Selection> selection = GetSelection()) {
@@ -986,8 +984,7 @@ void IMEContentObserver::CharacterDataChanged(
   } else {
     nsresult rv = ContentEventHandler::GetFlatTextLengthInRange(
         RawNodePosition::BeforeFirstContentOf(*mRootElement),
-        RawNodePosition(aContent, aInfo.mChangeStart), mRootElement, &offset,
-        LINE_BREAK_TYPE_NATIVE);
+        RawNodePosition(aContent, aInfo.mChangeStart), mRootElement, &offset);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return;
     }
@@ -1469,7 +1466,8 @@ void IMEContentObserver::MaybeNotifyIMEOfSelectionChange(
   FlushMergeableNotifications();
 }
 
-void IMEContentObserver::MaybeNotifyIMEOfPositionChange() {
+void IMEContentObserver::MaybeNotifyIMEOfPositionChange(
+    Immediately aImmediately) {
   MOZ_LOG(sIMECOLog, LogLevel::Verbose,
           ("0x%p MaybeNotifyIMEOfPositionChange()", this));
   // If reflow is caused by ContentEventHandler during PositionChangeEvent
@@ -1484,14 +1482,14 @@ void IMEContentObserver::MaybeNotifyIMEOfPositionChange() {
              this));
     return;
   }
-  PostPositionChangeNotification();
+  PostPositionChangeNotification(aImmediately);
   FlushMergeableNotifications();
 }
 
 void IMEContentObserver::CancelNotifyingIMEOfPositionChange() {
   MOZ_LOG(sIMECOLog, LogLevel::Debug,
           ("0x%p CancelNotifyIMEOfPositionChange()", this));
-  mNeedsToNotifyIMEOfPositionChange = false;
+  mTicksUntilNotifyIMEOfPositionChange = 0;
 }
 
 void IMEContentObserver::MaybeNotifyCompositionEventHandled() {
@@ -1533,11 +1531,29 @@ bool IMEContentObserver::UpdateSelectionCache(bool aRequireFlush /* = true */) {
   return true;
 }
 
-void IMEContentObserver::PostPositionChangeNotification() {
+void IMEContentObserver::PostPositionChangeNotification(
+    Immediately aImmediately) {
   MOZ_LOG(sIMECOLog, LogLevel::Debug,
-          ("0x%p PostPositionChangeNotification()", this));
+          ("0x%p PostPositionChangeNotification(aImmediately=%s)", this,
+           YesOrNo(static_cast<bool>(aImmediately))));
 
-  mNeedsToNotifyIMEOfPositionChange = true;
+  // If we need to send the notification immediately, we should do it in the
+  // next tick.
+  if (aImmediately == Immediately::Yes) {
+    mTicksUntilNotifyIMEOfPositionChange = 1u;
+    return;
+  }
+
+  // Otherwise, we should send the notification after some ticks. To avoid
+  // delaying IME UI updates too much, apply the delay only when there is no
+  // pending position change notification.
+  if (!mTicksUntilNotifyIMEOfPositionChange) {
+    mTicksUntilNotifyIMEOfPositionChange = static_cast<
+        uint8_t>(std::min<uint32_t>(
+        StaticPrefs::
+            intl_ime_content_observer_notifications_position_change_ticks_after_scrolling(),
+        UINT8_MAX));
+  }
 }
 
 void IMEContentObserver::PostCompositionEventHandledNotification() {
@@ -1639,7 +1655,8 @@ void IMEContentObserver::FlushMergeableNotifications() {
   if (mNeedsToNotifyIMEOfTextChange && !NeedsTextChangeNotification()) {
     CancelNotifyingIMEOfTextChange();
   }
-  if (mNeedsToNotifyIMEOfPositionChange && !NeedsPositionChangeNotification()) {
+  if (mTicksUntilNotifyIMEOfPositionChange &&
+      !NeedsPositionChangeNotification()) {
     CancelNotifyingIMEOfPositionChange();
   }
 
@@ -1889,6 +1906,11 @@ IMEContentObserver::IMENotificationSender::Run() {
     return NS_OK;
   }
 
+  const bool allowToNotifyIMEOfPositionChange =
+      observer->mNeedsToNotifyIMEOfTextChange ||
+      observer->mNeedsToNotifyIMEOfSelectionChange ||
+      observer->mNeedsToNotifyIMEOfCompositionEventHandled ||
+      observer->mTicksUntilNotifyIMEOfPositionChange == 1;
   if (observer->mNeedsToNotifyIMEOfTextChange) {
     observer->mNeedsToNotifyIMEOfTextChange = false;
     SendTextChange();
@@ -1910,11 +1932,27 @@ IMEContentObserver::IMENotificationSender::Run() {
   // selection change notification causes either a text change or another
   // selection change, we should notify IME of those before sending a position
   // change notification.
-  if (!observer->mNeedsToNotifyIMEOfTextChange &&
+  if (observer->mTicksUntilNotifyIMEOfPositionChange &&
+      !observer->mNeedsToNotifyIMEOfTextChange &&
       !observer->mNeedsToNotifyIMEOfSelectionChange) {
-    if (observer->mNeedsToNotifyIMEOfPositionChange) {
-      observer->mNeedsToNotifyIMEOfPositionChange = false;
+    observer->mTicksUntilNotifyIMEOfPositionChange--;
+    // If text or selection is changed, IME may need to the latest layout
+    // information immediately. Thus, we need to send position change
+    // notification right now.  Otherwise, we should put it off to stop
+    // notifying too many position change notifications during a scroll or a
+    // layout change caused by the web app.
+    if (allowToNotifyIMEOfPositionChange) {
+      observer->mTicksUntilNotifyIMEOfPositionChange = 0;
       SendPositionChange();
+    } else {
+      // If we need to notify IME of a position change later, we should enqueue
+      // this again to save the cost of creating new sender and notify IME of
+      // the other things at that time.
+      if (observer->mQueuedSender != this) {
+        observer->mQueuedSender = new IMENotificationSender(observer);
+      }
+      observer->mQueuedSender->Dispatch(observer->mDocShell);
+      return NS_OK;
     }
   }
 
@@ -1923,7 +1961,7 @@ IMEContentObserver::IMENotificationSender::Run() {
   // events are handled completely.
   if (!observer->mNeedsToNotifyIMEOfTextChange &&
       !observer->mNeedsToNotifyIMEOfSelectionChange &&
-      !observer->mNeedsToNotifyIMEOfPositionChange) {
+      !observer->mTicksUntilNotifyIMEOfPositionChange) {
     if (observer->mNeedsToNotifyIMEOfCompositionEventHandled) {
       observer->mNeedsToNotifyIMEOfCompositionEventHandled = false;
       SendCompositionEventHandled();
@@ -2162,7 +2200,7 @@ void IMEContentObserver::IMENotificationSender::SendPositionChange() {
              "does not send notification due to unsafe, retrying to send "
              "NOTIFY_IME_OF_POSITION_CHANGE...",
              this));
-    observer->PostPositionChangeNotification();
+    observer->PostPositionChangeNotification(Immediately::Yes);
     return;
   }
 
@@ -2344,8 +2382,7 @@ nsresult IMEContentObserver::FlatTextCache::
   uint32_t length = 0;
   nsresult rv = ContentEventHandler::GetFlatTextLengthInRange(
       RawNodePosition::BeforeFirstContentOf(*aRootElement),
-      RawNodePosition::After(aContent), aRootElement, &length,
-      LineBreakType::LINE_BREAK_TYPE_NATIVE);
+      RawNodePosition::After(aContent), aRootElement, &length);
   if (NS_FAILED(rv)) {
     Clear(aCallerName);
     return rv;
@@ -2540,7 +2577,7 @@ IMEContentObserver::FlatTextCache::ComputeTextLengthOfContent(
     start.mAfterOpenTag = false;
     nsresult rv = ContentEventHandler::GetFlatTextLengthInRange(
         start, RawNodePosition::AtEndOf(aContent), aRootElement, &textLength,
-        LineBreakType::LINE_BREAK_TYPE_NATIVE, /* aIsRemovingNode = */ true);
+        /* aIsRemovingNode = */ true);
     if (NS_FAILED(rv)) {
       return Err(rv);
     }
@@ -2558,8 +2595,8 @@ IMEContentObserver::FlatTextCache::ComputeTextLengthBeforeContent(
   uint32_t textLengthBeforeContent = 0;
   nsresult rv = ContentEventHandler::GetFlatTextLengthInRange(
       RawNodePosition::BeforeFirstContentOf(*aRootElement),
-      RawNodePosition::Before(aContent), aRootElement, &textLengthBeforeContent,
-      LineBreakType::LINE_BREAK_TYPE_NATIVE);
+      RawNodePosition::Before(aContent), aRootElement,
+      &textLengthBeforeContent);
   if (NS_FAILED(rv)) {
     return Err(rv);
   }
@@ -2574,8 +2611,7 @@ Result<uint32_t, nsresult> IMEContentObserver::FlatTextCache::
   uint32_t textLength = 0;
   nsresult rv = ContentEventHandler::GetFlatTextLengthInRange(
       RawNodePosition::Before(aStartContent),
-      RawNodePosition::After(aEndContent), aRootElement, &textLength,
-      LineBreakType::LINE_BREAK_TYPE_NATIVE);
+      RawNodePosition::After(aEndContent), aRootElement, &textLength);
   if (NS_FAILED(rv)) {
     return Err(rv);
   }
@@ -2592,8 +2628,7 @@ IMEContentObserver::FlatTextCache::ComputeTextLengthBeforeFirstContentOf(
       // Include the line break caused by open tag of aContainer if it's an
       // element when we cache text length before first content of aContainer.
       RawNodePosition(const_cast<nsINode*>(&aContainer), nullptr), aRootElement,
-      &lengthIncludingLineBreakCausedByOpenTagOfContent,
-      LineBreakType::LINE_BREAK_TYPE_NATIVE);
+      &lengthIncludingLineBreakCausedByOpenTagOfContent);
   if (NS_FAILED(rv)) {
     return Err(rv);
   }

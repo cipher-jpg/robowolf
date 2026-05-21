@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -42,7 +41,6 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import mozilla.components.feature.top.sites.TopSite
-import mozilla.components.support.utils.ext.isLandscape
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.History
 import org.mozilla.fenix.GleanMetrics.HomeBookmarks
@@ -56,7 +54,6 @@ import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.compose.MessageCard
 import org.mozilla.fenix.compose.home.HomeSectionHeader
 import org.mozilla.fenix.debugsettings.sportswidget.SportsWidgetDebugTool
-import org.mozilla.fenix.ext.isLargeWindow
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.bookmarks.Bookmark
 import org.mozilla.fenix.home.bookmarks.interactor.BookmarksInteractor
@@ -81,10 +78,9 @@ import org.mozilla.fenix.home.recentvisits.view.RecentlyVisited
 import org.mozilla.fenix.home.sessioncontrol.CollectionInteractor
 import org.mozilla.fenix.home.sessioncontrol.MessageCardInteractor
 import org.mozilla.fenix.home.setup.ui.SetupChecklist
-import org.mozilla.fenix.home.sports.ui.CountdownPromoCard
-import org.mozilla.fenix.home.sports.ui.FollowTeamPromoCard
-import org.mozilla.fenix.home.sports.ui.MatchCard
+import org.mozilla.fenix.home.sports.CountrySelectorSource
 import org.mozilla.fenix.home.sports.ui.SportsCountrySelectorBottomSheet
+import org.mozilla.fenix.home.sports.ui.SportsWidget
 import org.mozilla.fenix.home.store.HeaderState
 import org.mozilla.fenix.home.store.HomepageState
 import org.mozilla.fenix.home.store.NimbusMessageState
@@ -172,7 +168,6 @@ internal fun Homepage(
                         onLogoClicked = {
                             if (settings.showHomepageSportsWidget) showSportsCountrySelector = true
                         },
-                        onLogoLongClicked = interactor::onLogoLongClicked,
                     )
                 }
 
@@ -192,9 +187,11 @@ internal fun Homepage(
                         browsingModeChanged = browsingModeChanged,
                         isSportsWidgetEnabled = settings.enableHomepageSportsWidget,
                         onLogoClicked = {
-                            if (settings.showHomepageSportsWidget) showSportsCountrySelector = true
+                            if (settings.showHomepageSportsWidget) {
+                                interactor.onCountrySelectorShown(CountrySelectorSource.SPORTS_LOGO)
+                                showSportsCountrySelector = true
+                            }
                         },
-                        onLogoLongClicked = interactor::onLogoLongClicked,
                     )
                 }
             }
@@ -229,15 +226,24 @@ internal fun Homepage(
                             }
 
                             if (sportsWidgetState.isShown) {
-                                SportsWidgetSection(
+                                interactor.onSportsWidgetShown()
+                                SportsWidget(
                                     sportsWidgetState = sportsWidgetState,
                                     onDismiss = interactor::onSportsWidgetDismissed,
                                     onCountdownWidgetDismiss = interactor::onCountdownWidgetDismissed,
                                     onViewSchedule = interactor::onViewScheduleClicked,
-                                    onFollowTeam = {
+                                    onFollowTeam = { source ->
+                                        interactor.onCountrySelectorShown(source)
                                         showSportsCountrySelector = true
                                     },
                                     onSkip = interactor::onSkippedFollowTeam,
+                                    onGetCustomWallpaper = interactor::onGetCustomWallpaperClicked,
+                                    onRefresh = { source ->
+                                        interactor.onRefreshClicked(source)
+                                    },
+                                    onMatchClicked = { homeTeam, awayTeam, date ->
+                                        interactor.onMatchClicked(homeTeam, awayTeam, date)
+                                    },
                                 )
                             }
 
@@ -248,6 +254,7 @@ internal fun Homepage(
                                     interactor = interactor,
                                     cardBackgroundColor = cardBackgroundColor,
                                     recentTabs = recentTabs,
+                                    reducedTopSpacing = showPrivacyReport && showLongfoxEntryPoint,
                                 )
 
                                 if (showRecentSyncedTab) {
@@ -317,11 +324,17 @@ internal fun Homepage(
                             Spacer(Modifier.height(bottomPadding.dp))
 
                             if (showSportsCountrySelector) {
+                                val selectedCountryCode = sportsWidgetState.countriesSelected.firstOrNull()
                                 SportsCountrySelectorBottomSheet(
-                                    selectedCountryCode = sportsWidgetState.countriesSelected.firstOrNull(),
+                                    selectedCountryCode = selectedCountryCode,
+                                    eliminatedCountryCodes = sportsWidgetState.eliminatedCountries,
                                     onCountrySelected = { countryCode ->
-                                        interactor.onCountriesSelected(setOf(countryCode))
-                                        showSportsCountrySelector = false
+                                        val selection = if (countryCode == selectedCountryCode) {
+                                            emptySet()
+                                        } else {
+                                            setOf(countryCode)
+                                        }
+                                        interactor.onCountriesSelected(selection)
                                     },
                                     onDismiss = { showSportsCountrySelector = false },
                                 )
@@ -423,8 +436,10 @@ private fun RecentTabsSection(
     interactor: RecentTabInteractor,
     cardBackgroundColor: Color,
     recentTabs: List<RecentTab>,
+    reducedTopSpacing: Boolean = false,
 ) {
-    Spacer(modifier = Modifier.height(40.dp))
+    val topSpacing = if (reducedTopSpacing) 16.dp else 40.dp
+    Spacer(modifier = Modifier.height(topSpacing))
 
     Column(modifier = Modifier.padding(horizontal = horizontalMargin)) {
         HomeSectionHeader(
@@ -581,50 +596,6 @@ private fun CollectionsSection(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun SportsWidgetSection(
-    sportsWidgetState: SportsWidgetState,
-    onDismiss: () -> Unit,
-    onCountdownWidgetDismiss: () -> Unit,
-    onViewSchedule: () -> Unit,
-    onFollowTeam: () -> Unit,
-    onSkip: () -> Unit,
-) {
-    Spacer(modifier = Modifier.height(44.dp))
-
-    val isLargeWindow = LocalContext.current.isLargeWindow()
-    val isLandscape = LocalContext.current.isLandscape()
-    val modifier = Modifier.fillMaxWidth(
-        fraction = when {
-            isLargeWindow || isLandscape -> 0.7f
-            else -> 1f
-        },
-    )
-
-    if (sportsWidgetState.isCountdownShown) {
-        val worldCupKickoffDate = "2026-06-11T00:00:00Z"
-        CountdownPromoCard(
-            dateInUtc = worldCupKickoffDate,
-            onViewSchedule = onViewSchedule,
-            onDismiss = onCountdownWidgetDismiss,
-            modifier = modifier.padding(horizontal = horizontalMargin),
-        )
-    } else if (sportsWidgetState.isFollowTeamsCardShown) {
-        FollowTeamPromoCard(
-            onFollowTeam = onFollowTeam,
-            onSkip = onSkip,
-            onDismiss = onDismiss,
-            modifier = modifier.padding(horizontal = horizontalMargin),
-        )
-    } else if (sportsWidgetState.matchCardState != null) {
-        MatchCard(
-            state = sportsWidgetState.matchCardState,
-            onMenuClick = {},
-            modifier = modifier.padding(horizontal = horizontalMargin),
-        )
     }
 }
 

@@ -18,10 +18,10 @@ tags = "os_integration"
 
 ["browser_accessibility_zoom.js"]
 
-["browser_languages_pane.js"]
-
 ["browser_setting_group_in_progress.js"]
 
 ["browser_setting_pane_redesign_promo.js"]
 
 ["browser_setting_pane_sub_pane.js"]
+
+["browser_sub_pane_navigation_selection.js"]

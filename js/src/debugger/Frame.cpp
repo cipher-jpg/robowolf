@@ -176,16 +176,8 @@ js::Debugger* js::DebuggerFrame::owner() const {
 }
 
 const JSClassOps DebuggerFrame::classOps_ = {
-    nullptr,                         // addProperty
-    nullptr,                         // delProperty
-    nullptr,                         // enumerate
-    nullptr,                         // newEnumerate
-    nullptr,                         // resolve
-    nullptr,                         // mayResolve
-    finalize,                        // finalize
-    nullptr,                         // call
-    nullptr,                         // construct
-    CallTraceMethod<DebuggerFrame>,  // trace
+    .finalize = finalize,
+    .trace = CallTraceMethod<DebuggerFrame>,
 };
 
 const JSClass DebuggerFrame::class_ = {
@@ -434,6 +426,11 @@ void DebuggerFrame::terminate(JS::GCContext* gcx, AbstractFramePtr frame) {
 
 #ifdef ENABLE_WASM_JSPI
   if (!getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).isUndefined()) {
+    if (onStepHandler()) {
+      AbstractFramePtr referent = AbstractFramePtr::fromRaw(
+          getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).toPrivate());
+      decrementStepperCounter(gcx, referent);
+    }
     setReservedSlot(WASM_CONT_FRAME_PTR_SLOT, JS::UndefinedValue());
   }
 #endif
@@ -855,6 +852,18 @@ bool DebuggerFrame::setOnStepHandler(JSContext* cx,
     } else if (!handler && prior) {
       frame->decrementStepperCounter(cx->gcContext(), script);
     }
+#ifdef ENABLE_WASM_JSPI
+  } else if (!frame->getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).isUndefined()) {
+    AbstractFramePtr referent = DebuggerFrame::getReferent(frame);
+
+    if (handler && !prior) {
+      if (!frame->incrementStepperCounter(cx, referent)) {
+        return false;
+      }
+    } else if (!handler && prior) {
+      frame->decrementStepperCounter(cx->gcContext(), referent);
+    }
+#endif
   } else {
     // If the frame is entirely dead, we still allow setting the onStep
     // handler, but it has no effect.
@@ -1270,7 +1279,12 @@ bool DebuggerFrame::isOnStack(JSContext* cx) const {
     MOZ_ASSERT(fp.isWasmDebugFrame());
     wasm::ContStack* stack = cx->wasm().findStackForAddress(
         cx, reinterpret_cast<uintptr_t>(fp.asWasmDebugFrame()));
-    return stack && stack->findIfActive();
+    // No stack means the frame address is on the main stack (not a continuation
+    // stack). canResume() means the continuation is suspended, not active.
+    if (!stack || stack->canResume()) {
+      return false;
+    }
+    return stack->findIfActive();
   }
 #endif
 
@@ -1870,7 +1884,7 @@ DebuggerArguments* DebuggerArguments::create(JSContext* cx, HandleObject proto,
     return nullptr;
   }
 
-  JS::SetReservedSlot(obj, FRAME_SLOT, ObjectValue(*frame));
+  obj->setReservedSlot(FRAME_SLOT, ObjectValue(*frame));
 
   MOZ_ASSERT(referent.numActualArgs() <= 0x7fffffff);
   unsigned fargc = referent.numActualArgs();

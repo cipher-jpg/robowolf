@@ -56,13 +56,24 @@ add_task(async function () {
     "toolboxServerError event has the expected stack"
   );
   ok(
-    events[0].extra.server_stack.includes("/document-event.js"),
+    events[0].extra.server_stack.includes(
+      "watchResources@resource://devtools/server/actors/watcher.js"
+    ),
     "toolboxServerError event has the expected server stack"
+  );
+  ok(
+    events[0].extra.server_content_process_stack.includes("/document-event.js"),
+    "toolboxServerError event has the expected server content process stack"
   );
   is(
     events[0].extra.packet_type,
     "watchResources",
     "toolboxServerError packet type is correct"
+  );
+  is(
+    events[0].extra.session_id,
+    toolbox.sessionId,
+    "toolboxServerError session_id matches the toolbox session id"
   );
 
   await toolbox.destroy();

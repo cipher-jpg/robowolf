@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use crate::{AsProcessReaderHandle, Pid, IO_TIMEOUT};
+use crate::{Pid, IO_TIMEOUT};
 use std::{
     ffi::{CStr, CString, OsString},
     mem::{zeroed, MaybeUninit},
@@ -50,12 +50,6 @@ impl ProcessHandle {
         Ok(ProcessHandle(unsafe {
             OwnedHandle::from_raw_handle(handle as RawHandle)
         }))
-    }
-}
-
-impl AsProcessReaderHandle for ProcessHandle {
-    fn as_handle(&self) -> process_reader::ProcessHandle {
-        self.0.as_raw_handle() as process_reader::ProcessHandle
     }
 }
 
@@ -166,7 +160,7 @@ fn cancel_overlapped_io(handle: BorrowedHandle, overlapped: &OVERLAPPED) -> bool
         return false;
     }
 
-    if overlapped.hEvent == 0 {
+    if overlapped.hEvent.is_null() {
         // No associated event, don't wait
         return true;
     }
@@ -430,7 +424,7 @@ impl OverlappedOperation {
         // operation from generating completion events. The event handle will
         // be notified instead when it completes.
         Ok(Box::new(OVERLAPPED {
-            hEvent: event.as_raw_handle() as HANDLE | 1,
+            hEvent: (event.as_raw_handle() as usize | 1) as HANDLE,
             ..unsafe { zeroed() }
         }))
     }
@@ -478,7 +472,7 @@ impl Drop for OverlappedOperation {
         let overlapped = self.overlapped.take();
         let buffer = self.buffer.take();
         if let Some(overlapped) = overlapped {
-            if overlapped.hEvent == 0 {
+            if overlapped.hEvent.is_null() {
                 return; // This operation should have already been cancelled.
             }
 

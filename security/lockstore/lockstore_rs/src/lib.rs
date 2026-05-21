@@ -5,12 +5,13 @@
 pub mod crypto;
 mod datastore;
 mod keystore;
+mod pbkdf2;
 mod utils;
 
 pub use crypto::CipherSuite;
 pub use crypto::DEFAULT_CIPHER_SUITE;
 pub use datastore::LockstoreDatastore;
-pub use keystore::LockstoreKeystore;
+pub use keystore::{ConnectionHandle, Keystore};
 #[cfg(test)]
 pub use utils::{bytes_to_value, value_to_bytes};
 
@@ -50,12 +51,22 @@ pub enum LockstoreError {
     NotExtractable(String),
     #[error("Authentication cancelled")]
     AuthenticationCancelled,
+    #[error("Authentication failed")]
+    AuthenticationFailed,
     #[error("Token error: {0}")]
     TokenError(String),
     #[error("Invalid kek_ref: {0}")]
     InvalidKekRef(String),
     #[error("NSS initialization failed: {0}")]
     NssInitialization(String),
+    #[error("Primary password is locked")]
+    Locked,
+    #[error("Primary password is incorrect")]
+    WrongPassword,
+    #[error("Primary password is not initialized")]
+    NotInitialized,
+    #[error("Locking failure: {0}")]
+    LockingFailure(String),
 }
 
 impl From<serde_json::Error> for LockstoreError {
@@ -71,48 +82,57 @@ impl From<NssError> for LockstoreError {
 }
 
 pub const KEK_REF_PREFIX: &str = "lockstore::kek::";
+pub const KEK_REF_LOCAL: &str = "lockstore::kek::local";
+pub const KEK_REF_PRP: &str = "lockstore::kek::primary_password";
 
+/// The kind of KEK identified by a `kek_ref`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SecurityLevel {
+pub enum KekType {
     #[default]
     #[serde(rename = "local")]
     LocalKey,
     #[serde(rename = "pkcs11token")]
     Pkcs11Token,
+    #[serde(rename = "primary_password")]
+    PrimaryPassword,
     #[cfg(test)]
     #[serde(rename = "test")]
-    TestLevel,
+    Test,
 }
 
-impl SecurityLevel {
+impl KekType {
     pub fn as_str(&self) -> &str {
         match self {
-            SecurityLevel::LocalKey => "local",
-            SecurityLevel::Pkcs11Token => "pkcs11token",
+            KekType::LocalKey => "local",
+            KekType::Pkcs11Token => "pkcs11token",
+            KekType::PrimaryPassword => "primary_password",
             #[cfg(test)]
-            SecurityLevel::TestLevel => "test",
+            KekType::Test => "test",
         }
     }
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "local" => Some(SecurityLevel::LocalKey),
-            "pkcs11token" => Some(SecurityLevel::Pkcs11Token),
+            "local" => Some(KekType::LocalKey),
+            "pkcs11token" => Some(KekType::Pkcs11Token),
+            "primary_password" => Some(KekType::PrimaryPassword),
             #[cfg(test)]
-            "test" => Some(SecurityLevel::TestLevel),
+            "test" => Some(KekType::Test),
             _ => None,
         }
     }
 
     pub fn from_kek_ref(kek_ref: &str) -> Result<Self, LockstoreError> {
-        if kek_ref == "lockstore::kek::local" {
-            Ok(SecurityLevel::LocalKey)
+        if kek_ref == KEK_REF_LOCAL {
+            Ok(KekType::LocalKey)
+        } else if kek_ref == KEK_REF_PRP {
+            Ok(KekType::PrimaryPassword)
         } else if kek_ref.starts_with("lockstore::kek::pkcs11:") {
-            Ok(SecurityLevel::Pkcs11Token)
+            Ok(KekType::Pkcs11Token)
         } else {
             #[cfg(test)]
             if kek_ref == "lockstore::kek::test" {
-                return Ok(SecurityLevel::TestLevel);
+                return Ok(KekType::Test);
             }
             Err(LockstoreError::InvalidKekRef(kek_ref.to_string()))
         }

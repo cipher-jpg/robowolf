@@ -4,6 +4,7 @@
 
 #include "ViewTimeline.h"
 
+#include "mozilla/Keyframe.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/ElementInlines.h"
@@ -19,8 +20,8 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(ViewTimeline, ScrollTimeline)
 /* static */
 already_AddRefed<ViewTimeline> ViewTimeline::MakeNamed(
     Document* aDocument, Element* aSubject,
-    const PseudoStyleRequest& aPseudoRequest,
-    const StyleViewTimeline& aStyleTimeline) {
+    const PseudoStyleRequest& aPseudoRequest, StyleScrollAxis aAxis,
+    const StyleViewTimelineInset& aInset) {
   MOZ_ASSERT(NS_IsMainThread());
 
   // 1. Create an anonymous scroller, as if `scroll(nearest)`.
@@ -29,9 +30,8 @@ already_AddRefed<ViewTimeline> ViewTimeline::MakeNamed(
       NonOwningAnimationTarget{aSubject, aPseudoRequest});
 
   // 2. Create timeline.
-  return MakeAndAddRef<ViewTimeline>(
-      aDocument, scroller, aStyleTimeline.GetAxis(), aSubject,
-      aPseudoRequest.mType, aStyleTimeline.GetInset());
+  return MakeAndAddRef<ViewTimeline>(aDocument, scroller, aAxis, aSubject,
+                                     aPseudoRequest.mType, aInset);
 }
 
 /* static */
@@ -72,19 +72,20 @@ Nullable<double> ViewTimeline::GetEndOffset() const {
 
 void ViewTimeline::ReplacePropertiesWith(
     Element* aSubjectElement, const PseudoStyleRequest& aPseudoRequest,
-    const StyleViewTimeline& aNew) {
+    nsAtom* aName, StyleScrollAxis aAxis,
+    const StyleViewTimelineInset& aInset) {
   mSubject = aSubjectElement;
   mSubjectPseudoType = aPseudoRequest.mType;
-  mAxis = aNew.GetAxis();
+  mAxis = aAxis;
   // FIXME: Bug 1817073. We assume it is a non-animatable value for now.
-  mInset = aNew.GetInset();
+  mInset = aInset;
 
   for (auto* anim = mAnimationOrder.getFirst(); anim;
        anim = static_cast<LinkedListElement<Animation>*>(anim)->getNext()) {
     MOZ_ASSERT(anim->GetTimeline() == this);
-    MOZ_ASSERT(anim->GetTimelineName() == aNew.GetName());
+    MOZ_ASSERT(anim->GetTimelineName() == aName);
     // Set this so we just PostUpdate() for this animation.
-    anim->SetTimeline(this, aNew.GetName());
+    anim->SetTimeline(this, aName);
   }
 }
 
@@ -122,7 +123,7 @@ static std::pair<nscoord, nscoord> ComputeInsets(
   return {startInset, endInset};
 }
 
-void ViewTimeline::UpdateCachedCurrentTime() {
+bool ViewTimeline::UpdateCachedCurrentTime() {
   const auto prevCachedCurrentTime = std::move(mCachedCurrentTime);
 
   mCachedCurrentTime.reset();
@@ -130,14 +131,14 @@ void ViewTimeline::UpdateCachedCurrentTime() {
   const auto state = GetState();
   // If no layout box, this timeline is inactive.
   if (const auto* e = state.mSource.mElement; !e || !e->GetPrimaryFrame()) {
-    return;
+    return prevCachedCurrentTime.isSome();
   }
 
   // if this is not a scroller container, this timeline is inactive.
   const ScrollContainerFrame* scrollContainerFrame =
       state.GetScrollContainerFrame();
   if (!scrollContainerFrame) {
-    return;
+    return prevCachedCurrentTime.isSome();
   }
 
   // If there is no scrollable overflow, then the ScrollTimeline is inactive.
@@ -145,7 +146,7 @@ void ViewTimeline::UpdateCachedCurrentTime() {
   const auto orientation = state.Axis();
   if (!scrollContainerFrame->GetAvailableScrollingDirections().contains(
           orientation)) {
-    return;
+    return prevCachedCurrentTime.isSome();
   }
 
   // Note: We may fail to get the pseudo element (or its primary frame) if it is
@@ -162,7 +163,7 @@ void ViewTimeline::UpdateCachedCurrentTime() {
     // No principal box of the subject, so we cannot compute the offset. This
     // may happen when we clear all animation collections during unbinding from
     // the tree.
-    return;
+    return prevCachedCurrentTime.isSome();
   }
 
   // The current scroll position and scroll range.
@@ -192,13 +193,21 @@ void ViewTimeline::UpdateCachedCurrentTime() {
       ComputeInsets(scrollContainerFrame, orientation, mAxis, mInset);
 
   // Adjuct the positions and sizes based on the physical axis.
+  const WritingMode wm = scrolledFrame->GetWritingMode();
   switch (orientation) {
-    case layers::ScrollDirection::eVertical:
+    case layers::ScrollDirection::eVertical: {
+      // Mirror of the R-L case below for bottom-to-top scrolling (vertical
+      // writing-mode + direction:rtl), where the inline axis is vertical and
+      // reversed, so scrollPosition.y is zero or negative.
+      const bool isBottomToTop = wm.IsVertical() && wm.IsInlineReversed();
       mCachedCurrentTime.emplace(CurrentTimeData{
           ScrollTimeline::CurrentTimeData{scrollPosition.y, scrollRange.height},
-          scrollPort.height, subjectRect.y, subjectRect.height,
-          sideInsets.first, sideInsets.second});
+          scrollPort.height,
+          isBottomToTop ? scrolledFrame->GetSize().height - subjectRect.YMost()
+                        : subjectRect.y,
+          subjectRect.height, sideInsets.first, sideInsets.second});
       break;
+    }
     case layers::ScrollDirection::eHorizontal:
       mCachedCurrentTime.emplace(CurrentTimeData{
           ScrollTimeline::CurrentTimeData{scrollPosition.x, scrollRange.width},
@@ -208,7 +217,7 @@ void ViewTimeline::UpdateCachedCurrentTime() {
           // start border edge of the subject, and compute its position by using
           // the x-most side of the scrolled frame as the origin on the
           // horizontal axis.
-          scrolledFrame->GetWritingMode().IsPhysicalRTL()
+          wm.IsPhysicalRTL()
               ? scrolledFrame->GetSize().width - subjectRect.XMost()
               : subjectRect.x,
           subjectRect.width, sideInsets.first, sideInsets.second});
@@ -219,6 +228,7 @@ void ViewTimeline::UpdateCachedCurrentTime() {
       prevCachedCurrentTime->IsChanged(*mCachedCurrentTime)) {
     TimelineDataDidChange();
   }
+  return mCachedCurrentTime != prevCachedCurrentTime;
 }
 
 // FIXME: Bug 2018678. Need to be adjusted for sticky positioning element.
@@ -336,13 +346,39 @@ std::pair<nscoord, nscoord> ViewTimeline::IntervalForTimelineRangeName(
       return {0, mCachedCurrentTime->mScrollData.mMaxScrollOffset};
   }
 
-  MOZ_ASSERT_UNREACHABLE("All cases should be hanlded.");
+  MOZ_ASSERT_UNREACHABLE("All cases should be handled.");
   // Use cover as the default value. However, we shouldn't be here.
   return {alignedSubjectStartViewEnd, alignedSubjectEndViewStart};
 }
 
-// TODO: Bug 2020822. We have to align the start time of animation with this
-// attachment range. Otherwise, the animation-range-start doesn't work.
+// Calculate the offset (as a percentage) for a pair of range name and offset,
+// based on the full timeline range (i.e. `cover` for view-timeline).
+template <typename F>
+double ViewTimeline::ComputeOffsetToTimelineRange(
+    const StyleTimelineRangeName& aName,
+    const ScrollTimeline::ComputedTimelineData& aData,
+    F&& aFuncToResolveValue) const {
+  const auto [nameStart, nameEnd] = IntervalForTimelineRangeName(aName, aData);
+  const auto timelineRange = aData.mEnd - aData.mStart;
+  const auto nameRange = nameEnd - nameStart;
+  const auto positionInNameRange = nameStart + aFuncToResolveValue(nameRange);
+  const auto positionInTimeline = positionInNameRange - aData.mStart;
+  return static_cast<double>(positionInTimeline) /
+         static_cast<double>(timelineRange);
+}
+
+Maybe<double> ViewTimeline::MapKeyframeOffsetToOffset(
+    const StyleTimelineRangeName aName, const double aPercentage) const {
+  const auto& data = ComputeTimelineData();
+  if (!data) {
+    return Nothing();
+  }
+
+  return Some(ComputeOffsetToTimelineRange(
+      aName, *data,
+      [&](const nscoord aBasis) { return aPercentage * aBasis; }));
+}
+
 std::pair<double, double> ViewTimeline::IntervalForAttachmentRange(
     const AnimationRange& aStyleRange) const {
   const auto& data = ComputeTimelineData();
@@ -356,15 +392,9 @@ std::pair<double, double> ViewTimeline::IntervalForAttachmentRange(
   auto computeNamedRangeEdgeAsPercentage =
       [&](const StyleGenericAnimationRangeValue<StyleLengthPercentage>&
               aValue) {
-        const auto [nameStart, nameEnd] =
-            IntervalForTimelineRangeName(aValue.name, *data);
-        const auto timelineRange = data->mEnd - data->mStart;
-        const auto nameRange = nameEnd - nameStart;
-        const auto positionInNameRange =
-            nameStart + aValue.lp.Resolve(nameRange);
-        const auto positionInTimeline = positionInNameRange - data->mStart;
-        return static_cast<double>(positionInTimeline) /
-               static_cast<double>(timelineRange);
+        return ComputeOffsetToTimelineRange(
+            aValue.name, *data,
+            [&](const nscoord aBasis) { return aValue.lp.Resolve(aBasis); });
       };
   return {computeNamedRangeEdgeAsPercentage(aStyleRange.mStart),
           computeNamedRangeEdgeAsPercentage(aStyleRange.mEnd)};

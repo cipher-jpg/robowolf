@@ -297,12 +297,10 @@ class ReadOnlyInspectorDeclaration final : public nsDOMCSSDeclaration {
     return CSSStyleProperties_Binding::Wrap(aCx, this, aGivenProto);
   }
   // These ones are a bit sad, but matches e.g. nsComputedDOMStyle.
-  nsresult SetCSSDeclaration(DeclarationBlock* aDecl,
-                             MutationClosureData*) final {
+  nsresult SetCSSDeclaration(Block* aDecl, MutationClosureData*) final {
     MOZ_CRASH("called ReadOnlyInspectorDeclaration::SetCSSDeclaration");
   }
-  DeclarationBlock* GetOrCreateCSSDeclaration(Operation,
-                                              DeclarationBlock**) override {
+  Block* GetOrCreateCSSDeclaration(Operation, Block**) override {
     MOZ_CRASH("called ReadOnlyInspectorDeclaration::GetOrCreateCSSDeclaration");
   }
   ParsingEnvironment GetParsingEnvironment(nsIPrincipal*) const final {
@@ -418,7 +416,8 @@ void InspectorUtils::GetMatchingCSSRules(
     GlobalObject& aGlobalObject, Element& aElement, const nsAString& aPseudo,
     bool aIncludeVisitedStyle, bool aWithStartingStyle,
     nsTArray<OwningCSSRuleOrInspectorDeclaration>& aResult) {
-  auto pseudo = PseudoStyleRequest::Parse(aPseudo);
+  auto pseudo = PseudoStyleRequest::Parse(
+      aPseudo, aElement.OwnerDoc()->DefaultStyleAttrURLData());
   if (!pseudo) {
     return;
   }
@@ -693,8 +692,17 @@ static uint8_t ToServoCssType(InspectorPropertyType aType) {
 
 bool InspectorUtils::Supports(GlobalObject&, const nsACString& aDeclaration,
                               const SupportsOptions& aOptions) {
-  return Servo_CSSSupports(&aDeclaration, aOptions.mUserAgent, aOptions.mChrome,
-                           aOptions.mQuirks);
+  StyleCssSupportsParams params{
+      .origin =
+          aOptions.mUserAgent ? StyleOrigin::UserAgent : StyleOrigin::Author,
+      .url_context = aOptions.mChrome ? StyleCssSupportsUrlContext::Chrome
+                                      : StyleCssSupportsUrlContext::Default,
+      .quirks = aOptions.mQuirks
+                    ? nsCompatibility::eCompatibility_NavQuirks
+                    : nsCompatibility::eCompatibility_FullStandards,
+  };
+  return Servo_CSSSupports(&aDeclaration, &params,
+                           /* aUrlData = */ nullptr);
 }
 
 bool InspectorUtils::CssPropertySupportsType(GlobalObject& aGlobalObject,

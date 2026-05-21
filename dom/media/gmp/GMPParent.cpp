@@ -536,16 +536,14 @@ void GMPParent::CloseIfUnused() {
        mState == GMPState::Unloading) &&
       !IsUsed()) {
     // Ensure all timers are killed.
-    for (uint32_t i = mTimers.Length(); i > 0; i--) {
-      mTimers[i - 1]->Shutdown();
+    for (auto* timer : ManagedPGMPTimerParent()) {
+      static_cast<GMPTimerParent*>(timer)->Shutdown();
     }
 
     // Shutdown GMPStorage. Given that all protocol actors must be shutdown
     // (!Used() is true), all storage operations should be complete.
-    GMP_PARENT_LOG_DEBUG("%p shutdown storage (sz=%zu)", this,
-                         mStorage.Length());
-    for (size_t i = mStorage.Length(); i > 0; i--) {
-      mStorage[i - 1]->Shutdown();
+    for (auto* storage : ManagedPGMPStorageParent()) {
+      static_cast<GMPStorageParent*>(storage)->Shutdown();
     }
     Shutdown();
   }
@@ -881,49 +879,17 @@ void GMPParent::ActorDestroy(ActorDestroyReason aWhy) {
   }
 }
 
-PGMPStorageParent* GMPParent::AllocPGMPStorageParent() {
-  GMPStorageParent* p = new GMPStorageParent(mNodeId, this);
-  mStorage.AppendElement(p);  // Addrefs, released in DeallocPGMPStorageParent.
-  return p;
-}
-
-bool GMPParent::DeallocPGMPStorageParent(PGMPStorageParent* aActor) {
-  GMPStorageParent* p = static_cast<GMPStorageParent*>(aActor);
-  p->Shutdown();
-  mStorage.RemoveElement(p);
-  return true;
-}
-
-mozilla::ipc::IPCResult GMPParent::RecvPGMPStorageConstructor(
-    PGMPStorageParent* aActor) {
-  GMPStorageParent* p = (GMPStorageParent*)aActor;
-  if (NS_FAILED(p->Init())) {
-    // TODO: Verify if this is really a good reason to IPC_FAIL.
-    // There might be shutdown edge cases here.
-    return IPC_FAIL(this,
-                    "GMPParent::RecvPGMPStorageConstructor: p->Init() failed.");
+already_AddRefed<PGMPStorageParent> GMPParent::AllocPGMPStorageParent() {
+  auto p = MakeRefPtr<GMPStorageParent>(mNodeId, this);
+  if (NS_WARN_IF(NS_FAILED(p->Init()))) {
+    return nullptr;
   }
-  return IPC_OK();
+  return p.forget();
 }
 
-mozilla::ipc::IPCResult GMPParent::RecvPGMPTimerConstructor(
-    PGMPTimerParent* actor) {
-  return IPC_OK();
-}
-
-PGMPTimerParent* GMPParent::AllocPGMPTimerParent() {
+already_AddRefed<PGMPTimerParent> GMPParent::AllocPGMPTimerParent() {
   nsCOMPtr<nsISerialEventTarget> target = GMPEventTarget();
-  GMPTimerParent* p = new GMPTimerParent(target);
-  mTimers.AppendElement(
-      p);  // Released in DeallocPGMPTimerParent, or on shutdown.
-  return p;
-}
-
-bool GMPParent::DeallocPGMPTimerParent(PGMPTimerParent* aActor) {
-  GMPTimerParent* p = static_cast<GMPTimerParent*>(aActor);
-  p->Shutdown();
-  mTimers.RemoveElement(p);
-  return true;
+  return MakeAndAddRef<GMPTimerParent>(std::move(target));
 }
 
 bool ReadInfoField(GMPInfoFileParser& aParser, const nsCString& aKey,
@@ -1079,7 +1045,7 @@ RefPtr<GenericPromise> GMPParent::ReadGMPInfoFile(nsIFile* aFile) {
 
   nsTArray<nsCString> apiTokens;
   SplitAt(", ", apis, apiTokens);
-  for (nsCString api : apiTokens) {
+  for (const nsCString& api : apiTokens) {
     int32_t tagsStart = api.FindChar('[');
     if (tagsStart == 0) {
       // Not allowed to be the first character.
@@ -1105,7 +1071,7 @@ RefPtr<GenericPromise> GMPParent::ReadGMPInfoFile(nsIFile* aFile) {
             Substring(api, tagsStart + 1, tagsEnd - tagsStart - 1));
         nsTArray<nsCString> tagTokens;
         SplitAt(":", ts, tagTokens);
-        for (nsCString tag : tagTokens) {
+        for (const nsCString& tag : tagTokens) {
           cap.mAPITags.AppendElement(tag);
         }
       }

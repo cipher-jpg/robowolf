@@ -191,8 +191,7 @@ class ScrollTimeline : public AnimationTimeline,
   // scroll-timeline-name property.
   static already_AddRefed<ScrollTimeline> MakeNamed(
       Document* aDocument, Element* aReferenceElement,
-      const PseudoStyleRequest& aPseudoRequest,
-      const StyleScrollTimeline& aStyleTimeline);
+      const PseudoStyleRequest& aPseudoRequest, StyleScrollAxis aAxis);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ScrollTimeline, AnimationTimeline)
@@ -201,17 +200,14 @@ class ScrollTimeline : public AnimationTimeline,
                        JS::Handle<JSObject*> aGivenProto) override;
 
   // ScrollTimeline methods.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   static already_AddRefed<ScrollTimeline> Constructor(
       const GlobalObject& aGlobal, const ScrollTimelineOptions& aOptions,
       ErrorResult& aRv);
-  // MOZ_CAN_RUN_SCRIPT because GetScrollingElement may flush in quirks mode.
-  MOZ_CAN_RUN_SCRIPT Element* GetSource() const;
+  Element* GetSource() const;
   dom::ScrollAxis GetScrollAxis() const;
 
-  State GetState() const {
-    return State{mScrollerInfo.Source(), mAxis,
-                 mScrollerInfo.mType == ScrollerInfo::Type::Root};
-  };
+  State GetState() const;
 
   // AnimationTimeline methods.
   Nullable<TimeDuration> GetCurrentTimeAsDuration() const override;
@@ -251,6 +247,8 @@ class ScrollTimeline : public AnimationTimeline,
 
   void WillRefresh();
 
+  bool UpdateIfStale();
+
   // May return null if script created us.
   Element* SourceElement() const { return mScrollerInfo.Source().mElement; }
 
@@ -264,14 +262,15 @@ class ScrollTimeline : public AnimationTimeline,
 
   void ReplacePropertiesWith(const Element* aReferenceElement,
                              const PseudoStyleRequest& aPseudoRequest,
-                             const StyleScrollTimeline& aNew);
+                             nsAtom* aName, StyleScrollAxis aAxis);
 
   void NotifyAnimationUpdated(Animation& aAnimation) override;
 
   void NotifyAnimationContentVisibilityChanged(Animation* aAnimation,
                                                bool aIsVisible) override;
 
-  virtual void UpdateCachedCurrentTime();
+  // Updates mCachedCurrentTime. Returns true if the cached value changed.
+  virtual bool UpdateCachedCurrentTime();
 
   virtual std::pair<double, double> IntervalForAttachmentRange(
       const AnimationRange& aStyleRange) const;
@@ -319,6 +318,10 @@ class ScrollTimeline : public AnimationTimeline,
     // needs to take care of that.
     nscoord mPosition = 0;
     nscoord mMaxScrollOffset = 0;
+    bool operator==(const CurrentTimeData& aOther) const {
+      return mPosition == aOther.mPosition &&
+             mMaxScrollOffset == aOther.mMaxScrollOffset;
+    }
   };
 
  private:

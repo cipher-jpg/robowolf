@@ -11,6 +11,7 @@ import React, {
 } from "react";
 import {
   buildClockZone,
+  buildLocalizedTimeZoneMap,
   getCityFromTimeZone,
   getClockFormDerivedState,
   getRandomLabelColor,
@@ -28,6 +29,7 @@ const MAX_NICKNAME_LENGTH = 11;
  * @param {object|null} props.initialClock Pre-fill values when editing.
  * @param {boolean} props.canAddClock
  * @param {string[]} props.supportedTimeZones
+ * @param {string} [props.locale] Locale for localized zone names.
  * @param {(zone: object) => void} props.onSave
  * @param {() => void} props.onCancel
  */
@@ -36,9 +38,14 @@ export function AddClockForm({
   initialClock,
   canAddClock,
   supportedTimeZones,
+  locale,
   onSave,
   onCancel,
 }) {
+  const localizedTimeZoneMap = useMemo(
+    () => buildLocalizedTimeZoneMap(supportedTimeZones, locale),
+    [supportedTimeZones, locale]
+  );
   const [searchQuery, setSearchQuery] = useState(
     initialClock
       ? initialClock.city || getCityFromTimeZone(initialClock.timeZone)
@@ -62,9 +69,17 @@ export function AddClockForm({
         clockSearchQuery: searchQuery,
         clockSelectedTimeZone: selectedTimeZone,
         isEditingClock: isEditing,
+        localizedTimeZoneMap,
         supportedTimeZones,
       }),
-    [canAddClock, searchQuery, selectedTimeZone, isEditing, supportedTimeZones]
+    [
+      canAddClock,
+      searchQuery,
+      selectedTimeZone,
+      isEditing,
+      localizedTimeZoneMap,
+      supportedTimeZones,
+    ]
   );
 
   // moz-input-search renders its inner input asynchronously, so focusing
@@ -180,30 +195,40 @@ export function AddClockForm({
             role="listbox"
             data-l10n-id="newtab-clock-widget-search-results"
           >
-            {filteredTimeZones.map((timeZone, index) => (
+            {filteredTimeZones.length ? (
+              filteredTimeZones.map((timeZone, index) => (
+                <div
+                  id={`clocks-result-${index}`}
+                  className="clocks-search-result"
+                  key={timeZone}
+                  onClick={() => handleSelectLocation(timeZone)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleSelectLocation(timeZone);
+                    }
+                  }}
+                  role="option"
+                  aria-selected={timeZone === selectedTimeZone}
+                  tabIndex={0}
+                >
+                  <span className="clocks-search-result-city">
+                    {getCityFromTimeZone(timeZone)}
+                  </span>
+                  <span className="clocks-search-result-timezone">
+                    {localizedTimeZoneMap?.get(timeZone) || timeZone}
+                  </span>
+                </div>
+              ))
+            ) : (
               <div
-                id={`clocks-result-${index}`}
-                className="clocks-search-result"
-                key={timeZone}
-                onClick={() => handleSelectLocation(timeZone)}
-                onKeyDown={e => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    handleSelectLocation(timeZone);
-                  }
-                }}
+                className="clocks-search-no-results"
                 role="option"
-                aria-selected={timeZone === selectedTimeZone}
-                tabIndex={0}
-              >
-                <span className="clocks-search-result-city">
-                  {getCityFromTimeZone(timeZone)}
-                </span>
-                <span className="clocks-search-result-timezone">
-                  {timeZone}
-                </span>
-              </div>
-            ))}
+                aria-disabled="true"
+                aria-selected="false"
+                data-l10n-id="newtab-clock-widget-search-no-results"
+              />
+            )}
           </div>
         )}
       </div>

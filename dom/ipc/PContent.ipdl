@@ -153,6 +153,7 @@ using FontVisibility from "gfxTypes.h";
 using mozilla::dom::MediaControlAction from "mozilla/dom/MediaControlKeySource.h";
 using mozilla::dom::MediaPlaybackState from "mozilla/dom/MediaPlaybackStatus.h";
 using mozilla::dom::MediaAudibleState from "mozilla/dom/MediaPlaybackStatus.h";
+using mozilla::dom::ControlType from "mozilla/dom/MediaPlaybackStatus.h";
 using mozilla::dom::MediaMetadataBase from "mozilla/dom/MediaMetadata.h";
 using mozilla::dom::MediaSessionAction from "mozilla/dom/MediaSessionBinding.h";
 using mozilla::dom::MediaSessionPlaybackState from "mozilla/dom/MediaSessionBinding.h";
@@ -1076,11 +1077,11 @@ child:
     // the `PermitUnloadResult` enum. If `aStartingAt` is an in-process, top-level
     // browsing context, then a "navigate" event will also be dispatched.
     // See https://html.spec.whatwg.org/#preventing-navigation:fire-a-traverse-navigate-event
-    async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt, SessionHistoryInfo? info)
+    async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt, nsDocShellLoadState? info)
         returns (PermitUnloadResult result);
 
     // Only dispatches "navigate" to the traversable. Used in case we don't want to dispatch beforeunload.
-    async DispatchNavigateToTraversable(MaybeDiscardedBrowsingContext aTraversable, SessionHistoryInfo? info)
+    async DispatchNavigateToTraversable(MaybeDiscardedBrowsingContext aTraversable, nsDocShellLoadState info)
         returns (PermitUnloadResult result);
 
     // Update the cached list of codec supported in the given process.
@@ -1642,10 +1643,10 @@ parent:
                                                   MaybeDiscardedBrowsingContext aParentContext,
                                                   nullable nsIPrincipal aTrackingPrincipal,
                                                   nsCString aTrackingOrigin,
-                                                  int aAllowMode,
+                                                  StorageAccessPromptChoices aAllowMode,
                                                   StorageAccessPermissionGrantedReason? aReason,
                                                   bool aFrameOnly)
-          returns (bool unused);
+          returns (bool granted);
 
     async CompleteAllowAccessFor(MaybeDiscardedBrowsingContext aParentContext,
                                  uint64_t aTopLevelWindowId,
@@ -1673,10 +1674,13 @@ parent:
 
    /**
     * When media became audible or inaudible in content process, we have to
-    * notify chrome process in order to which tab is audible.
+    * notify chrome process in order to which tab is audible. The aType
+    * parameter distinguishes controllable sources (full media-control
+    * lifecycle) from uncontrollable sources that only contribute audibility.
     */
     async NotifyMediaAudibleChanged(MaybeDiscardedBrowsingContext aContext,
-                                    MediaAudibleState aState);
+                                    MediaAudibleState aState,
+                                    ControlType aType);
 
    /**
     * When media enabled or disabled the Picture-in-Picture mode, we have to

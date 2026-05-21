@@ -20,7 +20,7 @@ use selectors::parser::PseudoElement as PseudoElementTrait;
 use selectors::{Element, OpaqueElement};
 use servo_arc::{Arc, ArcBorrow};
 use smallvec::SmallVec;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::Write;
 use std::iter;
 use std::os::raw::c_void;
@@ -53,7 +53,6 @@ use style::gecko::restyle_damage::GeckoRestyleDamage;
 use style::gecko::selector_parser::{NonTSPseudoClass, PseudoElement};
 use style::gecko::snapshot_helpers::classes_changed;
 use style::gecko::traversal::RecalcStyleOnly;
-use style::gecko::url;
 use style::gecko::wrapper::{
     slow_selector_flags_from_node_selector_flags, GeckoElement, GeckoNode,
 };
@@ -66,8 +65,8 @@ use style::gecko_bindings::bindings::{
     Gecko_HaveSeenPtr, IterationCompositeOperation, Loader, LoaderReusableStyleSheets,
     MallocSizeOf as GeckoMallocSizeOf, NonCustomCSSPropertyId, OriginFlags, PropertyValuePair,
     PseudoStyleType, SeenPtrs, ServoElementSnapshotTable, ServoStyleSetSizes, ServoTraversalFlags,
-    SheetLoadData, SheetLoadDataHolder, SheetParsingMode, StyleRuleInclusion,
-    StyleSheet as DomStyleSheet, URLExtraData,
+    ShadowRoot as RawShadowRoot, SheetLoadData, SheetLoadDataHolder, SheetParsingMode,
+    StyleRuleInclusion, StyleSheet as DomStyleSheet, URLExtraData,
 };
 use style::gecko_bindings::structs;
 use style::gecko_bindings::sugar::ownership::Strong;
@@ -97,7 +96,7 @@ use style::properties::{
 };
 use style::properties_and_values::registry::PropertyRegistration;
 use style::rule_cache::RuleCacheConditions;
-use style::rule_tree::{RuleCascadeFlags, StrongRuleNode};
+use style::rule_tree::{CascadeLevel, RuleCascadeFlags, StrongRuleNode};
 use style::selector_parser::PseudoElementCascadeType;
 use style::shared_lock::{
     Locked, SharedRwLock, SharedRwLockReadGuard, StylesheetGuards, ToCssWithGuard,
@@ -130,6 +129,7 @@ use style::traversal::DomTraversal;
 use style::traversal_flags::{self, TraversalFlags};
 use style::typed_om::numeric_declaration::NumericDeclaration;
 use style::typed_om::sum_value::SumValue;
+use style::url;
 use style::use_counters::{CustomUseCounter, UseCounters};
 use style::values::animated::{Animate, Procedure, ToAnimatedZero};
 use style::values::computed::easing::ComputedTimingFunction;
@@ -153,7 +153,7 @@ use style::values::specified::intersection_observer::IntersectionObserverMargin;
 use style::values::specified::position::PositionTryFallbacksItem;
 use style::values::specified::source_size_list::SourceSizeList;
 use style::values::specified::svg_path::PathCommand;
-use style::values::specified::{AbsoluteLength, NoCalcLength};
+use style::values::specified::{LengthUnit, NoCalcLength};
 use style::values::{specified, AtomIdent, CustomIdent, KeyframesName};
 use style_traits::{
     CssWriter, NumericValue, ParseError, ParsingMode, SpecifiedValueInfo, ToCss, ToTyped,
@@ -222,7 +222,7 @@ pub unsafe extern "C" fn Servo_Shutdown() {
     DUMMY_URL_DATA = ptr::null_mut();
     DUMMY_CHROME_URL_DATA = ptr::null_mut();
     Stylist::shutdown();
-    url::shutdown();
+    url::gecko::shutdown();
 }
 
 #[inline(always)]
@@ -1201,6 +1201,12 @@ pub extern "C" fn Servo_ComputedValues_ShouldTransition(
         return Default::default();
     }
 
+    if old_transition_end_value.is_none() && !AnimationValue::is_different_for(prop, old, new) {
+        // Skip computing AnimationValues when there's no running transition and the property value
+        // hasn't changed.
+        return Default::default();
+    }
+
     let Some(new_value) = AnimationValue::from_computed_values(prop, new) else {
         return Default::default();
     };
@@ -1560,11 +1566,26 @@ pub extern "C" fn Servo_Element_ReferencesAttribute(
     let Some(data) = element.borrow_data() else {
         return false;
     };
-    let Some(ref attrs) = data.styles.primary().attribute_references else {
-        return false;
-    };
+    if let Some(ref attrs) = data.styles.primary().attribute_references {
+        if unsafe { Atom::with(attr, |attr| attrs.contains_key(AtomIdent::cast(attr))) } {
+            return true;
+        }
+    }
 
-    unsafe { Atom::with(attr, |attr| attrs.contains_key(AtomIdent::cast(attr))) }
+    // Some eager pseudos (::first-letter, ::first-line) lack Gecko element nodes,
+    // so check them for attr() dependency through the originating element here.
+    for pseudo_styles in data.styles.pseudos.as_array() {
+        let Some(ref styles) = pseudo_styles else {
+            continue;
+        };
+        let Some(ref attrs) = styles.attribute_references else {
+            continue;
+        };
+        if unsafe { Atom::with(attr, |attr| attrs.contains_key(AtomIdent::cast(attr))) } {
+            return true;
+        }
+    }
+    false
 }
 
 fn mode_to_origin(mode: SheetParsingMode) -> Origin {
@@ -2613,6 +2634,34 @@ pub extern "C" fn Servo_NestedDeclarationsRule_SetStyle(
     write_locked_arc(rule, |rule: &mut NestedDeclarationsRule| {
         rule.block = unsafe { Arc::from_raw_addrefed(declarations) };
     })
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_DeclarationBlock_IsImmutable(
+    declarations: &LockedDeclarationBlock,
+) -> bool {
+    use std::sync::atomic::Ordering;
+    // SAFETY: See StyleSource::mark_in_rule_tree. This boolean is conceptually not part of the
+    // locked data, and it's a relaxed atomic, so it's sound to read.
+    unsafe {
+        declarations
+            .read_unchecked()
+            .immutable
+            .load(Ordering::Relaxed)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_DeclarationBlock_SetImmutable(declarations: &LockedDeclarationBlock) {
+    use std::sync::atomic::Ordering;
+    // SAFETY: See StyleSource::mark_in_rule_tree. This boolean is conceptually not part of the
+    // locked data, and it's a relaxed atomic, so it's sound to read.
+    unsafe {
+        declarations
+            .read_unchecked()
+            .immutable
+            .store(true, Ordering::Relaxed);
+    }
 }
 
 #[no_mangle]
@@ -4453,6 +4502,7 @@ pub unsafe extern "C" fn Servo_ComputedValues_GetForPageContent(
 pub unsafe extern "C" fn Servo_ComputedValues_GetForPositionTry(
     raw_data: &PerDocumentStyleData,
     style: &ComputedValues,
+    scope: CascadeLevel,
     element: &RawGeckoElement,
     fallback_item: &PositionTryFallbacksItem,
 ) -> Strong<ComputedValues> {
@@ -4462,7 +4512,7 @@ pub unsafe extern "C" fn Servo_ComputedValues_GetForPositionTry(
     let element = GeckoElement(element);
     let data = raw_data.borrow();
     data.stylist
-        .resolve_position_try(style, &guards, element, fallback_item)
+        .resolve_position_try(style, &guards, scope, element, fallback_item)
         .into()
 }
 
@@ -5204,6 +5254,7 @@ pub extern "C" fn Servo_PseudoStyleType_EnabledForAllContent(ty: PseudoStyleType
 #[no_mangle]
 pub extern "C" fn Servo_ParsePseudoElement(
     data: &nsAString,
+    url_data: *mut URLExtraData,
     ignore_enabled_state: bool,
     request: &mut structs::PseudoStyleRequest, /* output */
 ) -> bool {
@@ -5224,7 +5275,8 @@ pub extern "C" fn Servo_ParsePseudoElement(
     if parser.next_including_whitespace().is_ok() {
         return false;
     }
-    if !ignore_enabled_state && !pseudo.enabled_in_content() {
+    let data = unsafe { UrlExtraData::from_ptr_ref(&url_data) };
+    if !ignore_enabled_state && !pseudo.enabled_in_content(data) {
         return false;
     }
     let (pseudo_type, name) = pseudo.pseudo_type_and_argument();
@@ -6320,7 +6372,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetPixelValue(
         PaddingLeft => NonNegative(lp),
         BorderSpacing => {
             let v = NonNegativeLength::from(nocalc);
-            Box::new(BorderSpacing::new(v.clone(), v))
+            BorderSpacing::new(v.clone(), v)
         },
         BorderTopLeftRadius => {
             let length = NonNegativeLengthPercentage::from(nocalc);
@@ -6354,62 +6406,33 @@ pub extern "C" fn Servo_DeclarationBlock_SetLengthValue(
     use style::properties::PropertyDeclaration;
     use style::values::generics::length::{LengthPercentageOrAuto, Size};
     use style::values::generics::NonNegative;
-    use style::values::specified::length::{
-        FontRelativeLength, LengthPercentage, ViewportPercentageLength,
-    };
+    use style::values::specified::length::LengthPercentage;
     use style::values::specified::FontSize;
 
     let long = get_longhand_from_id!(property);
-    let nocalc = match unit {
-        structs::nsCSSUnit::eCSSUnit_EM => {
-            NoCalcLength::FontRelative(FontRelativeLength::Em(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_XHeight => {
-            NoCalcLength::FontRelative(FontRelativeLength::Ex(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_RootEM => {
-            NoCalcLength::FontRelative(FontRelativeLength::Rem(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_Char => {
-            NoCalcLength::FontRelative(FontRelativeLength::Ch(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_Ideographic => {
-            NoCalcLength::FontRelative(FontRelativeLength::Ic(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_CapHeight => {
-            NoCalcLength::FontRelative(FontRelativeLength::Cap(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_LineHeight => {
-            NoCalcLength::FontRelative(FontRelativeLength::Lh(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_RootLineHeight => {
-            NoCalcLength::FontRelative(FontRelativeLength::Rlh(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_Pixel => NoCalcLength::Absolute(AbsoluteLength::Px(value)),
-        structs::nsCSSUnit::eCSSUnit_Inch => NoCalcLength::Absolute(AbsoluteLength::In(value)),
-        structs::nsCSSUnit::eCSSUnit_Centimeter => {
-            NoCalcLength::Absolute(AbsoluteLength::Cm(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_Millimeter => {
-            NoCalcLength::Absolute(AbsoluteLength::Mm(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_Point => NoCalcLength::Absolute(AbsoluteLength::Pt(value)),
-        structs::nsCSSUnit::eCSSUnit_Pica => NoCalcLength::Absolute(AbsoluteLength::Pc(value)),
-        structs::nsCSSUnit::eCSSUnit_Quarter => NoCalcLength::Absolute(AbsoluteLength::Q(value)),
-        structs::nsCSSUnit::eCSSUnit_VW => {
-            NoCalcLength::ViewportPercentage(ViewportPercentageLength::Vw(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_VH => {
-            NoCalcLength::ViewportPercentage(ViewportPercentageLength::Vh(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_VMin => {
-            NoCalcLength::ViewportPercentage(ViewportPercentageLength::Vmin(value))
-        },
-        structs::nsCSSUnit::eCSSUnit_VMax => {
-            NoCalcLength::ViewportPercentage(ViewportPercentageLength::Vmax(value))
-        },
+    let length_unit = match unit {
+        structs::nsCSSUnit::eCSSUnit_EM => LengthUnit::Em,
+        structs::nsCSSUnit::eCSSUnit_XHeight => LengthUnit::Ex,
+        structs::nsCSSUnit::eCSSUnit_RootEM => LengthUnit::Rem,
+        structs::nsCSSUnit::eCSSUnit_Char => LengthUnit::Ch,
+        structs::nsCSSUnit::eCSSUnit_Ideographic => LengthUnit::Ic,
+        structs::nsCSSUnit::eCSSUnit_CapHeight => LengthUnit::Cap,
+        structs::nsCSSUnit::eCSSUnit_LineHeight => LengthUnit::Lh,
+        structs::nsCSSUnit::eCSSUnit_RootLineHeight => LengthUnit::Rlh,
+        structs::nsCSSUnit::eCSSUnit_Pixel => LengthUnit::Px,
+        structs::nsCSSUnit::eCSSUnit_Inch => LengthUnit::In,
+        structs::nsCSSUnit::eCSSUnit_Centimeter => LengthUnit::Cm,
+        structs::nsCSSUnit::eCSSUnit_Millimeter => LengthUnit::Mm,
+        structs::nsCSSUnit::eCSSUnit_Point => LengthUnit::Pt,
+        structs::nsCSSUnit::eCSSUnit_Pica => LengthUnit::Pc,
+        structs::nsCSSUnit::eCSSUnit_Quarter => LengthUnit::Q,
+        structs::nsCSSUnit::eCSSUnit_VW => LengthUnit::Vw,
+        structs::nsCSSUnit::eCSSUnit_VH => LengthUnit::Vh,
+        structs::nsCSSUnit::eCSSUnit_VMin => LengthUnit::Vmin,
+        structs::nsCSSUnit::eCSSUnit_VMax => LengthUnit::Vmax,
         _ => unreachable!("Unknown unit passed to SetLengthValue"),
     };
+    let nocalc = NoCalcLength::new(length_unit, value);
 
     let mut source_declarations = SourcePropertyDeclaration::with_one(match_wrap_declared! { long,
         Width => Size::LengthPercentage(NonNegative(LengthPercentage::Length(nocalc))),
@@ -6842,12 +6865,26 @@ pub extern "C" fn Servo_CSSSupports2(property: &nsACString, value: &nsACString) 
     .is_ok()
 }
 
+#[repr(u8)]
+#[derive(Clone, Copy)]
+pub enum CssSupportsUrlContext {
+    Default,
+    Chrome,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CssSupportsParams {
+    pub origin: Origin,
+    pub url_context: CssSupportsUrlContext,
+    pub quirks: nsCompatibility,
+}
+
 #[no_mangle]
-pub extern "C" fn Servo_CSSSupports(
+pub unsafe extern "C" fn Servo_CSSSupports(
     cond: &nsACString,
-    ua_origin: bool,
-    chrome_sheet: bool,
-    quirks: bool,
+    params: &CssSupportsParams,
+    raw_extra_data: *mut URLExtraData,
 ) -> bool {
     let condition = unsafe { cond.as_str_unchecked() };
     let mut input = ParserInput::new(&condition);
@@ -6857,32 +6894,27 @@ pub extern "C" fn Servo_CSSSupports(
         Err(..) => return false,
     };
 
-    let origin = if ua_origin {
-        Origin::UserAgent
-    } else {
-        Origin::Author
-    };
     let url_data = unsafe {
-        if chrome_sheet {
-            dummy_chrome_url_data()
-        } else {
-            dummy_url_data()
+        match params.url_context {
+            CssSupportsUrlContext::Default => {
+                if !raw_extra_data.is_null() {
+                    UrlExtraData::from_ptr_ref(&raw_extra_data)
+                } else {
+                    dummy_url_data()
+                }
+            },
+            CssSupportsUrlContext::Chrome => dummy_chrome_url_data(),
         }
-    };
-    let quirks_mode = if quirks {
-        QuirksMode::Quirks
-    } else {
-        QuirksMode::NoQuirks
     };
 
     // NOTE(emilio): The supports API is not associated to any stylesheet,
     // so the fact that there is no namespace map here is fine.
     let context = ParserContext::new(
-        origin,
+        params.origin,
         url_data,
         Some(CssRuleType::Style),
         ParsingMode::DEFAULT,
-        quirks_mode,
+        params.quirks.into(),
         /* namespaces = */ Default::default(),
         None,
         None,
@@ -7538,6 +7570,30 @@ fn fill_in_missing_keyframe_values(
     }
 }
 
+fn remove_duplicated_property_value_entry(
+    keyframes: &mut nsTArray<structs::Keyframe>,
+    grouped_keyframes_indexes: HashSet<usize>,
+) {
+    for idx in grouped_keyframes_indexes.into_iter() {
+        debug_assert!(idx < keyframes.len());
+        let k = &mut keyframes[idx];
+        let mut set = HashSet::new();
+        let mut values = nsTArray::new();
+        for pair in k.mPropertyValues.drain(..).rev() {
+            let property =
+                match OwnedPropertyDeclarationId::from_gecko_css_property_id(&pair.mProperty) {
+                    Some(property) => property,
+                    None => continue,
+                };
+            if !set.contains(&property) {
+                set.insert(property);
+                values.push(pair);
+            }
+        }
+        k.mPropertyValues = values;
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn Servo_StyleSet_GetKeyframesForName(
     raw_data: &PerDocumentStyleData,
@@ -7548,6 +7604,8 @@ pub unsafe extern "C" fn Servo_StyleSet_GetKeyframesForName(
     keyframes: &mut nsTArray<structs::Keyframe>,
 ) -> bool {
     use style::gecko_bindings::structs::CompositeOperationOrAuto;
+    use style::properties::PropertyDeclaration;
+    use style::stylesheets::keyframes_rule::KeyframesStep;
     use style::values::computed::AnimationComposition;
 
     debug_assert!(keyframes.len() == 0, "keyframes should be initially empty");
@@ -7573,35 +7631,57 @@ pub unsafe extern "C" fn Servo_StyleSet_GetKeyframesForName(
 
     let writing_mode = style.writing_mode;
 
+    let get_timing_func_and_composition =
+        |step: &KeyframesStep| -> (ComputedTimingFunction, CompositeOperationOrAuto) {
+            // Override timing_function if the keyframe has an animation-timing-function.
+            let timing_function = match step.get_animation_timing_function(&guard) {
+                Some(val) => val.to_computed_value_without_context(),
+                None => (*inherited_timing_function).clone(),
+            };
+            // Override composite operation if the keyframe has an animation-composition.
+            let composition = step.get_animation_composition(&guard).map_or(
+                CompositeOperationOrAuto::Auto,
+                |val| match val {
+                    AnimationComposition::Replace => CompositeOperationOrAuto::Replace,
+                    AnimationComposition::Add => CompositeOperationOrAuto::Add,
+                    AnimationComposition::Accumulate => CompositeOperationOrAuto::Accumulate,
+                },
+            );
+            (timing_function, composition)
+        };
+    let is_not_animatable = |id: &PropertyDeclarationId| {
+        // Skip non-animatable properties, including the 'display' property because although it is
+        // animatable from SMIL, it should not be animatable from CSS Animations.
+        !id.is_animatable() || id == &PropertyDeclarationId::Longhand(LonghandId::Display)
+    };
+    let make_declaration_pair = |declaration: &PropertyDeclaration| {
+        let id = declaration.id().to_physical(writing_mode);
+        let mut pair = property_value_pair_for(&id);
+        pair.mServoDeclarationBlock
+            .set_arc(Arc::new(global_style_data.shared_lock.wrap(
+                PropertyDeclarationBlock::with_one(
+                    declaration.to_physical(writing_mode),
+                    Importance::Normal,
+                ),
+            )));
+        pair
+    };
+
     // Iterate over the keyframe rules backwards so we can drop overridden
     // properties (since declarations in later rules override those in earlier
     // ones).
     for step in animation.steps.iter().rev() {
-        if step.start_percentage.0 != current_offset {
+        debug_assert!(step.start_offset.range_name.is_none());
+        if step.start_offset.percentage.0 != current_offset {
             properties_set_at_current_offset.clear();
-            current_offset = step.start_percentage.0;
+            current_offset = step.start_offset.percentage.0;
         }
-
-        // Override timing_function if the keyframe has an animation-timing-function.
-        let timing_function = match step.get_animation_timing_function(&guard) {
-            Some(val) => val.to_computed_value_without_context(),
-            None => (*inherited_timing_function).clone(),
-        };
-
-        // Override composite operation if the keyframe has an animation-composition.
-        let composition =
-            step.get_animation_composition(&guard)
-                .map_or(CompositeOperationOrAuto::Auto, |val| match val {
-                    AnimationComposition::Replace => CompositeOperationOrAuto::Replace,
-                    AnimationComposition::Add => CompositeOperationOrAuto::Add,
-                    AnimationComposition::Accumulate => CompositeOperationOrAuto::Accumulate,
-                });
-
+        let (timing_function, composition) = get_timing_func_and_composition(step);
         // Look for an existing keyframe with the same offset, timing function, and compsition, or
         // else add a new keyframe at the beginning of the keyframe array.
         let keyframe = &mut *bindings::Gecko_GetOrCreateKeyframeAtStart(
             keyframes,
-            step.start_percentage.0 as f32,
+            step.start_offset.percentage.0 as f32,
             &timing_function,
             composition,
         );
@@ -7629,6 +7709,9 @@ pub unsafe extern "C" fn Servo_StyleSet_GetKeyframesForName(
                 } else if current_offset == 1.0 {
                     has_complete_final_keyframe = true;
                 }
+
+                // Only generated keyframes use ComputedValue.
+                keyframe.mIsGenerated = true;
             },
             KeyframesStepValue::Declarations { ref block } => {
                 let guard = block.read_with(&guard);
@@ -7640,13 +7723,7 @@ pub unsafe extern "C" fn Servo_StyleSet_GetKeyframesForName(
                 // there are logical and physical longhands in the same block.
                 for declaration in guard.normal_declaration_iter().rev() {
                     let id = declaration.id().to_physical(writing_mode);
-
-                    // Skip non-animatable properties, including the 'display' property because
-                    // although it is animatable from SMIL, it should not be animatable from CSS
-                    // Animations.
-                    if !id.is_animatable()
-                        || id == PropertyDeclarationId::Longhand(LonghandId::Display)
-                    {
+                    if is_not_animatable(&id) {
                         continue;
                     }
 
@@ -7654,16 +7731,9 @@ pub unsafe extern "C" fn Servo_StyleSet_GetKeyframesForName(
                         continue;
                     }
 
-                    let mut pair = property_value_pair_for(&id);
-                    pair.mServoDeclarationBlock.set_arc(Arc::new(
-                        global_style_data
-                            .shared_lock
-                            .wrap(PropertyDeclarationBlock::with_one(
-                                declaration.to_physical(writing_mode),
-                                Importance::Normal,
-                            )),
-                    ));
-                    keyframe.mPropertyValues.push(pair);
+                    keyframe
+                        .mPropertyValues
+                        .push(make_declaration_pair(declaration));
 
                     if current_offset == 0.0 {
                         properties_set_at_start.insert(id);
@@ -7682,6 +7752,7 @@ pub unsafe extern "C" fn Servo_StyleSet_GetKeyframesForName(
     }
 
     // Append property values that are missing in the initial or the final keyframes.
+    // FIXME: Bug 2037642. We shouldn't handle missing keyframes now.
     if !has_complete_initial_keyframe {
         fill_in_missing_keyframe_values(
             &properties_changed,
@@ -7700,6 +7771,73 @@ pub unsafe extern "C" fn Servo_StyleSet_GetKeyframesForName(
             keyframes,
         );
     }
+
+    // After appending the missing initial and final keyframes, we start to append the Keyframes
+    // with timeline range names. We create the Keyframes in a temporary array because we need to
+    // reverse it later.
+    let mut keyframes_with_range_names = nsTArray::new();
+    // The indexes of keyframes_with_range_names that correspond to the grouped keyframes.
+    // e.g. If there are 4 keyframes:
+    //   [0] cover 10% {width: 10px; height: 10px;}
+    //   [1] cover 10% {width: 20px;}
+    //   [2] cover 20% {...}
+    //   [3] cover 10% {width: 30px;}
+    //
+    // [0] will store all declared properties of [1] and [3], to be de-duplicated later.
+    // For example, before de-duplication, the generated grouped keyframes may look like:
+    //   [0] cover 10% {width: 10px; height: 10px; width: 20px; width: 30px; }
+    //   [1] cover 20% {...}
+    // The hashset contains {[0]}.
+    //
+    // After the de-duplication, the generated grouped keyframes will look like:
+    // [0] cover 10% {height: 10px; width: 30px; }
+    // [1] cover 20% {...}
+    // Only the last property value of `width` is kept.
+    let mut grouped_keyframes_indexes = HashSet::new();
+    for step in animation.steps_with_range_name.iter() {
+        debug_assert!(!step.start_offset.range_name.is_none());
+        let (timing_function, composition) = get_timing_func_and_composition(step);
+        let mut matched_idx = 0;
+        let keyframe = &mut *bindings::Gecko_GetOrCreateKeyframeWithRangeName(
+            &mut keyframes_with_range_names,
+            step.start_offset.range_name,
+            step.start_offset.percentage.0 as f32,
+            &timing_function,
+            composition,
+            &mut matched_idx,
+        );
+        // Check if we may have to de-duplicate this keyframe's mPropertyValues.
+        if matched_idx != keyframes_with_range_names.len() {
+            grouped_keyframes_indexes.insert(matched_idx);
+        }
+
+        match step.value {
+            KeyframesStepValue::ComputedValues => unreachable!("No implicit keyframes"),
+            KeyframesStepValue::Declarations { ref block } => {
+                let guard = block.read_with(&guard);
+                // Filter out non-animatable properties and properties with
+                // !important.
+                //
+                // Also, iterate in reverse to respect the source order in case
+                // there are logical and physical longhands in the same block.
+                for declaration in guard.normal_declaration_iter().rev() {
+                    let id = declaration.id().to_physical(writing_mode);
+                    if is_not_animatable(&id) {
+                        continue;
+                    }
+                    keyframe
+                        .mPropertyValues
+                        .push(make_declaration_pair(declaration));
+                }
+            },
+        }
+    }
+
+    remove_duplicated_property_value_entry(
+        &mut keyframes_with_range_names,
+        grouped_keyframes_indexes,
+    );
+    keyframes.append(&mut keyframes_with_range_names);
     true
 }
 
@@ -9802,8 +9940,8 @@ pub unsafe extern "C" fn Servo_StyleArcSlice_EmptyPtr() -> *mut c_void {
 
 #[no_mangle]
 pub unsafe extern "C" fn Servo_LoadData_GetLazy(
-    source: &url::LoadDataSource,
-) -> *const url::LoadData {
+    source: &url::gecko::LoadDataSource,
+) -> *const url::gecko::LoadData {
     source.get()
 }
 
@@ -11055,4 +11193,15 @@ pub extern "C" fn Servo_ResolvePositionAreaSelfAlignment(
         return;
     };
     *out = align;
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_GetShadowRootForScoped(
+    element: &RawGeckoElement,
+    scope: CascadeLevel,
+) -> *const RawShadowRoot {
+    let element = GeckoElement(element);
+    scope
+        .get_shadow_root_for_scoped(element)
+        .map_or(ptr::null(), |sr| sr.0 as *const _)
 }

@@ -29,7 +29,6 @@ def generatedLocaleListDir = new File(generatedLocaleListBaseDir, "org/mozilla/f
 def generatedLocaleListFilename = "LocalesList.kt"
 
 import com.android.build.api.variant.FilterConfiguration
-import com.google.android.gms.oss.licenses.plugin.DependencyTask
 
 android {
     if (project.hasProperty("testBuildType")) {
@@ -375,6 +374,7 @@ dependencies {
     androidTestImplementation libs.androidx.test.monitor
     androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.uiautomator
+    androidTestImplementation libs.kotlin.test
     androidTestImplementation libs.mockwebserver
     androidTestImplementation libs.okhttp
     androidTestRuntimeOnly libs.okio
@@ -572,10 +572,10 @@ def enabledLocales = project.provider { getEnabledLocales() }
 
 tasks.register('generateLocaleList') {
     def localeList = file(new File(generatedLocaleListDir, generatedLocaleListFilename))
-    
+
     inputs.property("enabledLocales", enabledLocales)
     outputs.file(localeList)
-    
+
     doLast {
         generatedLocaleListDir.mkdir()
         localeList.delete()
@@ -654,15 +654,6 @@ if (project.hasProperty("coverage")) {
             }
         }
     }
-}
-
-// Fix for Gradle 9 strictness: Ensure CleanUp runs before DependencyTask
-tasks.withType(DependencyTask).configureEach { task ->
-    // The OSS plugin creates a "LicensesCleanUp" task for every "DependencyTask"
-    // e.g., nightlyOssDependencyTask -> nightlyOssLicensesCleanUp
-    def cleanUpTaskName = task.name.replace("DependencyTask", "LicensesCleanUp")
-    // make the dependency task depend on its cleanup task.
-    task.dependsOn(tasks.named(cleanUpTaskName))
 }
 
 mozilla {

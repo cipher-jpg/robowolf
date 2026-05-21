@@ -51,7 +51,7 @@ features:
             "pocket-sponsored-stories": true,
             "synced-tabs": true,
             "collections": true,
-            "privacy-report": false,
+            "privacy-report": true,
           }
     defaults:
       - channel: nightly
@@ -64,7 +64,7 @@ features:
             "pocket": true,
             "synced-tabs": true,
             "collections": true,
-            "privacy-report": false,
+            "privacy-report": true,
           }
         }
   nimbus-validation:
@@ -969,20 +969,6 @@ features:
           type: Boolean
           default: true
 
-  toolbar-redesign-option:
-    description: Control the visibility of toolbar redesign option in settings.
-    variables:
-      show-options:
-        description: >
-          Whether or not the toolbar redesign option is visible to the user.  This allows the user to switch between simple and expanded toolbar.
-        type: Boolean
-        default: true
-      show-customization:
-        description: >
-          Whether or not the simple/expanded toolbar customization option is visible to the user.
-        type: Boolean
-        default: true
-
   tab-management-enhancements:
     description: Control the visibility of the tab management enhancements.
     variables:
@@ -1003,15 +989,6 @@ features:
         value:
           opening_animation_enabled: true
 
-  tab-search:
-    description: Control the visibility of the tab search feature.
-    variables:
-      enabled:
-        description: >
-          Whether or not to enable the tab search feature.
-        type: Boolean
-        default: true
-
   tab-groups:
     description: Control the visibility of the tab groups feature.
     variables:
@@ -1026,7 +1003,7 @@ features:
           enabled: false
       - channel: beta
         value:
-          enabled: false
+          enabled: true
       - channel: nightly
         value:
           enabled: true
@@ -1044,10 +1021,18 @@ features:
           enabled: false
       - channel: beta
         value:
-          enabled: false
+          enabled: true
       - channel: nightly
         value:
-          enabled: false
+          enabled: true
+
+  marketing-onboarding-card:
+    description: A temporary feature to control the marketing onboarding card shown during the onboarding flow.
+    variables:
+      enabled:
+        description: If false, the marketing onboarding card will never be shown.
+        type: Boolean
+        default: true
 
   suppress-sponsored-top-sites:
     description: Suppress sponsored top sites for new users for 14 days.
@@ -1177,6 +1162,13 @@ features:
         description: If true, Native Share Sheet is enabled.
         type: Boolean
         default: false
+    defaults:
+      - channel: developer
+        value:
+          enabled: true
+      - channel: nightly
+        value:
+          enabled: true
 
   add-shortcuts-improvement:
     description: Feature to enable Add Shortcuts improvement for users on Firefox on Android.
@@ -1303,6 +1295,29 @@ features:
         description: If true, Homepage Sports Widget is enabled.
         type: Boolean
         default: false
+      force-one-week-to-world-cup:
+        description: >
+          If true, treat the user as being within one week of the World Cup kickoff regardless of the
+          device date. Used to roll out the pre-tournament pager (follow your team + view-schedule cards)
+          ahead of the calendar date for testing or staggered launches. The natural date-based check
+          still applies when this is false (the default).
+        type: Boolean
+        default: false
+
+  webcompat-reporter-enhancements:
+    description: Feature to enable WebCompat Reporter enhancements for users on Firefox Android.
+    variables:
+      enabled:
+        description: If true, WebCompat Reporter enhancements is enabled.
+        type: Boolean
+        default: false
+    defaults:
+      - channel: nightly
+        value:
+          enabled: false
+      - channel: developer
+        value:
+          enabled: true
 
 types:
   objects:

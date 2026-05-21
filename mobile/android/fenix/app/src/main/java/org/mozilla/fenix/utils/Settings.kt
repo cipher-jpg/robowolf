@@ -215,12 +215,6 @@ class Settings(
         persistDefaultIfNotExists = true,
     )
 
-    val toolbarSimpleShortcut: String
-        get() = when (shouldShowToolbarCustomization) {
-            true -> toolbarSimpleShortcutKey
-            false -> ShortcutType.NEW_TAB.value
-        }
-
     /**
      * Indicates what expanded toolbar shortcut key is currently selected.
      */
@@ -229,12 +223,6 @@ class Settings(
         default = { ShortcutType.BOOKMARK.value },
         persistDefaultIfNotExists = true,
     )
-
-    val toolbarExpandedShortcut: String
-        get() = when (shouldShowToolbarCustomization) {
-            true -> toolbarExpandedShortcutKey
-            false -> ShortcutType.BOOKMARK.value
-        }
 
     /**
      * Indicates if the Pocket recommendations homescreen section should also show sponsored stories.
@@ -290,16 +278,6 @@ class Settings(
 
     private val homescreenSections: Map<HomeScreenSection, Boolean>
         get() = FxNimbus.features.homescreen.value().sectionsEnabled
-
-    /**
-     * Indicates if the privacy report homepage section settings should be visible.
-     * Controlled by secret settings toggle.
-     */
-    val showPrivacyReportSectionToggle: Boolean
-        get() = preferences.getBoolean(
-            appContext.getPreferenceKey(R.string.pref_key_enable_privacy_report),
-            false,
-        )
 
     /**
      * Indicates if the recent tabs homepage section settings should be visible
@@ -465,6 +443,16 @@ class Settings(
 
     var rtamoAddonDownloadUrl by stringPreference(
         appContext.getPreferenceKey(R.string.pref_key_rtamo_addon_download_url),
+        default = "",
+    )
+
+    var rtamoAddonImageUrl by stringPreference(
+        appContext.getPreferenceKey(R.string.pref_key_rtamo_addon_image_url),
+        default = "",
+    )
+
+    var rtamoAddonName by stringPreference(
+        appContext.getPreferenceKey(R.string.pref_key_rtamo_addon_name),
         default = "",
     )
 
@@ -1114,6 +1102,15 @@ class Settings(
             appContext.getString(R.string.remote_settings_server_dev) -> {
                 appContext.getString(R.string.preferences_remote_settings_server_dev_label)
             }
+            appContext.getString(R.string.remote_settings_server_prod_v2) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_prod_label_v2)
+            }
+            appContext.getString(R.string.remote_settings_server_stage_v2) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_stage_label_v2)
+            }
+            appContext.getString(R.string.remote_settings_server_dev_v2) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_dev_label_v2)
+            }
             else -> {
                 appContext.getString(R.string.preferences_remote_settings_server_prod_label)
             }
@@ -1149,8 +1146,8 @@ class Settings(
         default = true,
     )
 
-    var shouldUseTrackingProtectionDatabase by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_tracking_protection_database_status),
+    var shouldShowTrackingProtectionDashboard by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_tracking_protection_dashboard_status),
         default = false,
     )
 
@@ -1532,11 +1529,6 @@ class Settings(
         key = appContext.getPreferenceKey(R.string.pref_key_toolbar_expanded),
         default = false,
         persistDefaultIfNotExists = true,
-    )
-
-    var shouldShowToolbarCustomization by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_enable_toolbar_customization),
-        default = { FxNimbus.features.toolbarRedesignOption.value().showCustomization },
     )
 
     val toolbarPosition: ToolbarPosition
@@ -2361,14 +2353,6 @@ class Settings(
     )
 
     /**
-     * Indicates if the user has access to the toolbar redesign option in settings.
-     */
-    var toolbarRedesignEnabled by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_enable_toolbar_redesign),
-        default = { FxNimbus.features.toolbarRedesignOption.value().showOptions },
-    )
-
-    /**
      * Indicates whether or not to use remote server search configuration.
      */
     var useRemoteSearchConfiguration by booleanPreference(
@@ -2574,6 +2558,14 @@ class Settings(
     )
 
     /**
+     * Nimbus override: when true, treat the user as being within one week of the World Cup
+     * kickoff regardless of the device date. The natural date-based check still applies when
+     * false (the default).
+     */
+    val forceOneWeekToWorldCup: Boolean
+        get() = FxNimbus.features.homepageSportsWidget.value().forceOneWeekToWorldCup
+
+    /**
      * Indicates if the Homepage Sports Widget should be visible on the homepage.
      * This is the user-controlled visibility toggle, independent of the
      * [enableHomepageSportsWidget] feature flag.
@@ -2777,9 +2769,12 @@ class Settings(
         default = true,
     )
 
+    /**
+     * Feature flag that indicates if the Import Bookmarks feature is enabled.
+     */
     var importBookmarksFeatureFlagEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_import_bookmarks),
-        default = Config.channel.isDebug,
+        default = Config.channel.isNightlyOrDebug,
     )
 
     /**
@@ -2894,6 +2889,14 @@ class Settings(
     var coldStartsBetweenSetAsDefaultPrompts by intPreference(
         appContext.getPreferenceKey(R.string.pref_key_app_cold_start_count),
         default = 0,
+    )
+
+    /**
+     * Feature flag that indicates if the Import Passwords feature is enabled.
+     */
+    var importPasswordsFeatureFlagEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_import_passwords),
+        default = Config.channel.isDebug,
     )
 
     /**
@@ -3144,14 +3147,6 @@ class Settings(
     )
 
     /**
-     * Whether the Tab Search feature is enabled.
-     */
-    var tabSearchEnabled by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_tab_search),
-        default = { DefaultTabManagementFeatureHelper.tabSearchEnabled },
-    )
-
-    /**
      * Whether the private mode and stories entry point experiment is enabled.
      */
     var privateModeAndStoriesEntryPointEnabled by booleanPreference(
@@ -3233,6 +3228,16 @@ class Settings(
     )
 
     /**
+     * User preference (local only) controlling whether the Google Lens integration is active
+     * when [googleLensIntegrationEnabled] is on. When false, the standard QR scanner is used
+     * and the "Open with Google Lens" image context menu entry is hidden.
+     */
+    var googleLensIntegrationUserEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_google_lens_integration_user_enabled),
+        default = true,
+    )
+
+    /**
      * Whether Longfox is enabled.
      */
     var longfoxEnabled by booleanPreference(
@@ -3252,5 +3257,13 @@ class Settings(
     var downloadsDefaultLocation by stringPreference(
         appContext.getPreferenceKey(R.string.pref_key_downloads_default_location),
         default = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path,
+    )
+
+    /**
+     * Whether WebCompat Reporter enhancements is enabled.Í
+     */
+    var webCompatReporterEnhancementsEnabled by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_webcompat_reporter_enhancements),
+        default = { FxNimbus.features.webcompatReporterEnhancements.value().enabled },
     )
 }

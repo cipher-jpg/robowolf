@@ -925,6 +925,17 @@ export class BackupService extends EventTarget {
   #wasRestorePreviouslyDisabled = false;
 
   /**
+   * Identifies the UI that triggered the most recent call to
+   * setScheduledBackups(). Read once by onUpdateScheduledBackups() when the
+   * pref change actually flips state (in either direction), at which point it
+   * is reset to "unknown" so a subsequent direct pref flip does not inherit a
+   * stale source.
+   *
+   * @type {string}
+   */
+  #scheduledBackupsToggleSource = "unknown";
+
+  /**
    * Called when prefs or other conditions relevant to the status of the backup
    * service change. Unlike #observer, this does not wait for an idle tick.
    *
@@ -3519,7 +3530,9 @@ export class BackupService extends EventTarget {
       );
       let profile = profileSvc.createUniqueProfile(
         profileRootPath ? await IOUtils.getDirectory(profileRootPath) : null,
-        manifest.meta.profileName
+        manifest.meta.profileName,
+        // This is transient and will be overwritten when times.json is copied over.
+        "backup"
       );
 
       let postRecovery = await this.#recoverResources(
@@ -3664,7 +3677,9 @@ export class BackupService extends EventTarget {
       }
       let profile = await lazy.SelectableProfileService.createNewProfile(
         false,
-        existingProfilePath
+        existingProfilePath,
+        // This is transient and will be overwritten when times.json is copied over.
+        "backup"
       );
 
       let postRecovery = await this.#recoverResources(
@@ -3672,6 +3687,11 @@ export class BackupService extends EventTarget {
         recoveryPath,
         profile.path
       );
+
+      if (copiedProfile) {
+        let profileAge = await lazy.ProfileAge(profile.path);
+        await profileAge.recordProfileCopied();
+      }
 
       let isLegacyBackup = manifest.meta?.isSelectableProfile === false;
 
@@ -4076,8 +4096,14 @@ export class BackupService extends EventTarget {
    * Sets browser.backup.scheduled.enabled to true or false.
    *
    * @param { boolean } shouldEnableScheduledBackups true if scheduled backups should be enabled. Else, false.
+   * @param { string } [source] Identifies the UI that is toggling scheduled
+   * backups, in either direction. "preferences" is used for the main backup
+   * settings page. If toggled by a message, use the message ID. Recorded to
+   * the scheduler_toggle_source metric, paired with scheduler_enabled.
    */
-  setScheduledBackups(shouldEnableScheduledBackups) {
+  setScheduledBackups(shouldEnableScheduledBackups, source = "unknown") {
+    this.#scheduledBackupsToggleSource = source || "unknown";
+
     Services.prefs.setBoolPref(
       SCHEDULED_BACKUPS_ENABLED_PREF_NAME,
       shouldEnableScheduledBackups
@@ -4126,6 +4152,12 @@ export class BackupService extends EventTarget {
       } else {
         Glean.browserBackup.toggleOff.record();
       }
+      Glean.browserBackup.schedulerToggleSource.set(
+        this.#scheduledBackupsToggleSource
+      );
+      // Reset the source to "unknown" so a subsequent toggle does not inherit
+      // a stale source.
+      this.#scheduledBackupsToggleSource = "unknown";
 
       lazy.logConsole.debug(
         "Updating scheduled backups",
@@ -5084,10 +5116,9 @@ export class BackupService extends EventTarget {
     multipleFiles = false,
     speedUpHeuristic = false,
   } = {}) {
-    // Do we already have a backup for this browser? if so, we don't need to do any searching!
-    if (lazy.lastBackupFileName) {
+    // If we already have a backup and aren't scanning for multiple files, skip searching
+    if (lazy.lastBackupFileName && !multipleFiles) {
       return {
-        found: true,
         multipleBackupsFound: false,
         count: 1,
       };
@@ -5154,7 +5185,7 @@ export class BackupService extends EventTarget {
         maybeBackupFiles.sort((a, b) => {
           let nameA = PathUtils.filename(a);
           let nameB = PathUtils.filename(b);
-          const match = /_(\d{8}-\d{4})\.html$/;
+          const match = /_(\d{8}-\d{6}\.\d{3})\.html$/;
           let timestampA = nameA.match(match)?.[1];
           let timestampB = nameB.match(match)?.[1];
 
@@ -5371,6 +5402,9 @@ export class BackupService extends EventTarget {
    * @returns {Promise<boolean>}
    */
   async #infalliblePathExists(path) {
+    if (!path) {
+      return false;
+    }
     let exists = false;
     try {
       exists = await IOUtils.exists(path);
@@ -5390,10 +5424,12 @@ export class BackupService extends EventTarget {
     }
 
     let profilesEnabledOn = JSON.parse(
-      Services.prefs.getStringPref(BACKUP_ENABLED_ON_PROFILES_PREF_NAME, "{}")
+      Services.prefs.getStringPref(BACKUP_ENABLED_ON_PROFILES_PREF_NAME, "[]")
     );
 
-    profilesEnabledOn[profileID] = true;
+    if (!profilesEnabledOn.includes(profileID)) {
+      profilesEnabledOn.push(profileID);
+    }
 
     Services.prefs.setStringPref(
       BACKUP_ENABLED_ON_PROFILES_PREF_NAME,
@@ -5410,9 +5446,9 @@ export class BackupService extends EventTarget {
     }
 
     let profilesEnabledOn = JSON.parse(
-      Services.prefs.getStringPref(BACKUP_ENABLED_ON_PROFILES_PREF_NAME, "{}")
+      Services.prefs.getStringPref(BACKUP_ENABLED_ON_PROFILES_PREF_NAME, "[]")
     );
-    delete profilesEnabledOn[profileID];
+    profilesEnabledOn = profilesEnabledOn.filter(id => id !== profileID);
     Services.prefs.setStringPref(
       BACKUP_ENABLED_ON_PROFILES_PREF_NAME,
       JSON.stringify(profilesEnabledOn)

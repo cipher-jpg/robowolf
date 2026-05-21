@@ -117,11 +117,13 @@ data class TabsTrayState(
      * @property items The list of open [TabsTrayItem]s on the Normal page.
      * @property selectedItemIndex The index of the selected normal item.
      * @property tabCount The total number of open Normal tabs, including inactive tabs and the tabs within tab groups.
+     * @property itemFocusIndicatorEnabled Whether the focus indicator may be shown on the Normal tabs page.
      */
     data class NormalTabsState(
         val items: List<TabsTrayItem> = emptyList(),
         val selectedItemIndex: Int = 0,
         val tabCount: Int = 0,
+        val itemFocusIndicatorEnabled: Boolean = true,
     )
 
     /**
@@ -177,7 +179,6 @@ data class TabsTrayState(
      * @property tabGroupsDragAndDropEnabled:  Whether drag and drop is enabled for Tab Groups.
      * @property isInDebugMode Whether the app is in a debug state or has secret menu enabled.
      * @property showTabAutoCloseBanner Whether the banner for the tab auto-closer feature is visible.
-     * @property tabSearchEnabled Whether the tab search feature is globally enabled.
      */
     data class TabsTrayConfig(
         val displayTabsInGrid: Boolean = false,
@@ -185,7 +186,6 @@ data class TabsTrayState(
         val tabGroupsDragAndDropEnabled: Boolean = false,
         val isInDebugMode: Boolean = false,
         val showTabAutoCloseBanner: Boolean = false,
-        val tabSearchEnabled: Boolean = false,
     )
 
     /**
@@ -203,7 +203,7 @@ data class TabsTrayState(
      * Whether the Tab Search button is visible.
      */
     val searchIconVisible: Boolean
-        get() = config.tabSearchEnabled && selectedPage != Page.SyncedTabs
+        get() = selectedPage != Page.SyncedTabs
 
     /**
      * Whether the Tab Search button is enabled.

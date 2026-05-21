@@ -803,8 +803,6 @@ def test_release_promotion(
             "project": "try",
             "level": "1",
             "pushlog_id": "100",
-            "required_signoffs": [],
-            "signoff_urls": {},
             "release_product": "firefox",
             "release_type": "nightly",
         }),
@@ -1079,6 +1077,18 @@ def test_backfill_sliced_boundary_gap(mocker, run_action):
     # ensure no duplicate pushes are triggered
     assert len(called_pids) == len(set(called_pids))
     assert set(called_pids) == {"101", "103", "105"}
+
+
+def test_os_integration(mocker, run_action, graph_config):
+    m = mocker.patch("gecko_taskgraph.actions.os_integration.taskgraph_decision")
+
+    run_action("os-integration")
+
+    m.assert_called_once()
+    args, kwargs = m.call_args
+    assert args[0] == {"root": graph_config.root_dir}
+    assert kwargs["parameters"]["target_tasks_method"] == "os-integration"
+    assert kwargs["parameters"]["optimize_target_tasks"] is True
 
 
 if __name__ == "__main__":

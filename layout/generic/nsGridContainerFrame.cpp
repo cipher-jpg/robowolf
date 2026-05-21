@@ -58,8 +58,10 @@ static mozilla::LazyLogModule gGridContainerLog("GridContainer");
 #define GRID_LOG(...) \
   MOZ_LOG(gGridContainerLog, LogLevel::Debug, (__VA_ARGS__));
 
-static const int32_t kMaxLine = StyleMAX_GRID_LINE;
-static const int32_t kMinLine = StyleMIN_GRID_LINE;
+// These are the limits that we choose to clamp grid line numbers to.
+// http://drafts.csswg.org/css-grid/#overlarge-grids
+static const int32_t kMaxLine = 10000;
+static const int32_t kMinLine = -10000;
 // The maximum line number, in the zero-based translated grid.
 static const uint32_t kTranslatedMaxLine = uint32_t(kMaxLine - kMinLine);
 static const uint32_t kAutoLine = kTranslatedMaxLine + 3457U;
@@ -101,7 +103,7 @@ inline const StyleTrackBreadth& StyleTrackSize::GetMin() const {
   static const StyleTrackBreadth kAuto = StyleTrackBreadth::Auto();
   if (IsBreadth()) {
     // <flex> behaves like minmax(auto, <flex>)
-    return AsBreadth().IsFr() ? kAuto : AsBreadth();
+    return AsBreadth().IsFlex() ? kAuto : AsBreadth();
   }
   if (IsMinmax()) {
     return AsMinmax()._0;
@@ -543,7 +545,7 @@ TrackSize::StateBits nsGridContainerFrame::TrackSize::Initialize(
       mState |= eMaxContentMinSizing;
       break;
     default:
-      MOZ_ASSERT(!min.IsFr(), "<flex> min-sizing is invalid as a track size");
+      MOZ_ASSERT(!min.IsFlex(), "<flex> min-sizing is invalid as a track size");
       mBase = ::ResolveToDefiniteSize(min, aPercentageBasis);
   }
   switch (maxSizeTag) {
@@ -557,7 +559,7 @@ TrackSize::StateBits nsGridContainerFrame::TrackSize::Initialize(
                                               : eMaxContentMaxSizing;
       mLimit = NS_UNCONSTRAINEDSIZE;
       break;
-    case Tag::Fr:
+    case Tag::Flex:
       mState |= eFlexMaxSizing;
       mLimit = NS_UNCONSTRAINEDSIZE;
       break;
@@ -4626,6 +4628,7 @@ int32_t nsGridContainerFrame::Grid::ResolveLine(
     const LineNameMap& aNameMap, LogicalSide aSide, uint32_t aExplicitGridEnd,
     const nsStylePosition* aStyle) {
   MOZ_ASSERT(!aLine.IsAuto());
+  aNth = std::clamp(aNth, kMinLine, kMaxLine);
   int32_t line = 0;
   if (aLine.LineName()->IsEmpty()) {
     MOZ_ASSERT(aNth != 0, "css-grid 9.2: <integer> must not be zero.");
@@ -4706,6 +4709,8 @@ nsGridContainerFrame::Grid::ResolveLineRangeHelper(
     const LineNameMap& aNameMap, LogicalAxis aAxis, uint32_t aExplicitGridEnd,
     const nsStylePosition* aStyle) {
   MOZ_ASSERT(int32_t(kAutoLine) > kMaxLine);
+  auto startNum = std::clamp(aStart.line_num, kMinLine, kMaxLine);
+  auto endNum = std::clamp(aEnd.line_num, kMinLine, kMaxLine);
 
   if (aStart.is_span) {
     if (aEnd.is_span || aEnd.IsAuto()) {
@@ -4713,18 +4718,18 @@ nsGridContainerFrame::Grid::ResolveLineRangeHelper(
       if (aStart.LineName()->IsEmpty()) {
         // span <integer> / span *
         // span <integer> / auto
-        return LinePair(kAutoLine, aStart.line_num);
+        return LinePair(kAutoLine, startNum);
       }
       // span <custom-ident> / span *
       // span <custom-ident> / auto
       return LinePair(kAutoLine, 1);  // XXX subgrid explicit size instead of 1?
     }
 
-    uint32_t from = aEnd.line_num < 0 ? aExplicitGridEnd + 1 : 0;
-    auto end = ResolveLine(aEnd, aEnd.line_num, from, aNameMap,
+    uint32_t from = endNum < 0 ? aExplicitGridEnd + 1 : 0;
+    auto end = ResolveLine(aEnd, endNum, from, aNameMap,
                            MakeLogicalSide(aAxis, LogicalEdge::End),
                            aExplicitGridEnd, aStyle);
-    int32_t span = aStart.line_num == 0 ? 1 : aStart.line_num;
+    int32_t span = startNum == 0 ? 1 : startNum;
     if (end <= 1) {
       // The end is at or before the first explicit line, thus all lines before
       // it match <custom-ident> since they're implicit.
@@ -4746,16 +4751,16 @@ nsGridContainerFrame::Grid::ResolveLineRangeHelper(
     if (aEnd.is_span) {
       if (aEnd.LineName()->IsEmpty()) {
         // auto / span <integer>
-        MOZ_ASSERT(aEnd.line_num != 0);
-        return LinePair(start, aEnd.line_num);
+        MOZ_ASSERT(endNum != 0);
+        return LinePair(start, endNum);
       }
       // https://drafts.csswg.org/css-grid-2/#grid-placement-errors
       // auto / span <custom-ident>
       return LinePair(start, 1);  // XXX subgrid explicit size instead of 1?
     }
   } else {
-    uint32_t from = aStart.line_num < 0 ? aExplicitGridEnd + 1 : 0;
-    start = ResolveLine(aStart, aStart.line_num, from, aNameMap,
+    uint32_t from = startNum < 0 ? aExplicitGridEnd + 1 : 0;
+    start = ResolveLine(aStart, startNum, from, aNameMap,
                         MakeLogicalSide(aAxis, LogicalEdge::Start),
                         aExplicitGridEnd, aStyle);
     if (aEnd.IsAuto()) {
@@ -4767,7 +4772,7 @@ nsGridContainerFrame::Grid::ResolveLineRangeHelper(
   }
 
   uint32_t from;
-  int32_t nth = aEnd.line_num == 0 ? 1 : aEnd.line_num;
+  int32_t nth = endNum == 0 ? 1 : endNum;
   if (aEnd.is_span) {
     if (MOZ_UNLIKELY(start < 0)) {
       if (aEnd.LineName()->IsEmpty()) {
@@ -4783,7 +4788,7 @@ nsGridContainerFrame::Grid::ResolveLineRangeHelper(
       from = start;
     }
   } else {
-    from = aEnd.line_num < 0 ? aExplicitGridEnd + 1 : 0;
+    from = endNum < 0 ? aExplicitGridEnd + 1 : 0;
   }
   auto end = ResolveLine(aEnd, nth, from, aNameMap,
                          MakeLogicalSide(aAxis, LogicalEdge::End),
@@ -7395,7 +7400,7 @@ float nsGridContainerFrame::Tracks::FindFrUnitSize(
   for (auto i : aRange.Range()) {
     const TrackSize& sz = mSizes[i];
     if (sz.mState & TrackSize::eFlexMaxSizing) {
-      flexFactorSum += aFunctions.MaxSizingFor(i).AsFr();
+      flexFactorSum += aFunctions.MaxSizingFor(i).AsFlex()._0;
     } else {
       leftOverSpace -= sz.mBase;
       if (leftOverSpace <= 0) {
@@ -7416,7 +7421,7 @@ float nsGridContainerFrame::Tracks::FindFrUnitSize(
       if (track == kAutoLine) {
         continue;  // Track marked as inflexible in a prev. iter of this loop.
       }
-      float flexFactor = aFunctions.MaxSizingFor(track).AsFr();
+      float flexFactor = aFunctions.MaxSizingFor(track).AsFlex()._0;
       const nscoord base = mSizes[track].mBase;
       if (flexFactor * hypotheticalFrSize < base) {
         // 12.7.1.4: Treat this track as inflexible.
@@ -7450,7 +7455,7 @@ float nsGridContainerFrame::Tracks::FindUsedFlexFraction(
   // floored at 1).
   float fr = 0.0f;
   for (uint32_t track : aFlexTracks) {
-    float flexFactor = aFunctions.MaxSizingFor(track).AsFr();
+    float flexFactor = aFunctions.MaxSizingFor(track).AsFlex()._0;
     float possiblyDividedBaseSize = (flexFactor > 1.0f)
                                         ? mSizes[track].mBase / flexFactor
                                         : mSizes[track].mBase;
@@ -7523,7 +7528,7 @@ void nsGridContainerFrame::Tracks::StretchFlexibleTracks(
                                     aAvailableSize);
     if (fr != 0.0f) {
       for (uint32_t i : flexTracks) {
-        float flexFactor = aFunctions.MaxSizingFor(i).AsFr();
+        float flexFactor = aFunctions.MaxSizingFor(i).AsFlex()._0;
         nscoord flexLength = NSToCoordRound(flexFactor * fr);
         nscoord& base = mSizes[i].mBase;
         if (flexLength > base) {
@@ -10845,7 +10850,7 @@ nscoord nsGridContainerFrame::TrackPlan::DistributeToFlexTrackSizes(
   for (uint32_t track : aGrowableTracks) {
     MOZ_ASSERT(aTracks.mSizes[track].mState & TrackSize::eFlexMaxSizing,
                "Only flex-sized tracks should be growable during step 4");
-    totalFr += aFunctions.MaxSizingFor(track).AsFr();
+    totalFr += aFunctions.MaxSizingFor(track).AsFlex()._0;
   }
   MOZ_ASSERT(totalFr >= 0.0, "flex fractions must be non-negative.");
 
@@ -10860,7 +10865,7 @@ nscoord nsGridContainerFrame::TrackPlan::DistributeToFlexTrackSizes(
     if (sz.IsFrozen()) {
       continue;
     }
-    const double trackFr = aFunctions.MaxSizingFor(track).AsFr();
+    const double trackFr = aFunctions.MaxSizingFor(track).AsFlex()._0;
     nscoord size = NSToCoordRoundWithClamp(frSize * trackFr);
     // This shouldn't happen in theory, but it could happen due to a
     // combination of floating-point error during the multiplication above

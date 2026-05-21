@@ -886,6 +886,25 @@ nsIFrame* nsLayoutUtils::GetBackdropFrame(const nsIContent* aContent) {
   return pseudo ? pseudo->GetPrimaryFrame() : nullptr;
 }
 
+/*static*/
+void nsLayoutUtils::AppendGeneratedContentPseudos(
+    const Element* aElement, nsTArray<nsIContent*>& aPseudos) {
+  if (aElement->HasProperties()) {
+    if (auto* backdrop = nsLayoutUtils::GetBackdropPseudo(aElement)) {
+      aPseudos.AppendElement(backdrop);
+    }
+    if (auto* marker = nsLayoutUtils::GetMarkerPseudo(aElement)) {
+      aPseudos.AppendElement(marker);
+    }
+    if (auto* before = nsLayoutUtils::GetBeforePseudo(aElement)) {
+      aPseudos.AppendElement(before);
+    }
+    if (auto* after = nsLayoutUtils::GetAfterPseudo(aElement)) {
+      aPseudos.AppendElement(after);
+    }
+  }
+}
+
 #ifdef ACCESSIBILITY
 void nsLayoutUtils::GetMarkerSpokenText(const nsIContent* aContent,
                                         nsAString& aText) {
@@ -3867,15 +3886,16 @@ already_AddRefed<nsFontMetrics> nsLayoutUtils::GetFontMetricsForFrame(
 
 already_AddRefed<nsFontMetrics> nsLayoutUtils::GetFontMetricsForComputedStyle(
     const ComputedStyle* aComputedStyle, nsPresContext* aPresContext,
-    float aInflation, uint8_t aVariantWidth) {
+    float aInflation, uint8_t aVariantWidth, bool aForceHorizontalMetrics) {
   WritingMode wm(aComputedStyle);
   const nsStyleFont* styleFont = aComputedStyle->StyleFont();
   nsFontMetrics::Params params;
   params.language = styleFont->mLanguage;
   params.explicitLanguage = styleFont->mExplicitLanguage;
-  params.orientation = wm.IsVertical() && !wm.IsSideways()
-                           ? nsFontMetrics::eVertical
-                           : nsFontMetrics::eHorizontal;
+  params.orientation =
+      !aForceHorizontalMetrics && wm.IsVertical() && !wm.IsSideways()
+          ? nsFontMetrics::eVertical
+          : nsFontMetrics::eHorizontal;
   // pass the user font set object into the device context to
   // pass along to CreateFontGroup
   params.userFontSet = aPresContext->GetUserFontSet();
@@ -8605,6 +8625,17 @@ void nsLayoutUtils::SetBSizeFromFontMetrics(const nsIFrame* aFrame,
       nsLayoutUtils::GetInflatedFontMetricsForFrame(aFrame);
 
   if (fm) {
+    // In vertical mixed mode, sideways glyphs (e.g. Latin) use horizontal font
+    // metrics and may need more block-size than vertical metrics provide.
+    if (aLineWM.IsVertical() && !aLineWM.IsSideways() &&
+        !aFrameWM.IsUpright()) {
+      RefPtr<nsFontMetrics> hfm = nsLayoutUtils::GetFontMetricsForComputedStyle(
+          aFrame->Style(), aFrame->PresContext(), FontSizeInflationFor(aFrame),
+          NS_FONT_VARIANT_WIDTH_NORMAL, true);
+      if (hfm && hfm->MaxHeight() > fm->MaxHeight()) {
+        fm = std::move(hfm);
+      }
+    }
     // Compute final height of the frame.
     //
     // Do things the standard css2 way -- though it's hard to find it

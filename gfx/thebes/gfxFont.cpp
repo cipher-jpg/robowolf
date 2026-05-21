@@ -840,24 +840,34 @@ void gfxShapedText::SetMissingGlyph(uint32_t aIndex, uint32_t aChar,
 }
 
 bool gfxShapedText::FilterIfIgnorable(uint32_t aIndex, uint32_t aCh) {
-  if (IsIgnorable(aCh)) {
-    // There are a few default-ignorables of Letter category (currently,
-    // just the Hangul filler characters) that we'd better not discard
-    // if they're followed by additional characters in the same cluster.
-    // Some fonts use them to carry the width of a whole cluster of
-    // combining jamos; see bug 1238243.
-    auto* charGlyphs = GetCharacterGlyphs();
-    if (GetGenCategory(aCh) == nsUGenCategory::kLetter &&
-        aIndex + 1 < GetLength() && !charGlyphs[aIndex + 1].IsClusterStart()) {
+  if (!IsIgnorable(aCh)) {
+    return false;
+  }
+  // There are a few default-ignorables of Letter category (currently,
+  // just the Hangul filler characters) that we'd better not discard
+  // if they're followed by additional characters in the same cluster.
+  // Some fonts use them to carry the width of a whole cluster of
+  // combining jamos; see bug 1238243.
+  auto* charGlyphs = GetCharacterGlyphs();
+  auto category = GetGeneralCategory(aCh);
+  if (category == HB_UNICODE_GENERAL_CATEGORY_OTHER_LETTER &&
+      aIndex + 1 < GetLength() && !charGlyphs[aIndex + 1].IsClusterStart()) {
+    return false;
+  }
+  CompressedGlyph& g = charGlyphs[aIndex];
+  // For Format-Control characters, we avoid filtering if the glyph is _not_
+  // .notdef and has a positive advance width (e.g. Mongolian Vowel Separator
+  // in some fonts).
+  if (category == HB_UNICODE_GENERAL_CATEGORY_FORMAT) {
+    if (!g.IsSimpleGlyph() ||
+        (g.GetSimpleGlyph() != 0 && g.GetSimpleAdvance() > 0)) {
       return false;
     }
-    // A compressedGlyph that is set to MISSING but has no DetailedGlyphs list
-    // will be zero-width/invisible, which is what we want here.
-    CompressedGlyph& g = charGlyphs[aIndex];
-    g.SetComplex(g.IsClusterStart(), g.IsLigatureGroupStart()).SetMissing();
-    return true;
   }
-  return false;
+  // A compressedGlyph that is set to MISSING but has no DetailedGlyphs list
+  // will be zero-width/invisible, which is what we want here.
+  g.SetComplex(g.IsClusterStart(), g.IsLigatureGroupStart()).SetMissing();
+  return true;
 }
 
 void gfxShapedText::ApplyTrackingToClusters(gfxFloat aTrackingAdjustment,
@@ -2441,13 +2451,10 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
     // centered. So in this case, we need to adjust the position so that
     // the rotated horizontal text (which uses an alphabetic baseline) will
     // look OK when juxtaposed with upright glyphs (rendered on a centered
-    // vertical baseline). The adjustment here is somewhat ad hoc; we
-    // should eventually look for baseline tables[1] in the fonts and use
-    // those if available.
-    // [1] See http://www.microsoft.com/typography/otspec/base.htm
+    // vertical baseline).
     if (aTextRun->UseCenterBaseline()) {
-      const Metrics& metrics = GetMetrics(nsFontMetrics::eHorizontal);
-      float baseAdj = (metrics.emAscent - metrics.emDescent) / 2;
+      float baseAdj = (GetBaseline(kAlphabetic, nsFontMetrics::eHorizontal) -
+                       GetBaseline(kAlphabetic, nsFontMetrics::eVertical));
       baseline += baseAdj * aTextRun->GetAppUnitsPerDevUnit() * baselineDir;
     }
   } else if (textDrawer &&
@@ -3132,10 +3139,9 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
     // based on the alphabetic baseline. So we compute a baseline offset
     // that will be applied to ascent/descent values and glyph rects
     // to effectively shift them relative to the baseline.
-    // XXX Eventually we should probably use the BASE table, if present.
-    // But it usually isn't, so we need an ad hoc adjustment for now.
-    baselineOffset =
-        appUnitsPerDevUnit * (fontMetrics.emAscent - fontMetrics.emDescent) / 2;
+    float baseAdj = (GetBaseline(kAlphabetic, nsFontMetrics::eHorizontal) -
+                     GetBaseline(kAlphabetic, nsFontMetrics::eVertical));
+    baselineOffset = appUnitsPerDevUnit * baseAdj;
   }
 
   RunMetrics metrics;
@@ -4409,6 +4415,14 @@ void gfxFont::SanitizeMetrics(gfxFont::Metrics* aMetrics,
   }
 }
 
+static gfxFloat SynthesizeVerticalMetricFromHorizontalMetric(
+    const gfxFont::Metrics& aHMetrics, const gfxFont::Metrics& aVMetrics,
+    gfxFloat aHValue) {
+  gfxFloat hAbsolute = aHValue + aHMetrics.maxDescent;
+  gfxFloat vAbsolute = hAbsolute / aHMetrics.maxHeight * aVMetrics.maxHeight;
+  return vAbsolute - aVMetrics.maxDescent;
+}
+
 gfxFloat gfxFont::GetBaseline(const Baseline& aBaseline,
                               Orientation aOrientation) {
   std::atomic<gfxFloat>& baseline =
@@ -4420,16 +4434,29 @@ gfxFloat gfxFont::GetBaseline(const Baseline& aBaseline,
     // Use harfbuzz to try to read the font's baseline metrics. For
     // missing baselines, harfbuzz will synthesize fallbacks according
     // to the CSS Inline Layout Module Level 3 specification.
-    hb_font_t* hbFont = gfxHarfBuzzShaper::CreateHBFont(this);
+    hb_font_t* hbFont = GetHarfBuzzShaper()->GetHBFont();
     hb_direction_t hbDir = aOrientation == nsFontMetrics::eHorizontal
                                ? HB_DIRECTION_LTR
                                : HB_DIRECTION_TTB;
-    hb_position_t position;
-    hb_ot_layout_get_baseline_with_fallback(
-        hbFont, tag, hbDir, HB_OT_TAG_DEFAULT_SCRIPT,
-        HB_OT_TAG_DEFAULT_LANGUAGE, &position);
-    hb_font_destroy(hbFont);
-    value = position / 65536.0;
+
+    // Some fonts have vertical baseline metrics that are poorly behaved,
+    // so instead synthesize the baselines from the horizontal orientation.
+    const Metrics& horizMetrics = GetMetrics(nsFontMetrics::eHorizontal);
+    if (aOrientation == nsFontMetrics::eVertical &&
+        horizMetrics.maxHeight != 0) {
+      const Metrics& vertMetrics = GetMetrics(nsFontMetrics::eVertical);
+      gfxFloat horizBaseline =
+          GetBaseline(aBaseline, nsFontMetrics::eHorizontal);
+      value = SynthesizeVerticalMetricFromHorizontalMetric(
+          horizMetrics, vertMetrics, horizBaseline);
+    } else {
+      hb_position_t position;
+      hb_ot_layout_get_baseline_with_fallback(
+          hbFont, tag, hbDir, HB_OT_TAG_DEFAULT_SCRIPT,
+          HB_OT_TAG_DEFAULT_LANGUAGE, &position);
+      value = position / 65536.0;
+    }
+
     [[maybe_unused]] gfxFloat oldValue = baseline.exchange(value);
     MOZ_ASSERT(std::isnan(oldValue) || oldValue == value,
                "computed baseline mismatch");
@@ -4456,6 +4483,7 @@ void gfxFont::CreateVerticalMetrics() {
 
   auto* metrics = new Metrics();
   ::memset(metrics, 0, sizeof(Metrics));
+  const Metrics& horizMetrics = GetHorizontalMetrics();
 
   // Some basic defaults, in case the font lacks any real metrics tables.
   // TODO: consider what rounding (if any) we should apply to these.
@@ -4573,7 +4601,6 @@ void gfxFont::CreateVerticalMetrics() {
   // horizontal metrics as well, to help consistency of CSS line-height.
   if (!metrics->aveCharWidth ||
       metrics->externalLeading == UNINITIALIZED_LEADING) {
-    const Metrics& horizMetrics = GetHorizontalMetrics();
     if (!metrics->aveCharWidth) {
       metrics->aveCharWidth = horizMetrics.maxAscent + horizMetrics.maxDescent;
     }
@@ -4619,12 +4646,26 @@ void gfxFont::CreateVerticalMetrics() {
 
   // Somewhat arbitrary values for now, subject to future refinement...
   metrics->spaceWidth = metrics->aveCharWidth;
-  metrics->xHeight = metrics->emHeight / 2;
-  metrics->capHeight = metrics->maxAscent;
 
-  metrics->maxHeight = metrics->maxAscent + metrics->maxDescent;
-  metrics->internalLeading =
-      std::max(0.0, metrics->maxHeight - metrics->emHeight);
+  // Synthesize the internal leading of the vertical font from the horizontal
+  // metrics, and distribute evenly to both the vertical ascent and descent.
+  if (horizMetrics.emHeight != 0) {
+    metrics->internalLeading = horizMetrics.internalLeading /
+                               horizMetrics.emHeight * metrics->emHeight;
+    metrics->maxAscent += metrics->internalLeading / 2;
+    metrics->maxDescent += metrics->internalLeading / 2;
+    metrics->maxHeight = metrics->maxAscent + metrics->maxDescent;
+  } else {
+    metrics->maxHeight = metrics->maxAscent + metrics->maxDescent;
+    metrics->internalLeading =
+        std::max(0.0, metrics->maxHeight - metrics->emHeight);
+  }
+
+  // Synthesize the x-height and cap-height from the horizontal metrics.
+  metrics->xHeight = SynthesizeVerticalMetricFromHorizontalMetric(
+      horizMetrics, *metrics, horizMetrics.xHeight);
+  metrics->capHeight = SynthesizeVerticalMetricFromHorizontalMetric(
+      horizMetrics, *metrics, horizMetrics.capHeight);
 
   if (metrics->zeroWidth < 0.0) {
     metrics->zeroWidth = metrics->aveCharWidth;

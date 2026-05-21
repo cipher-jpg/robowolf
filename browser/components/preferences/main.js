@@ -803,26 +803,6 @@ var gMainPane = {
     });
 
     setEventListener("chooseLanguage", "command", gMainPane.showLanguages);
-    // TODO (Bug 1817084) Remove this code when we disable the extension
-    setEventListener(
-      "fxtranslateButton",
-      "command",
-      gMainPane.showTranslationExceptions
-    );
-
-    document
-      .getElementById("migrationWizardDialog")
-      .addEventListener("MigrationWizard:Close", function (e) {
-        e.currentTarget.close();
-      });
-
-    // Firefox Translations settings panel
-    // TODO (Bug 1817084) Remove this code when we disable the extension
-    const fxtranslationsDisabledPrefName = "extensions.translations.disabled";
-    if (!Services.prefs.getBoolPref(fxtranslationsDisabledPrefName, true)) {
-      let fxtranslationRow = document.getElementById("fxtranslationsBox");
-      fxtranslationRow.hidden = false;
-    }
 
     // Initilize Application section.
 
@@ -1674,17 +1654,6 @@ var gMainPane = {
     }
   },
 
-  /**
-   * Displays the translation exceptions dialog where specific site and language
-   * translation preferences can be set.
-   */
-  // TODO (Bug 1817084) Remove this code when we disable the extension
-  showTranslationExceptions() {
-    gSubDialog.open(
-      "chrome://browser/content/preferences/dialogs/translationExceptions.xhtml"
-    );
-  },
-
   showTranslationsSettings() {
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/translations.xhtml"
@@ -1715,12 +1684,17 @@ var gMainPane = {
 
     await customElements.whenDefined("migration-wizard");
 
-    // If we've been opened before, remove the old wizard and insert a
-    // new one to put it back into its starting state.
+    // Only create the migration-wizard once.
     if (!migrationWizardDialog.firstElementChild) {
       let wizard = document.createElement("migration-wizard");
       wizard.toggleAttribute("dialog-mode", true);
       migrationWizardDialog.appendChild(wizard);
+      migrationWizardDialog.addEventListener(
+        "MigrationWizard:Close",
+        function (e) {
+          e.currentTarget.close();
+        }
+      );
     }
     migrationWizardDialog.firstElementChild.requestState();
 

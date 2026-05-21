@@ -12,10 +12,10 @@ import androidx.annotation.DrawableRes
  * @property key Abbreviation named for a given name (e.g. "ENG").
  * @property flagResId Local fallback drawable for the flag.
  * @property globalTeamId Unique numeric identifier for this team.
- * @property name Long display name (e.g. "England").
+ * @property name Long display name (e.g. "England"). This is not localized.
  * @property region ISO3 region code This may differ from [key] (e.g. "ENG").
  * @property iconUrl Optional URL for the team logo.
- * @property group Group name (e.g. "Group A"). This will be null after the knockout stage starts.
+ * @property group [Group] name (e.g. "Group A"). This will be null after the knockout stage starts.
  * @property eliminated True once the team is out of the tournament.
  * @property standing The [TeamStanding] record in the tournament.
  */
@@ -26,10 +26,15 @@ data class Team(
     val name: String = "",
     val region: String = "",
     val iconUrl: String? = null,
-    val group: String? = null,
+    val group: Group? = null,
     val eliminated: Boolean = false,
     val standing: TeamStanding = TeamStanding(),
 )
+
+/**
+ * Represents the Group stage within the tournament.
+ */
+enum class Group { A, B, C, D, E, F, G, H, I, J, K, L }
 
 /**
  * The team's record within the tournament.
@@ -62,10 +67,10 @@ sealed class MatchStatus {
     /**
      * Match is in a penalty shootout.
      *
-     * @property homeScore Home team score.
-     * @property awayScore Away team score.
+     * @property homePenalty Home team penalty score.
+     * @property awayPenalty Away team penalty score.
      */
-    data class Penalties(val homeScore: Int? = null, val awayScore: Int? = null) : MatchStatus()
+    data class Penalties(val homePenalty: Int? = null, val awayPenalty: Int? = null) : MatchStatus()
 
     /**
      * Match has ended.
@@ -75,10 +80,10 @@ sealed class MatchStatus {
     /**
      * Match has ended with penalities.
      *
-     * @property homeScore Home team score.
-     * @property awayScore Away team score.
+     * @property homePenalty Home team penalty score.
+     * @property awayPenalty Away team penalty score.
      */
-    data class FinalAfterPenalties(val homeScore: Int? = null, val awayScore: Int? = null) : MatchStatus()
+    data class FinalAfterPenalties(val homePenalty: Int? = null, val awayPenalty: Int? = null) : MatchStatus()
 
     /**
      * API returned an unrecognized status string.
@@ -90,9 +95,10 @@ sealed class MatchStatus {
  * Information related to a given sport event (game/match).
  *
  * @property globalEventId Stable upstream identifier; the natural cache key.
- * @property date UTC DateTime string for start of match.
- * @property home Home [Team].
- * @property away Away [Team].
+ * @property date Date string for start of match e.g. Jun 13.
+ * @property time Time string for start of match e.g. 5:00 PM.
+ * @property home Home [Team]. Null if the match has not been scheduled.
+ * @property away Away [Team]. Null if the match has not been scheduled.
  * @property matchStatus Current [MatchStatus].
  * @property homeScore Home team score. Null if the match has not started.
  * @property awayScore Away team score. Null if the match has not started.
@@ -106,8 +112,9 @@ sealed class MatchStatus {
 data class Match(
     val globalEventId: Long = 0L,
     val date: String,
-    val home: Team,
-    val away: Team,
+    val time: String,
+    val home: Team?,
+    val away: Team?,
     val matchStatus: MatchStatus = MatchStatus.Scheduled,
     val homeScore: Int? = null,
     val awayScore: Int? = null,
@@ -148,9 +155,16 @@ sealed class FollowedTeamOutcome {
     data object Eliminated : FollowedTeamOutcome()
 
     /**
-     * Followed team won the tournament with this match.
+     * Tournament has been decided. [winner] is the team that won the final, regardless of
+     * whether any team is followed. The celebration card uses this directly.
      */
-    data object TournamentWinner : FollowedTeamOutcome()
+    data class TournamentWinner(val winner: Team) : FollowedTeamOutcome()
+
+    /**
+     * Third-place playoff has been decided. [winner] is the team that won the playoff,
+     * regardless of whether any team is followed. The celebration card uses this directly.
+     */
+    data class ThirdPlace(val winner: Team) : FollowedTeamOutcome()
 }
 
 /**
@@ -169,13 +183,13 @@ enum class TournamentRound {
 /**
  * UI state for a match card.
  *
- * @property match The underlying match data.
+ * @property matches The underlying data for each match.
  * @property round Which round of the tournament this match belongs to.
  * @property viewerOutcome Outcome of this match from the perspective of the followed team(s).
  * @property relatedMatches Related [Match]es to display.
  */
 data class MatchCard(
-    val match: Match,
+    val matches: List<Match>,
     val round: TournamentRound = TournamentRound.GROUP_STAGE,
     val viewerOutcome: FollowedTeamOutcome = FollowedTeamOutcome.NotInvolved,
     val relatedMatches: List<Match>,
@@ -195,3 +209,21 @@ data class ChampionCard(
     val winner: Team,
     val thirdPlace: Boolean = false,
 )
+
+/**
+ * Represents the source of the Country Selector BottomSheet impressions.
+ */
+enum class CountrySelectorSource(val value: String) {
+    COUNTDOWN_CARD_FOLLOW_TEAM_BUTTON("countdown_card_follow_team_button"),
+    KEEP_TABS_CARD_FOLLOW_TEAM_BUTTON("keep_tabs_card_follow_team_button"),
+    SPORTS_WIDGET_MENU("sports_widget_menu"),
+    SPORTS_LOGO("sports_logo"),
+}
+
+/**
+ * Represents the source of the Live Match Refresh button clicks.
+ */
+enum class LiveMatchRefreshSource(val value: String) {
+    LIVE_MATCH_HEADER("live_match_header"),
+    LIVE_MATCH_ERROR_BUTTON("live_match_error_button"),
+}

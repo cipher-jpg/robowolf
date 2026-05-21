@@ -39,6 +39,7 @@ import mozilla.components.lib.shake.detectShakes
 import mozilla.components.support.base.feature.UserInteractionHandler
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.ktx.kotlin.isContentUrl
+import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.store.BrowserScreenAction.ReaderModeStatusUpdated
 import org.mozilla.fenix.components.Components
@@ -48,6 +49,7 @@ import org.mozilla.fenix.components.TabCollectionStorage
 import org.mozilla.fenix.components.VoiceSearchFeature
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
 import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
 import org.mozilla.fenix.components.metrics.installSourcePackage
 import org.mozilla.fenix.components.toolbar.gestures.ToolbarHorizontalGesturesHandler
 import org.mozilla.fenix.components.toolbar.gestures.ToolbarVerticalGesturesHandler
@@ -211,7 +213,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
                     activity = requireActivity(),
                     contentLayout = binding.browserLayout,
                     tabPreview = binding.tabPreview,
-                    toolbarLayout = browserToolbarView.layout,
+                    toolbarLayout = browserToolbar.layout,
                     navBarLayout = browserNavigationBar?.layout,
                     store = components.core.store,
                     selectTabUseCase = components.useCases.tabsUseCases.selectTab,
@@ -226,7 +228,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
             binding.gestureLayout.addGestureListener(
                 ToolbarVerticalGesturesHandler(
                     appStore = components.appStore,
-                    toolbarLayout = browserToolbarView.layout,
+                    toolbarLayout = browserToolbar.layout,
                     navBarLayout = browserNavigationBar?.layout,
                     toolbarPosition = settings.toolbarPosition,
                     navController = findNavController(),
@@ -260,9 +262,12 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
 
     private suspend fun navigateToSummarizationIfEligible() {
         findNavController().apply {
-            // If the shake gesture was disabled in the bottom sheet hosted settings but the fragment
-            // has not been recreated yet, we need to check if it's still active before proceeding.
-            val shakeEnabled = requireComponents.core.summarizationSettings.isGestureEnabled.value
+            // If the shake gesture or the parent feature was disabled in the bottom sheet hosted
+            // settings but the fragment has not been recreated yet, we need to check both are still
+            // active before proceeding.
+            val summarizationSettings = requireComponents.core.summarizationSettings
+            val shakeEnabled = summarizationSettings.isFeatureEnabled.value &&
+                summarizationSettings.isGestureEnabled.value
 
             if (!shakeEnabled) {
                 return
@@ -356,13 +361,22 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
                     browserScreenStore = browserScreenStore,
                     appStore = rootView.context.components.appStore,
                     onTranslationStatusUpdate = {},
-                    onShowTranslationsDialog = browserToolbarInteractor::onTranslationsButtonClicked,
+                    onShowTranslationsDialog = ::openTranslationsDialogFromToolbar,
                     navController = findNavController(),
                 ),
                 owner = this,
                 view = rootView,
             )
         }
+    }
+
+    private fun openTranslationsDialogFromToolbar() {
+        Translations.action.record(Translations.ActionExtra("main_flow_toolbar"))
+        requireComponents.appStore.dispatch(SnackbarAction.SnackbarDismissed)
+        findNavController().navigateSafe(
+            R.id.browserFragment,
+            BrowserFragmentDirections.actionBrowserFragmentToTranslationsDialogFragment(),
+        )
     }
 
     override fun onStart() {
@@ -600,9 +614,11 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
         showFor = { _, hitResult ->
             val isImage = hitResult is HitResult.IMAGE || hitResult is HitResult.IMAGE_SRC
             val selectedEngine = context.components.core.store.state.search.selectedOrDefaultSearchEngine
+            val settings = context.settings()
             isImage &&
                 hitResult.src.isHttpUrl() &&
-                context.settings().googleLensIntegrationEnabled &&
+                settings.googleLensIntegrationEnabled &&
+                settings.googleLensIntegrationUserEnabled &&
                 selectedEngine.isGoogleSearchEngine()
         },
         action = { _, hitResult ->
@@ -623,9 +639,5 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
     @VisibleForTesting
     internal fun updateLastBrowseActivity() {
         requireContext().settings().lastBrowseActivity = System.currentTimeMillis()
-    }
-
-    companion object {
-        const val SHARE_WEIGHT = 4
     }
 }

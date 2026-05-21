@@ -4508,8 +4508,7 @@ bool nsContentUtils::IsValidShadowHostName(nsAtom* aName,
          aName == nsGkAtoms::h5 || aName == nsGkAtoms::h6 ||
          aName == nsGkAtoms::header || aName == nsGkAtoms::main ||
          aName == nsGkAtoms::nav || aName == nsGkAtoms::p ||
-         aName == nsGkAtoms::section || aName == nsGkAtoms::search ||
-         aName == nsGkAtoms::span;
+         aName == nsGkAtoms::section || aName == nsGkAtoms::span;
 }
 
 // static
@@ -5648,6 +5647,19 @@ static already_AddRefed<Event> GetEventWithTarget(
   event->SetTarget(aTarget);
 
   return event.forget();
+}
+
+// static
+nsIContent* nsContentUtils::GetEventTargetContent(
+    nsIContent* aExplicitEventTargetContent, const WidgetEvent* aEvent) {
+  if (!aExplicitEventTargetContent ||
+      aExplicitEventTargetContent->IsElement() || !aEvent ||
+      !IsForbiddenDispatchingToNonElementContent(aEvent->mMessage)) {
+    return aExplicitEventTargetContent;
+  }
+  Element* const ancestorElement =
+      aExplicitEventTargetContent->GetInclusiveFlattenedTreeAncestorElement();
+  return ancestorElement ? ancestorElement : aExplicitEventTargetContent;
 }
 
 // static
@@ -9632,8 +9644,7 @@ already_AddRefed<imgIContainer> nsContentUtils::IPCImageToImage(
     return nullptr;
   }
 
-  RefPtr<gfxDrawable> drawable =
-      new gfxSurfaceDrawable(surface, surface->GetSize());
+  auto drawable = MakeRefPtr<gfxSurfaceDrawable>(surface, surface->GetSize());
   nsCOMPtr<imgIContainer> imageContainer =
       image::ImageOps::CreateFromDrawable(drawable);
   return imageContainer.forget();
@@ -11402,14 +11413,15 @@ nsresult nsContentUtils::NewXULOrHTMLElement(
              "Can only create XUL or XHTML elements.");
 
   nsAtom* name = nodeInfo->NameAtom();
-  int32_t tag = eHTMLTag_unknown;
   bool isCustomElementName = false;
-  if (nodeInfo->NamespaceEquals(kNameSpaceID_XHTML)) {
-    tag = nsHTMLTags::CaseSensitiveAtomTagToId(name);
+  const Maybe<const nsHTMLTag>& tag = nodeInfo->HTMLTag();
+  if (tag.isSome()) {
+    MOZ_ASSERT(nodeInfo->NamespaceEquals(kNameSpaceID_XHTML));
     isCustomElementName =
-        (tag == eHTMLTag_userdefined &&
+        (*tag == eHTMLTag_userdefined &&
          nsContentUtils::IsCustomElementName(name, kNameSpaceID_XHTML));
-  } else {  // kNameSpaceID_XUL
+  } else {
+    MOZ_ASSERT(nodeInfo->NamespaceEquals(kNameSpaceID_XUL));
     if (aIsAtom) {
       // Make sure the customized built-in element to be constructed confirms
       // to our naming requirement, i.e. [is] must be a dashed name and
@@ -11500,7 +11512,7 @@ nsresult nsContentUtils::NewXULOrHTMLElement(
       // 4.2. "Set result to the result of creating an element internal..."
       if (nodeInfo->NamespaceEquals(kNameSpaceID_XHTML)) {
         *aResult =
-            CreateHTMLElement(tag, nodeInfo.forget(), aFromParser).take();
+            CreateHTMLElement(*tag, nodeInfo.forget(), aFromParser).take();
       } else {
         NS_IF_ADDREF(*aResult = nsXULElement::Construct(nodeInfo.forget()));
       }
@@ -11579,7 +11591,7 @@ nsresult nsContentUtils::NewXULOrHTMLElement(
       NS_IF_ADDREF(*aResult =
                        NS_NewHTMLElement(nodeInfo.forget(), aFromParser));
     } else {
-      *aResult = CreateHTMLElement(tag, nodeInfo.forget(), aFromParser).take();
+      *aResult = CreateHTMLElement(*tag, nodeInfo.forget(), aFromParser).take();
     }
   } else {
     NS_IF_ADDREF(*aResult = nsXULElement::Construct(nodeInfo.forget()));

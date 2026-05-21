@@ -38,6 +38,26 @@ function setSearchValue(container, value) {
   return input;
 }
 
+// Per-zone Intl.DateTimeFormat mock for render tests that need
+// different localized names across multiple time zones in one run.
+// The inner stub must stay a `function` expression — arrow functions
+// can't be invoked with `new`, which production code does.
+const installMockedIntl = nameByTimeZone => {
+  const Original = Intl.DateTimeFormat;
+  Intl.DateTimeFormat = function (locale, options = {}) {
+    const tz = options.timeZone;
+    const value = tz && nameByTimeZone[tz];
+    return {
+      format: () => "",
+      formatToParts: () => (value ? [{ type: "timeZoneName", value }] : []),
+      resolvedOptions: () => ({ timeZone: tz }),
+    };
+  };
+  return () => {
+    Intl.DateTimeFormat = Original;
+  };
+};
+
 describe("<AddClockForm>", () => {
   describe("rendering", () => {
     it("renders an empty form when no initialClock is supplied", () => {
@@ -132,15 +152,52 @@ describe("<AddClockForm>", () => {
       ).toBe("Berlin");
     });
 
+    it("renders and searches by the localized zone name built from Intl", () => {
+      const restore = installMockedIntl({
+        "Europe/Berlin": "Central European Time",
+        "Australia/Sydney": "Eastern Australia Time",
+        "America/New_York": "Eastern Time",
+        "America/Los_Angeles": "Pacific Time",
+        "Asia/Tokyo": "Japan Time",
+      });
+      try {
+        const { container } = renderForm();
+        setSearchValue(container, "Tok");
+        const result = container.querySelector(".clocks-search-result");
+        expect(
+          result.querySelector(".clocks-search-result-timezone").textContent
+        ).toBe("Japan Time");
+        setSearchValue(container, "Pacific");
+        const cities = Array.from(
+          container.querySelectorAll(".clocks-search-result-city")
+        ).map(el => el.textContent);
+        expect(cities).toContain("Los Angeles");
+      } finally {
+        restore();
+      }
+    });
+
     it("renders results as div role='option' (not buttons) per ARIA combobox pattern", () => {
       const { container } = renderForm();
-      // Use a partial query so the dropdown stays open. An exact match
-      // resolves the timezone and hides the listbox.
-      setSearchValue(container, "Berl");
+      setSearchValue(container, "Berlin");
       const result = container.querySelector(".clocks-search-result");
       expect(result.tagName).toBe("DIV");
       expect(result.getAttribute("role")).toBe("option");
       expect(result.getAttribute("tabIndex")).toBe("0");
+    });
+
+    it("keeps the results list open on a full city name and closes it only after a row is clicked", () => {
+      const { container } = renderForm();
+      setSearchValue(container, "Berlin");
+      expect(
+        container.querySelector("#clocks-search-results")
+      ).toBeInTheDocument();
+      const result = container.querySelector(".clocks-search-result");
+      expect(result).toBeInTheDocument();
+      fireEvent.click(result);
+      expect(
+        container.querySelector("#clocks-search-results")
+      ).not.toBeInTheDocument();
     });
 
     it("selects a timezone when a result is clicked, replacing the search value with the city", () => {
@@ -168,6 +225,25 @@ describe("<AddClockForm>", () => {
       setSearchValue(container, "Ber");
       // No selection yet — aria-activedescendant should not point anywhere.
       expect(input.hasAttribute("aria-activedescendant")).toBe(false);
+    });
+
+    it("renders a no-results message inside the listbox when the query matches nothing", () => {
+      const { container } = renderForm();
+      setSearchValue(container, "zzz");
+      const listbox = container.querySelector("#clocks-search-results");
+      expect(listbox).toBeInTheDocument();
+      expect(listbox.getAttribute("role")).toBe("listbox");
+      expect(
+        container.querySelector(".clocks-search-result")
+      ).not.toBeInTheDocument();
+      const empty = listbox.querySelector(".clocks-search-no-results");
+      expect(empty).toBeInTheDocument();
+      expect(empty.getAttribute("role")).toBe("option");
+      expect(empty.getAttribute("aria-disabled")).toBe("true");
+      expect(empty.getAttribute("aria-selected")).toBe("false");
+      expect(empty.getAttribute("data-l10n-id")).toBe(
+        "newtab-clock-widget-search-no-results"
+      );
     });
   });
 

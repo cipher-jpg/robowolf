@@ -215,6 +215,10 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // not on this transaction.
   void FinishAdopted0RTT(bool aRestart);
 
+  // Remove all SSL session tokens keyed by aSecInfo->GetPeerId() so a 0-RTT
+  // restart starts a fresh handshake instead of looping on the rejected ticket.
+  void RemoveSSLTokens(nsITransportSecurityInfo* aSecInfo);
+
   uint64_t BrowserId() override { return mBrowserId; }
 
   void SetHttpTrailers(nsCString& aTrailers);
@@ -674,6 +678,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   bool mSupportsHTTP3 = false;
   Atomic<bool, Relaxed> mIsForWebTransport{false};
   bool mIsResettingForTunnelConn = false;
+  Maybe<bool> mIsWebsocketUpgrade;
 
   bool mResumptionAttempted = false;
   void OnPSKResumptionAccepted() override;

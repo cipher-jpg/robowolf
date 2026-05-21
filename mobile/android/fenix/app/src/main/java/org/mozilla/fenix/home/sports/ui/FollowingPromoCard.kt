@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -19,7 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight.Companion.W700
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -34,11 +34,16 @@ import org.mozilla.fenix.theme.FirefoxTheme
  *
  * @param team The followed [Team] containing the country key and flag resource id.
  * @param modifier The [Modifier] to be applied to the card.
+ * @param pageNumber 1-based page position when shown inside a pager; appended to the title for
+ * assistive technology.
+ * @param pageCount Total page count when inside a pager. Ignored if `pageNumber` is null.
  */
 @Composable
 fun FollowingPromoCard(
     team: Team,
     modifier: Modifier = Modifier,
+    pageNumber: Int? = null,
+    pageCount: Int? = null,
 ) {
     PromoCard(
         modifier = modifier,
@@ -46,22 +51,31 @@ fun FollowingPromoCard(
             Image(
                 painter = painterResource(team.flagResId),
                 contentDescription = null,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)),
+                modifier = Modifier.clip(MaterialTheme.shapes.small),
             )
 
             Spacer(modifier = Modifier.height(6.dp))
 
             val title = stringResource(R.string.sports_widget_team_followed_title).split("\n", limit = 2)
+            val teamName = localizedTeamName(team)
+            val titleBase = title[0]
+            val titleContentDescription = pagerHeadingContentDescription(
+                baseText = "$titleBase $teamName",
+                pageNumber = pageNumber,
+                pageCount = pageCount,
+            )
             Column(
-                modifier = Modifier.semantics(mergeDescendants = true) {},
+                modifier = Modifier.clearAndSetSemantics {
+                    contentDescription = titleContentDescription
+                },
             ) {
                 Text(
-                    text = title[0],
+                    text = titleBase,
                     style = FirefoxTheme.typography.headline8,
                 )
                 Spacer(modifier = Modifier.height(FirefoxTheme.layout.space.static25))
                 Text(
-                    text = team.key,
+                    text = teamName,
                     style = FirefoxTheme.typography.headline5.copy(fontWeight = W700),
                 )
             }
@@ -77,7 +91,7 @@ fun FollowingPromoCard(
                 contentDescription = null,
                 modifier = Modifier
                     .width(100.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .clip(MaterialTheme.shapes.small),
             )
         },
         contentSpacing = 0.dp,

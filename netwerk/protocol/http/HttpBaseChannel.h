@@ -467,6 +467,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   nsHttpResponseHead* GetResponseHead() const { return mResponseHead.get(); }
   nsHttpRequestHead* GetRequestHead() { return &mRequestHead; }
   nsHttpHeaderArray* GetResponseTrailers() const {
+    MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
     return mResponseTrailers.get();
   }
 
@@ -861,7 +862,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   UniquePtr<ProfileChunkedBuffer> mSource;
 
-  uint32_t mLoadFlags{LOAD_NORMAL};
+  Atomic<uint32_t, Relaxed> mLoadFlags{LOAD_NORMAL};
   uint32_t mCaps{0};
 
   ClassOfService mClassOfService;

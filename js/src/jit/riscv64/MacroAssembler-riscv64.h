@@ -119,9 +119,7 @@ class MacroAssemblerRiscv64 : public Assembler {
   int32_t GetOffset(int32_t offset, Label* L, OffsetSize bits);
 
   inline void GenPCRelativeJump(Register rd, int32_t imm32) {
-    MOZ_ASSERT(is_int32(imm32 + 0x800));
-    int32_t Hi20 = ((imm32 + 0x800) >> 12);
-    int32_t Lo12 = imm32 << 20 >> 20;
+    auto [Hi20, Lo12] = ToHigh20Low12(imm32);
     auipc(rd, Hi20);  // Read PC + Hi20 into scratch.
     jr(rd, Lo12);     // jump PC + Hi20 + Lo12
   }
@@ -413,21 +411,10 @@ class MacroAssemblerRiscv64 : public Assembler {
     fmv_x_d(dest, src);
     srli(dest, dest, 32);
   }
+
   // Bit field starts at bit pos and extending for size bits is extracted from
-  // rs and stored zero/sign-extended and right-justified in rt
-  void ExtractBits(Register rt, Register rs, uint16_t pos, uint16_t size,
-                   bool sign_extend = false);
-  void ExtractBits(Register dest, Register source, Register pos, int size,
-                   bool sign_extend = false) {
-    sra(dest, source, pos);
-    ExtractBits(dest, dest, 0, size, sign_extend);
-  }
-
-  // Insert bits [0, size) of source to bits [pos, pos+size) of dest
-  void InsertBits(Register dest, Register source, Register pos, int size);
-
-  // Insert bits [0, size) of source to bits [pos, pos+size) of dest
-  void InsertBits(Register dest, Register source, int pos, int size);
+  // rs and stored zero-extended and right-justified in rd.
+  void ExtractBits(Register rd, Register rs, uint16_t pos, uint16_t size);
 
   template <typename F_TYPE>
   void RoundHelper(FPURegister dst, FPURegister src, FPURegister fpu_scratch,
@@ -653,7 +640,7 @@ class MacroAssemblerRiscv64Compat : public MacroAssemblerRiscv64 {
 
   void j(Label* dest) { ma_branch(dest); }
 
-  void mov(Register src, Register dest) { addi(dest, src, 0); }
+  void mov(Register src, Register dest) { mv(dest, src); }
   void mov(ImmWord imm, Register dest) { ma_li(dest, imm); }
   void mov(ImmPtr imm, Register dest) {
     mov(ImmWord(uintptr_t(imm.value)), dest);
@@ -729,7 +716,7 @@ class MacroAssemblerRiscv64Compat : public MacroAssemblerRiscv64 {
 
   static size_t ToggledCallSize(uint8_t* code) {
     // Four instructions used in: MacroAssemblerRiscv64Compat::toggledCall
-    return 7 * sizeof(uint32_t);
+    return 7 * kInstrSize;
   }
 
   CodeOffset pushWithPatch(ImmWord imm) {
@@ -904,7 +891,7 @@ class MacroAssemblerRiscv64Compat : public MacroAssemblerRiscv64 {
                   JSValueType type);
 
   void notBoolean(const ValueOperand& val) {
-    xori(val.valueReg(), val.valueReg(), 1);
+    NegateBool(val.valueReg(), val.valueReg());
   }
 
   // boxing code

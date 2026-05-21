@@ -134,6 +134,15 @@ export class UrlbarView {
   }
 
   /**
+   * The top chrome window. this.window is the owner of the view's panel which
+   * can be a content window for smartbar, so use the window exposed by the
+   * input to consistently get the chrome window for gBrowser and other APIs.
+   */
+  get chromeWindow() {
+    return this.input.window;
+  }
+
+  /**
    * Whether the panel is open.
    *
    * @returns {boolean}
@@ -552,13 +561,15 @@ export class UrlbarView {
 
     this.#stopTail150();
 
-    this.#inputWidthOnLastClose = getBoundsWithoutFlushing(this.input).width;
+    this.#containerWidthOnLastClose = getBoundsWithoutFlushing(
+      this.input.parentElement
+    ).width;
 
     // We exit search mode preview on close since the result previewing it is
     // implicitly unselected.
     if (this.input.searchMode?.isPreview) {
       this.input.searchMode = null;
-      this.window.gBrowser.userTypedValue = null;
+      this.chromeWindow.gBrowser.userTypedValue = null;
     }
 
     this.resultMenu.hidePopup();
@@ -568,7 +579,6 @@ export class UrlbarView {
     this.#previousTabToSearchEngine = null;
 
     this.input.removeAttribute("open");
-    this.input.endLayoutExtend();
 
     // Search Tips can open the view without the Urlbar being focused. If the
     // tip is ignored (e.g. the page content is clicked or the window loses
@@ -725,7 +735,8 @@ export class UrlbarView {
     if (
       this.#rows.firstElementChild &&
       this.#queryContext.searchString == this.input.value &&
-      this.#inputWidthOnLastClose == getBoundsWithoutFlushing(this.input).width
+      this.#containerWidthOnLastClose ==
+        getBoundsWithoutFlushing(this.input.parentElement).width
     ) {
       // We can reuse the current rows.
       queryOptions.allowAutofill = this.#queryContext.allowAutofill;
@@ -745,7 +756,7 @@ export class UrlbarView {
     // term. If they do want to navigate directly, users can modify their
     // search, which resets persistence and re-enables autofill.
     let state = this.input.getBrowserState(
-      this.window.gBrowser.selectedBrowser
+      this.chromeWindow.gBrowser.selectedBrowser
     );
     if (state.persist?.shouldPersist) {
       queryOptions.allowAutofill = false;
@@ -1153,7 +1164,7 @@ export class UrlbarView {
   #announceTabToSearchOnSelection;
   #blobUrlsByResultUrl = null;
   #tail150 = null;
-  #inputWidthOnLastClose = 0;
+  #containerWidthOnLastClose = 0;
   #l10nCache;
   #mousedownSelectedElement;
   #openPanelInstance;
@@ -1199,7 +1210,6 @@ export class UrlbarView {
 
     this.input.toggleAttribute("suppress-focus-border", true);
     this.input.toggleAttribute("open", true);
-    this.input.startLayoutExtend();
 
     this.window.addEventListener("resize", this);
     this.window.addEventListener("blur", this);
@@ -3153,6 +3163,13 @@ export class UrlbarView {
       if (element != row) {
         row?.toggleAttribute("descendant-selected", true);
       }
+      // Keep the selected row in view in the smartbar, where the results
+      // list is scrollable. `block: "nearest"` is a no-op when the row is
+      // already visible. Scoped to smartbar to avoid changing classic
+      // urlbar behavior.
+      if (this.input.sapName == "smartbar") {
+        (row ?? element).scrollIntoView({ block: "nearest" });
+      }
     }
 
     let result = row?.result;
@@ -3517,7 +3534,7 @@ export class UrlbarView {
     } else {
       tabGroupAction?.remove();
     }
-    let splitview = this.window.gBrowser.selectedTab.splitview;
+    let splitview = this.chromeWindow.gBrowser.selectedTab.splitview;
     let shouldMoveTabToSplitView =
       splitview &&
       !splitview.tabs.some(
@@ -3581,7 +3598,9 @@ export class UrlbarView {
   }
 
   #addGroupToSwitchTabChiclet(result, actionNode) {
-    const group = this.window.gBrowser.getTabGroupById(result.payload.tabGroup);
+    const group = this.chromeWindow.gBrowser.getTabGroupById(
+      result.payload.tabGroup
+    );
     if (!group) {
       actionNode.remove();
       return;
@@ -3620,6 +3639,14 @@ export class UrlbarView {
     actionNode.style.setProperty(
       "--tab-group-color-pale",
       group.style.getPropertyValue("--tab-group-color-pale")
+    );
+    actionNode.style.setProperty(
+      "--tab-group-background-color",
+      group.style.getPropertyValue("--tab-group-background-color")
+    );
+    actionNode.style.setProperty(
+      "--tab-group-text-color",
+      group.style.getPropertyValue("--tab-group-text-color")
     );
   }
 

@@ -4661,10 +4661,15 @@ void nsIFrame::MarkAbsoluteFramesForDisplayList(
   }
 }
 
-nsIContent* nsIFrame::GetContentForEvent(const WidgetEvent* aEvent) const {
+nsIContent* nsIFrame::GetExplicitEventTargetContent(
+    const WidgetEvent* aEvent /* = nullptr */) const {
+  // Return the content as-is if this is not a generated content.
   if (!IsGeneratedContentFrame()) {
     return GetContent();
   }
+  // If the content is a generated content, it won't handle any events from the
+  // DOM point of view. Therefore, let's return the parent of the generated
+  // content.
   const nsIFrame* generatedRoot = this;
   while (true) {
     auto* parent = nsLayoutUtils::GetParentOrPlaceholderFor(generatedRoot);
@@ -4675,6 +4680,12 @@ nsIContent* nsIFrame::GetContentForEvent(const WidgetEvent* aEvent) const {
   }
   // Return the non-generated ancestor.
   return generatedRoot->GetContent()->GetParent();
+}
+
+nsIContent* nsIFrame::GetEventTargetContent(
+    const mozilla::WidgetEvent* aEvent /* = nullptr */) const {
+  return nsContentUtils::GetEventTargetContent(
+      GetExplicitEventTargetContent(aEvent), aEvent);
 }
 
 void nsIFrame::FireDOMEvent(const nsAString& aDOMEventName,
@@ -7857,8 +7868,8 @@ bool nsIFrame::UpdateIsRelevantContent(
   // https://drafts.csswg.org/css-contain/#content-visibility-auto-state-changed
   // "This event is dispatched by posting a task at the time when the state
   // change occurs."
-  RefPtr<AsyncEventDispatcher> asyncDispatcher =
-      new AsyncEventDispatcher(element, event.forget());
+  auto asyncDispatcher =
+      MakeRefPtr<AsyncEventDispatcher>(element, event.forget());
   DebugOnly<nsresult> rv = asyncDispatcher->PostDOMEvent();
   NS_ASSERTION(NS_SUCCEEDED(rv), "AsyncEventDispatcher failed to dispatch");
   return true;
@@ -11680,6 +11691,13 @@ StyleAlignmentBaseline nsIFrame::AlignmentBaseline() const {
     // text elements instead of only approximating from dominant-baseline.
     auto dominantBaseline = StyleVisibility()->mDominantBaseline;
     return ConvertSVGDominantBaselineToAlignmentBaseline(dominantBaseline);
+  }
+
+  if (IsTableCellFrame()) {
+    // The alignment-baseline / vertical-align property on a table cell is used
+    // to align its children (see nsTableCellFrame::GetTableCellAlignment), but
+    // does not affect the alignment of the cell itself within its row.
+    return StyleAlignmentBaseline::Baseline;
   }
 
   if (StyleDisplay()->mAlignmentBaseline == StyleAlignmentBaseline::Baseline) {

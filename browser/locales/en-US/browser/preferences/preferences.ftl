@@ -56,28 +56,25 @@ category-list =
     .aria-label = Categories
 
 pane-general-title = General
-category-general =
-    .tooltiptext = { pane-general-title }
 
 pane-home-title = Home
-category-home =
-    .tooltiptext = { pane-home-title }
 
-pane-search-title = Search
-category-search =
-    .tooltiptext = { pane-search-title }
+pane-home-startup-title2 = Home and startup
+  .title = Home and startup
 
-pane-privacy-title2 = Privacy and security
+pane-search-title2 = Search
+  .title = Search
+
+pane-privacy-title3 = Privacy and security
+  .title = Privacy and security
+
 pane-privacy-section =
     .heading = Privacy and security
 
 pane-sync-title3 = Sync
-category-sync3 =
-    .tooltiptext = { pane-sync-title3 }
 
-pane-ai-controls-title = AI controls
-category-ai-controls =
-    .tooltiptext = { pane-ai-controls-title }
+pane-ai-controls-title2 = AI controls
+  .title = AI controls
 
 pane-about-firefox-title = About { -brand-short-name }
   .title = { pane-about-firefox-title }
@@ -85,33 +82,36 @@ pane-about-firefox-title = About { -brand-short-name }
 pane-appearance-title = Appearance
   .title = { pane-appearance-title }
 
-pane-downloads-title = Downloads
-pane-downloads =
-    .heading = { pane-downloads-title }
+pane-downloads-title2 = Downloads
+  .title = Downloads
+
+pane-downloads2 =
+    .heading = { pane-downloads-title2 }
 
 pane-accessibility-title = Accessibility
   .title = { pane-accessibility-title }
 
-pane-languages-title = Languages
-category-languages =
-    .tooltiptext = { pane-languages-title }
+pane-languages-title2 = Languages
+  .title = Languages
 
-preferences-languages-header =
-    .heading = { pane-languages-title }
+preferences-languages-header2 =
+    .heading = { pane-languages-title2 }
 
-settings-pane-labs-title = { -firefoxlabs-brand-name }
+settings-pane-labs-title2 = { -firefoxlabs-brand-name }
+  .title = { -firefoxlabs-brand-name }
+
 settings-pane-labs-header =
     .heading = { -firefoxlabs-brand-name }
-settings-category-labs =
-    .tooltiptext = { -firefoxlabs-brand-name }
 pane-experimental-description4 = Give our experimental features a try! They’re in development and evolving, which could impact how { -brand-short-name } works. We only receive data about your use of these features if you have <a data-l10n-name="data-collection">technical and interaction data</a> turned on.
 
 pane-experimental-reset =
   .label = Restore Defaults
   .accesskey = R
 
-help-button-label = { -brand-short-name } support
-addons-button-label = Extensions and themes
+help-button-label2 = { -brand-short-name } support
+  .title = { -brand-short-name } support
+addons-button-label2 = Extensions and themes
+  .title = Extensions and themes
 
 focus-search =
     .key = f
@@ -172,7 +172,7 @@ extension-controlling-homepage = { $name } controls some of your homepage settin
 
 ## Preferences UI Search Results
 
-search-results-header = Search Results
+search-results-header = Search results
 
 # `<span data-l10n-name="query"></span>` will be replaced by the search term.
 search-results-empty-message2 =
@@ -239,8 +239,8 @@ preferences-copy-profile-button = Copy
 tabs-browsing-section =
   .heading = Tabs and browsing
 
-pane-tabs-browsing-title = Tabs and browsing
-  .title = { pane-tabs-browsing-title }
+pane-tabs-browsing-title2 = Tabs and browsing
+  .title = Tabs and browsing
 
 tabs-group-header2 =
   .label = Tabs
@@ -345,7 +345,7 @@ settings-tabs-drag-to-create-tab-groups =
     .label = Drag tabs together to create tab groups
 
 browser-layout-header2 =
-    .label = Browser Layout
+    .label = Browser layout
 
 browser-layout-horizontal-tabs2 =
     .label = Horizontal tabs
@@ -431,8 +431,8 @@ preferences-zoom-text-only =
     .label = Zoom text only
     .accesskey = t
 
-preferences-text-zoom-override-warning =
-    .message = Warning: If you select “Zoom text only” and your default zoom is not set to 100%, it may cause some sites or content to break.
+preferences-text-zoom-override-warning2 =
+    .message = If “Zoom text only” is on and your default zoom isn’t 100%, some sites might not display content correctly.
 
 language-header = Language
 
@@ -769,7 +769,7 @@ update-history-2 =
 update-application-installation =
     .label = Installation
 
-update-application-auto =
+update-application-auto-2 =
     .label = Automatically install updates (recommended)
     .accesskey = A
 
@@ -1127,6 +1127,12 @@ home-prefs-choose-wallpaper-link2 =
 home-prefs-firefox-home-disabled-notice =
     .message = To use these features, set new tabs or new windows to { -firefox-home-brand-name }.
 
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = Extension ({ $extension })
+
 # Variables:
 #   $num (number) - Number of rows displayed
 home-prefs-sections-rows-option =
@@ -1335,7 +1341,8 @@ containers-remove-button =
 account-sync-section =
     .heading = Account and sync
 
-pane-account-sync-title = Account and sync
+pane-account-sync-title2 = Account and sync
+    .title = Account and sync
 
 sync-group-label =
     .label = Sync
@@ -1796,9 +1803,8 @@ address-moz-box-item =
   .label = { $name }
   .description = { $address }
 
-category-passwords-autofill =
-    .tooltiptext = Passwords and autofill settings
-pane-passwords-autofill-title = Passwords and autofill
+pane-passwords-autofill-title2 = Passwords and autofill
+  .title = Passwords and autofill
 preferences-passwords-autofill-header =
    .heading = Passwords and autofill
 
@@ -2074,7 +2080,8 @@ tracking-manage-exceptions =
 permissions-data-section =
     .heading = Permissions and data
 
-pane-permissions-data-title = Permissions and data
+pane-permissions-data-title2 = Permissions and data
+  .title = Permissions and data
 
 permissions-header3 =
     .label = Permissions
@@ -2469,6 +2476,9 @@ related-settings-accessibility-link =
 related-settings-home-link =
     .label = Customize { -firefox-home-brand-name }
 
+related-settings-tabs-browsing-link =
+    .label = Customize browser layout
+
 ## Accessibility page
 
 preferences-accessibility-header =
@@ -2501,8 +2511,8 @@ motion-and-link-group =
 
 ## AI controls page
 
-preferences-ai-controls-header =
-    .heading = { pane-ai-controls-title }
+preferences-ai-controls-header2 =
+    .heading = { pane-ai-controls-title2 }
 
 preferences-ai-controls-description = You always have a choice in { -brand-short-name }, including whether to use features enhanced with AI. More controls coming soon.
 
@@ -2690,8 +2700,18 @@ preferences-etp-custom-cookies-enabled =
 preferences-etp-custom-cookie-behavior =
     .aria-label = Cookies
 
-preferences-etpc-custom-cookie-behavior-accept-all =
+preferences-etp-custom-cookie-behavior-accept-all =
     .label = Allow all cookies
+preferences-etp-custom-cookie-behavior-block-cross-site-cookies =
+    .label = Block cross-site cookies
+preferences-etp-custom-cookie-behavior-isolate-cross-site-cookies =
+    .label = Isolate cross-site cookies
+preferences-etp-custom-cookie-behavior-block-unvisited =
+    .label = Block cookies from unvisited websites
+preferences-etp-custom-cookie-behavior-block-all-cross-site-cookies =
+    .label = Block all cross-site cookies (may cause websites to break)
+preferences-etp-custom-cookie-behavior-block-all =
+    .label = Block all cookies (will cause websites to break)
 
 preferences-etp-custom-tracking-protection-enabled =
     .label = Tracking content

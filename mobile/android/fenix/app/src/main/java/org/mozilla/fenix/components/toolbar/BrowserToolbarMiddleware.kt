@@ -63,8 +63,9 @@ import mozilla.components.concept.engine.permission.SitePermissionsStorage
 import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.concept.storage.BookmarksStorage
-import mozilla.components.feature.ipprotection.Authorized
-import mozilla.components.feature.ipprotection.IPProtectionStore
+import mozilla.components.feature.ipprotection.store.IPProtectionAction
+import mozilla.components.feature.ipprotection.store.IPProtectionStore
+import mozilla.components.feature.ipprotection.store.state.Authorized
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.session.TrackingProtectionUseCases
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
@@ -105,7 +106,7 @@ import org.mozilla.fenix.components.appstate.AppAction.URLCopiedToClipboard
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
 import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.components.metrics.MetricsUtils
-import org.mozilla.fenix.components.share.createPdfShareAction
+import org.mozilla.fenix.components.share.ShareSource
 import org.mozilla.fenix.components.toolbar.DisplayActions.AddBookmarkClicked
 import org.mozilla.fenix.components.toolbar.DisplayActions.EditBookmarkClicked
 import org.mozilla.fenix.components.toolbar.DisplayActions.HomepageClicked
@@ -125,6 +126,7 @@ import org.mozilla.fenix.components.toolbar.TabCounterInteractions.AddNewTab
 import org.mozilla.fenix.components.toolbar.TabCounterInteractions.CloseCurrentTab
 import org.mozilla.fenix.components.toolbar.TabCounterInteractions.TabCounterClicked
 import org.mozilla.fenix.components.toolbar.TabCounterInteractions.TabCounterLongClicked
+import org.mozilla.fenix.components.usecases.ShareUseCases
 import org.mozilla.fenix.ext.canGoBackInHistoryOrToStories
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.navigateSafe
@@ -199,6 +201,7 @@ internal sealed class PageEndActionsInteractions(override val source: Source) : 
  * of the current tab.
  * @param useCases [UseCases] helping this integrate with other features of the applications.
  * @param sessionUseCases [SessionUseCases] for interacting with the current session.
+ * @param shareUseCases [ShareUseCases] for sharing content via the system share sheet or the in-app [ShareFragment].
  * @param nimbusComponents [NimbusComponents] used for accessing Nimbus events to use in telemetry.
  * @param clipboard [ClipboardHandler] to use for reading from device's clipboard.
  * @param publicSuffixList [PublicSuffixList] used to obtain the base domain of the current site.
@@ -225,6 +228,7 @@ class BrowserToolbarMiddleware(
     private val trackingProtectionUseCases: TrackingProtectionUseCases,
     private val useCases: UseCases,
     private val sessionUseCases: SessionUseCases = SessionUseCases(browserStore),
+    private val shareUseCases: ShareUseCases,
     private val nimbusComponents: NimbusComponents,
     private val clipboard: ClipboardHandler,
     private val publicSuffixList: PublicSuffixList,
@@ -376,7 +380,13 @@ class BrowserToolbarMiddleware(
 
                 val selectedTab = browserStore.state.selectedTab
                 val url = selectedTab?.readerState?.activeUrl ?: selectedTab?.content?.url
-                clipboard.text = url
+                val isPrivate = selectedTab?.content?.private ?: true
+
+                if (isPrivate) {
+                    clipboard.sensitiveText = url
+                } else {
+                    clipboard.text = url
+                }
 
                 // Android 13+ shows by default a popup for copied text.
                 // Avoid overlapping popups informing the user when the URL is copied to the clipboard.
@@ -585,24 +595,29 @@ class BrowserToolbarMiddleware(
 
             is ShareClicked -> {
                 val selectedTab = browserStore.state.selectedTab ?: return
-                val shareAction = browserStore.createPdfShareAction(selectedTab.id, selectedTab.content.url)
-                if (shareAction != null) {
-                    browserStore.dispatch(shareAction)
-                } else {
-                    navController.nav(
-                        R.id.browserFragment,
-                        BrowserFragmentDirections.actionGlobalShareFragment(
-                            sessionId = selectedTab.id,
-                            data = arrayOf(
-                                ShareData(
-                                    url = selectedTab.content.url,
-                                    title = selectedTab.content.title,
+                shareUseCases.shareUrl(
+                    id = selectedTab.id,
+                    url = selectedTab.content.url,
+                    title = selectedTab.content.title,
+                    source = ShareSource.BROWSER_TOOLBAR,
+                    isPrivate = selectedTab.content.private,
+                    isCustomTab = false,
+                    navigateToShareFragment = {
+                        navController.nav(
+                            R.id.browserFragment,
+                            BrowserFragmentDirections.actionGlobalShareFragment(
+                                sessionId = selectedTab.id,
+                                data = arrayOf(
+                                    ShareData(
+                                        url = selectedTab.content.url,
+                                        title = selectedTab.content.title,
+                                    ),
                                 ),
+                                showPage = true,
                             ),
-                            showPage = true,
-                        ),
-                    )
-                }
+                        )
+                    },
+                )
 
                 next(action)
             }
@@ -750,7 +765,7 @@ class BrowserToolbarMiddleware(
     private fun buildEndPageActions(): List<Action> {
         val isWideScreen = isWideScreen()
         val tabStripEnabled = settings.isTabStripEnabled
-        val simpleShortcut = ShortcutType.fromValue(settings.toolbarSimpleShortcut)
+        val simpleShortcut = ShortcutType.fromValue(settings.toolbarSimpleShortcutKey)
         val translateShortcutEnabled = simpleShortcut == ShortcutType.TRANSLATE
         val shareShortcutEnabled = simpleShortcut == ShortcutType.SHARE
 
@@ -777,7 +792,7 @@ class BrowserToolbarMiddleware(
         val isWideWindow = isWideScreen()
         val isTallWindow = isTallScreen()
         val shouldUseExpandedToolbar = settings.shouldUseExpandedToolbar
-        val primarySlotAction = ShortcutType.fromValue(settings.toolbarSimpleShortcut)?.toToolbarAction()
+        val primarySlotAction = ShortcutType.fromValue(settings.toolbarSimpleShortcutKey)?.toToolbarAction()
 
         val configs = listOfNotNull(
             primarySlotAction?.let {
@@ -814,7 +829,7 @@ class BrowserToolbarMiddleware(
         val isWideWindow = isWideScreen()
         val isTallWindow = isTallScreen()
         val shouldUseExpandedToolbar = settings.shouldUseExpandedToolbar
-        val primarySlotAction = ShortcutType.fromValue(settings.toolbarExpandedShortcut)
+        val primarySlotAction = ShortcutType.fromValue(settings.toolbarExpandedShortcutKey)
             ?.toToolbarAction() ?: getBookmarkAction()
 
         return listOf(
@@ -1025,10 +1040,10 @@ class BrowserToolbarMiddleware(
             distinctUntilChangedBy { it.pageTranslationStatus }
                 .collect {
                     updateEndPageActions(store)
-                    if (ShortcutType.fromValue(settings.toolbarSimpleShortcut) == ShortcutType.TRANSLATE) {
+                    if (ShortcutType.fromValue(settings.toolbarSimpleShortcutKey) == ShortcutType.TRANSLATE) {
                         updateEndBrowserActions(store)
                     }
-                    if (ShortcutType.fromValue(settings.toolbarExpandedShortcut) == ShortcutType.TRANSLATE) {
+                    if (ShortcutType.fromValue(settings.toolbarExpandedShortcutKey) == ShortcutType.TRANSLATE) {
                         updateNavigationActions(store)
                     }
                 }
@@ -1044,10 +1059,10 @@ class BrowserToolbarMiddleware(
                 )
             }.collect {
                 updateStartBrowserActions(store)
-                if (ShortcutType.fromValue(settings.toolbarSimpleShortcut) == ShortcutType.BACK) {
+                if (ShortcutType.fromValue(settings.toolbarSimpleShortcutKey) == ShortcutType.BACK) {
                     updateEndBrowserActions(store)
                 }
-                if (ShortcutType.fromValue(settings.toolbarExpandedShortcut) == ShortcutType.BACK) {
+                if (ShortcutType.fromValue(settings.toolbarExpandedShortcutKey) == ShortcutType.BACK) {
                     updateNavigationActions(store)
                 }
             }
@@ -1078,10 +1093,10 @@ class BrowserToolbarMiddleware(
                 it.snackbarState is SnackbarState.BookmarkAdded ||
                         it.snackbarState is SnackbarState.BookmarkDeleted
             }.collect { isBookmarked ->
-                if (ShortcutType.fromValue(settings.toolbarSimpleShortcut) == ShortcutType.BOOKMARK) {
+                if (ShortcutType.fromValue(settings.toolbarSimpleShortcutKey) == ShortcutType.BOOKMARK) {
                     updateEndBrowserActions(store)
                 }
-                if (ShortcutType.fromValue(settings.toolbarExpandedShortcut) == ShortcutType.BOOKMARK) {
+                if (ShortcutType.fromValue(settings.toolbarExpandedShortcutKey) == ShortcutType.BOOKMARK) {
                     updateNavigationActions(store)
                 }
             }
@@ -1337,9 +1352,12 @@ class BrowserToolbarMiddleware(
                 overlayResId = iconsR.drawable.mozac_ic_globe_24,
                 textResId = R.string.ip_protection_toolbar_pill_label,
                 contentDescriptionResId = R.string.ip_protection_toolbar_pill_description,
+                animated = !ipProtectionStore.state.proxyActiveShown,
                 highlighted = highlighted,
                 onClick = onClick,
-            )
+            ).also {
+                ipProtectionStore.dispatch(IPProtectionAction.ProxyActiveShown)
+            }
         } else {
             ActionButtonRes(
                 drawableResId = drawableResId,

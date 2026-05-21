@@ -6,13 +6,7 @@
   @include newtab-card-style;
 
   .nova-enabled & {
-    box-shadow: var(--box-shadow-level-2);
-
-    &:hover,
-    &:focus-within {
-      outline: 1px solid var(--border-color-deemphasized);
-      box-shadow: var(--card-box-shadow-hover);
-    }
+    @include widget-base-style;
   }
 
   border-radius: var(--border-radius-large);
@@ -20,6 +14,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  height: 100%;
 
   // Classic layout (when Nova is disabled)
   // @nova-cleanup(remove-conditional): Remove classic fixed-width/height styles after Nova ships
@@ -33,14 +28,6 @@
     .has-sections-grid & {
       width: var(--newtab-card-width-medium);
     }
-  }
-
-  &.medium-widget {
-    grid-row: span 2;
-  }
-
-  &.large-widget {
-    grid-row: span 4;
   }
 
   // @nova-cleanup(remove-conditional): Once Nova ships, hoist these rules to the root selector

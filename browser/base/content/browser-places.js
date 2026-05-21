@@ -32,6 +32,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
+  FaviconUtils: "moz-src:///toolkit/modules/FaviconUtils.sys.mjs",
   PanelMultiView:
     "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   RecentlyClosedTabsAndWindowsMenuUtils:
@@ -322,8 +323,12 @@ var StarUI = {
       return;
     }
 
-    // If we're changing where a bookmark gets saved, persist that location.
-    if (didChangeFolder) {
+    // If we're changing where a bookmark gets saved, persist that location,
+    // unless it is the mobile root.
+    if (
+      didChangeFolder &&
+      selectedFolderGuid !== PlacesUtils.bookmarks.mobileGuid
+    ) {
       Services.prefs.setCharPref(
         "browser.bookmarks.defaultLocation",
         selectedFolderGuid
@@ -1249,6 +1254,9 @@ var PlacesToolbarHelper = {
     popup.appendChild(fragment);
   },
 
+  // Schemes accepted for the ManagedBookmarks `favicon` policy property.
+  MANAGED_BOOKMARK_FAVICON_SCHEMES: ["data:", "http:", "https:"],
+
   async addManagedBookmarks(menu, children) {
     for (let i = 0; i < children.length; i++) {
       let entry = children[i];
@@ -1267,29 +1275,71 @@ var PlacesToolbarHelper = {
         menu.appendChild(submenu);
         this.addManagedBookmarks(submenupopup, entry.children);
       } else if (entry.name && entry.url) {
-        // It's bookmark.
-        let { preferredURI } = Services.uriFixup.getFixupURIInfo(entry.url);
+        // It's a bookmark.
+        // Match Chrome: accept scheme-less hostnames like "google.com" by
+        // prefixing https:// when the raw value isn't a valid URL.
+        let parsed = URL.parse(entry.url);
+        let url = entry.url;
+        if (!parsed) {
+          parsed = URL.parse(`https://${entry.url}`);
+          url = parsed?.href;
+        }
+        if (!parsed) {
+          console.error(
+            `ManagedBookmarks: ignoring invalid url "${entry.url}"`
+          );
+          continue;
+        }
+
+        let imageURL;
+        if (entry.favicon) {
+          let iconURL = URL.parse(entry.favicon);
+          if (
+            iconURL &&
+            this.MANAGED_BOOKMARK_FAVICON_SCHEMES.includes(iconURL.protocol)
+          ) {
+            imageURL = FaviconUtils.getMozRemoteImageURL(entry.favicon, {
+              size: 16,
+            });
+          } else {
+            console.error(
+              `ManagedBookmarks: ignoring favicon "${entry.favicon}", ` +
+                `expected one of: ${this.MANAGED_BOOKMARK_FAVICON_SCHEMES.join(", ")}`
+            );
+          }
+        } else if (parsed.protocol != "javascript:") {
+          imageURL = "page-icon:" + ChromeUtils.encodeURIForSrcset(url);
+        }
+
         let menuitem = document.createXULElement("menuitem");
         menuitem.setAttribute("label", entry.name);
-        menuitem.setAttribute(
-          "image",
-          "page-icon:" + ChromeUtils.encodeURIForSrcset(preferredURI.spec)
-        );
+        if (imageURL) {
+          menuitem.setAttribute("image", imageURL);
+        }
         menuitem.classList.add(
           "menuitem-iconic",
           "menuitem-with-favicon",
           "bookmark-item"
         );
-        menuitem.link = preferredURI.spec;
+        menuitem.link = url;
         menu.appendChild(menuitem);
       }
     }
   },
 
   openManagedBookmark(event) {
-    openUILink(event.target.link, event, {
-      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-    });
+    let link = event.target.link;
+    let triggeringPrincipal =
+      Services.scriptSecurityManager.getSystemPrincipal();
+    if (/^javascript:/i.test(link)) {
+      openTrustedLinkIn(link, "current", {
+        allowPopups: true,
+        allowInheritPrincipal: true,
+        triggeringPrincipal,
+      });
+      return;
+    }
+    openUILink(link, event, { triggeringPrincipal });
   },
 
   onDragStartManaged(event) {

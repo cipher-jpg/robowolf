@@ -67,6 +67,10 @@ export class AIChatContentParent extends JSWindowActorParent {
     this.sendAsyncMessage("AIChatContent:SeenUrls", payload);
   }
 
+  setGeneratingOnChatContent(isGenerating) {
+    this.sendAsyncMessage("AIChatContent:SetGenerating", { isGenerating });
+  }
+
   receiveMessage({ data, name }) {
     switch (name) {
       case "aiChatContentActor:followUp":
@@ -91,6 +95,10 @@ export class AIChatContentParent extends JSWindowActorParent {
 
       case "AIChatContent:AccountSignIn":
         this.#handleAccountSignIn();
+        break;
+
+      case "AIChatContent:ToolUIUpdate":
+        this.#handleToolUIUpdate(data);
         break;
 
       default:
@@ -223,6 +231,15 @@ export class AIChatContentParent extends JSWindowActorParent {
       aiWindow.onQuickPromptClicked(data.text, false);
     } catch (e) {
       console.warn("Could not submit follow-up from AI Window chat", e);
+    }
+  }
+
+  #handleToolUIUpdate(data) {
+    try {
+      const aiWindow = this.#getAIWindowElement();
+      aiWindow.handleToolUIUpdate(data);
+    } catch (e) {
+      console.warn("Could not handle tool UI update from AI Window chat", e);
     }
   }
 }

@@ -1591,7 +1591,8 @@ void Loader::NotifyObservers(SheetLoadData& aData, nsresult aStatus) {
       observer->StyleSheetLoaded(aData.mSheet, aData.ShouldDefer(), aStatus);
     }
 
-    for (nsCOMPtr<nsICSSLoaderObserver> obs : mObservers.ForwardRange()) {
+    for (const auto& obsRef : mObservers.ForwardRange()) {
+      nsCOMPtr<nsICSSLoaderObserver> obs{obsRef};
       LOG(("  Notifying global observer %p for data %p.  deferred: %d",
            obs.get(), &aData, aData.ShouldDefer()));
       obs->StyleSheetLoaded(aData.mSheet, aData.ShouldDefer(), aStatus);
@@ -1936,10 +1937,10 @@ Result<Loader::LoadSheetResult, nsresult> Loader::LoadStyleLink(
     // load.
     if (aInfo.mContent && !mDocument->IsLoadedAsData()) {
       // Fire an async error event on it.
-      RefPtr<AsyncEventDispatcher> loadBlockingAsyncDispatcher =
-          new LoadBlockingAsyncEventDispatcher(aInfo.mContent, u"error"_ns,
-                                               CanBubble::eNo,
-                                               ChromeOnlyDispatch::eNo);
+      auto loadBlockingAsyncDispatcher =
+          MakeRefPtr<LoadBlockingAsyncEventDispatcher>(
+              aInfo.mContent, u"error"_ns, CanBubble::eNo,
+              ChromeOnlyDispatch::eNo);
       loadBlockingAsyncDispatcher->PostDOMEvent();
     }
     return Err(rv);

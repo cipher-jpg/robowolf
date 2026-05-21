@@ -7,7 +7,6 @@ package mozilla.components.compose.base
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -36,8 +35,6 @@ import mozilla.components.compose.base.button.TextButton
 import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.support.base.log.logger.Logger
 
-private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(28.dp)
-
 /**
  * The tag used for links in the text for annotated strings.
  */
@@ -64,10 +61,13 @@ data class LinkTextState(
  * @param text The complete text.
  * @param linkTextStates The clickable part of the text. The order of the states added in the list
  * should be the same as the links shown in the text.
+ * @param modifier The [Modifier] to be applied to the underlying [Text].
  * @param style [TextStyle] applied to the text.
  * @param linkTextColor [Color] applied to the clickable part of the text.
  * @param linkTextDecoration [TextDecoration] applied to the clickable part of the text.
  * @param textAlign The alignment of the text within the lines of the paragraph. See [TextStyle.textAlign].
+ * @param contentDescription Optional accessibility content description. When provided, overrides
+ * the default description that is derived from the text content. Used for when more custom context is needed.
  * @param shouldApplyAccessibleSize determines whether a minimum interactive size should be applied
  * to improve accessibility touch targets.
  */
@@ -75,6 +75,7 @@ data class LinkTextState(
 fun LinkText(
     text: String,
     linkTextStates: List<LinkTextState>,
+    modifier: Modifier = Modifier,
     style: TextStyle = AcornTheme.typography.body2.copy(
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -82,6 +83,7 @@ fun LinkText(
     linkTextColor: Color = MaterialTheme.colorScheme.tertiary,
     linkTextDecoration: TextDecoration = TextDecoration.None,
     textAlign: TextAlign? = null,
+    contentDescription: String? = null,
     shouldApplyAccessibleSize: Boolean = false,
 ) {
     val annotatedString = buildUrlAnnotatedString(
@@ -98,28 +100,30 @@ fun LinkText(
         LinksDialog(linkTextStates) { showDialog.value = false }
     }
 
-    val modifier = if (shouldApplyAccessibleSize) {
-        Modifier.minimumInteractiveComponentSize()
-    } else {
-        Modifier
-    }
-
     Text(
         text = annotatedString,
         style = style,
-        modifier = modifier.clearAndSetSemantics {
-            onClick {
-                if (linkTextStates.size > 1) {
-                    showDialog.value = true
+        modifier = modifier
+            .then(
+                if (shouldApplyAccessibleSize) {
+                    Modifier.minimumInteractiveComponentSize()
                 } else {
-                    linkTextStates.firstOrNull()?.let {
-                        it.onClick(it.url)
+                    Modifier
+                },
+            )
+            .clearAndSetSemantics {
+                onClick {
+                    if (linkTextStates.size > 1) {
+                        showDialog.value = true
+                    } else {
+                        linkTextStates.firstOrNull()?.let {
+                            it.onClick(it.url)
+                        }
                     }
+                    return@onClick true
                 }
-                return@onClick true
-            }
-            contentDescription = "$annotatedString $linksAvailable"
-        },
+                this.contentDescription = contentDescription ?: "$annotatedString $linksAvailable"
+            },
         textAlign = textAlign,
     )
 }
@@ -134,7 +138,7 @@ private fun LinksDialog(
             modifier = Modifier
                 .background(
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = ROUNDED_CORNER_SHAPE,
+                    shape = MaterialTheme.shapes.extraLarge,
                 )
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

@@ -598,6 +598,30 @@ bool nsHttpChannel::StorageAccessReloadedChannel() {
   return LoadStorageAccessReloadChannel();
 }
 
+void nsHttpChannel::PrimeSuspendAfterExamineResponse() {
+  mSuspendAfterExamineResponse = Some(true);
+}
+
+void nsHttpChannel::CancelSuspendOrResumeAfterExamineResponse() {
+  if (mSuspendAfterExamineResponse.isNothing()) {
+    return;
+  }
+  bool oldValue = mSuspendAfterExamineResponse.ref().exchange(false);
+  if (!oldValue) {
+    Resume();
+  }
+}
+
+void nsHttpChannel::MaybeSuspendAfterExamineResponse() {
+  if (mSuspendAfterExamineResponse.isNothing()) {
+    return;
+  }
+  bool oldValue = mSuspendAfterExamineResponse.ref().exchange(false);
+  if (oldValue) {
+    Suspend();
+  }
+}
+
 nsresult nsHttpChannel::PrepareToConnect() {
   LOG(("nsHttpChannel::PrepareToConnect [this=%p]\n", this));
 
@@ -3077,6 +3101,8 @@ nsresult nsHttpChannel::ProcessResponse(nsHttpConnectionInfo* aConnInfo) {
 
   // notify "http-on-examine-response" observers
   gHttpHandler->OnExamineResponse(this);
+
+  MaybeSuspendAfterExamineResponse();
 
   return ContinueProcessResponse1(aConnInfo);
 }
@@ -7611,8 +7637,7 @@ void nsHttpChannel::AsyncOpenFinal(TimeStamp aTimeStamp) {
   // lookup is not needed so CheckIsTrackerWithLocalTable() will return an
   // error and then we can MaybeResolveProxyAndBeginConnect() right away.
   // We skip the check in case this is an internal redirected channel
-  if (!LoadAuthRedirectedChannel() &&
-      NS_ShouldClassifyChannel(this, ClassifyType::ETP)) {
+  if (NS_ShouldClassifyChannel(this, ClassifyType::ETP)) {
     RefPtr<nsHttpChannel> self = this;
     willCallback = NS_SUCCEEDED(
         AsyncUrlChannelClassifier::CheckChannel(this, [self]() -> void {
@@ -8042,7 +8067,6 @@ nsresult nsHttpChannel::BeginConnect() {
   // skip classifier checks if this channel was the result of internal auth
   // redirect
   bool shouldBeClassifiedForTracker =
-      !LoadAuthRedirectedChannel() &&
       NS_ShouldClassifyChannel(this, ClassifyType::ETP);
 
   if (shouldBeClassifiedForTracker) {
@@ -8071,6 +8095,18 @@ nsresult nsHttpChannel::BeginConnect() {
 
   bool shouldBeClassifiedForSafeBrowsing =
       NS_ShouldClassifyChannel(this, ClassifyType::SafeBrowsing);
+
+  if (shouldBeClassifiedForTracker) {
+    PrimeSuspendAfterExamineResponse();
+    RefPtr<nsHttpChannel> self(this);
+    nsresult rv =
+        AntiTrackingChannelClassifierUtils::CheckChannelBeforeProcessResponse(
+            this,
+            [self]() { self->CancelSuspendOrResumeAfterExamineResponse(); });
+    if (NS_FAILED(rv)) {
+      CancelSuspendOrResumeAfterExamineResponse();
+    }
+  }
 
   if (shouldBeClassifiedForSafeBrowsing) {
     // Start nsChannelClassifier to catch phishing and malware URIs.
@@ -9422,27 +9458,27 @@ static void RecordHttpChanDispositionGlean(ChannelDisposition chanDisposition) {
   }
 }
 
+enum class HttpChannelDispositionUpgrade {
+  cancel,
+  disk,
+  netOk,
+  netEarlyFail,
+  netLateFail,
+};
+
 static nsLiteralCString HttpChanDispositionToTelemetryLabel(
-    Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE upgradeChanDisposition) {
-  if (upgradeChanDisposition ==
-      Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE::cancel) {
-    return "cancel"_ns;
-  }
-  if (upgradeChanDisposition ==
-      Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE::disk) {
-    return "disk"_ns;
-  }
-  if (upgradeChanDisposition ==
-      Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE::netOk) {
-    return "net_ok"_ns;
-  }
-  if (upgradeChanDisposition ==
-      Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE::netEarlyFail) {
-    return "net_early_fail"_ns;
-  }
-  if (upgradeChanDisposition ==
-      Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE::netLateFail) {
-    return "net_late_fail"_ns;
+    HttpChannelDispositionUpgrade upgradeChanDisposition) {
+  switch (upgradeChanDisposition) {
+    case HttpChannelDispositionUpgrade::cancel:
+      return "cancel"_ns;
+    case HttpChannelDispositionUpgrade::disk:
+      return "disk"_ns;
+    case HttpChannelDispositionUpgrade::netOk:
+      return "net_ok"_ns;
+    case HttpChannelDispositionUpgrade::netEarlyFail:
+      return "net_early_fail"_ns;
+    case HttpChannelDispositionUpgrade::netLateFail:
+      return "net_late_fail"_ns;
   }
 
   MOZ_ASSERT_UNREACHABLE("Unknown value for upgradeChanDecomposition");
@@ -10091,32 +10127,27 @@ nsresult nsHttpChannel::ContinueOnStopRequest(nsresult aStatus, bool aIsFromNet,
   // HTTP_CHANNEL_DISPOSITION TELEMETRY
   ChannelDisposition chanDisposition = kHttpCanceled;
   // HTTP_CHANNEL_DISPOSITION_UPGRADE TELEMETRY
-  Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE upgradeChanDisposition =
-      Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE::cancel;
+  HttpChannelDispositionUpgrade upgradeChanDisposition =
+      HttpChannelDispositionUpgrade::cancel;
 
   // HTTP 0.9 is more likely to be an error than really 0.9, so count it that
   // way
   if (mCanceled) {
     chanDisposition = kHttpCanceled;
-    upgradeChanDisposition =
-        Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE::cancel;
+    upgradeChanDisposition = HttpChannelDispositionUpgrade::cancel;
   } else if (!LoadUsedNetwork()) {
     chanDisposition = kHttpDisk;
-    upgradeChanDisposition =
-        Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE::disk;
+    upgradeChanDisposition = HttpChannelDispositionUpgrade::disk;
   } else if (NS_SUCCEEDED(aStatus) && mResponseHead &&
              mResponseHead->Version() != HttpVersion::v0_9) {
     chanDisposition = kHttpNetOK;
-    upgradeChanDisposition =
-        Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE::netOk;
+    upgradeChanDisposition = HttpChannelDispositionUpgrade::netOk;
   } else if (!mTransferSize) {
     chanDisposition = kHttpNetEarlyFail;
-    upgradeChanDisposition =
-        Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE::netEarlyFail;
+    upgradeChanDisposition = HttpChannelDispositionUpgrade::netEarlyFail;
   } else {
     chanDisposition = kHttpNetLateFail;
-    upgradeChanDisposition =
-        Telemetry::LABELS_HTTP_CHANNEL_DISPOSITION_UPGRADE::netLateFail;
+    upgradeChanDisposition = HttpChannelDispositionUpgrade::netLateFail;
   }
   // Browser upgrading only happens on HTTPS pages for mixed passive content
   // when upgrading is enabled.

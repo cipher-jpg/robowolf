@@ -19,7 +19,6 @@ browser.jar:
    content/browser/preferences/fxaPairDevice.js
    content/browser/preferences/findInPage.js
    content/browser/preferences/more-from-mozilla-qr-code-simple.svg
-   content/browser/preferences/more-from-mozilla-qr-code-simple-cn.svg
    content/browser/preferences/browser-layout-horizontal.svg
    content/browser/preferences/browser-layout-vertical.svg
    content/browser/preferences/web-appearance-dark.svg
@@ -43,6 +42,7 @@ browser.jar:
    content/browser/preferences/config/permissions-data.mjs              (config/permissions-data.mjs)
    content/browser/preferences/config/tabs-browsing.mjs                 (config/tabs-browsing.mjs)
    content/browser/preferences/config/privacy.mjs                       (config/privacy.mjs)
+   content/browser/preferences/config/LegacyPaneMappings.mjs            (config/LegacyPaneMappings.mjs)
    content/browser/preferences/config/search.mjs                        (config/search.mjs)
    content/browser/preferences/config/translations.mjs                  (config/translations.mjs)
    content/browser/preferences/config/SettingGroupManager.mjs           (config/SettingGroupManager.mjs)

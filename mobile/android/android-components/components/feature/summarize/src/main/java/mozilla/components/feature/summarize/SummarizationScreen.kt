@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -111,7 +112,7 @@ private fun SummarizationScreen(
 
     val loadingAlpha by animateFloatAsState(
         targetValue = if (state.isLoading && useGradient) 1f else 0f,
-        animationSpec = if (state.isLoading) snap() else state.tween,
+        animationSpec = if (state.isLoading) state.tween else snap(),
         label = "gradientAlpha",
     )
 
@@ -241,13 +242,21 @@ private fun SummarizationScreenScaffold(
     content: @Composable (() -> Unit),
 ) {
     Surface(
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        shape = MaterialTheme.shapes.extraLarge.copy(
+            bottomStart = CornerSize(0.dp),
+            bottomEnd = CornerSize(0.dp),
+        ),
         color = color,
         contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier
             .fillMaxWidth()
             .wrapContentHeight(align = Alignment.Bottom)
-            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .clip(
+                MaterialTheme.shapes.extraLarge.copy(
+                    bottomStart = CornerSize(0.dp),
+                    bottomEnd = CornerSize(0.dp),
+                ),
+            )
             .then(modifier)
             .widthIn(max = AcornTheme.layout.size.containerMaxWidth),
     ) {
@@ -308,7 +317,11 @@ private class SummarizationStatePreviewProvider : PreviewParameterProvider<Summa
         SummarizationState.ShakeConsentRequired,
         SummarizationState.ShakeConsentWithDownloadRequired,
         SummarizationState.Error(SummarizationError.ContentTooLong),
-        SummarizationState.Error(SummarizationError.SummarizationFailed(PageMetadataExtractor.Exception())),
+        SummarizationState.Error(
+            SummarizationError.SummarizationFailed(
+                PageMetadataExtractor.Exception(NullPointerException()),
+            ),
+        ),
     )
 }
 

@@ -57,17 +57,18 @@ import org.mozilla.fenix.tabstray.data.TabGroupTheme
 import org.mozilla.fenix.tabstray.data.TabsTrayItem
 import org.mozilla.fenix.tabstray.ui.tabitems.LOREM_IPSUM
 import org.mozilla.fenix.tabstray.ui.tabitems.MultiSelectTabButton
-import org.mozilla.fenix.tabstray.ui.tabitems.TabContentCardShape
 import org.mozilla.fenix.tabstray.ui.tabitems.TabGridTabItem
 import org.mozilla.fenix.tabstray.ui.tabitems.TabGroupMenuButton
 import org.mozilla.fenix.tabstray.ui.tabitems.TabHeaderIconTouchTargetSize
 import org.mozilla.fenix.tabstray.ui.tabitems.TabsTrayItemClickHandler
 import org.mozilla.fenix.tabstray.ui.tabitems.TabsTrayItemSelectionState
-import org.mozilla.fenix.tabstray.ui.tabitems.ThumbnailShape
 import org.mozilla.fenix.tabstray.ui.tabitems.gridItemAspectRatio
+import org.mozilla.fenix.tabstray.ui.tabitems.tabContentCardShape
+import org.mozilla.fenix.tabstray.ui.tabitems.tabGridItemContainerColor
 import org.mozilla.fenix.tabstray.ui.tabitems.tabItemClickable
 import org.mozilla.fenix.tabstray.ui.tabitems.tabItemConditionalBorder
 import org.mozilla.fenix.tabstray.ui.tabitems.tabItemInteractionAnimation
+import org.mozilla.fenix.tabstray.ui.tabitems.thumbnailShape
 import org.mozilla.fenix.theme.FirefoxTheme
 
 const val TOP_START_THUMBNAIL_INDEX = 0
@@ -97,6 +98,8 @@ fun TabGroupCard(
     onEditTabGroupClick: () -> Unit,
     onCloseTabGroupClick: () -> Unit,
 ) {
+    val containerColor = tabGridItemContainerColor(selectionState)
+
     Box(
         modifier = modifier
             .wrapContentSize()
@@ -106,15 +109,15 @@ fun TabGroupCard(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(TabContentCardShape)
+                .clip(tabContentCardShape)
                 .tabItemClickable(
                     clickHandler = clickHandler,
                     clickedItem = group,
                 ),
-            shape = TabContentCardShape,
+            shape = tabContentCardShape,
             border = tabItemConditionalBorder(selectionState),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                containerColor = containerColor,
             ),
         ) {
             Column(modifier = Modifier.aspectRatio(gridItemAspectRatio)) {
@@ -127,10 +130,7 @@ fun TabGroupCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     CompositionLocalProvider(LocalContentColor provides group.theme.onPrimary) {
-                        Spacer(
-                            modifier = Modifier
-                                .width(FirefoxTheme.layout.space.static100),
-                        )
+                        Spacer(modifier = Modifier.width(FirefoxTheme.layout.space.static100))
 
                         Text(
                             text = group.title.take(MAX_URI_LENGTH),
@@ -153,10 +153,7 @@ fun TabGroupCard(
                     }
                 }
 
-                Spacer(
-                    modifier = Modifier
-                        .height(FirefoxTheme.layout.space.static25),
-                )
+                Spacer(modifier = Modifier.height(FirefoxTheme.layout.space.static25))
 
                 // 4x4 Thumbnail Grid
                 Card(
@@ -166,10 +163,11 @@ fun TabGroupCard(
                             end = FirefoxTheme.layout.space.static50,
                             bottom = FirefoxTheme.layout.space.static50,
                         ),
-                    shape = ThumbnailShape,
+                    shape = thumbnailShape,
                 ) {
                     ThumbnailsGridView(
                         thumbnails = group.thumbnails,
+                        containerColor = containerColor,
                     )
                 }
 
@@ -237,11 +235,13 @@ private val BoxWithConstraintsScope.groupThumbnailSizePx: Int
  * size themselves to fit the available space.
  * @param thumbnails: List of thumbnails.  May be empty, or up to size 4.
  * @param modifier: Modifier parameter
+ * @param containerColor: Background Color of the thumbnails grid.
  */
 @Composable
 fun ThumbnailsGridView(
     thumbnails: List<TabThumbnailImageData>,
     modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
 ) {
     BoxWithConstraints {
         val groupThumbnailDimens = groupThumbnailDimens
@@ -249,7 +249,7 @@ fun ThumbnailsGridView(
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .background(color = MaterialTheme.colorScheme.surfaceContainerHighest),
+                .background(color = containerColor),
             verticalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.static25),
         ) {
             Row(

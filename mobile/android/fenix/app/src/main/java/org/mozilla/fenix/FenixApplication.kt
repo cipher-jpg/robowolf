@@ -54,14 +54,12 @@ import mozilla.components.feature.addons.migration.DefaultSupportedAddonsChecker
 import mozilla.components.feature.addons.update.GlobalAddonDependencyProvider
 import mozilla.components.feature.autofill.AutofillUseCases
 import mozilla.components.feature.fxsuggest.GlobalFxSuggestDependencyProvider
-import mozilla.components.feature.ipprotection.DefaultIPProtectionFeature
 import mozilla.components.feature.search.ext.buildSearchUrl
 import mozilla.components.feature.search.ext.waitForSelectedOrDefaultSearchEngine
 import mozilla.components.feature.summarize.settings.SummarizationSettings
 import mozilla.components.feature.syncedtabs.commands.GlobalSyncedTabsCommandsProvider
 import mozilla.components.feature.top.sites.TopSitesFrecencyConfig
 import mozilla.components.feature.top.sites.TopSitesProviderConfig
-import mozilla.components.feature.webcompat.reporter.WebCompatReporterFeature
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.service.fxa.manager.SyncEnginesStorage
 import mozilla.components.service.sync.autofill.GlobalAutofillDependencyProvider
@@ -108,9 +106,6 @@ import org.mozilla.fenix.components.Core
 import org.mozilla.fenix.components.RobowolfPrivacyPrefs
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.initializeGlean
-import org.mozilla.fenix.components.ipprotection.ErrorMessages
-import org.mozilla.fenix.components.ipprotection.FenixIPProtectionEligibilityStorage
-import org.mozilla.fenix.components.ipprotection.IPProtectionFeatureIntegration
 import org.mozilla.fenix.components.metrics.MozillaProductDetector
 import org.mozilla.fenix.components.startMetricsIfEnabled
 import org.mozilla.fenix.experiments.maybeFetchExperiments
@@ -241,6 +236,11 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // Note: The A-C / Fenix crash service processes are responsible for their own setup and
         //       should minimize their dependencies to avoid also crashing.
         runOnlyInMainProcess {
+            // Start loading the SharedPreferences file from disk on a background thread immediately.
+            applicationScope.launch(IO) {
+                applicationContext.getSharedPreferences(Settings.FENIX_PREFERENCES, MODE_PRIVATE)
+            }
+
             // Initialization is split into two phases based on if libmegazord is fully initialized.
             setupEarlyMain()
             setupPostMegazord()
@@ -668,33 +668,8 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     private fun maybeSetupIPProtection() {
-        IPProtectionFeatureIntegration(
-            DefaultIPProtectionFeature(
-                engine = components.core.engine,
-                lazyAccountManager = lazy { components.backgroundServices.accountManager },
-                storage = FenixIPProtectionEligibilityStorage(
-                    browserStore = components.core.store,
-                    sharedPref = components.settings.preferences,
-                    prefKey = this.getString(R.string.pref_key_enable_ip_protection),
-                    lifecycleOwner = ProcessLifecycleOwner.get(),
-                ),
-                store = components.ipProtectionStore,
-                browserStore = components.core.store,
-                tabsUseCases = components.useCases.tabsUseCases,
-            ),
-            store = components.ipProtectionStore,
-            appStore = components.appStore,
-            errorMessages = ErrorMessages(
-                connectionError = this.getString(R.string.ip_protection_connection_error_snackbar),
-                dataLimitReached = this.getString(
-                    R.string.ip_protection_data_limit_reached_snackbar,
-                    FxNimbus.features.ipProtection.value().dataLimitGigabyte,
-                ),
-            ),
-        ).also {
-            it.initialize()
-            it.start()
-        }
+        components.ipProtection.feature.initialize()
+//        components.ipProtection.storageSynchronizer.onResume(ProcessLifecycleOwner.get())
     }
 
     private fun setupCrashReporting(): CrashReporter {
@@ -852,7 +827,6 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         }
     }
 
-    @Suppress("ForbiddenComment")
     private fun initializeWebExtensionSupport() {
         try {
             GlobalAddonDependencyProvider.initialize(
@@ -886,15 +860,6 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 onExtensionsLoaded = { extensions ->
                     components.addonUpdater.registerForFutureUpdates(extensions)
                     subscribeForNewAddonsIfNeeded(components.supportedAddonsChecker, extensions)
-
-                    // Bug 1948634 - Make sure the webcompat-reporter extension is fully uninstalled.
-                    // This is added here because we need gecko to load the extension first.
-                    //
-                    // TODO: Bug 1953359 - remove the code below in the next release.
-                    if (Config.channel.isNightlyOrDebug || Config.channel.isBeta) {
-                        logger.debug("Attempting to uninstall the WebCompat Reporter extension")
-                        WebCompatReporterFeature.uninstall(components.core.engine)
-                    }
                 },
                 onUpdatePermissionRequest = components.addonUpdater::onUpdatePermissionRequest,
             )
@@ -1174,10 +1139,8 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 },
             )
 
-            if (settings.shouldShowToolbarCustomization) {
-                toolbarSimpleShortcut.set(settings.toolbarSimpleShortcut)
-                toolbarExpandedShortcut.set(settings.toolbarExpandedShortcut)
-            }
+            toolbarSimpleShortcut.set(settings.toolbarSimpleShortcutKey)
+            toolbarExpandedShortcut.set(settings.toolbarExpandedShortcutKey)
 
             enhancedTrackingProtection.set(
                 when {

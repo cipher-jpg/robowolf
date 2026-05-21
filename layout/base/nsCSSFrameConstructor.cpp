@@ -5811,7 +5811,7 @@ nsIFrame* nsCSSFrameConstructor::GetInsertionPrevSibling(
       AssertAnonymousFlexOrGridItemParent(aInsertion->mParentFrame);
       if (!prevSibling->GetNextSibling() &&
           (!aChild->IsText() || aChild->TextIsOnlyWhitespace())) {
-        prevSibling = aInsertion->mParentFrame;
+        prevSibling = aInsertion->mParentFrame->GetTailContinuation();
         aInsertion->mParentFrame = prevSibling->GetParent();
       }
     }
@@ -5830,7 +5830,8 @@ nsIFrame* nsCSSFrameConstructor::GetInsertionPrevSibling(
       AssertAnonymousFlexOrGridItemParent(aInsertion->mParentFrame);
       if (!nextSibling->GetPrevSibling() &&
           (!aChild->IsText() || aChild->TextIsOnlyWhitespace())) {
-        aInsertion->mParentFrame = aInsertion->mParentFrame->GetParent();
+        aInsertion->mParentFrame =
+            aInsertion->mParentFrame->FirstContinuation()->GetParent();
       }
     }
   } else {
@@ -8018,7 +8019,6 @@ bool nsCSSFrameConstructor::ShouldHaveFirstLetterStyle(
 bool nsCSSFrameConstructor::HasFirstLetterStyle(nsIFrame* aBlockFrame) {
   MOZ_ASSERT(aBlockFrame, "Need a frame");
   NS_ASSERTION(aBlockFrame->IsBlockFrameOrSubclass(), "Not a block frame?");
-
   return aBlockFrame->HasAnyStateBits(NS_BLOCK_HAS_FIRST_LETTER_STYLE);
 }
 
@@ -8027,7 +8027,9 @@ bool nsCSSFrameConstructor::ShouldHaveFirstLineStyle(
   bool hasFirstLine = nsLayoutUtils::HasPseudoStyle(
       aContent, aComputedStyle, PseudoStyleType::FirstLine,
       mPresShell->GetPresContext());
-  return hasFirstLine && !aContent->IsHTMLElement(nsGkAtoms::fieldset);
+  return hasFirstLine &&
+         !aContent->IsAnyOfHTMLElements(nsGkAtoms::fieldset, nsGkAtoms::input,
+                                        nsGkAtoms::textarea);
 }
 
 void nsCSSFrameConstructor::ShouldHaveSpecialBlockStyle(

@@ -29,6 +29,13 @@
     <color name="fx_mobile_on_error">@color/photonLightGrey05</color>
     <color name="fx_mobile_error_container">@color/photonRed05</color>
     <color name="fx_mobile_on_error_container">@color/photonDarkGrey90</color>
+    <color name="fx_mobile_information">@color/photonBlue60</color>
+    <color name="fx_mobile_information_container">@color/photonBlue50A44</color>
+    <color name="fx_mobile_on_information_container">@color/photonDarkGrey90</color>
+    <color name="fx_mobile_success">@color/photonGreen80</color>
+    <color name="fx_mobile_warning">@color/photonYellow80</color>
+    <color name="fx_mobile_warning_container">@color/photonYellow20</color>
+    <color name="fx_mobile_on_warning_container">@color/photonDarkGrey90</color>
     <color name="fx_mobile_outline">@color/photonLightGrey90</color>
     <color name="fx_mobile_outline_variant">@color/photonLightGrey30</color>
     <color name="fx_mobile_surface_bright">@color/photonWhite</color>
@@ -68,48 +75,27 @@
     <color name="fx_mobile_layer_color_critical">@color/photonRed10</color>
 
     <!-- Action -->
-    <!-- Primary button, Snackbar, Floating action button, Chip selected -->
-    <color name="fx_mobile_action_color_primary">@color/photonInk20</color>
     <!-- Primary button in a disabled state-->
     <color name="fx_mobile_action_color_primary_disabled">@color/photonInk20A20</color>
-    <!-- Secondary button -->
-    <color name="fx_mobile_action_color_secondary">@color/photonLightGrey30</color>
 
     <!-- Text -->
-    <!-- Disabled text -->
-    <color name="fx_mobile_text_color_disabled">@color/photonDarkGrey90A40</color>
-    <!-- Warning text on Secondary button -->
-    <color name="fx_mobile_text_color_critical_button">@color/photonRed70</color>
     <!-- Text Inverted/On Color -->
     <color name="fx_mobile_text_color_oncolor_primary">@color/photonLightGrey05</color>
     <!-- Text Inverted/On Color -->
     <color name="fx_mobile_text_color_oncolor_secondary">@color/photonLightGrey40</color>
-    <!-- Action Primary text -->
-    <color name="fx_mobile_text_color_action_primary">@color/photonLightGrey05</color>
     <!-- Action Primary disabled text -->
     <color name="fx_mobile_text_color_action_primary_disabled">@color/photonDarkGrey90A50</color>
-    <!-- Action Secondary text -->
-    <color name="fx_mobile_text_color_action_secondary">@color/photonDarkGrey90</color>
 
     <!-- Icon -->
-    <!-- Primary icon -->
-    <color name="fx_mobile_icon_color_primary">@color/photonDarkGrey90</color>
-    <!-- Secondary icon -->
-    <color name="fx_mobile_icon_color_secondary">@color/photonDarkGrey05</color>
     <!-- Disabled icon -->
     <color name="fx_mobile_icon_color_disabled">@color/photonDarkGrey90A40</color>
     <!-- Icon inverted (on color) -->
     <color name="fx_mobile_icon_color_oncolor">@color/photonLightGrey05</color>
-    <color name="fx_mobile_icon_color_critical">@color/photonRed70</color>
-    <!-- Warning icon on Secondary button -->
-    <color name="fx_mobile_icon_color_critical_button">@color/photonRed70</color>
     <color name="fx_mobile_icon_color_accent_violet">@color/photonViolet70</color>
     <color name="fx_mobile_icon_color_accent_blue">@color/photonBlue60</color>
     <color name="fx_mobile_icon_color_accent_pink">@color/photonPink60</color>
     <color name="fx_mobile_icon_color_accent_green">@color/photonGreen60</color>
     <color name="fx_mobile_icon_color_accent_yellow">@color/photonYellow60</color>
-    <!-- Action Secondary Icon -->
-    <color name="fx_mobile_icon_color_action_secondary">@color/photonDarkGrey90</color>
 
     <!-- Border -->
     <!-- Active tab (Nav), Selected tab, Active form -->
@@ -143,6 +129,13 @@
     <color name="fx_mobile_private_on_error">@color/photonDarkGrey90</color>
     <color name="fx_mobile_private_error_container">@color/photonRed80</color>
     <color name="fx_mobile_private_on_error_container">@color/photonLightGrey05</color>
+    <color name="fx_mobile_private_information">@color/photonBlue30</color>
+    <color name="fx_mobile_private_information_container">@color/photonBlue50</color>
+    <color name="fx_mobile_private_on_information_container">@color/photonLightGrey05</color>
+    <color name="fx_mobile_private_success">@color/photonGreen50</color>
+    <color name="fx_mobile_private_warning">@color/photonYellow50</color>
+    <color name="fx_mobile_private_warning_container">@color/photonYellow70A77</color>
+    <color name="fx_mobile_private_on_warning_container">@color/photonLightGrey05</color>
     <color name="fx_mobile_private_outline">@color/photonLightGrey80</color>
     <color name="fx_mobile_private_outline_variant">@color/photonDarkGrey05</color>
     <color name="fx_mobile_private_surface_bright">#FF413857</color>
@@ -171,27 +164,18 @@
     <color name="fx_mobile_private_layer_color_scrim">@color/photonDarkGrey90A95</color>
 
     <!-- Action -->
-    <!-- Primary button, Snackbar, Floating action button, Chip selected -->
-    <color name="fx_mobile_private_action_color_primary">@color/photonViolet60</color>
     <!-- Primary button in a disabled state -->
     <color name="fx_mobile_private_action_color_primary_disabled">@color/photonInk20A20</color>
 
     <!-- Text -->
-    <!-- Disabled text -->
-    <color name="fx_mobile_private_text_color_disabled">@color/photonLightGrey05A40</color>
     <!-- Text Inverted/On Color -->
     <color name="fx_mobile_private_text_color_oncolor_primary">@color/photonLightGrey05</color>
-    <!-- Action Primary text -->
-    <color name="fx_mobile_private_text_color_action_primary">@color/photonLightGrey05</color>
     <!-- Action Primary disabled text -->
     <color name="fx_mobile_private_text_color_action_primary_disabled">@color/photonLightGrey05A40</color>
 
     <!-- Icon -->
-    <!-- Primary icon -->
-    <color name="fx_mobile_private_icon_color_primary">@color/photonLightGrey05</color>
     <!-- Icon inverted (on color) -->
     <color name="fx_mobile_private_icon_color_oncolor">@color/photonLightGrey05</color>
-    <color name="fx_mobile_private_icon_color_critical">@color/photonRed20</color>
 
     <!-- Light theme color palette -->
     <color name="primary_text_light_theme">@color/photonInk80</color>
@@ -216,6 +200,30 @@
     <color name="search_suggestion_indicator_icon_color_normal_theme">@color/photonGreen70</color>
     <color name="search_suggestion_indicator_icon_bookmark_color_normal_theme">@color/photonBlue50</color>
 
+    <!-- Tracking protection dashboard colors used in normal browsing mode -->
+    <color name="protections_dashboard_background">#FFE6E0F5</color>
+    <color name="protections_dashboard_text_primary">#FF15141A</color>
+    <color name="protections_dashboard_text_accent">#FF312A64</color>
+    <color name="protections_dashboard_chip_background">#66FFFFFF</color>
+    <color name="protections_dashboard_chip_text">#FF312A64</color>
+    <color name="protections_dashboard_wave_gradient1">#FFFCF5F0</color>
+    <color name="protections_dashboard_wave_gradient2">#FFFAECF1</color>
+    <color name="protections_dashboard_wave_gradient3">#FFF5D4F5</color>
+    <color name="protections_dashboard_wave_gradient4">#FFEEAEF0</color>
+    <color name="protections_dashboard_progress_bar">#FF592ACB</color>
+
+    <!-- Tracking protection dashboard colors used in private browsing mode -->
+    <color name="protections_dashboard_background_private">#FF4B3974</color>
+    <color name="protections_dashboard_text_primary_private">#FFD9D0F5</color>
+    <color name="protections_dashboard_text_accent_private">#FFE8CCFF</color>
+    <color name="protections_dashboard_chip_background_private">#FF3D3264</color>
+    <color name="protections_dashboard_chip_text_private">#FFD9D0F5</color>
+    <color name="protections_dashboard_wave_gradient1_private">#FF342668</color>
+    <color name="protections_dashboard_wave_gradient2_private">#FF3D2D7A</color>
+    <color name="protections_dashboard_wave_gradient3_private">#FF4A3A8C</color>
+    <color name="protections_dashboard_wave_gradient4_private">#FF5C4A9E</color>
+    <color name="protections_dashboard_progress_bar_private">#FFD9BFFF</color>
+
     <!-- Colors for Edge to Edge background  -->
     <color name="homepage_edge_to_edge_gradient_start">#FFF7EAE8</color>
     <color name="homepage_edge_to_edge_gradient_end">#FFF8F3F4</color>
@@ -236,7 +244,6 @@
     <color name="toggle_off_track_normal_theme">@color/photonDarkGrey90</color>
 
     <!-- Misc colors applied universally-->
-    <color name="suggestion_highlight_color">#5C592ACB</color>
     <color name="sync_error_background_color">#FFF36E</color>
     <color name="sync_error_text_color">@color/photonYellow90</color>
     <color name="preference_scroll_highlight">@color/fx_mobile_surface_container_highest</color>
@@ -245,7 +252,7 @@
     <color name="mozac_feat_prompt_cancel_save_dialog_text_color" tools:ignore="UnusedResources">@color/photonViolet70A80</color>
 
     <!-- Reader View colors -->
-    <color name="mozac_feature_readerview_text_color" tools:ignore="UnusedResources">@color/fx_mobile_icon_color_primary</color>
+    <color name="mozac_feature_readerview_text_color" tools:ignore="UnusedResources">@color/fx_mobile_on_surface</color>
     <color name="mozac_feature_readerview_selected">@color/photonViolet40</color>
 
     <!-- Share UI -->
@@ -267,7 +274,7 @@
     <color name="search_view_hint_color">@color/photonDarkGrey05</color>
 
     <!-- Tab Counter colors -->
-    <color name="mozac_ui_tabcounter_default_tint" tools:ignore="UnusedResources">@color/fx_mobile_icon_color_primary</color>
+    <color name="mozac_ui_tabcounter_default_tint" tools:ignore="UnusedResources">@color/fx_mobile_on_surface</color>
     <color name="mozac_ui_tabcounter_default_text" tools:ignore="UnusedResources">@color/fx_mobile_on_surface</color>
 
     <!-- App Spinners colors -->
@@ -284,14 +291,14 @@
     <color name="mozac_ui_private_mode_circle_fill" tools:ignore="UnusedResources">@color/photonPurple60</color>
 
     <!-- Account Sync Avatar fill colors -->
-    <color name="mozac_ui_avatar_warning_bg_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_icon_color_secondary</color>
-    <color name="mozac_ui_avatar_warning_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_icon_color_critical</color>
+    <color name="mozac_ui_avatar_warning_bg_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_on_surface_variant</color>
+    <color name="mozac_ui_avatar_warning_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_error</color>
 
     <!-- Extensions disabled icon fill colors -->
-    <color name="mozac_ui_extensions_warning_bg_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_icon_color_secondary</color>
-    <color name="mozac_ui_extensions_warning_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_icon_color_critical</color>
+    <color name="mozac_ui_extensions_warning_bg_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_on_surface_variant</color>
+    <color name="mozac_ui_extensions_warning_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_error</color>
 
     <!-- Lock slash critical fill colors for mozac_ic_lock_slash_critical_24 -->
-    <color name="mozac_ui_lock_slash_bg_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_icon_color_secondary</color>
-    <color name="mozac_ui_lock_slash_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_icon_color_critical</color>
+    <color name="mozac_ui_lock_slash_bg_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_on_surface_variant</color>
+    <color name="mozac_ui_lock_slash_fill_critical" tools:ignore="UnusedResources">@color/fx_mobile_error</color>
 </resources>

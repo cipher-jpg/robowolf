@@ -224,8 +224,8 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-benchmark-firefox-ares6**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -435,8 +435,8 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-benchmark-firefox-assorted-dom**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -751,8 +751,8 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-benchmark-firefox-jetstream2**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -1057,8 +1057,8 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-benchmark-firefox-jetstream2**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -1890,8 +1890,8 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-benchmark-firefox-matrix-react-bench**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -4159,6 +4159,78 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
 
 
+   .. list-table:: **test-android-hw-a55-lt-14-0-aarch64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-benchmark-speedometer3-mobile-chrome-m-nofis**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-cstm-car-m-nofis**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-fenix**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-fenix-nofis**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-geckoview**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-geckoview-nofis**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-android-hw-a55-lt-14-0-aarch64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-benchmark-speedometer3-mobile-fenix**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-fenix-nofis**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-geckoview**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-geckoview-nofis**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
    .. list-table:: **test-android-hw-p6-13-0-aarch64-shippable/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -4578,6 +4650,78 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
 
 
    .. list-table:: **test-android-hw-a55-14-0-aarch64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-benchmark-speedometer3-mobile-fenix**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-fenix-nofis**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-geckoview**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-geckoview-nofis**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-android-hw-a55-lt-14-0-aarch64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-benchmark-speedometer3-mobile-chrome-m-nofis**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-cstm-car-m-nofis**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-fenix**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-fenix-nofis**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-geckoview**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **browsertime-benchmark-speedometer3-mobile-geckoview-nofis**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-android-hw-a55-lt-14-0-aarch64/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -5144,8 +5288,8 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-benchmark-firefox-stylebench**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -5350,8 +5494,8 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-benchmark-firefox-sunspider**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -5543,8 +5687,8 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - mozilla-release
         - mozilla-beta
       * - **browsertime-benchmark-firefox-twitch-animation**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -6314,7 +6458,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-benchmark-wasm-firefox-wasm-godot**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -6502,7 +6646,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - mozilla-release
         - mozilla-beta
       * - **browsertime-benchmark-wasm-firefox-wasm-godot-baseline**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -6690,7 +6834,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - mozilla-release
         - mozilla-beta
       * - **browsertime-benchmark-wasm-firefox-wasm-godot-optimizing**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -6895,7 +7039,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-benchmark-wasm-firefox-wasm-misc**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -7086,7 +7230,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - mozilla-release
         - mozilla-beta
       * - **browsertime-benchmark-wasm-firefox-wasm-misc-baseline**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -7277,7 +7421,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - mozilla-release
         - mozilla-beta
       * - **browsertime-benchmark-wasm-firefox-wasm-misc-optimizing**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -7484,8 +7628,8 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-benchmark-firefox-webaudio**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -10836,11 +10980,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addMab1**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addMab1**
         - ✅
         - ✅
@@ -11035,11 +11174,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addMabN**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addMabN**
         - ✅
         - ✅
@@ -11234,11 +11368,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addMar1**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addMar1**
         - ✅
         - ✅
@@ -11433,11 +11562,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addMarN**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addMarN**
         - ✅
         - ✅
@@ -11632,11 +11756,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addMbl1**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addMbl1**
         - ✅
         - ✅
@@ -11831,11 +11950,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addMblN**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addMblN**
         - ✅
         - ✅
@@ -12030,11 +12144,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addkAB1**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addkAB1**
         - ✅
         - ✅
@@ -12229,11 +12338,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addkABN**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addkABN**
         - ✅
         - ✅
@@ -12428,11 +12532,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addkAR1**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addkAR1**
         - ✅
         - ✅
@@ -12627,11 +12726,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addkARN**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addkARN**
         - ✅
         - ✅
@@ -12826,11 +12920,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addkBL1**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addkBL1**
         - ✅
         - ✅
@@ -13025,11 +13114,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-addkBLN**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-addkBLN**
         - ✅
         - ✅
@@ -13944,11 +14028,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-getkeyrng**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-getkeyrng**
         - ✅
         - ✅
@@ -16483,11 +16562,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-idb-open-few-par**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-idb-open-few-par**
         - ✅
         - ✅
@@ -16682,11 +16756,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-idb-open-few-seq**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-idb-open-few-seq**
         - ✅
         - ✅
@@ -16881,11 +16950,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-idb-open-many-par**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-idb-open-many-par**
         - ✅
         - ✅
@@ -17080,11 +17144,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-indexeddb-chrome-idb-open-many-seq**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-indexeddb-firefox-idb-open-many-seq**
         - ✅
         - ✅
@@ -19662,11 +19721,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-upload-chrome-upload**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-upload-firefox-upload**
         - ✅
         - ✅
@@ -19862,11 +19916,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-upload-chrome-upload-h3**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-upload-firefox-upload-h3**
         - ✅
         - ✅
@@ -20069,16 +20118,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-av1-q**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-av1-q**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-av1-q**
         - ✅
         - ✅
@@ -20282,16 +20321,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-av1-q-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-av1-q-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-av1-q-cam**
         - ✅
         - ✅
@@ -20494,16 +20523,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-av1-q-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-av1-q-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-av1-q-i420**
         - ✅
         - ✅
@@ -20706,16 +20725,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-av1-rt**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-av1-rt**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-av1-rt**
         - ✅
         - ✅
@@ -20919,16 +20928,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-av1-rt-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-av1-rt-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-av1-rt-cam**
         - ✅
         - ✅
@@ -21131,16 +21130,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-av1-rt-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-av1-rt-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-av1-rt-i420**
         - ✅
         - ✅
@@ -21688,16 +21677,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-h264-q-sd**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-h264-q-sd**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-h264-q-sd**
         - ✅
         - ✅
@@ -21843,16 +21822,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-h264-q-sd-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-h264-q-sd-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-h264-q-sd-cam**
         - ✅
         - ✅
@@ -22400,16 +22369,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-h264-rt-sd**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-h264-rt-sd**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-h264-rt-sd**
         - ✅
         - ✅
@@ -22555,16 +22514,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-h264-rt-sd-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-h264-rt-sd-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-h264-rt-sd-cam**
         - ✅
         - ✅
@@ -22767,16 +22716,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp8-q**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp8-q**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp8-q**
         - ✅
         - ✅
@@ -22980,16 +22919,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp8-q-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp8-q-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp8-q-cam**
         - ✅
         - ✅
@@ -23192,16 +23121,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp8-q-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp8-q-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp8-q-i420**
         - ✅
         - ✅
@@ -23404,16 +23323,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp8-rt**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp8-rt**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp8-rt**
         - ✅
         - ✅
@@ -23617,16 +23526,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp8-rt-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp8-rt-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp8-rt-cam**
         - ✅
         - ✅
@@ -23829,16 +23728,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp8-rt-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp8-rt-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp8-rt-i420**
         - ✅
         - ✅
@@ -24041,16 +23930,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp9-q**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp9-q**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp9-q**
         - ✅
         - ✅
@@ -24254,16 +24133,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp9-q-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp9-q-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp9-q-cam**
         - ✅
         - ✅
@@ -24466,16 +24335,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp9-q-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp9-q-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp9-q-i420**
         - ✅
         - ✅
@@ -24678,16 +24537,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp9-rt**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp9-rt**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp9-rt**
         - ✅
         - ✅
@@ -24891,16 +24740,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp9-rt-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp9-rt-cam**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp9-rt-cam**
         - ✅
         - ✅
@@ -25103,16 +24942,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-webcodecs-chrome-ve-vp9-rt-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp9-rt-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp9-rt-i420**
         - ✅
         - ✅
@@ -25358,11 +25187,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-video-playback-latency-chrome-vpl-av1**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-video-playback-latency-firefox-vpl-av1**
         - ❌
         - ❌
@@ -25411,11 +25235,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-video-playback-latency-chrome-vpl-av1**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-video-playback-latency-firefox-vpl-av1**
         - ❌
         - ❌
@@ -25666,11 +25485,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-video-playback-latency-chrome-vpl-h264**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-video-playback-latency-firefox-vpl-h264**
         - ❌
         - ❌
@@ -25719,11 +25533,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-video-playback-latency-chrome-vpl-h264**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-video-playback-latency-firefox-vpl-h264**
         - ❌
         - ❌
@@ -25969,11 +25778,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-video-playback-latency-chrome-vpl-vp9**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-video-playback-latency-firefox-vpl-vp9**
         - ❌
         - ❌
@@ -26022,11 +25826,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-video-playback-latency-chrome-vpl-vp9**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-video-playback-latency-firefox-vpl-vp9**
         - ❌
         - ❌
@@ -26604,24 +26403,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ✅
         - ❌
         - ❌
-      * - **browsertime-tp6-essential-chrome-amazon**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-amazon**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-essential-firefox-amazon**
         - ✅
         - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-amazon**
-        - ❌
-        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6-live-firefox-amazon**
@@ -26984,24 +26768,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ✅
         - ❌
         - ❌
-      * - **browsertime-tp6-essential-chrome-bing-search**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-bing-search**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-essential-firefox-bing-search**
         - ✅
         - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-bing-search**
-        - ❌
-        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6-live-firefox-bing-search**
@@ -27240,19 +27009,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-buzzfeed**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-buzzfeed**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-buzzfeed**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -27575,16 +27334,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
       * - **browsertime-tp6-bytecode-firefox-cnn**
         - ✅
         - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-chrome-cnn**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-cnn**
-        - ❌
-        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6-essential-firefox-cnn**
@@ -28076,22 +27825,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-ebay**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-ebay**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-ebay**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-ebay**
         - ❌
         - ❌
         - ❌
@@ -28327,19 +28061,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-espn**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-espn**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-espn**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -28562,19 +28286,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-expedia**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-expedia**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-expedia**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -28848,22 +28562,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-facebook**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-facebook**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-facebook**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-facebook**
         - ❌
         - ❌
         - ❌
@@ -29214,24 +28913,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ✅
         - ❌
         - ❌
-      * - **browsertime-tp6-essential-chrome-fandom**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-fandom**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-essential-firefox-fandom**
         - ✅
         - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-fandom**
-        - ❌
-        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6-live-firefox-fandom**
@@ -29526,22 +29210,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-google-docs**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-google-docs**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-google-docs**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-google-docs**
         - ❌
         - ❌
         - ❌
@@ -29830,22 +29499,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-google-mail**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-google-mail**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-google-mail**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-google-mail**
         - ❌
         - ❌
         - ❌
@@ -30135,22 +29789,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-google-search**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-google-search**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-google-search**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-google-search**
         - ❌
         - ❌
         - ❌
@@ -30501,24 +30140,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ✅
         - ❌
         - ❌
-      * - **browsertime-tp6-essential-chrome-google-slides**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-google-slides**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-essential-firefox-google-slides**
         - ✅
         - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-google-slides**
-        - ❌
-        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6-live-firefox-google-slides**
@@ -30812,22 +30436,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-imdb**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-imdb**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-imdb**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-imdb**
         - ❌
         - ❌
         - ❌
@@ -31109,19 +30718,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-imgur**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-imgur**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-imgur**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6-live-firefox-imgur**
@@ -31465,24 +31064,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ✅
         - ❌
         - ❌
-      * - **browsertime-tp6-essential-chrome-instagram**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-instagram**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-essential-firefox-instagram**
         - ✅
         - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-instagram**
-        - ❌
-        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6-live-firefox-instagram**
@@ -31775,22 +31359,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-linkedin**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-linkedin**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-linkedin**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-linkedin**
         - ❌
         - ❌
         - ❌
@@ -32080,22 +31649,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-microsoft**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-microsoft**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-microsoft**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-microsoft**
         - ❌
         - ❌
         - ❌
@@ -32380,22 +31934,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-netflix**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-netflix**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-netflix**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-netflix**
         - ❌
         - ❌
         - ❌
@@ -32630,19 +32169,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-nytimes**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-nytimes**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-nytimes**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -32865,19 +32394,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-office**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-office**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-office**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -33342,22 +32861,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-outlook**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-outlook**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-outlook**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-outlook**
         - ❌
         - ❌
         - ❌
@@ -33646,22 +33150,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-paypal**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-paypal**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-paypal**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-paypal**
         - ❌
         - ❌
         - ❌
@@ -33951,22 +33440,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-pinterest**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-pinterest**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-pinterest**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-pinterest**
         - ❌
         - ❌
         - ❌
@@ -34257,22 +33731,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-reddit**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-reddit**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-reddit**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-reddit**
         - ❌
         - ❌
         - ❌
@@ -34948,22 +34407,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-tumblr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-tumblr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-tumblr**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-tumblr**
         - ❌
         - ❌
         - ❌
@@ -35255,22 +34699,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-twitch**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-twitch**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-twitch**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-twitch**
         - ❌
         - ❌
         - ❌
@@ -35615,24 +35044,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ✅
         - ❌
         - ❌
-      * - **browsertime-tp6-essential-chrome-twitter**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-twitter**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-essential-firefox-twitter**
         - ✅
         - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-twitter**
-        - ❌
-        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6-live-firefox-twitter**
@@ -36064,19 +35478,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-wikia**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-wikia**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-wikia**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -36416,24 +35820,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ✅
         - ❌
         - ❌
-      * - **browsertime-tp6-essential-chrome-wikipedia**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-wikipedia**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-essential-firefox-wikipedia**
         - ✅
         - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-wikipedia**
-        - ❌
-        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6-live-firefox-wikipedia**
@@ -36786,24 +36175,9 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ✅
         - ❌
         - ❌
-      * - **browsertime-tp6-essential-chrome-yahoo-mail**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-yahoo-mail**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-essential-firefox-yahoo-mail**
         - ✅
         - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-yahoo-mail**
-        - ❌
-        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6-live-firefox-yahoo-mail**
@@ -37097,22 +36471,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-tp6-chrome-youtube**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-youtube**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-youtube**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **browsertime-tp6-live-chrome-youtube**
         - ❌
         - ❌
         - ❌
@@ -37334,11 +36693,6 @@ Browsertime tests that interact with the webpage. Includes responsiveness tests 
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-responsiveness-chrome-cnn-nav**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-responsiveness-firefox-cnn-nav**
         - ✅
         - ✅
@@ -37547,11 +36901,6 @@ Browsertime tests that interact with the webpage. Includes responsiveness tests 
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-responsiveness-chrome-facebook-nav**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-responsiveness-firefox-facebook-nav**
         - ✅
         - ✅
@@ -37759,11 +37108,6 @@ Browsertime tests that interact with the webpage. Includes responsiveness tests 
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-responsiveness-chrome-reddit-billgates-ama**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-responsiveness-firefox-reddit-billgates-ama**
         - ✅
         - ✅
@@ -37971,11 +37315,6 @@ Browsertime tests that interact with the webpage. Includes responsiveness tests 
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-responsiveness-chrome-reddit-billgates-post-1**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-responsiveness-firefox-reddit-billgates-post-1**
         - ✅
         - ✅
@@ -38183,11 +37522,6 @@ Browsertime tests that interact with the webpage. Includes responsiveness tests 
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-responsiveness-chrome-reddit-billgates-post-2**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-responsiveness-firefox-reddit-billgates-post-2**
         - ✅
         - ✅

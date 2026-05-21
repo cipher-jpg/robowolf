@@ -16,12 +16,16 @@ const PrivateBrowsingUtils = ChromeUtils.importESModule(
 ).PrivateBrowsingUtils;
 
 const lazy = XPCOMUtils.declareLazy({
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   AppUpdater: "resource://gre/modules/AppUpdater.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   DoHConfigController: "moz-src:///toolkit/components/doh/DoHConfig.sys.mjs",
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
+  ExtensionSettingsStore:
+    "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
   FirefoxRelay: "resource://gre/modules/FirefoxRelay.sys.mjs",
+  Management: "resource://gre/modules/Extension.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
   SiteDataManager: "resource:///modules/SiteDataManager.sys.mjs",
   IPProtection:
@@ -311,6 +315,7 @@ Preferences.addAll([
   // Trust Panel
   { id: "browser.urlbar.trustPanel.breachAlerts", type: "bool" },
   { id: "browser.urlbar.trustPanel.featureGate", type: "bool" },
+  { id: "browser.urlbar.trustPanel.breachAlerts.featureGate", type: "bool" },
 
   // Button prefs
   { id: "pref.privacy.disable_button.cookie_exceptions", type: "bool" },
@@ -368,6 +373,7 @@ Preferences.addAll([
   { id: "browser.ipProtection.autoStartPrivateEnabled", type: "bool" },
   { id: "browser.ipProtection.bandwidth.enabled", type: "bool" },
   { id: "browser.ipProtection.usageCache", type: "string" },
+  { id: "browser.ipProtection.upgradeNotAvailable", type: "bool" },
 
   // Media
   { id: "media.autoplay.default", type: "int" },
@@ -477,10 +483,6 @@ if (SECURITY_PRIVACY_STATUS_CARD_ENABLED) {
     },
     {
       id: "browser.preferences.config_warning.warningProxyAutodetection.dismissed",
-      type: "bool",
-    },
-    {
-      id: "services.passwordSavingEnabled",
       type: "bool",
     },
     {
@@ -671,6 +673,7 @@ SettingGroupManager.registerGroups({
     items: [
       {
         id: "warningCard",
+        subcategory: "security-warning-card",
         l10nId: "security-privacy-issue-card",
         control: "moz-card",
         controlAttrs: {
@@ -763,6 +766,7 @@ SettingGroupManager.registerGroups({
   },
   cookiesAndSiteData2: {
     inProgress: true,
+    subcategory: "sitedata",
     l10nId: "sitedata-heading",
     iconSrc: "chrome://browser/skin/controlcenter/3rdpartycookies.svg",
     headingLevel: 2,
@@ -951,8 +955,9 @@ SettingGroupManager.registerGroups({
         ],
         controlAttrs: {
           "search-l10n-ids": `
-            history-remember-description3,
-            history-dontremember-description3,
+            history-remember-description4,
+            history-dontremember-description4,
+            history-custom-description4,
             history-private-browsing-permanent.label,
             history-remember-browser-option.label,
             history-remember-search-option.label,
@@ -1007,7 +1012,9 @@ SettingGroupManager.registerGroups({
     ],
   },
   dnsOverHttps: {
+    subcategory: "dnsOverHttps",
     l10nId: "dns-over-https-group2",
+    supportPage: "dns-over-https",
     headingLevel: 1,
     inProgress: true,
     items: [
@@ -1089,6 +1096,7 @@ SettingGroupManager.registerGroups({
   },
   etpStatus: {
     inProgress: true,
+    subcategory: "etpStatus",
     headingLevel: 2,
     l10nId: "preferences-etp-status-header",
     supportPage: "enhanced-tracking-protection",
@@ -1147,6 +1155,7 @@ SettingGroupManager.registerGroups({
           },
           {
             id: "etpLevelStrict",
+            subcategory: "etp-strict-control",
             value: "strict",
             l10nId: "preferences-etp-level-strict",
             items: [
@@ -1167,6 +1176,7 @@ SettingGroupManager.registerGroups({
           },
           {
             id: "etpLevelCustom",
+            subcategory: "etp-custom-control",
             value: "custom",
             l10nId: "preferences-etp-level-custom",
             items: [
@@ -1235,6 +1245,18 @@ SettingGroupManager.registerGroups({
           },
         ],
       },
+      {
+        id: "reloadTabsHint",
+        control: "moz-message-bar",
+        l10nId: "preferences-etp-reload-tabs-hint",
+        options: [
+          {
+            control: "moz-button",
+            l10nId: "preferences-etp-reload-tabs-hint-button",
+            slot: "actions",
+          },
+        ],
+      },
     ],
   },
   etpCustomize: {
@@ -1267,28 +1289,32 @@ SettingGroupManager.registerGroups({
             options: [
               {
                 value: Ci.nsICookieService.BEHAVIOR_ACCEPT.toString(),
-                l10nId: "preferences-etpc-custom-cookie-behavior-accept-all",
+                l10nId: "preferences-etp-custom-cookie-behavior-accept-all",
               },
               {
                 value: Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER.toString(),
-                l10nId: "sitedata-option-block-cross-site-trackers",
+                l10nId:
+                  "preferences-etp-custom-cookie-behavior-block-cross-site-cookies",
               },
               {
                 value:
                   Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN.toString(),
-                l10nId: "sitedata-option-block-cross-site-cookies2",
+                l10nId:
+                  "preferences-etp-custom-cookie-behavior-isolate-cross-site-cookies",
               },
               {
                 value: Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN.toString(),
-                l10nId: "sitedata-option-block-unvisited",
+                l10nId:
+                  "preferences-etp-custom-cookie-behavior-block-unvisited",
               },
               {
                 value: Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN.toString(),
-                l10nId: "sitedata-option-block-all-cross-site-cookies",
+                l10nId:
+                  "preferences-etp-custom-cookie-behavior-block-all-cross-site-cookies",
               },
               {
                 value: Ci.nsICookieService.BEHAVIOR_REJECT.toString(),
-                l10nId: "sitedata-option-block-all",
+                l10nId: "preferences-etp-custom-cookie-behavior-block-all",
               },
             ],
           },
@@ -1368,6 +1394,7 @@ SettingGroupManager.registerGroups({
     ],
   },
   ipprotection: {
+    subcategory: "vpn",
     l10nId: "ip-protection-description-1",
     headingLevel: 2,
     supportPage: "built-in-vpn",
@@ -1383,7 +1410,6 @@ SettingGroupManager.registerGroups({
           imagesrc:
             "chrome://browser/content/ipprotection/assets/vpn-settings-get-started.svg",
           imagealignment: "end",
-          imagewidth: "large",
         },
         items: [
           {
@@ -1462,10 +1488,16 @@ Preferences.addSetting({
 });
 
 Preferences.addSetting({
+  id: "trustPanelBreachAlertsFeatureGate",
+  pref: "browser.urlbar.trustPanel.breachAlerts.featureGate",
+});
+
+Preferences.addSetting({
   id: "trustPanelBreachAlertsMain",
   pref: "browser.urlbar.trustPanel.breachAlerts",
-  deps: ["trustPanelFeatureGate"],
-  visible: ({ trustPanelFeatureGate }) => trustPanelFeatureGate.value,
+  deps: ["trustPanelFeatureGate", "trustPanelBreachAlertsFeatureGate"],
+  visible: ({ trustPanelFeatureGate, trustPanelBreachAlertsFeatureGate }) =>
+    trustPanelFeatureGate.value && trustPanelBreachAlertsFeatureGate.value,
 });
 
 /**
@@ -1498,8 +1530,10 @@ class WarningSettingConfig {
    * setting initially
    * @param {boolean} isDismissable - A boolean indicating whether or not we should support dismissing
    * this setting
+   * @param {string} [extensionStoreId] - The ExtensionSettingsStore "prefs" key to watch. When an
+   * installed extension is controlling this setting, the warning is suppressed.
    */
-  constructor(id, prefMapping, problematic, isDismissable) {
+  constructor(id, prefMapping, problematic, isDismissable, extensionStoreId) {
     this.id = id;
     this.prefMapping = prefMapping;
     if (isDismissable) {
@@ -1509,6 +1543,8 @@ class WarningSettingConfig {
       this.prefMapping.dismissAll = this.dismissAllPrefId;
     }
     this.problematic = problematic;
+    this.extensionStoreId = extensionStoreId;
+    this.extensionControlled = false;
   }
 
   /**
@@ -1521,6 +1557,7 @@ class WarningSettingConfig {
     return (
       !this.dismissAll?.value &&
       !this.dismissed?.value &&
+      !this.extensionControlled &&
       this.problematic(this)
     );
   }
@@ -1559,10 +1596,39 @@ class WarningSettingConfig {
       this[getter] = Preferences.get(prefId);
       this[getter].on("change", emitChange);
     }
+
+    let extensionListenerCleanup;
+    if (this.extensionStoreId) {
+      let updateExtensionControlled = async () => {
+        await lazy.Management.asyncLoadSettingsModules();
+        await lazy.ExtensionSettingsStore.initialize();
+        let info = lazy.ExtensionSettingsStore.getSetting(
+          "prefs",
+          this.extensionStoreId
+        );
+        let controlled = false;
+        if (info?.id) {
+          let addon = await lazy.AddonManager.getAddonByID(info.id);
+          controlled = !!addon;
+        }
+        if (this.extensionControlled !== controlled) {
+          this.extensionControlled = controlled;
+          emitChange();
+        }
+      };
+      let topic = `extension-setting-changed:${this.extensionStoreId}`;
+      lazy.Management.on(topic, updateExtensionControlled);
+      updateExtensionControlled();
+      extensionListenerCleanup = () => {
+        lazy.Management.off(topic, updateExtensionControlled);
+      };
+    }
+
     return () => {
       for (let getter of Object.keys(this.prefMapping)) {
         this[getter].off(emitChange);
       }
+      extensionListenerCleanup?.();
     };
   }
 
@@ -1634,11 +1700,10 @@ if (SECURITY_PRIVACY_STATUS_CARD_ENABLED) {
       "warningPasswordManager",
       {
         enabled: "signon.rememberSignons",
-        extentionAllows: "services.passwordSavingEnabled",
       },
-      ({ enabled, extentionAllows }) =>
-        !enabled.value && !enabled.locked && !extentionAllows.value,
-      true
+      ({ enabled }) => !enabled.value && !enabled.locked,
+      true,
+      "services.passwordSavingEnabled"
     )
   );
 
@@ -1826,24 +1891,33 @@ if (SECURITY_PRIVACY_STATUS_CARD_ENABLED) {
       id: "appUpdateStatus",
       cachedValue: undefined,
       setup(emitChange) {
-        if (lazy.AppConstants.MOZ_UPDATER && !lazy.isPackagedApp) {
-          let appUpdater = new lazy.AppUpdater();
-          /**
-           * @param {number} appStatus
-           * @param {any[]} _args
-           */
-          let listener = (appStatus, ..._args) => {
-            this.cachedValue = appStatus;
-            emitChange();
-          };
-          appUpdater.addListener(listener);
-          appUpdater.check();
-          return () => {
-            appUpdater.removeListener(listener);
-            appUpdater.stop();
-          };
+        if (!lazy.AppConstants.MOZ_UPDATER || lazy.isPackagedApp) {
+          return () => {};
         }
-        return () => {};
+        // Reuse the AppUpdater driven by about-firefox.mjs's updateState
+        // setting so we don't kick off a parallel update check and download.
+        let sharedAppUpdater = window.gAppUpdater?._appUpdater;
+        let appUpdater = sharedAppUpdater ?? new lazy.AppUpdater();
+        /**
+         * @param {number} appStatus
+         * @param {any[]} _args
+         */
+        let listener = (appStatus, ..._args) => {
+          this.cachedValue = appStatus;
+          emitChange();
+        };
+        appUpdater.addListener(listener);
+        if (sharedAppUpdater) {
+          this.cachedValue = appUpdater.status;
+        } else {
+          appUpdater.check();
+        }
+        return () => {
+          appUpdater.removeListener(listener);
+          if (!sharedAppUpdater) {
+            appUpdater.stop();
+          }
+        };
       },
       get() {
         return this.cachedValue;
@@ -1904,6 +1978,10 @@ Preferences.addSetting({
       return false;
     }
   },
+});
+Preferences.addSetting({
+  id: "ipProtectionUpgradeNotAvailable",
+  pref: "browser.ipProtection.upgradeNotAvailable",
 });
 Preferences.addSetting({
   id: "ipProtectionNotOptedInSection",
@@ -2118,15 +2196,18 @@ Preferences.addSetting({
     "ipProtectionVisible",
     "ipProtectionNotOptedIn",
     "ipProtectionSubscribedToVpn",
+    "ipProtectionUpgradeNotAvailable",
   ],
   visible: ({
     ipProtectionVisible,
     ipProtectionNotOptedIn,
     ipProtectionSubscribedToVpn,
+    ipProtectionUpgradeNotAvailable,
   }) =>
     ipProtectionVisible.value &&
     !ipProtectionNotOptedIn.value &&
-    !ipProtectionSubscribedToVpn.value,
+    !ipProtectionSubscribedToVpn.value &&
+    !ipProtectionUpgradeNotAvailable.value,
 });
 
 Preferences.addSetting({
@@ -2555,6 +2636,20 @@ Preferences.addSetting(
     },
   })
 );
+
+// Trigger site data calculation the first time the privacy pane is shown in
+// this prefs document. siteDataSize, clearSiteDataButton, and siteDataSettings
+// all consume the resulting "sitedatamanager:*" notifications.
+{
+  let onPaneShown = event => {
+    if (event.detail.category === "panePrivacy") {
+      lazy.SiteDataManager.updateSites();
+      window.removeEventListener("paneshown", onPaneShown);
+    }
+  };
+  window.addEventListener("paneshown", onPaneShown);
+}
+
 Preferences.addSetting({
   id: "cookieExceptions",
   onUserClick() {
@@ -3078,7 +3173,7 @@ Preferences.addSetting({
         reason: Services.dns.getTRRSkipReasonName(
           Ci.nsITRRSkipReason.TRR_PARENTAL_CONTROL
         ),
-        displayName,
+        name: displayName,
       };
     } else {
       let confirmationState = Services.dns.currentTrrConfirmationState;
@@ -3113,19 +3208,19 @@ Preferences.addSetting({
       if (confirmationStatus != Cr.NS_OK) {
         l10nArgs = {
           reason: ChromeUtils.getXPCOMErrorName(confirmationStatus),
-          name,
+          name: displayName,
         };
       } else {
         l10nArgs = {
           reason: Services.dns.getTRRSkipReasonName(
             Services.dns.lastConfirmationSkipReason
           ),
-          name,
+          name: displayName,
         };
         if (
           Services.dns.lastConfirmationSkipReason ==
             Ci.nsITRRSkipReason.TRR_BAD_URL ||
-          !name
+          !displayName
         ) {
           l10nId = "preferences-doh-status-item-not-active-bad-url";
           supportPage = "doh-status";
@@ -3273,21 +3368,13 @@ Preferences.addSetting({
 Preferences.addSetting({
   id: "dohCustomProvider",
   deps: ["dohProviderSelect", "dohURL"],
-  _value: null,
   visible: deps => {
     return deps.dohProviderSelect.value == "custom";
   },
   get(_val, deps) {
-    if (this._value === null) {
-      return deps.dohURL.value;
-    }
-    return this._value;
+    return deps.dohURL.value;
   },
   set(val, deps) {
-    this._value = val;
-    if (val == "") {
-      val = " ";
-    }
     deps.dohURL.value = val;
   },
 });
@@ -3402,6 +3489,9 @@ Preferences.addSetting({
     }
 
     return config;
+  },
+  onUserChange() {
+    PrivacySettingHelpers.maybeNotifyUserToReload();
   },
 });
 
@@ -3543,6 +3633,7 @@ Preferences.addSetting({
   deps: ["contentBlockingCategory"],
   onUserClick(_, { contentBlockingCategory }) {
     contentBlockingCategory.value = "standard";
+    PrivacySettingHelpers.maybeNotifyUserToReload();
   },
   disabled({ contentBlockingCategory }) {
     return (
@@ -3557,6 +3648,7 @@ Preferences.addSetting({
   deps: ["contentBlockingCategory"],
   onUserClick(_, { contentBlockingCategory }) {
     contentBlockingCategory.value = "strict";
+    PrivacySettingHelpers.maybeNotifyUserToReload();
   },
   disabled({ contentBlockingCategory }) {
     return (

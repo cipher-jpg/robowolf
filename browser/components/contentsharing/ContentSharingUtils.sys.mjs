@@ -11,6 +11,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   JsonSchema: "resource://gre/modules/JsonSchema.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
@@ -37,7 +38,7 @@ ChromeUtils.defineLazyGetter(lazy, "contentSharingL10n", () => {
   return new Localization(["browser/contentSharing.ftl"]);
 });
 
-const MAX_ITEM_COUNT = 30;
+export const MAX_ITEM_COUNT = 30;
 // Delay for server retries. Lower in testing so the test doesn't time out.
 const BASE_DELAY = Cu.isInAutomation ? 100 : 1000;
 const MAX_REQUEST_ATTEMPTS = 5;
@@ -67,7 +68,34 @@ export const ERRORS = Object.freeze({
   GENERIC: "generic-error",
   MAX_RETRY_ATTEMPTS: "max-retry-attempts-error",
   UNAUTHORIZED: "unauthorized-error",
+  DISABLED: "disabled-error",
+  INVALID_SCHEMA: "invalid-schema-error",
 });
+
+export const WARNINGS = Object.freeze({
+  TOO_MANY_LINKS: "too-many-links-warning",
+});
+
+/**
+ * @typedef {object} ShareResult
+ * @property {object|null} share The share object to send to the server.
+ * @property {string|null} error A single error from {@link ERRORS}, if any.
+ * @property {string|null} warning A single warning from {@link WARNINGS}, if any.
+ * @property {string|null} url The share URL returned by the server on success.
+ * @property {boolean|null} isSchemaValid Whether the share passed schema validation.
+ * @property {boolean|null} isSignedIn Whether the user is signed in.
+ */
+
+export function makeShareResult({ share = null } = {}) {
+  return {
+    share,
+    error: null,
+    warning: null,
+    url: null,
+    isSchemaValid: null,
+    isSignedIn: null,
+  };
+}
 
 /**
  * Class for interacting with Content Sharing features, such as sharing bookmarks, tab groups, and tabs.
@@ -76,11 +104,19 @@ class ContentSharingUtilsClass {
   #validator = null;
 
   get isEnabled() {
-    return lazy.CONTENT_SHARING_ENABLED;
+    let isPrivate = lazy.PrivateBrowsingUtils.isWindowPrivate(
+      Services.wm.getMostRecentBrowserWindow()
+    );
+    return lazy.CONTENT_SHARING_ENABLED && !isPrivate;
   }
 
   get serverURL() {
     return lazy.CONTENT_SHARING_SERVER_URL;
+  }
+
+  disable() {
+    Services.prefs.setBoolPref("browser.contentsharing.enabled", false);
+    Services.prefs.setStringPref("browser.contentsharing.server.url", "");
   }
 
   async getValidator() {
@@ -102,14 +138,15 @@ class ContentSharingUtilsClass {
    * @param {Array<string>} bookmarkFolderGuids An array of bookmark folder guids
    */
   async createShareableLinkFromBookmarkFolders(bookmarkFolderGuids) {
-    let share;
+    let shareResult;
     try {
-      share = await this.buildShareFromBookmarkFolders(bookmarkFolderGuids);
+      shareResult =
+        await this.buildShareFromBookmarkFolders(bookmarkFolderGuids);
     } catch (e) {
       console.error("ContentSharingUtils: failed to share bookmarks", e);
     }
-    if (share) {
-      await this.#createLinkAndOpenModal(share, "bookmarks");
+    if (shareResult) {
+      await this.#createLinkAndOpenModal(shareResult, "bookmarks");
     }
   }
 
@@ -138,8 +175,8 @@ class ContentSharingUtilsClass {
         title: t.label,
       })),
     };
-    const share = this.buildShare(shareObject);
-    await this.#createLinkAndOpenModal(share, "tabs");
+    const result = this.buildShare(shareObject);
+    await this.#createLinkAndOpenModal(result, "tabs");
   }
 
   /**
@@ -165,8 +202,8 @@ class ContentSharingUtilsClass {
         };
       }),
     };
-    const share = this.buildShare(shareObject);
-    await this.#createLinkAndOpenModal(share, "tab group");
+    const result = this.buildShare(shareObject);
+    await this.#createLinkAndOpenModal(result, "tab group");
   }
 
   /**
@@ -264,21 +301,25 @@ class ContentSharingUtilsClass {
    * @param {object} currentCount The current count of links in the share
    * object. The object only has a "value" property that is the count of the
    * number of items in the share.
-   * @returns {object} The built share object that will be validated against
-   * the contentsharing.schema.json
+   * @returns {ShareResult} An object containing the share object that will be
+   * validated against the contentsharing.schema.json and any warnings if
+   * present
    */
   buildShare(shareObject, currentCount = {}) {
     // Using an object for currentCount so that it can be passed by reference
     // and updated across recursive calls.
     currentCount.value = currentCount.value ?? 0;
 
+    const shareResult = makeShareResult();
     const share = {
       type: shareObject.type ?? "bookmarks",
       title: shareObject.title.slice(0, 100),
     };
+
     let links = [];
     for (let linkOrNestShare of shareObject.children ?? []) {
       if (currentCount.value >= MAX_ITEM_COUNT) {
+        shareResult.warning = WARNINGS.TOO_MANY_LINKS;
         break;
       }
 
@@ -292,13 +333,13 @@ class ContentSharingUtilsClass {
         linkOrNestShare.type = "bookmarks";
 
         currentCount.value += 1;
-        links.push(this.buildShare(linkOrNestShare, currentCount));
+        links.push(this.buildShare(linkOrNestShare, currentCount).share);
       }
     }
 
     share.links = links;
-
-    return share;
+    shareResult.share = share;
+    return shareResult;
   }
 
   /**
@@ -307,33 +348,29 @@ class ContentSharingUtilsClass {
    * user to log in or sign up, and then attempt to create the share and
    * open a new tab at the share URL.
    *
-   * @param {object} share The share object
+   * @param {ShareResult} shareResult An object containing the share object and any warnings
    * @param {string} context Used in error logging (e.g. "tabs", "tab group")
    */
-  async #createLinkAndOpenModal(share, context) {
+  async #createLinkAndOpenModal(shareResult, context) {
     // Note: the result object contains either the URL or an error. It's safe
     // to pass into the modal, which handles error UI as needed.
-    let result = await this.createShareableLink(share);
-
-    result.isSignedIn =
-      this.isSignedIn() && result.error !== ERRORS.UNAUTHORIZED;
+    shareResult = await this.createShareableLink(shareResult);
+    shareResult.isSignedIn =
+      this.isSignedIn() && shareResult.error !== ERRORS.UNAUTHORIZED;
 
     let window = Services.wm.getMostRecentBrowserWindow();
 
     // Note: we deliberately do not await the open.
-    window.gDialogBox.open(CONTENT_SHARING_MODAL_URL, {
-      share,
-      ...result,
-    });
-    if (result.error && !result.isSignedIn) {
+    window.gDialogBox.open(CONTENT_SHARING_MODAL_URL, shareResult);
+    if (shareResult.error && !shareResult.isSignedIn) {
       console.error(
         `ContentSharingUtils: failed to share ${context}`,
-        result.error
+        shareResult.error
       );
     }
 
     // After the dialog box closes, attempt login if needed.
-    if (result.isSignedIn) {
+    if (shareResult.isSignedIn) {
       return;
     }
 
@@ -341,18 +378,23 @@ class ContentSharingUtilsClass {
       await this.detectLogin();
 
       // Now that we are logged in, try to create again.
-      const { url, error } = await this.createShareableLink(share);
-      if (error) {
+      shareResult = await this.createShareableLink(shareResult);
+      if (shareResult.error) {
         console.error(
           "ContentSharingUtils: something went wrong after login: ",
-          error
+          shareResult.error
         );
         return;
       }
 
       // The most recent window may have changed during the login flow.
       window = Services.wm.getMostRecentBrowserWindow();
-      window.openWebLinkIn(url, "tab");
+
+      // Borrowing a hack from unexpectedScriptLoad.js, which we use to ensure
+      // opened tabs are foregrounded. To be fixed in bug 2040823.
+      window.top.document.documentElement.removeAttribute("window-modal-open");
+
+      window.openWebLinkIn(shareResult.url, "tab");
     } catch (ex) {
       // Either we timed out waiting for the cookie to be set, or something
       // else went wrong. The user will have to try again.
@@ -367,22 +409,22 @@ class ContentSharingUtilsClass {
    * backoff. It still unsuccessful, an error will be thrown. If successful,
    * the successful response is returned.
    *
-   * @param {object} share The share object to send to the server
-   * @returns {Promise<object>} An object containing the share url on success
-   * or errors on failure
+   * @param {ShareResult} shareResult The share result containing the share
+   * object to send to the server
+   * @returns {Promise<ShareResult>} An share object with the url set if
+   * successful otherwise the share result with errors set
    */
-  async #doRequest(share) {
+  async #doRequest(shareResult) {
     const serverEndpoint = this.serverURL + SERVER_PATH;
     const maxDelay = 30 * BASE_DELAY;
     let canRetry = true;
     let attempts = 0;
     let response;
-    let result = {};
 
     if (!this.serverURL) {
       console.error("ContentSharingUtils: server URL is not set");
-      result.error = ERRORS.GENERIC;
-      return result;
+      shareResult.error = ERRORS.GENERIC;
+      return shareResult;
     }
 
     // Only allow insecure http connections in automation and in local builds.
@@ -392,13 +434,13 @@ class ContentSharingUtilsClass {
       !this.serverURL.startsWith("https://")
     ) {
       console.error("ContentSharingUtils: server URL must be HTTPS");
-      result.error = ERRORS.GENERIC;
-      return result;
+      shareResult.error = ERRORS.GENERIC;
+      return shareResult;
     }
 
     if (!this.isSignedIn()) {
-      result.error = ERRORS.UNAUTHORIZED;
-      return result;
+      shareResult.error = ERRORS.UNAUTHORIZED;
+      return shareResult;
     }
 
     while (canRetry) {
@@ -406,7 +448,7 @@ class ContentSharingUtilsClass {
         console.error(
           "ContentSharingUtils: tried to request the server the maximum number times"
         );
-        result.error = ERRORS.MAX_REQUEST_ATTEMPTS;
+        shareResult.error = ERRORS.MAX_REQUEST_ATTEMPTS;
         break;
       }
 
@@ -424,7 +466,7 @@ class ContentSharingUtilsClass {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(share),
+          body: JSON.stringify(shareResult.share),
         });
 
         if (!response.ok && response.status >= 500) {
@@ -432,26 +474,32 @@ class ContentSharingUtilsClass {
         } else if (!response.ok && response.status >= 400) {
           canRetry = false;
           if (response.status === 401) {
-            // Bug 2033911
-            result.error = ERRORS.UNAUTHORIZED;
-          } else {
-            result.error = ERRORS.GENERIC;
+            shareResult.error = ERRORS.UNAUTHORIZED;
           }
-        } else if (response.ok && response.status === 201) {
+          if (response.status === 410) {
+            shareResult.error = ERRORS.DISABLED;
+            this.disable();
+          } else {
+            shareResult.error = ERRORS.GENERIC;
+          }
+        } else if (
+          response.ok &&
+          (response.status === 201 || response.status === 200)
+        ) {
           // Success!
           break;
         }
       } catch (error) {
         console.error(error);
         canRetry = false;
-        result.error = ERRORS.GENERIC;
+        shareResult.error = ERRORS.MAX_REQUEST_ATTEMPTS;
       }
 
       attempts += 1;
     }
 
-    if (result.error) {
-      return result;
+    if (shareResult.error) {
+      return shareResult;
     }
 
     try {
@@ -464,24 +512,33 @@ class ContentSharingUtilsClass {
         console.error(
           `ContentSharingUtils: share URL ${url} does not match configured server origin`
         );
-        return { error: ERRORS.GENERIC };
+        shareResult.error = ERRORS.GENERIC;
+        return shareResult;
       }
 
-      return { url };
+      shareResult.url = url;
     } catch (error) {
       console.error(error);
-      result.error = ERRORS.GENERIC;
+      shareResult.error = ERRORS.GENERIC;
     }
-    return result;
+
+    return shareResult;
   }
 
-  async createShareableLink(share) {
-    await this.validateSchema(share);
-
-    return this.#doRequest(share);
+  async createShareableLink(shareResult) {
+    shareResult.error = null;
+    await this.validateSchema(shareResult);
+    if (shareResult.error) {
+      return shareResult;
+    }
+    return this.#doRequest(shareResult);
   }
 
   countItems(share) {
+    if (!share.links || share.links.length === 0) {
+      return 0;
+    }
+
     let count = 0;
     for (let item of share.links) {
       if (item.links) {
@@ -494,23 +551,16 @@ class ContentSharingUtilsClass {
     return count;
   }
 
-  async validateSchema(share) {
+  async validateSchema(shareResult) {
     const validator = await this.getValidator();
-    const result = validator.validate(share);
+    const result = validator.validate(shareResult.share);
 
-    if (!result.valid) {
-      throw new Error(
-        `ContentSharing Schema Error: ${result.errors.map(e => e.error).join(", ")}`
-      );
+    shareResult.isSchemaValid = result.valid;
+    if (!result.valid || this.countItems(shareResult.share) > MAX_ITEM_COUNT) {
+      shareResult.error = ERRORS.INVALID_SCHEMA;
     }
 
-    if (this.countItems(share) > MAX_ITEM_COUNT) {
-      throw new Error(
-        `ContentSharing Schema Error: Share object contains over ${MAX_ITEM_COUNT} links`
-      );
-    }
-
-    return true;
+    return shareResult;
   }
 
   getCookie() {

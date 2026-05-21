@@ -1207,7 +1207,7 @@ class ContentParent final : public PContentParent,
       uint64_t aTopLevelWindowId,
       const MaybeDiscarded<BrowsingContext>& aParentContext,
       nsIPrincipal* aTrackingPrincipal, const nsACString& aTrackingOrigin,
-      const int& aAllowMode,
+      const StorageAccessPromptChoices& aAllowMode,
       const Maybe<
           ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
           aReason,
@@ -1234,8 +1234,8 @@ class ContentParent final : public PContentParent,
       MediaPlaybackState aState);
 
   mozilla::ipc::IPCResult RecvNotifyMediaAudibleChanged(
-      const MaybeDiscarded<BrowsingContext>& aContext,
-      MediaAudibleState aState);
+      const MaybeDiscarded<BrowsingContext>& aContext, MediaAudibleState aState,
+      ControlType aType);
 
   mozilla::ipc::IPCResult RecvNotifyPictureInPictureModeChanged(
       const MaybeDiscarded<BrowsingContext>& aContext, bool aEnabled);

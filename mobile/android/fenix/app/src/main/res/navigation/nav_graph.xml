@@ -203,6 +203,9 @@
     <action
         android:id="@+id/action_global_to_installedAddonDetailsFragment"
         app:destination="@id/installedAddonDetailsFragment" />
+    <action
+        android:id="@+id/action_global_to_downloadAddonDialogFragment"
+        app:destination="@id/downloadAddonDialogFragment" />
 
     <action
         android:id="@+id/action_global_aiControlsFragment"
@@ -451,8 +454,7 @@
     <fragment
         android:id="@+id/downloadsFragment"
         android:name="org.mozilla.fenix.downloads.listscreen.DownloadFragment"
-        android:label="Downloads"
-        tools:layout="@layout/fragment_downloads" />
+        android:label="Downloads" />
 
     <fragment
         android:id="@+id/webCompatReporterFragment"
@@ -465,8 +467,7 @@
 
     <fragment
         android:id="@+id/bookmarkFragment"
-        android:name="org.mozilla.fenix.bookmarks.BookmarkFragment"
-        tools:layout="@layout/fragment_bookmark">
+        android:name="org.mozilla.fenix.bookmarks.BookmarkFragment">
         <argument
             android:name="currentRoot"
             app:argType="string" />
@@ -480,8 +481,7 @@
 
     <fragment
         android:id="@+id/bookmarkEditFragment"
-        android:name="org.mozilla.fenix.bookmarks.EditBookmarkFragment"
-        tools:layout="@layout/fragment_edit_bookmark">
+        android:name="org.mozilla.fenix.bookmarks.EditBookmarkFragment">
         <argument
             android:name="guidToEdit"
             app:argType="string"
@@ -1413,9 +1413,7 @@
     </dialog>
     <fragment
         android:id="@+id/dohSettingsFragment"
-        android:name="org.mozilla.fenix.settings.doh.DohSettingsFragment"
-        tools:layout="@layout/fragment_doh_settings">
-    </fragment>
+        android:name="org.mozilla.fenix.settings.doh.DohSettingsFragment" />
     <fragment
         android:id="@+id/addonDetailsFragment"
         android:name="org.mozilla.fenix.addons.AddonDetailsFragment"
@@ -1508,8 +1506,7 @@
     </fragment>
     <fragment
         android:id="@+id/addonPermissionsDetailFragment"
-        android:name="org.mozilla.fenix.addons.AddonPermissionsDetailsFragment"
-        tools:layout="@layout/fragment_add_on_permissions">
+        android:name="org.mozilla.fenix.addons.AddonPermissionsDetailsFragment">
         <argument
             android:name="addon"
             app:argType="mozilla.components.feature.addons.Addon" />
@@ -1522,6 +1519,27 @@
             android:name="addon"
             app:argType="mozilla.components.feature.addons.Addon" />
     </fragment>
+
+    <dialog
+        android:id="@+id/downloadAddonDialogFragment"
+        android:name="org.mozilla.fenix.addons.DownloadAddonDialogFragment">
+        <argument
+            android:name="addonDownloadUrl"
+            app:argType="string"
+            app:nullable="false" />
+        <argument
+            android:name="addonName"
+            app:argType="string"
+            app:nullable="true" />
+        <argument
+            android:name="addonImageUrl"
+            app:argType="string"
+            app:nullable="true" />
+        <argument
+            android:name="addonInstallationSource"
+            android:defaultValue="MANAGER"
+            app:argType="mozilla.components.concept.engine.webextension.InstallationMethod" />
+    </dialog>
 
     <navigation
         android:id="@+id/addons_management_graph"
@@ -1570,8 +1588,7 @@
         </fragment>
         <fragment
             android:id="@+id/searchShortcutsFragment"
-            android:name="org.mozilla.fenix.settings.search.SearchShortcutsFragment"
-            tools:layout="@layout/fragment_search_shortcuts">
+            android:name="org.mozilla.fenix.settings.search.SearchShortcutsFragment">
             <action
                 android:id="@+id/action_searchShortcutsFragment_to_saveSearchEngineFragment"
                 app:destination="@+id/saveSearchEngineFragment" />
@@ -1700,8 +1717,7 @@
         app:startDestination="@id/savedLoginsFragment">
         <fragment
             android:id="@+id/savedLoginsFragment"
-            android:name="org.mozilla.fenix.settings.logins.fragment.SavedLoginsFragment"
-            tools:layout="@layout/fragment_saved_logins">
+            android:name="org.mozilla.fenix.settings.logins.fragment.SavedLoginsFragment">
             <action
                 android:id="@+id/action_savedLoginsFragment_to_browserFragment"
                 app:destination="@id/browserFragment"

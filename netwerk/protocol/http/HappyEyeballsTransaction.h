@@ -132,13 +132,15 @@ class HappyEyeballsTransaction final : public SpeculativeTransaction {
                               nsISVCBRecord* aHighestPriorityRecord,
                               const nsACString& aCname) override;
 
-  // 0-RTT interface — delegates to the shared ZeroRttHandle (always,
-  // regardless of adoption state).
+  // 0-RTT interface — delegates to the shared ZeroRttHandle while it is
+  // non-null (i.e. before adoption; the Adopted transition clears it).
   bool Do0RTT(bool aCanSendEarlyData) override {
-    return mZeroRttHandle->Do0RTT(this, aCanSendEarlyData);
+    return mZeroRttHandle && mZeroRttHandle->Do0RTT(this, aCanSendEarlyData);
   }
   nsresult Finish0RTT(bool aRestart, bool aAlpnChanged) override {
-    return mZeroRttHandle->Finish0RTT(this, aRestart, aAlpnChanged);
+    return mZeroRttHandle
+               ? mZeroRttHandle->Finish0RTT(this, aRestart, aAlpnChanged)
+               : NS_OK;
   }
 
   // Position in the real transaction's request stream this attempt
@@ -151,6 +153,10 @@ class HappyEyeballsTransaction final : public SpeculativeTransaction {
     return m0RttRequestStreamOffset;
   }
   bool Entered0RTT() const { return m0RttRequestStreamOffset.isSome(); }
+
+  // Remove SSL session tokens for this 0-RTT attempt via the live connection
+  // (uses GetPeerId() as the SSLTokensCache key, not mConnInfo->HashKey()).
+  void MaybeRemoveSSLTokens();
 
  private:
   ~HappyEyeballsTransaction() override;

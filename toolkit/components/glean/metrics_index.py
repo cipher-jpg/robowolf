@@ -230,7 +230,6 @@ firefox_desktop_pings = [
     "browser/components/urlbar/pings.yaml",
     "browser/extensions/data-leak-blocker/pings.yaml",
     "browser/modules/pings.yaml",
-    "dom/security/pings.yaml",
     "services/fxaccounts/pings.yaml",
     "services/sync/pings.yaml",
     "toolkit/components/nimbus/pings.yaml",
@@ -238,6 +237,7 @@ firefox_desktop_pings = [
     "toolkit/components/telemetry/pings.yaml",
     "toolkit/modules/pings.yaml",
     "toolkit/mozapps/update/shared_pings.yaml",
+    "toolkit/profile/pings.yaml",
 ]
 
 # Pings that are sent by the Firefox Desktop Background Update Task

@@ -28,7 +28,10 @@ add_task(async function test_handleShareTabs() {
 
     await assertContentSharingModal(window, {
       share: body,
+      error: null,
+      warning: null,
       url: server.mockResponse.url,
+      isSchemaValid: true,
       isSignedIn: true,
     });
 

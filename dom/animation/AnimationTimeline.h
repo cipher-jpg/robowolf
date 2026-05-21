@@ -6,6 +6,7 @@
 #define mozilla_dom_AnimationTimeline_h
 
 #include "mozilla/AnimationUtils.h"
+#include "mozilla/dom/CSSNumericValueBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsHashKeys.h"
 #include "nsIGlobalObject.h"
@@ -18,6 +19,7 @@ namespace mozilla::dom {
 class Animation;
 class Document;
 class ScrollTimeline;
+class ViewTimeline;
 
 struct AnimationRange;
 
@@ -52,6 +54,8 @@ class AnimationTimeline : public nsISupports, public nsWrapperCache {
     return AnimationUtils::TimeDurationToDouble(GetCurrentTimeAsDuration(),
                                                 mRTPCallerType);
   }
+  void GetDuration(Nullable<OwningDoubleOrCSSNumericValue>& aRetVal,
+                   ErrorResult& aRv) const;
 
   TimeStamp GetCurrentTimeAsTimeStamp() const {
     Nullable<TimeDuration> currentTime = GetCurrentTimeAsDuration();
@@ -113,6 +117,7 @@ class AnimationTimeline : public nsISupports, public nsWrapperCache {
   virtual bool IsScrollTimeline() const { return false; }
   virtual const ScrollTimeline* AsScrollTimeline() const { return nullptr; }
   virtual bool IsViewTimeline() const { return false; }
+  virtual const ViewTimeline* AsViewTimeline() const { return nullptr; }
 
   // For a monotonic timeline, there is no upper bound on current time, and
   // timeline duration is unresolved. For a non-monotonic (e.g. scroll)

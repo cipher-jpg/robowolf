@@ -39,6 +39,7 @@ let JSPROCESSACTORS = {
         "moz-src:///browser/components/mozcachedohttp/actors/MozCachedOHTTPParent.sys.mjs",
     },
     includeParent: true,
+    remoteTypes: ["parent", "privilegedabout"],
   },
 
   RefreshBlockerObserver: {
@@ -238,6 +239,7 @@ let JSWINDOWACTORS = {
         "AIChatContent:OpenLink": { wantUntrusted: true },
         "AIChatContent:DispatchNewChat": { wantUntrusted: true },
         "AIChatContent:AccountSignIn": { wantUntrusted: true },
+        "AIChatContent:ToolUIUpdate": { wantUntrusted: true },
       },
     },
     allFrames: true,
@@ -298,6 +300,7 @@ let JSWINDOWACTORS = {
       "about:newtab*",
       "about:home*",
     ],
+    remoteTypes: ["parent", "privilegedabout"],
   },
 
   BlockedSite: {

@@ -17,17 +17,153 @@ import {
   RUN_SEARCH,
   GET_USER_MEMORIES,
   GET_NAVIGATION_INFO,
+  WORLD_CUP_MATCHES,
+  WORLD_CUP_LIVE,
+  WORLD_CUP_TOOLS,
+  WORLD_CUP_PREF,
 } from "moz-src:///browser/components/aiwindow/models/Tools.sys.mjs";
+
+// TODO: move this to Tools.sys.mjs when able to define tool UI data there
+const CONFIRM_CLOSE_TABS = "confirm_close_tabs";
+
 import {
   expandUrlTokensInToolParams,
   replaceUrlsWithTokens,
 } from "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs";
 import { compactMessages } from "moz-src:///browser/components/aiwindow/models/PromptOptimizer.sys.mjs";
 
+/**
+ * Execute a specific tool and return the result
+ * Exported for testing purposes
+ *
+ * @param {string} toolName - The name of the tool to execute
+ * @param {object} toolParams - The parameters to pass to the tool
+ * @param {string} toolCallId - The ID of the tool call
+ * @param {ChatConversation} conversation - The conversation context
+ * @param {BrowsingContext} browsingContext - The browsing context (can be null for some tools)
+ * @param {string} mode - The mode of operation (e.g., "fullpage", "sidebar", "urlbar")
+ * @param {object} engineInstance - The AI engine instance (can be null for testing)
+ * @param {number} currentTurn - The current turn number in the conversation
+ * @returns {Promise<object>} The result of the tool execution
+ * @private
+ */
+export async function executeToolByName(
+  toolName,
+  toolParams,
+  toolCallId,
+  conversation,
+  browsingContext,
+  mode,
+  engineInstance,
+  currentTurn
+) {
+  let result;
+  switch (toolName) {
+    case GET_PAGE_CONTENT: {
+      const startTime = new Date();
+      result = await GetPageContent.getPageContent(toolParams, conversation);
+      Glean.smartWindow.getPageContent.record({
+        location: mode,
+        chat_id: conversation.id,
+        message_seq: conversation.messageCount,
+        length: result.reduce((acc, curr) => acc + (curr?.length || 0), 0),
+        time: new Date() - startTime,
+      });
+      break;
+    }
+    case RUN_SEARCH: {
+      result = await RunSearch.runSearch(
+        toolParams,
+        browsingContext,
+        conversation
+      );
+      const engine = await lazy.SearchService.getDefault();
+      Glean.smartWindow.searchHandoff.record({
+        location: mode,
+        chat_id: conversation.id,
+        message_seq: conversation.messageCount,
+        provider: engine.name ?? "unknown",
+        model: engineInstance?.model,
+      });
+      conversation._searchExecutedTurn = currentTurn;
+      break;
+    }
+    case GET_OPEN_TABS:
+      result = await toolFns.getOpenTabs(conversation);
+      break;
+    case SEARCH_BROWSING_HISTORY:
+      result = await toolFns.searchBrowsingHistory(toolParams, conversation);
+      break;
+    case GET_USER_MEMORIES:
+      result = await toolFns.getUserMemories(conversation);
+      break;
+    case GET_NAVIGATION_INFO:
+      result = await toolFns.getNavigationInfo(toolParams);
+      break;
+    case CONFIRM_CLOSE_TABS:
+      // Add the specific uiType for close tabs confirmation
+      result = executeAddUITool(conversation, toolCallId, {
+        ...toolParams,
+        uiType: "website-confirmation",
+      });
+      break;
+    default:
+      throw new Error(`No such tool: ${toolName}`);
+  }
+  return result;
+}
+
+/**
+ * Handles the ADD_UI_TOOL execution for testing UI components in conversations.
+ * Creates a text assistant message with embedded UI data that can be rendered.
+ *
+ * @param {ChatConversation} conversation - The current conversation
+ * @param {string} toolCallId - The ID of the tool call
+ * @param {object} toolParams - The parameters containing the UI data
+ * @returns {object} Result object with success status and message
+ */
+function executeAddUITool(conversation, toolCallId, toolParams) {
+  // Extract the UI data from toolParams provided by the model
+  if (!toolParams.uiType) {
+    return {
+      success: false,
+      message: "No UI type provided in tool parameters",
+      dataAdded: null,
+    };
+  }
+
+  return conversation.addUIToolToCurrentMessage(toolCallId, toolParams);
+}
+
 // Hard limit on how many times run_search can execute per conversation turn.
 // Prevents infinite tool-call loops when the model repeatedly requests search.
 // Bug 2024006.
 const MAX_RUN_SEARCH_PER_TURN = 3;
+
+/**
+ * Handlers for tools that are feature-gated by a pref and intended to be
+ * added or removed independently of the main tool dispatch. Lookups happen
+ * before the main switch so each new gated tool does not grow
+ * fetchWithHistory's cyclomatic complexity.
+ */
+const FEATURE_GATED_HANDLERS = new Map([
+  [WORLD_CUP_MATCHES, toolFns.worldCupMatches],
+  [WORLD_CUP_LIVE, toolFns.worldCupLive],
+]);
+
+/**
+ * Removes any feature-gated tools whose enable pref is currently off, so the
+ * model is never offered tools the build is not configured to support.
+ *
+ * @param {object[]} tools
+ * @returns {object[]}
+ */
+function filterFeatureGatedTools(tools) {
+  if (Services.prefs.getBoolPref(WORLD_CUP_PREF, false)) {
+    return tools;
+  }
+  return tools.filter(t => !WORLD_CUP_TOOLS.has(t.function?.name));
+}
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -126,7 +262,7 @@ Object.assign(Chat, {
     if (!fxAccountToken) {
       console.error("fetchWithHistory Account Token null or undefined");
       const fxaError = new Error("FxA token unavailable");
-      fxaError.error = 4; // ACCOUNT_ERROR: triggers FxA sign-in prompt in the UI
+      fxaError.clientReason = "fxaTokenUnavailable";
       throw fxaError;
     }
 
@@ -146,6 +282,8 @@ Object.assign(Chat, {
         RunSearch.setGeneratedSearchQueryDescription(chatToolsConfig);
       isVerbatimQuery = false;
     }
+
+    chatToolsConfig = filterFeatureGatedTools(chatToolsConfig);
 
     let fullResponseText = "";
     const searchExecuted = conversation._searchExecutedTurn === currentTurn;
@@ -181,6 +319,12 @@ Object.assign(Chat, {
       /** @type {ToolCall[] | null} */
       let pendingToolCalls = null;
 
+      ChromeUtils.addProfilerMarker(
+        "SmartWindow",
+        {},
+        "chat-server-request-start"
+      );
+      const turnStart = ChromeUtils.now();
       try {
         this.lastUsage = null;
         const response = await conversation.receiveResponse(
@@ -188,7 +332,6 @@ Object.assign(Chat, {
         );
         fullResponseText = response.fullResponseText;
         pendingToolCalls = response.pendingToolCalls;
-        lazy.console.log("Response", { fullResponseText, pendingToolCalls });
 
         // Debug logging: Record the raw text and requested tool calls from the model
         logConversationStream(currentTurn, "CHAT RECV", {
@@ -202,9 +345,16 @@ Object.assign(Chat, {
       } catch (err) {
         console.error("fetchWithHistory streaming error:", err);
         throw err;
+      } finally {
+        ChromeUtils.addProfilerMarker(
+          "SmartWindow",
+          { startTime: turnStart },
+          "ServerE2E"
+        );
       }
 
       if (!pendingToolCalls || pendingToolCalls.length === 0) {
+        ChromeUtils.addProfilerMarker("SmartWindow", {}, "chat-no-tool-calls");
         // Debug logging: Mark the end of the streaming loop for this turn
         logConversationStream(currentTurn, "STREAM END");
         return;
@@ -291,10 +441,23 @@ Object.assign(Chat, {
 
       lazy.AIWindow.chatStore?.updateConversation(conversation).catch(() => {});
 
+      ChromeUtils.addProfilerMarker(
+        "SmartWindow",
+        {},
+        `chat-tools-detected(${pendingToolCalls.length})`
+      );
+
       for (const toolCall of pendingToolCalls) {
         const { id, function: functionSpec } = toolCall;
         const toolName = functionSpec?.name || "";
         let toolParams = {};
+
+        ChromeUtils.addProfilerMarker(
+          "SmartWindow",
+          {},
+          `chat-run-tool-start(${toolName})`
+        );
+        const toolStart = ChromeUtils.now();
 
         try {
           toolParams = functionSpec?.arguments
@@ -302,7 +465,12 @@ Object.assign(Chat, {
             : {};
 
           expandUrlTokensInToolParams(toolParams, conversation.tokenToUrl);
-        } catch {
+        } catch (e) {
+          ChromeUtils.addProfilerMarker(
+            "SmartWindow",
+            {},
+            `chat-run-tool-error(${toolName}:argument-parse)`
+          );
           const content = {
             tool_call_id: id,
             body: { error: "Invalid JSON arguments" },
@@ -327,60 +495,21 @@ Object.assign(Chat, {
         // Dispatch the required arguments to different tool calls. Wrap this in a
         // try/catch so the conversation can be updated for failed calls.
         let result;
+        const featureGatedHandler = FEATURE_GATED_HANDLERS.get(toolName);
         try {
-          switch (toolName) {
-            case GET_PAGE_CONTENT: {
-              const startTime = new Date();
-              result = await GetPageContent.getPageContent(
-                toolParams,
-                conversation
-              );
-              Glean.smartWindow.getPageContent.record({
-                location: mode,
-                chat_id: conversation.id,
-                message_seq: conversation.messageCount,
-                length: result.reduce(
-                  (acc, curr) => acc + (curr?.length || 0),
-                  0
-                ),
-                time: new Date() - startTime,
-              });
-              break;
-            }
-            case RUN_SEARCH: {
-              result = await RunSearch.runSearch(
-                toolParams,
-                browsingContext,
-                conversation
-              );
-              const engine = await lazy.SearchService.getDefault();
-              Glean.smartWindow.searchHandoff.record({
-                location: mode,
-                chat_id: conversation.id,
-                message_seq: conversation.messageCount,
-                provider: engine.name ?? "unknown",
-                model: engineInstance?.model,
-              });
-              conversation._searchExecutedTurn = currentTurn;
-              break;
-            }
-            case GET_OPEN_TABS:
-              result = await toolFns.getOpenTabs(conversation);
-              break;
-            case SEARCH_BROWSING_HISTORY:
-              result = await toolFns.searchBrowsingHistory(
-                toolParams,
-                conversation
-              );
-              break;
-            case GET_USER_MEMORIES:
-              result = await toolFns.getUserMemories(conversation);
-              break;
-            case GET_NAVIGATION_INFO:
-              result = await toolFns.getNavigationInfo(toolParams);
-              break;
-            default:
-              throw new Error(`No such tool: ${toolName}`);
+          if (featureGatedHandler) {
+            result = await featureGatedHandler(toolParams, conversation);
+          } else {
+            result = await executeToolByName(
+              toolName,
+              toolParams,
+              toolCall.id,
+              conversation,
+              browsingContext,
+              mode,
+              engineInstance,
+              currentTurn
+            );
           }
 
           // Debug logging: Record the data returned by the tool before feeding it to the model
@@ -391,11 +520,22 @@ Object.assign(Chat, {
             toolName
           );
 
+          ChromeUtils.addProfilerMarker(
+            "SmartWindow",
+            { startTime: toolStart },
+            `chat-run-tool-complete(${toolName})`
+          );
+
           const content = { tool_call_id: id, body: result, name: toolName };
           conversation.addToolCallMessage(content, currentTurn, toolRoleOpts);
         } catch (error) {
           console.error(error);
           result = { error: `Tool execution failed: ${String(error)}` };
+          ChromeUtils.addProfilerMarker(
+            "SmartWindow",
+            { startTime: toolStart },
+            `chat-run-tool-error(${toolName})`
+          );
           const content = { tool_call_id: id, body: result };
           conversation.addToolCallMessage(content, currentTurn, toolRoleOpts);
         }
@@ -403,6 +543,12 @@ Object.assign(Chat, {
         lazy.AIWindow.chatStore
           ?.updateConversation(conversation)
           .catch(() => {});
+
+        // CONFIRM_CLOSE_TABS is terminal - UI handles the interaction
+        if (toolName === CONFIRM_CLOSE_TABS) {
+          conversation.securityProperties.commit();
+          return;
+        }
 
         // Perform the search handoff if the RUN_SEARCH tool was run.
         if (toolName === RUN_SEARCH) {

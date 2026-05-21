@@ -178,10 +178,9 @@ JS_PUBLIC_API bool JS_WrapPropertyDescriptor(
   return cx->compartment()->wrap(cx, desc);
 }
 
-JS_PUBLIC_API void JS_TraceShapeCycleCollectorChildren(JS::CallbackTracer* trc,
-                                                       JS::GCCellPtr shape) {
-  MOZ_ASSERT(shape.is<Shape>());
-  TraceCycleCollectorChildren(trc, &shape.as<Shape>());
+JS_PUBLIC_API void JS_TraceShapeCycleCollectorChildren(JSTracer* trc,
+                                                       Shape* shape) {
+  TraceCycleCollectorChildren(trc, shape);
 }
 
 static bool DefineHelpProperty(JSContext* cx, HandleObject obj,
@@ -478,15 +477,12 @@ JS_PUBLIC_API bool js::GetRealmOriginalEval(JSContext* cx,
   return true;
 }
 
-void JS::detail::SetReservedSlotWithBarrier(JSObject* obj, size_t slot,
-                                            const Value& value) {
-  if (obj->is<ProxyObject>()) {
-    obj->as<ProxyObject>().setReservedSlot(slot, value);
-  } else {
-    // Note: We do not currently support watching reserved object slots for
-    // property modification.
-    obj->as<NativeObject>().setSlot(slot, value);
-  }
+void JS::detail::SetNativeObjectReservedSlotWithBarrier(JSObject* obj,
+                                                        size_t slot,
+                                                        const Value& value) {
+  // Note: We do not currently support watching reserved object slots for
+  // property modification.
+  obj->as<NativeObject>().setReservedSlot(slot, value);
 }
 
 bool JS::NativeObjectHasOwnProperties(const JSObject* obj) {

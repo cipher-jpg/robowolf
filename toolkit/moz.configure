@@ -1622,6 +1622,8 @@ with only_when(compile_environment & depends(target.os)(lambda os: os != "WINNT"
 with only_when(compile_environment & depends(target.os)(lambda os: os != "WINNT")):
     set_define("HAVE_SYSIOCCOM_H", check_header("sys/ioccom.h"))
 
+    set_config("HAVE_EXECINFO", check_header("execinfo.h"))
+
 # Elfhack
 # ==============================================================
 with only_when("--enable-compile-environment"):
@@ -4331,3 +4333,18 @@ with only_when(target_is_windows):
 
     set_config("DESKTOP_LAUNCHER_ENABLED", True, when=desktop_launcher_enabled)
     set_define("DESKTOP_LAUNCHER_ENABLED", True, when=desktop_launcher_enabled)
+
+
+option(
+    "--enable-appservices-in-tree",
+    help="Enables building from an in-tree app-services",
+)
+
+
+@depends("--enable-appservices-in-tree")
+def enable_appservices_in_tree(value):
+    if value:
+        return True
+
+
+set_config("MOZ_APPSERVICES_IN_TREE", enable_appservices_in_tree)

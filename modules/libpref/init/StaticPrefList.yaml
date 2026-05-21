@@ -1415,6 +1415,15 @@
   value: false
   mirror: always
 
+# If true, TrackingDBService read methods broadcast a flush request before
+# querying, so live ContentBlockingLogs for long-lived top-level documents
+# write their pending events to the database first. Has no effect unless
+# browser.contentblocking.database.enabled is also true.
+- name: browser.contentblocking.database.flushOnQuery.enabled
+  type: bool
+  value: true
+  mirror: always
+
 # How many recent block/unblock actions per origins we remember in the
 # Content Blocking log for each top-level window.
 - name: browser.contentblocking.originlog.length
@@ -2583,6 +2592,13 @@
 - name: dom.allow_cut_copy
   type: bool
   value: true
+  mirror: always
+
+# Audio Session API: navigator.audioSession surface
+# https://w3c.github.io/audio-session/
+- name: dom.audio_session.enabled
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
 
 # Checks if offscreen animation throttling is enabled.
@@ -4059,7 +4075,7 @@
 # while the lock is active.
 - name: dom.pointer-lock.unadjusted-movement.enabled
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # re-SAB: Whether to allow postMessage of a SharedArrayBuffer if various
@@ -4953,7 +4969,7 @@
 # scope-based checks in "in body" mode.
 - name: dom.lift_select_parser_restrictions.enabled
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 - name: dom.send_after_paint_to_content
@@ -6393,13 +6409,12 @@
   value: false
   mirror: always
 
+# executeScript in moz-extension documents was deprecated in bug 2011234.
+# When true, allows executeScript to run in moz-extension documents as before.
+# TODO bug 2039393: Remove this pref.
 - name: extensions.webextensions.allow_executeScript_in_moz_extension
   type: bool
-#if defined(NIGHTLY_BUILD)
   value: false
-#else
-  value: true
-#endif
   mirror: always
 
 # Prior to bug 2013389 and bug 2017797, calling structuredClone within a
@@ -8868,6 +8883,22 @@
 # Prefs starting with "intl."
 #---------------------------------------------------------------------------
 
+# The number of ticks before notifying IME of a position change caused by scrolling.
+#
+# If this is set to 1, IMEContentObserver notifies the position change at the next vsync
+# update. In this case, the IME UI is updated quickly and appears smooth. However, this
+# can make scrolling slower when the editing host contains a large number of nodes.
+# If this is set to 0, IMEContentObserver won't notify IME of position change caused by
+# scrolling.
+#
+# On the other hand, larger values delay IME UI updates during/after scrolling. Although
+# Gecko can skip some layout computations in this case, the delayed IME UI updates may
+# still make scrolling feel sluggish.
+- name: intl.ime.content_observer.notifications.position_change.ticks_after_scrolling
+  type: uint32_t
+  value: 10
+  mirror: always
+
 #ifdef XP_WIN
   # Whether Gecko creates or does not create native caret for legacy ATOK
   # (2011 - 2015).
@@ -9398,7 +9429,7 @@
   type: RelaxedAtomicBool
   value: false
   mirror: always
-  set_spidermonkey_pref: startup
+  set_spidermonkey_pref: always
 
   # Experimental support for Error.stackTraceLimit
 - name: javascript.options.experimental.error_stack_trace_limit
@@ -9449,10 +9480,10 @@
 #ifdef ENABLE_SOURCE_PHASE_IMPORTS
   # Experimental support for source phase imports in JavaScript.
 - name: javascript.options.experimental.source_phase_imports
-  type: bool
+  type: RelaxedAtomicBool
   value: false
   mirror: always
-  set_spidermonkey_pref: startup
+  set_spidermonkey_pref: always
   # Enable support for <module source> module used in test262
 - name: javascript.options.experimental.source_phase_imports.test262_module_source
   type: bool
@@ -9653,6 +9684,26 @@
     value: false
     mirror: always
     set_spidermonkey_pref: always
+
+# Read once per ContStackAllocator at first allocation; changes at runtime
+# do not take effect for an already-initialized allocator.
+- name: javascript.options.wasm_cont_stack_size
+  type: uint32_t
+#if defined(HAVE_64BIT_BUILD)
+  value: 1 * 1024 * 1024
+#else
+  value: 512 * 1024
+#endif
+  mirror: always
+  set_spidermonkey_pref: always
+
+# Read once per ContStackAllocator at first allocation; changes at runtime
+# do not take effect for an already-initialized allocator.
+- name: javascript.options.wasm_cont_stack_arena_capacity
+  type: uint32_t
+  value: 8
+  mirror: always
+  set_spidermonkey_pref: always
 
 -   name: javascript.options.wasm_js_promise_integration
     type: bool
@@ -10310,7 +10361,7 @@
 # https://drafts.csswg.org/css-values-5/#attr-notation
 - name: layout.css.attr.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
   rust: true
 
@@ -10796,11 +10847,7 @@
 # avoid sending annotations hugely far away from the base.
 - name: layout.css.ruby.normalize-metrics-factor
   type: uint32_t
-#ifdef NIGHTLY_BUILD
   value: 100
-#else
-  value: 0
-#endif
   mirror: always
 
 - name: layout.css.scroll-snap.damping-ratio
@@ -11382,7 +11429,14 @@
 # overlay scrollbars.
 - name: layout.css.fake-webkit-scrollbar.enabled
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
+  mirror: always
+  rust: true
+
+# Per-domain blocklist for ::-webkit-scrollbar pseudo element
+- name: layout.css.fake-webkit-scrollbar.disabled-domains
+  type: DataMutexString
+  value: "discord.com,shitposter.world"
   mirror: always
   rust: true
 
@@ -11840,6 +11894,13 @@
 - name: media.mediacapabilities.webrtc-encode-smooth-override
   type: RelaxedAtomicUint32
   value: 0
+  mirror: always
+
+# Whether to expose media metadata to system media controls
+# in private browsing mode
+- name: media.privatebrowsing.metadata.enabled
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
 
 # AudioSink
@@ -13333,6 +13394,13 @@
 #endif
   mirror: always
 
+# When true, AudioContext yields to audio-focus competition by suspending
+# itself on the Stop media-control key.
+- name: media.audioFocus.webaudio.enabled
+  type: bool
+  value: false
+  mirror: always
+
 - name: media.hardwaremediakeys.enabled
   type: bool
   value: true
@@ -13520,7 +13588,7 @@
 
 - name: media.webrtc.simulcast.vp9.enabled
   type: RelaxedAtomicBool
-  value: @IS_EARLY_BETA_OR_EARLIER@
+  value: true
   mirror: always
 
 - name: media.peerconnection.video.use_dd
@@ -14197,7 +14265,7 @@
 # Include an idempotency-key header for POST requests
 - name: network.http.idempotencyKey.enabled
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: false
   mirror: always
 
 # Whether to respect the redirected-tainted origin flag
@@ -16057,9 +16125,25 @@
 # The slow start algorithm with which to configure neqo.
 # 0 => Classic
 # 1 => HyStart++
+# 2 => SEARCH
 - name: network.http.http3.slow_start_algorithm
   type: RelaxedAtomicUint32
   value: 0
+  mirror: always
+  rust: true
+
+# HTTP3: Whether the HyStart++ alternative CSS baseline value should be used.
+# Has no effect unless network.http.http3.slow_start_algorithm is set to 1, which activates HyStart++.
+- name: network.http.http3.hystart_alternative_css_baseline
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+  rust: true
+
+# HTTP3: Whether Spurious Congestion Event Recovery should be turned on.
+- name: network.http.http3.spurious_recovery
+  type: RelaxedAtomicBool
+  value: true
   mirror: always
   rust: true
 
@@ -16418,7 +16502,7 @@
 
 - name: network.http.happy_eyeballs_enabled
   type: RelaxedAtomicBool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 # The time to wait after receiving the first DNS response before moving on
@@ -16573,7 +16657,7 @@
 # to a fallback domain that hosts the same content.
 - name: network.essential_domains_fallback
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # Enable HTTP Compression Dictionary support
@@ -17203,6 +17287,13 @@
   value: true
   mirror: always
 
+# Allows content to defer the annotation url classification features
+# completion until the data is being handled.
+- name: privacy.trackingprotection.defer_annotation.enabled
+  type: bool
+  value: false
+  mirror: always
+
 # Whether to spoof user locale to English (used as part of Resist
 # Fingerprinting).
 # 0 - will prompt
@@ -17369,13 +17460,13 @@
 # Enable resetting the fingerprinting randomization key daily for normal windwos.
 - name: privacy.resistFingerprinting.randomization.daily_reset.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
 
 # Enable resetting the fingerprinting randomization key daily for private windwos.
 - name: privacy.resistFingerprinting.randomization.daily_reset.private.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
 
 # Control whether we use the SipHash to generate the canvas random key.
@@ -17655,7 +17746,7 @@
 # Reduce page protection infobar
 - name: privacy.reducePageProtection.infobar.enabled.pbmode
   type: bool
-  value: false
+  value: true
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -17744,6 +17835,12 @@
   value: true
   mirror: always
 
+# Whether all chrome: documents will automatically get a baseline CSP
+- name: security.chrome_baseline_csp.enabled
+  type: bool
+  value: true
+  mirror: always
+
 # Allow unsafe eval usage with high privileges to. This should
 # not be activated without a very good reason.
 # This pref has to be set before starting Firefox!
@@ -17757,28 +17854,6 @@
 - name: security.allow_parent_unrestricted_js_loads
   type: RelaxedAtomicBool
   value: true
-  mirror: always
-
-# A temporary pref that will be removed when the dialog in 1979341 is removed
-# Needed for early enforcement of a user-initiated block action
-- name: security.block_parent_unrestricted_js_loads.temporary
-  type: RelaxedAtomicBool
-  value: false
-  mirror: always
-
-# A temporary pref that will be removed when the dialog in 1979341 is removed
-# Disables the notification bar and dialog
-- name: security.hide_parent_unrestricted_js_loads_warning.temporary
-  type: RelaxedAtomicBool
-  value: false
-  mirror: always
-
-# A pref needed for testing: xpinstall.signatures.required is disabled
-# for Marionette, which trips the JSHacks detection and disables our script
-# protections, so this pref skips the JSHacks check
-- name: security.parent_unrestricted_js_loads.skip_jshacks
-  type: RelaxedAtomicBool
-  value: false
   mirror: always
 
 # Don't enable this! This is only meant for legacy tests.
@@ -17970,12 +18045,6 @@
   # Whether \Device\KsecDD is closed in content process. We are closing this
   # using a pref to give users a work-around if they have issues.
 -   name: security.sandbox.content.close-ksecdd-handle
-    type: RelaxedAtomicBool
-    value: true
-    mirror: always
-
-  # Whether MITIGATION_EXTENSION_POINT_DISABLE is used for the GPU sandbox.
--   name: security.sandbox.gpu.extension-point-disable
     type: RelaxedAtomicBool
     value: true
     mirror: always
@@ -18865,6 +18934,12 @@
 
 # Enable the gecko trace system.
 - name: toolkit.gecko-trace.enable
+  type: bool
+  value: false
+  mirror: always
+
+# Enable perfetto on Android
+- name: toolkit.perfetto.enabled
   type: bool
   value: false
   mirror: always
@@ -20031,6 +20106,12 @@
 - name: widget.wayland.fractional-scale.enabled
   type: bool
   value: true
+  mirror: always
+
+# Enable experimental xx-fractional-scale-v2
+- name: widget.wayland.coordinates-scale.enabled
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
 
 # Use opaque region for MozContainer wl_surface

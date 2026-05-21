@@ -57,6 +57,8 @@ const COLOR_TAKING_FUNCTIONS = new Set([
   "oklab",
   "oklch",
   "rgb",
+  // image(<color>) is equivalent to linear-gradient(<color>)
+  "image",
 ]);
 // Functions that accept a shape argument.
 const BASIC_SHAPE_FUNCTIONS = new Set([
@@ -64,6 +66,35 @@ const BASIC_SHAPE_FUNCTIONS = new Set([
   "circle",
   "ellipse",
   "inset",
+]);
+// TODO: Get the list from an InspectorUtils method (see Bug 2038635)
+const CSS_EXPLAINERS_SUPPORTED_FUNCTIONS = new Set([
+  "abs",
+  "acos",
+  "asin",
+  "atan",
+  "atan2",
+  "attr",
+  "calc",
+  "clamp",
+  "cos",
+  "env",
+  "exp",
+  "hypot",
+  "log",
+  "max",
+  "min",
+  "mod",
+  "pow",
+  // Not supported yet, see Bug 1975530
+  "progress",
+  "rem",
+  "round",
+  "sign",
+  "sin",
+  "sqrt",
+  "tan",
+  "var",
 ]);
 
 const BACKDROP_FILTER_ENABLED = Services.prefs.getBoolPref(
@@ -252,7 +283,21 @@ class OutputParser {
             text: tokenText,
           });
 
-          this.#appendTextNode(tokenText, token);
+          if (
+            options.cssExplainersEnabled &&
+            CSS_EXPLAINERS_SUPPORTED_FUNCTIONS.has(lowerCaseFunctionName)
+          ) {
+            this.#appendNode(
+              "span",
+              { class: "css-explainers-function-name" },
+              functionName,
+              token
+            );
+            this.#appendTextNode("(", token);
+          } else {
+            this.#appendTextNode(tokenText, token);
+          }
+
           break;
         }
 
@@ -368,7 +413,7 @@ class OutputParser {
           break;
 
         case "ParenthesisBlock":
-          this.#createStackEntry({ isParenthesis: true, text: tokenText });
+          this.#createStackEntry({ text: tokenText });
           this.#appendTextNode(tokenText, token);
           break;
 
@@ -399,7 +444,7 @@ class OutputParser {
             this.#stack.at(-1).sawComma = true;
           }
 
-          this.#appendTextNode(token.text, token);
+          this.#appendTextNode(tokenText, token);
           break;
 
         // falls through
@@ -467,11 +512,11 @@ class OutputParser {
       // Lowercase function name if token is a function, null otherwise.
       // Precomputed because this can be a hot path.
       lowerCaseFunctionName: null,
+      // Will hold the names of the functions that are used inside the current one
+      nestedFunctions: [],
       // Boolean indicating if the function accepts color parameters
       // if token is a function, null otherwise.
       isColorTakingFunction: null,
-      // Boolean indicating if the stack entry represent a parenthesis block
-      isParenthesis: null,
       // Will hold the text for the stack entry, i.e. the whole function call
       // (e.g. `min(10px, max(1em, var(--w, 20w)))`),
       text: "",
@@ -500,20 +545,20 @@ class OutputParser {
 
     const stackEntry = this.#stack.pop();
     let { lowerCaseFunctionName, parts, text } = stackEntry;
-    if (lowerCaseFunctionName === "light-dark") {
-      parts = this.#onCloseParenthesisForLightDark(stackEntry, options);
+    if (lowerCaseFunctionName === "attr") {
+      parts = this.#onCloseParenthesisForAttr(stackEntry, options);
     } else if (lowerCaseFunctionName === "cubic-bezier") {
       parts = this.#onCloseParenthesisForCubicBezier(stackEntry, options);
+    } else if (lowerCaseFunctionName === "light-dark") {
+      parts = this.#onCloseParenthesisForLightDark(stackEntry, options);
     } else if (lowerCaseFunctionName === "linear") {
       parts = this.#onCloseParenthesisForLinear(stackEntry, options);
-    } else if (lowerCaseFunctionName === "attr") {
-      parts = this.#onCloseParenthesisForAttr(stackEntry, options);
-    } else if (BASIC_SHAPE_FUNCTIONS.has(lowerCaseFunctionName)) {
-      parts = this.#onCloseParenthesisForBasicShape(stackEntry, options);
     } else if (lowerCaseFunctionName === "url") {
       parts = this.#onCloseParenthesisForUrl(stackEntry, options);
     } else if (lowerCaseFunctionName === "var") {
       parts = this.#onCloseParenthesisForVar(stackEntry, options);
+    } else if (BASIC_SHAPE_FUNCTIONS.has(lowerCaseFunctionName)) {
+      parts = this.#onCloseParenthesisForBasicShape(stackEntry, options);
     } else if (
       (options.supportsColor ||
         ((options.expectFilter || options.isVariable) &&
@@ -542,6 +587,21 @@ class OutputParser {
       parts = [colorContainerEl];
     }
 
+    if (
+      options.cssExplainersEnabled &&
+      CSS_EXPLAINERS_SUPPORTED_FUNCTIONS.has(lowerCaseFunctionName) &&
+      stackEntry.nestedFunctions.every(fn =>
+        CSS_EXPLAINERS_SUPPORTED_FUNCTIONS.has(fn)
+      )
+    ) {
+      const functionNode = this.#createNode("span", {
+        class: options.functionClass,
+        "data-function-expression": stackEntry.text,
+      });
+      functionNode.append(...parts);
+      parts = [functionNode];
+    }
+
     // Put all the parts in the "new" last stack, or the main parsed array if there
     // is no more entry in the stack
     this.#getCurrentStackParts().push(...parts);
@@ -568,6 +628,17 @@ class OutputParser {
       }
       // Then update the authored text
       lastStackEntry.text += text;
+
+      if (stackEntry.lowerCaseFunctionName) {
+        // Set the nested functions by adding the one for the stack entry we just handled
+        lastStackEntry.nestedFunctions = [
+          stackEntry.lowerCaseFunctionName,
+          ...stackEntry.nestedFunctions,
+        ];
+      } else {
+        // If we closed a parenthesis block, just copy the nested functions we had
+        lastStackEntry.nestedFunctions = Array.from(stackEntry.nestedFunctions);
+      }
 
       const compoundEntryToken = {
         // Associate AGGREGATED_TOKEN_TYPE to the part so consumers can know the part was for
@@ -2445,6 +2516,7 @@ class OutputParser {
    *        definition for CSS variables. Defaults to true.
    * @param {boolean} overrides.isDarkColorScheme: Is the currently applied color scheme dark.
    * @param {boolean} overrides.isValid: Is the name+value valid.
+   * @param {boolean} overrides.cssExplainersEnabled: Are CSS explainers enabled
    * @return {object} Overridden options object
    */
   #mergeOptions(overrides) {
@@ -2458,6 +2530,7 @@ class OutputParser {
       colorClass: null,
       colorSwatchClass: null,
       colorSwatchReadOnly: false,
+      cssExplainersEnabled: false,
       filterSwatch: false,
       flexClass: null,
       gridClass: null,

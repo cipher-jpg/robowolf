@@ -241,10 +241,12 @@ FxAccountsWebChannel.prototype = {
           lazy.accountServer.asciiHost.endsWith("." + val)
         );
       });
-    let { currentRemoteType } = sendingContext.browsingContext;
-    if (shouldCheckRemoteType && currentRemoteType != "privilegedmozilla") {
+    if (
+      shouldCheckRemoteType &&
+      sendingContext.remoteType != "privilegedmozilla"
+    ) {
       log.error(
-        `Rejected FxA webchannel message from remoteType = ${currentRemoteType}`
+        `Rejected FxA webchannel message from remoteType = ${sendingContext.remoteType}`
       );
       return;
     }
@@ -331,7 +333,11 @@ FxAccountsWebChannel.prototype = {
             await this._helpers.promptProfileSyncWarningIfNeeded(data);
           switch (result.action) {
             case "create-profile":
-              lazy.SelectableProfileService.createNewProfile();
+              lazy.SelectableProfileService.createNewProfile(
+                true,
+                null,
+                "sync-warning"
+              );
               response.data = { ok: false };
               break;
             case "switch-profile":
@@ -486,6 +492,9 @@ FxAccountsWebChannel.prototype = {
      *               The <EventTarget> where the message was sent.
      *        @param sendingContext.principal {Principal}
      *               The <Principal> of the EventTarget where the message was sent.
+     *        @param sendingContext.remoteType {String}
+     *               The remoteType from which the
+     *               WebChannelMessageToChrome was sent.
      * @private
      */
     let listener = (webChannelId, message, sendingContext) => {

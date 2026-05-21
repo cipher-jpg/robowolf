@@ -62,7 +62,16 @@ const EDIT_ADDRESS_DIALOG_URL =
   "chrome://formautofill/content/editAddress.xhtml";
 const EDIT_CREDIT_CARD_DIALOG_URL =
   "chrome://formautofill/content/editCreditCard.xhtml";
-const PRIVACY_PREF_URL = "about:preferences#privacy";
+// FormAutofill's autocomplete footer + prompts open
+// openPreferences("privacy-payment-methods-autofill"/"privacy-address-autofill"),
+// which the Settings Redesign LegacyPaneMappings shim routes to the
+// passwordsAutofill pane. Pick the matching URL for the active mode.
+const PRIVACY_PREF_URL = Services.prefs.getBoolPref(
+  "browser.settings-redesign.enabled",
+  false
+)
+  ? "about:preferences#passwordsAutofill"
+  : "about:preferences#privacy";
 
 const HTTP_TEST_PATH = "/browser/browser/extensions/formautofill/test/browser/";
 const BASE_URL = "http://mochi.test:8888" + HTTP_TEST_PATH;
@@ -717,7 +726,7 @@ async function openPopupOn(browser, selector) {
     );
     // If the field is already focused, we need to send a key event to
     // open the popup
-    if (previouslyFocused && !browser.autoCompletePopup.popupOpen) {
+    if (previouslyFocused || !selector.includes("cc-")) {
       info(`openPopupOn: before VK_DOWN on ${selector}`);
       await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
     }
@@ -734,7 +743,7 @@ async function openPopupOnSubframe(browser, frameBrowsingContext, selector) {
     );
     // If the field is already focused, we need to send a key event to
     // open the popup
-    if (previouslyFocused) {
+    if (previouslyFocused || !selector.includes("cc-")) {
       info(`openPopupOnSubframe: before VK_DOWN on ${selector}`);
       await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, frameBrowsingContext);
     }
@@ -900,7 +909,7 @@ async function clickAddressDoorhangerButton(buttonType, subType) {
   const notification = getNotification();
   let button;
   if (buttonType == EDIT_ADDRESS_BUTTON) {
-    button = AddressSaveDoorhanger.editButton(notification);
+    button = notification.querySelector(`#${AddressSaveDoorhanger.editLinkId}`);
   } else if (buttonType == ADDRESS_MENU_BUTTON) {
     const menu = AutofillDoorhanger.menuButton(notification);
     const menupopup = AutofillDoorhanger.menuPopup(notification);
@@ -1060,7 +1069,9 @@ function fillEditDoorhanger(record) {
   for (const [key, value] of Object.entries(record)) {
     const id = AddressEditDoorhanger.getInputId(key);
     const element = notification.querySelector(`#${id}`);
-    element.value = value;
+    if (element) {
+      element.value = value;
+    }
   }
 }
 

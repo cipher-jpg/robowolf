@@ -165,7 +165,7 @@ internal fun BookmarksScreen(
     startDestination: String = BookmarksDestinations.LIST,
 ) {
     val navController = rememberNavController()
-    val store = buildStore(navController)
+    val store = remember { buildStore(navController) }
 
     val isPrivateModeLocked by remember {
         appStore.stateFlow.map { appState -> appState.isPrivateScreenLocked }
@@ -970,7 +970,7 @@ private fun RootBookmarksOverflowMenu(store: BookmarksStore) {
     val menuItems = listOf(
         MenuItem.TextItem(
             text = Text.Resource(R.string.bookmark_import_menu_button),
-            onClick = { store.dispatch(ImportAction.ImportFileClicked) },
+            onClick = { store.dispatch(ImportAction.ImportFileClicked.FromMenu) },
         ),
     )
 
@@ -1038,7 +1038,7 @@ private fun RootEmptyContent(
     showBookmarksImport: Boolean,
 ) {
     Image(
-        painter = painterResource(iconsR.drawable.mozac_ic_kit_bookmarks_empty_state),
+        painter = painterResource(R.drawable.ic_kit_bookmarks_empty_state),
         modifier = Modifier.width(204.dp).height(182.dp),
         contentDescription = null,
     )
@@ -1057,7 +1057,7 @@ private fun RootEmptyContent(
     if (showBookmarksImport) {
         FilledButton(
             text = stringResource(R.string.bookmark_import_menu_button),
-            onClick = { dispatcher(ImportAction.ImportFileClicked) },
+            onClick = { dispatcher(ImportAction.ImportFileClicked.FromButton) },
             modifier = Modifier
                 .heightIn(40.dp)
                 .fillMaxWidth(),

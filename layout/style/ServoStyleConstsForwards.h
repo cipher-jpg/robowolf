@@ -49,7 +49,7 @@ class gfxFontFeatureValueSet;
 struct GeckoFontMetrics;
 namespace mozilla {
 
-// Forward declaration for `StyleLengthPercentageUnion::AsCalc`, which
+// Forward declaration for `StyleLengthPercentage::AsCalc`, which
 // references the type below in the generated code.
 struct StyleCalcLengthPercentage;
 
@@ -213,6 +213,7 @@ using StyleDomStyleSheet = StyleSheet;
 
 using StyleRawGeckoNode = nsINode;
 using StyleRawGeckoElement = dom::Element;
+using StyleRawShadowRoot = dom::ShadowRoot;
 using StyleDocument = dom::Document;
 using StyleComputedValues = ComputedStyle;
 using StyleIterationCompositeOperation = dom::IterationCompositeOperation;

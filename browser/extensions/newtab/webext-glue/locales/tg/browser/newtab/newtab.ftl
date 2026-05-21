@@ -631,6 +631,10 @@ newtab-new-user-custom-wallpaper-title = Тасвири заминаеро ин�
 newtab-new-user-custom-wallpaper-subtitle = Ҳар як варақаи навро ба як саҳифаи шахсии зебо табдил диҳед — бо тасвирҳои замина ва рангҳое, ки услуби шуморо инъикос мекунанд.
 newtab-new-user-custom-wallpaper-cta = Ҳозир онро кӯшиш кунед
 
+## Strings for Nova wallpaper feature highlight
+
+newtab-wallpaper-feature-highlight-cta = Тасвири заминаиеро интихоб намоед
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Браузери «{ -brand-product-name }»-ро ба телефони мобилии худ боргирӣ кунед
@@ -735,6 +739,7 @@ newtab-widget-section-maximize =
 newtab-widget-section-minimize =
     .title = Ба ҳадди ақал сохтани виҷетҳо
     .aria-label = Ҳамаи виҷетҳои худро то андозаи хурд шакл созед
+newtab-widget-section-menu-manage = Идоракунии виҷетҳо
 
 ## Strings introduced by the Nova redesign of the Timer widget
 

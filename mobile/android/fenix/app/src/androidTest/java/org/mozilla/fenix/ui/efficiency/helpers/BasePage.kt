@@ -6,7 +6,12 @@ package org.mozilla.fenix.ui.efficiency.helpers
 
 import android.util.Log
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasAnySibling
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onFirst
@@ -23,13 +28,17 @@ import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.pressImeActionButton
 import androidx.test.espresso.action.ViewActions.typeText
 import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.hasSibling
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.isNotSelected
+import androidx.test.espresso.matcher.ViewMatchers.isSelected
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiObject
 import androidx.test.uiautomator.UiSelector
+import mozilla.components.support.android.test.espresso.matcher.isSelected
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
@@ -109,6 +118,7 @@ abstract class BasePage(
                     is NavigationStep.OpenNotificationsTray -> mozOpenNotificationsTray()
                     is NavigationStep.EnterText -> mozEnterText(url, step.selector)
                     is NavigationStep.PressEnter -> mozPressEnter(step.selector)
+                    is NavigationStep.PressBack -> mDevice.pressBack()
                 }
             }
 
@@ -482,6 +492,84 @@ abstract class BasePage(
         }
     }
 
+    fun mozVerifyElementIsSelected(selector: Selector, applyPreconditions: Boolean = true): Boolean {
+        val element = mozGetElement(selector, applyPreconditions = applyPreconditions)
+
+        return when (element) {
+            is ViewInteraction -> {
+                try {
+                    element.check(matches(isSelected())); true
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            is UiObject -> element.isSelected()
+            is SemanticsNodeInteraction -> {
+                try {
+                    element.assertExists(); element.assertIsSelected(); true
+                } catch (_: AssertionError) {
+                    false
+                }
+            }
+            else -> false
+        }
+    }
+
+    fun mozVerifyElementIsNotSelected(selector: Selector, applyPreconditions: Boolean = true): Boolean {
+        val element = mozGetElement(selector, applyPreconditions = applyPreconditions)
+
+        return when (element) {
+            is ViewInteraction -> {
+                try {
+                    element.check(matches(isNotSelected())); true
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            is UiObject -> element.isSelected.not()
+            is SemanticsNodeInteraction -> {
+                try {
+                    element.assertExists(); element.assertIsNotSelected(); true
+                } catch (_: AssertionError) {
+                    false
+                }
+            }
+            else -> false
+        }
+    }
+
+    fun mozVerifyElementHasSiblingWithText(selector: Selector, siblingText: String, applyPreconditions: Boolean = true): Boolean {
+        val element = mozGetElement(selector, applyPreconditions = applyPreconditions)
+
+        return when (element) {
+            is ViewInteraction -> {
+                try {
+                    element.check(matches(hasSibling(withText(siblingText))))
+                    true
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            is UiObject -> {
+                try {
+                    val sibling = element.getFromParent(UiSelector().text(siblingText))
+                    sibling.exists()
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            is SemanticsNodeInteraction -> {
+                try {
+                    element.assert(hasAnySibling(hasText(siblingText)))
+                    true
+                } catch (_: AssertionError) {
+                    false
+                }
+            }
+            else -> false
+        }
+    }
+
     // ------------------------------------------------------------
     // Element resolution + verification (LOC)
     // ------------------------------------------------------------
@@ -524,6 +612,14 @@ abstract class BasePage(
             SelectorStrategy.COMPOSE_BY_CONTENT_DESCRIPTION -> {
                 try {
                     composeRule.onNodeWithContentDescription(selector.value)
+                } catch (_: Exception) {
+                    Log.i("mozGetElement", "Compose node not found for content description: ${selector.value}"); null
+                }
+            }
+
+            SelectorStrategy.COMPOSE_BY_CONTENT_DESCRIPTION_SUBSTRING -> {
+                try {
+                    composeRule.onNodeWithContentDescription(selector.value, substring = true)
                 } catch (_: Exception) {
                     Log.i("mozGetElement", "Compose node not found for content description: ${selector.value}"); null
                 }
@@ -575,6 +671,11 @@ abstract class BasePage(
 
             SelectorStrategy.UIAUTOMATOR_WITH_RES_ID -> {
                 val obj = mDevice.findObject(UiSelector().resourceId(packageName + ":id/" + selector.value))
+                if (!obj.exists()) null else obj
+            }
+
+            SelectorStrategy.UIAUTOMATOR_WITH_COMPOSE_TAG -> {
+                val obj = mDevice.findObject(UiSelector().resourceId(selector.value))
                 if (!obj.exists()) null else obj
             }
 

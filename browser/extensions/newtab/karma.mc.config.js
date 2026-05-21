@@ -340,7 +340,7 @@ module.exports = function (config) {
               branches: 0,
             },
             // Coverage for this module lives in Jest (test/jest/content-src/components/Widgets/WidgetsRegistry.test.jsx)
-            "content-src/components/Widgets/WidgetsRegistry.mjs": {
+            "common/WidgetsRegistry.mjs": {
               statements: 0,
               lines: 0,
               functions: 0,
@@ -348,6 +348,13 @@ module.exports = function (config) {
             },
             // Coverage for this component lives in Jest
             "content-src/components/Widgets/WidgetsComponentRegistry.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/MoveSubmenu.test.jsx)
+            "content-src/components/Widgets/MoveSubmenu.jsx": {
               statements: 0,
               lines: 0,
               functions: 0,
@@ -454,6 +461,21 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
+            // Coverage for this component lives in Jest (test/jest/content-src/components/Widgets/SportsMatchRow.test.jsx)
+            "content-src/components/Widgets/SportsWidget/SportsMatchRow.jsx": {
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
+            // Coverage for this hook lives in Jest (test/jest/content-src/components/Widgets/useLocalizedTeamNames.test.jsx)
+            "content-src/components/Widgets/SportsWidget/useLocalizedTeamNames.jsx":
+              {
+                statements: 0,
+                lines: 0,
+                functions: 0,
+                branches: 0,
+              },
             "content-src/components/**/*.jsx": {
               statements: 51.1,
               lines: 52.38,

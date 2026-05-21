@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LocalContentColor
@@ -33,6 +32,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -44,9 +44,9 @@ import org.mozilla.fenix.compose.TabThumbnailImageData
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
 import org.mozilla.fenix.tabstray.data.TabGroupTheme
 import org.mozilla.fenix.tabstray.data.TabsTrayItem
+import org.mozilla.fenix.tabstray.ui.tabitems.TabsTrayItemSelectionState
 import org.mozilla.fenix.theme.FirefoxTheme
 
-private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(4.dp)
 private val THUMBNAIL_WIDTH = 78.dp
 private val THUMBNAIL_HEIGHT = 68.dp
 
@@ -56,6 +56,7 @@ private val THUMBNAIL_HEIGHT = 68.dp
  * @param tabGroup The tab group to display.
  * @param onClick The action to be performed when the tab group item is clicked.
  * @param modifier The Modifier
+ * @param selectionState: The tab selection state.
  * @param trailingContent Optional trailing content.
  * @param trailingContentColor Optional content color for trailing content.
  */
@@ -64,6 +65,7 @@ fun TabGroupRow(
     tabGroup: TabsTrayItem.TabGroup,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    selectionState: TabsTrayItemSelectionState = TabsTrayItemSelectionState(),
     trailingContent: @Composable (() -> Unit)? = null,
     trailingContentColor: Color? = null,
 ) {
@@ -79,7 +81,7 @@ fun TabGroupRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .testTag(TabsTrayTestTag.TAB_GROUP_ROOT)
+            .testTag("${TabsTrayTestTag.TAB_GROUP_ROOT}.${tabGroup.id}")
             .padding(
                 if (trailingContent == null) {
                     PaddingValues(
@@ -98,6 +100,7 @@ fun TabGroupRow(
             .semantics(mergeDescendants = true) {
                 contentDescription = tabGroupRowContentDescription
                 role = Role.Button
+                selected = selectionState.isFocused
             },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.static200),
@@ -109,7 +112,7 @@ fun TabGroupRow(
                 .border(
                     width = 1.dp,
                     color = MaterialTheme.colorScheme.surfaceDimVariant,
-                    shape = ROUNDED_CORNER_SHAPE,
+                    shape = MaterialTheme.shapes.extraSmall,
                 ),
         )
 
@@ -170,7 +173,7 @@ private fun TabGroupListThumbnail(
 ) {
     Card(
         modifier = modifier,
-        shape = ROUNDED_CORNER_SHAPE,
+        shape = MaterialTheme.shapes.extraSmall,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),

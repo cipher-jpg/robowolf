@@ -64,7 +64,6 @@
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/ScrollTimelineAnimationTracker.h"
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoStyleSet.h"
@@ -1405,21 +1404,10 @@ bool PresShell::FixUpFocus() {
   if (NS_WARN_IF(!window)) {
     return false;
   }
-  // XXX: This is a temporary fix to avoid regressions with sequential
-  //      focus navigation. (But maybe this should still happen when caret
-  //      browsing is enabled?) See bug 2034851.
-  // Don't move document selection to native anonymous subtree.
-  if (RefPtr element = fm->GetFocusedElement();
-      element && !element->IsInNativeAnonymousSubtree()) {
-    RefPtr selection = window->GetSelection();
-    if (MOZ_LIKELY(selection)) {
-      // Move selection to the element so that focus navigation starts from
-      // there.
-      selection->SetAncestorLimiter(nullptr);
-      DebugOnly<nsresult> rv = selection->CollapseInLimiter(element, 0);
-      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                           "Selection::CollapseInLimiter failed.");
-    }
+  if (auto* element = fm->GetFocusedElement()) {
+    // Set focus navigation starting point, so that focus navigation still
+    // starts from this element.
+    element->OwnerDoc()->SetFocusNavigationStartingPoint(element);
   }
   fm->ClearFocus(window);
   return true;
@@ -2228,8 +2216,13 @@ void PresShell::NotifyDestroyingFrame(nsIFrame* aFrame) {
   }
 }
 
-already_AddRefed<nsCaret> PresShell::GetCaret() const {
+already_AddRefed<nsCaret> PresShell::GetActiveCaret() const {
   RefPtr<nsCaret> caret = mCaret;
+  return caret.forget();
+}
+
+already_AddRefed<nsCaret> PresShell::GetOriginalCaret() const {
+  RefPtr<nsCaret> caret = mOriginalCaret;
   return caret.forget();
 }
 
@@ -2239,7 +2232,7 @@ PresShell::GetAccessibleCaretEventHub() const {
   return eventHub.forget();
 }
 
-void PresShell::SetCaret(nsCaret* aNewCaret) {
+void PresShell::SetActiveCaret(nsCaret* aNewCaret) {
   if (mCaret == aNewCaret) {
     return;
   }
@@ -2252,7 +2245,7 @@ void PresShell::SetCaret(nsCaret* aNewCaret) {
   }
 }
 
-void PresShell::RestoreCaret() { SetCaret(mOriginalCaret); }
+void PresShell::RestoreOriginalCaret() { SetActiveCaret(mOriginalCaret); }
 
 NS_IMETHODIMP PresShell::SetCaretEnabled(bool aInEnable) {
   bool oldEnabled = mCaretEnabled;
@@ -2260,9 +2253,9 @@ NS_IMETHODIMP PresShell::SetCaretEnabled(bool aInEnable) {
   mCaretEnabled = aInEnable;
 
   if (mCaretEnabled != oldEnabled) {
-    MOZ_ASSERT(mCaret);
-    if (mCaret) {
-      mCaret->SetVisible(mCaretEnabled);
+    MOZ_ASSERT(mOriginalCaret);
+    if (mOriginalCaret) {
+      mOriginalCaret->SetVisible(mCaretEnabled);
     }
   }
 
@@ -2270,8 +2263,8 @@ NS_IMETHODIMP PresShell::SetCaretEnabled(bool aInEnable) {
 }
 
 NS_IMETHODIMP PresShell::SetCaretReadOnly(bool aReadOnly) {
-  if (mCaret) {
-    mCaret->SetCaretReadOnly(aReadOnly);
+  if (mOriginalCaret) {
+    mOriginalCaret->SetCaretReadOnly(aReadOnly);
   }
   return NS_OK;
 }
@@ -2283,16 +2276,16 @@ NS_IMETHODIMP PresShell::GetCaretEnabled(bool* aOutEnabled) {
 }
 
 NS_IMETHODIMP PresShell::SetCaretVisibilityDuringSelection(bool aVisibility) {
-  if (mCaret) {
-    mCaret->SetVisibilityDuringSelection(aVisibility);
+  if (mOriginalCaret) {
+    mOriginalCaret->SetVisibilityDuringSelection(aVisibility);
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP PresShell::GetCaretVisible(bool* aOutIsVisible) {
   *aOutIsVisible = false;
-  if (mCaret) {
-    *aOutIsVisible = mCaret->IsVisible();
+  if (mOriginalCaret) {
+    *aOutIsVisible = mOriginalCaret->IsVisible();
   }
   return NS_OK;
 }
@@ -4400,14 +4393,6 @@ static inline void AssertFrameTreeIsSane(const PresShell& aPresShell) {
 #endif
 }
 
-static void TriggerPendingScrollTimelineAnimations(Document* aDocument) {
-  auto* tracker = aDocument->GetScrollTimelineAnimationTracker();
-  if (!tracker || !tracker->HasPendingAnimations()) {
-    return;
-  }
-  tracker->TriggerPendingAnimations();
-}
-
 void PresShell::DoFlushPendingNotifications(mozilla::ChangesToFlush aFlush) {
   // FIXME(emilio, bug 1530177): Turn into a release assert when bug 1530188 and
   // bug 1530190 are fixed.
@@ -4565,17 +4550,6 @@ void PresShell::DoFlushPendingNotifications(mozilla::ChangesToFlush aFlush) {
   }
 
   FlushPendingScrollResnap();
-
-  if (MOZ_LIKELY(!mIsDestroying)) {
-    // Try to trigger pending scroll-driven animations after we flush
-    // style and layout (if any). If we try to trigger them after flushing
-    // style but the frame tree is not ready, we will check them again after
-    // we flush layout because the requirement to trigger scroll-driven
-    // animations is that the associated scroll containers are ready (i.e. the
-    // scroll-timeline is active), and this depends on the readiness of the
-    // scrollable frame and the primary frame of the scroll container.
-    TriggerPendingScrollTimelineAnimations(mDocument);
-  }
 }
 
 MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::CharacterDataChanged(
@@ -6735,17 +6709,23 @@ nsIFrame* PresShell::GetCurrentEventFrame() {
   return mCurrentEventTarget.mFrame;
 }
 
-already_AddRefed<nsIContent> PresShell::GetEventTargetContent(
-    WidgetEvent* aEvent) {
-  nsCOMPtr<nsIContent> content = GetCurrentEventContent();
+nsIContent* PresShell::GetExplicitEventTargetContent(
+    const WidgetEvent* aEvent /* = nullptr */) {
+  nsIContent* content = GetCurrentEventContent();
   if (!content) {
     if (nsIFrame* currentEventFrame = GetCurrentEventFrame()) {
-      content = currentEventFrame->GetContentForEvent(aEvent);
+      content = currentEventFrame->GetExplicitEventTargetContent(aEvent);
       NS_ASSERTION(!content || content->GetComposedDoc() == mDocument,
                    "handing out content from a different doc");
     }
   }
-  return content.forget();
+  return content;
+}
+
+nsIContent* PresShell::GetEventTargetContent(
+    const WidgetEvent* aEvent /* = nullptr */) {
+  return nsContentUtils::GetEventTargetContent(
+      GetExplicitEventTargetContent(aEvent), aEvent);
 }
 
 void PresShell::PushCurrentEventInfo(const EventTargetInfo& aInfo) {
@@ -8626,7 +8606,7 @@ bool PresShell::EventHandler::MaybeDiscardOrDelayMouseEvent(
     return true;
   }
 
-  if (auto* target = aFrameToHandleEvent->GetContentForEvent(aGUIEvent)) {
+  if (auto* target = aFrameToHandleEvent->GetEventTargetContent(aGUIEvent)) {
     aGUIEvent->mTarget = target;
   }
 
@@ -9413,6 +9393,27 @@ void PresShell::EventHandler::FinalizeHandlingEvent(
   }
 }
 
+void PresShell::MaybeExitKeyboardLockedFullscreen(
+    WidgetKeyboardEvent* aKeyboardEvent, Document* aFullscreenRoot) {
+  // No recorded keydown?
+  if (mFirstUnmatchedEscapeKeyDownForFullscreen.IsNull()) {
+    return;
+  }
+  const bool escapeKeyDeltaLargeEnough =
+      (aKeyboardEvent->mTimeStamp -
+       mFirstUnmatchedEscapeKeyDownForFullscreen) >=
+      TimeDuration::FromMilliseconds(
+          StaticPrefs::dom_fullscreen_keyboard_lock_long_press_interval());
+
+  if (escapeKeyDeltaLargeEnough) {
+    Document::AsyncExitFullscreen(aFullscreenRoot);
+    if (XRE_IsParentProcess() && (PointerLockManager::GetLockedRemoteTarget() ||
+                                  PointerLockManager::IsLocked())) {
+      PointerLockManager::Unlock("EscapeKey");
+    }
+  }
+}
+
 void PresShell::EventHandler::MaybeHandleKeyboardEventBeforeDispatch(
     WidgetKeyboardEvent* aKeyboardEvent) {
   MOZ_ASSERT(aKeyboardEvent);
@@ -9451,33 +9452,19 @@ void PresShell::EventHandler::MaybeHandleKeyboardEventBeforeDispatch(
         }
 
         MOZ_ASSERT(aKeyboardEvent->mIsRepeat);
-        if (mPresShell->mFirstUnmatchedEscapeKeyDownForFullscreen) {
-          if (mPresShell->ShouldShowFullscreenKeyboardLockWarning(
-                  *aKeyboardEvent)) {
-            nsContentUtils::DispatchEventOnlyToChrome(
-                root, root, u"MozDOMFullscreen:WarnAboutKeyboardLock"_ns,
-                CanBubble::eYes, Cancelable::eNo, /* DefaultAction */ nullptr);
-          }
-
-          const bool escapeHasBeenHeldLongEnough =
-              (aKeyboardEvent->mTimeStamp -
-               mPresShell->mFirstUnmatchedEscapeKeyDownForFullscreen) >=
-              TimeDuration::FromMilliseconds(
-                  StaticPrefs::
-                      dom_fullscreen_keyboard_lock_long_press_interval());
-          if (escapeHasBeenHeldLongEnough) {
-            mPresShell->mFirstUnmatchedEscapeKeyDownForFullscreen = TimeStamp();
-            MOZ_LOG_FMT(gLog, LogLevel::Debug,
-                        "Exiting fullscreen from Escape key long-press");
-            Document::AsyncExitFullscreen(root);
-
-            if (XRE_IsParentProcess() &&
-                (PointerLockManager::GetLockedRemoteTarget() ||
-                 PointerLockManager::IsLocked())) {
-              PointerLockManager::Unlock("EscapeKey");
-            }
-          }
+        if (mPresShell->ShouldShowFullscreenKeyboardLockWarning(
+                *aKeyboardEvent)) {
+          nsContentUtils::DispatchEventOnlyToChrome(
+              root, root, u"MozDOMFullscreen:WarnAboutKeyboardLock"_ns,
+              CanBubble::eYes, Cancelable::eNo, /* DefaultAction */ nullptr);
         }
+
+        mPresShell->MaybeExitKeyboardLockedFullscreen(aKeyboardEvent, root);
+      } else if (aKeyboardEvent->mMessage == eKeyUp) {
+        // When keyboard key repeat is disabled by the OS, no repeat keydown
+        // events are generated while holding Escape. Check on keyup whether the
+        // key was held long enough to exit fullscreen.
+        mPresShell->MaybeExitKeyboardLockedFullscreen(aKeyboardEvent, root);
       }
 
       // If fullscreen keyboard-lock is enabled, return here, as we don't allow
@@ -9658,12 +9645,7 @@ nsresult PresShell::EventHandler::DispatchEventToDOM(
     nsCOMPtr<nsIContent> targetContent;
     if (mPresShell->mCurrentEventTarget.mFrame) {
       targetContent =
-          mPresShell->mCurrentEventTarget.mFrame->GetContentForEvent(aEvent);
-      if (targetContent && !targetContent->IsElement() &&
-          IsForbiddenDispatchingToNonElementContent(aEvent->mMessage)) {
-        targetContent =
-            targetContent->GetInclusiveFlattenedTreeAncestorElement();
-      }
+          mPresShell->mCurrentEventTarget.mFrame->GetEventTargetContent(aEvent);
     }
     if (targetContent) {
       eventTarget = targetContent;
@@ -9999,7 +9981,7 @@ bool PresShell::EventHandler::PrepareToUseCaretPosition(
   nsresult rv;
 
   // check caret visibility
-  RefPtr<nsCaret> caret = mPresShell->GetCaret();
+  RefPtr<nsCaret> caret = mPresShell->GetActiveCaret();
   NS_ENSURE_TRUE(caret, false);
 
   bool caretVisible = caret->IsVisible();
@@ -12638,7 +12620,7 @@ void PresShell::EventHandler::EventTargetData::
 void PresShell::EventHandler::EventTargetData::SetContentForEventFromFrame(
     WidgetGUIEvent* aGUIEvent) {
   MOZ_ASSERT(mFrame);
-  mContent = mFrame->GetContentForEvent(aGUIEvent);
+  mContent = mFrame->GetEventTargetContent(aGUIEvent);
   AssertIfEventTargetContentAndFrameContentMismatch(aGUIEvent);
 }
 
@@ -12656,7 +12638,7 @@ void PresShell::EventHandler::EventTargetData::
 
   // If we know the event, we can compute the target correctly.
   if (aGUIEvent) {
-    MOZ_ASSERT(mContent == mFrame->GetContentForEvent(aGUIEvent));
+    MOZ_ASSERT(mContent == mFrame->GetEventTargetContent(aGUIEvent));
     return;
   }
   // If clicking an image map, mFrame should be the image frame, but mContent

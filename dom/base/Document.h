@@ -198,7 +198,6 @@ struct LangGroupFontPrefs;
 class PendingFullscreenEvent;
 class PermissionDelegateHandler;
 class PresShell;
-class ScrollTimelineAnimationTracker;
 class ServoStyleSet;
 enum class StyleOrigin : uint8_t;
 class SMILAnimationController;
@@ -563,6 +562,7 @@ class Document : public nsINode,
   friend class DocumentOrShadowRoot;
   friend class LinkedList<Document>;
   friend class LinkedListElement<Document>;
+  friend class AutoRestoreCloningForSVGUse;
 
  protected:
   Document(const char* aContentType, LoadedAsData aLoadedAsData);
@@ -2939,19 +2939,6 @@ class Document : public nsINode,
   // If HasAnimationController is true, this is guaranteed to return non-null.
   SMILAnimationController* GetAnimationController();
 
-  // Gets the tracker for scroll-driven animations that are waiting to start.
-  // Returns nullptr if there is no scroll-driven animation tracker for this
-  // document which will be the case if there have never been any scroll-driven
-  // animations in the document.
-  ScrollTimelineAnimationTracker* GetScrollTimelineAnimationTracker() {
-    return mScrollTimelineAnimationTracker;
-  }
-
-  // Gets the tracker for scroll-driven animations that are waiting to start and
-  // creates it if it doesn't already exist. As a result, the return value
-  // will never be nullptr.
-  ScrollTimelineAnimationTracker* GetOrCreateScrollTimelineAnimationTracker();
-
   /**
    * Prevents user initiated events from being dispatched to the document and
    * subdocuments.
@@ -3635,6 +3622,14 @@ class Document : public nsINode,
   HTMLCollection* Anchors();
   TimeStamp LastFocusTime() const;
   void SetLastFocusTime(const TimeStamp& aFocusTime);
+
+  void SetFocusNavigationStartingPoint(nsIContent* aContent,
+                                       bool aWillBeRemoved = false);
+  nsIContent* GetFocusNavigationStartingPoint() const {
+    return mFocusNavigationStartingPoint;
+  }
+  bool WasFocusedElementRemoved() const { return mWasFocusedElementRemoved; }
+
   // Event handlers are all on nsINode already
   bool MozSyntheticDocument() const { return IsSyntheticDocument(); }
   Element* GetCurrentScript();
@@ -3652,23 +3647,16 @@ class Document : public nsINode,
   MOZ_CAN_RUN_SCRIPT void GetWireframe(bool aIncludeNodes,
                                        Nullable<Wireframe>&);
 
-  // https://html.spec.whatwg.org/#close-entire-popover-list
-  MOZ_CAN_RUN_SCRIPT void CloseEntirePopoverList(PopoverAttributeState aMode,
-                                                 bool aFocusPreviousElement,
-                                                 bool aFireEvents);
-
-  // Hides all popovers until the given end point, see
-  // https://html.spec.whatwg.org/multipage/popover.html#hide-all-popovers-until
-  MOZ_CAN_RUN_SCRIPT void HideAllPopoversUntil(nsINode& aEndpoint,
-                                               bool aFocusPreviousElement,
-                                               bool aFireEvents);
-
-  // Hides all popovers, until the given end point, see
   // https://html.spec.whatwg.org/#hide-popover-stack-until
-  MOZ_CAN_RUN_SCRIPT void HidePopoverStackUntil(PopoverAttributeState aMode,
-                                                nsINode& aEndpoint,
-                                                bool aFocusPreviousElement,
-                                                bool aFireEvents);
+  MOZ_CAN_RUN_SCRIPT void HidePopoverStackUntil(
+      Element* aEndpoint, PopoverAttributeState aStackType,
+      bool aFocusPreviousElement, bool aFireEvents);
+
+  // Hides hint then auto popover stacks until the given endpoint.
+  // https://html.spec.whatwg.org/#hide-popovers-until
+  MOZ_CAN_RUN_SCRIPT void HidePopoversUntil(Element* aEndpoint,
+                                            bool aFocusPreviousElement,
+                                            bool aFireEvents);
 
   // Hides the given popover element, see
   // https://html.spec.whatwg.org/multipage/popover.html#hide-popover-algorithm
@@ -3681,7 +3669,9 @@ class Document : public nsINode,
   // popover opened in mode is in the given state.
   // See https://html.spec.whatwg.org/multipage/popover.html#auto-popover-list
   // See https://html.spec.whatwg.org/#showing-hint-popover-list
-  nsTArray<Element*> PopoverListOf(PopoverAttributeState aMode) const;
+  nsTArray<RefPtr<Element>> PopoverListOf(PopoverAttributeState aMode) const;
+  bool IsInPopoverListOf(const Element& aElement,
+                         PopoverAttributeState aMode) const;
 
   // Return document's popover list's last element of a particular mode.
   // See
@@ -3690,6 +3680,21 @@ class Document : public nsINode,
 
   void AddPopoverToTopLayer(Element&);
   void RemovePopoverFromTopLayer(Element&);
+
+  Element* PopoverHintStackParent() const;
+  void SetPopoverHintStackParent(Element* aParent);
+
+  bool IsShowingPopover() const { return mShowingPopover; }
+  void SetShowingPopover(bool aShowing) { mShowingPopover = aShowing; }
+
+  uint32_t HidingPopoverNestingCount() const {
+    return mHidingPopoverNestingCount;
+  }
+  void IncrementHidingPopoverNestingCount() { ++mHidingPopoverNestingCount; }
+  void DecrementHidingPopoverNestingCount() {
+    MOZ_ASSERT(mHidingPopoverNestingCount > 0);
+    --mHidingPopoverNestingCount;
+  }
 
   Element* GetTopLayerTop();
   // Return the fullscreen element in the top layer
@@ -3763,7 +3768,11 @@ class Document : public nsINode,
    */
   already_AddRefed<nsRange> CaretRangeFromPoint(int32_t aX, int32_t aY);
 
-  Element* GetScrollingElement();
+  MOZ_CAN_RUN_SCRIPT Element* GetScrollingElement();
+  // Like GetScrollingElement, but does not flush pending layout. Callers get
+  // an answer based on the current (possibly stale) frame state; if accuracy
+  // matters, callers should just call GetScrollingElement.
+  Element* GetScrollingElementNoFlush();
   // A way to check whether a given element is what would get returned from
   // GetScrollingElement.  It can be faster than comparing to the return value
   // of GetScrollingElement() due to being able to avoid flushes in various
@@ -4827,6 +4836,12 @@ class Document : public nsINode,
   // Helper for GetScrollingElement/IsScrollingElement.
   bool IsPotentiallyScrollable(HTMLBodyElement* aBody);
 
+  // Whether GetScrollingElementImpl / IsPotentiallyScrollableImpl should flush
+  // pending style and frame construction before answering.
+  enum class Flush : bool { No, Yes };
+  Element* GetScrollingElementImpl(Flush);
+  bool IsPotentiallyScrollableImpl(HTMLBodyElement* aBody, Flush);
+
   void MaybeAllowStorageForOpenerAfterUserInteraction();
 
   void MaybeStoreUserInteractionAsPermission();
@@ -4957,6 +4972,12 @@ class Document : public nsINode,
 
   // container for per-context fonts (downloadable, SVG, etc.)
   RefPtr<FontFaceSet> mFontFaceSet;
+
+  // Points to the focus navigation starting point if the focused element is
+  // removed or becomes non-focusable, so that focus navigation isn't reset when
+  // that happens.
+  // https://html.spec.whatwg.org/#sequential-focus-navigation-starting-point
+  RefPtr<nsIContent> mFocusNavigationStartingPoint;
 
   // Last time this document or a one of its sub-documents was focused.  If
   // focus has never occurred then mLastFocusTime.IsNull() will be true.
@@ -5300,6 +5321,11 @@ class Document : public nsINode,
   // Cached value of dom.image.sizes_auto.enabled
   const bool mAutoSizesEnabled : 1;
 
+  // If false, mFocusNavigationStartingPoint is the previously-focused element.
+  // If true, mFocusNavigationStartingPoint is the previously-focused element's
+  // previous sibling in the flat tree.
+  bool mWasFocusedElementRemoved : 1;
+
   // The fingerprinting protections overrides for this document. The value will
   // override the default enabled fingerprinting protections for this document.
   // This will only get populated if these is one that comes from the local
@@ -5617,6 +5643,15 @@ class Document : public nsINode,
   // Stack of top layer elements.
   nsTArray<nsWeakPtr> mTopLayer;
 
+  // https://html.spec.whatwg.org/#hint-stack-parent
+  RefPtr<Element> mPopoverHintStackParent;
+
+  // https://html.spec.whatwg.org/#showing-popover
+  bool mShowingPopover = false;
+
+  // https://html.spec.whatwg.org/#hiding-popover-nesting-count
+  uint32_t mHidingPopoverNestingCount = 0;
+
   // Stack of open dialogs
   // https://html.spec.whatwg.org/#open-dialogs-list
   nsTArray<HTMLDialogElement*> mOpenDialogs;
@@ -5647,10 +5682,6 @@ class Document : public nsINode,
   AnimationTimelinesController mTimelinesController;
 
   RefPtr<dom::ScriptLoader> mScriptLoader;
-
-  // Tracker for scroll-driven animations that are waiting to start.
-  // nullptr until GetOrCreateScrollTimelineAnimationTracker is called.
-  RefPtr<ScrollTimelineAnimationTracker> mScrollTimelineAnimationTracker;
 
   // A document "without a browsing context" that owns the content of
   // HTMLTemplateElement.

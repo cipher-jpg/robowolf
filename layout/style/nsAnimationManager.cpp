@@ -17,6 +17,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/DocumentTimeline.h"
+#include "mozilla/dom/ElementInlines.h"
 #include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/ScrollTimeline.h"
@@ -85,8 +86,10 @@ class MOZ_STACK_CLASS ServoCSSAnimationBuilder final {
         aElement, *mComputedStyle, aName, aTimingFunction, aKeyframes);
   }
   void SetKeyframes(KeyframeEffect& aEffect, nsTArray<Keyframe>&& aKeyframes,
-                    const dom::AnimationTimeline* aTimeline) {
-    aEffect.SetKeyframes(std::move(aKeyframes), mComputedStyle, aTimeline);
+                    const dom::AnimationTimeline* aTimeline,
+                    const dom::AnimationRange& aRange) {
+    aEffect.SetKeyframes(std::move(aKeyframes), mComputedStyle, aTimeline,
+                         &aRange);
   }
 
   // Currently all the animation building code in this file is based on
@@ -213,7 +216,7 @@ static void UpdateOldAnimationPropertiesWithNew(
     if (KeyframeEffect* oldKeyframeEffect = oldEffect->AsKeyframeEffect()) {
       if (~aOverriddenProperties & CSSAnimationProperties::Keyframes) {
         aBuilder.SetKeyframes(*oldKeyframeEffect, std::move(aNewKeyframes),
-                              aTimeline);
+                              aTimeline, aTimelineRange);
       }
 
       if (~aOverriddenProperties & CSSAnimationProperties::Composition) {
@@ -274,7 +277,7 @@ static already_AddRefed<dom::AnimationTimeline> GetNamedProgressTimeline(
   // 2. that element’s descendants
   // https://drafts.csswg.org/scroll-animations-1/#timeline-scope
   for (Element* e = aTarget.mElement->GetPseudoElement(aTarget.mPseudoRequest);
-       e; e = e->GetParentElement()) {
+       e; e = e->GetFlattenedTreeParentElement()) {
     // If multiple elements have declared the same timeline name, the matching
     // timeline is the one declared on the nearest element in tree order, which
     // considers siblings closer than parents.
@@ -423,7 +426,7 @@ static already_AddRefed<CSSAnimation> BuildAnimation(
       OwningAnimationTarget(aTarget.mElement, aTarget.mPseudoRequest),
       std::move(timing), effectOptions);
 
-  aBuilder.SetKeyframes(*effect, std::move(keyframes), timeline);
+  aBuilder.SetKeyframes(*effect, std::move(keyframes), timeline, range);
 
   auto animation = MakeRefPtr<CSSAnimation>(
       aPresContext->Document()->GetScopeObject(), animationName);

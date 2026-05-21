@@ -356,8 +356,6 @@ pub struct YamlFrameReader {
     keyframes: Option<Yaml>,
 
     external_image_handler: Option<Box<LocalExternalImageHandler>>,
-
-    next_spatial_key: u64,
 }
 
 impl YamlFrameReader {
@@ -386,7 +384,6 @@ impl YamlFrameReader {
             keyframes: None,
             external_image_handler: Some(Box::new(LocalExternalImageHandler::new())),
             next_external_scroll_id: 1000,      // arbitrary to easily see in logs which are implicit
-            next_spatial_key: 0,
         }
     }
 
@@ -414,8 +411,11 @@ impl YamlFrameReader {
 
     pub fn new_from_args(args: &clap::ArgMatches) -> YamlFrameReader {
         let yaml_file = args.value_of("INPUT").map(PathBuf::from).unwrap();
+        YamlFrameReader::new(&yaml_file)
+    }
 
-        let mut y = YamlFrameReader::new(&yaml_file);
+    pub fn new_from_show_args(args: &clap::ArgMatches) -> YamlFrameReader {
+        let mut y = YamlFrameReader::new_from_args(args);
 
         y.keyframes = args.value_of("keyframes").map(|path| {
             let mut file = File::open(&path).unwrap();
@@ -1646,12 +1646,6 @@ impl YamlFrameReader {
         }
     }
 
-    fn next_spatial_key(&mut self) -> SpatialTreeItemKey {
-        let key = SpatialTreeItemKey::new(self.next_spatial_key, 0);
-        self.next_spatial_key += 1;
-        key
-    }
-
     fn handle_scroll_frame(
         &mut self,
         dl: &mut DisplayListBuilder,
@@ -1714,7 +1708,6 @@ impl YamlFrameReader {
             external_scroll_offset,
             scroll_generation,
             has_scroll_linked_effect,
-            self.next_spatial_key(),
         );
         if let Some(numeric_id) = numeric_id {
             self.add_spatial_id_mapping(numeric_id, spatial_id);
@@ -1751,7 +1744,6 @@ impl YamlFrameReader {
             yaml["vertical-offset-bounds"].as_sticky_offset_bounds(),
             yaml["horizontal-offset-bounds"].as_sticky_offset_bounds(),
             yaml["previously-applied-offset"].as_vector().unwrap_or_else(LayoutVector2D::zero),
-            self.next_spatial_key(),
             None,
         );
 
@@ -1951,7 +1943,6 @@ impl YamlFrameReader {
             transform_style,
             transform.or(perspective).unwrap_or_default().into(),
             reference_frame_kind,
-            self.next_spatial_key(),
         );
 
         let numeric_id = yaml["id"].as_i64();
@@ -1998,7 +1989,6 @@ impl YamlFrameReader {
             scale_from,
             vertical_flip,
             rotation,
-            self.next_spatial_key(),
         );
 
         let numeric_id = yaml["id"].as_i64();
@@ -2058,7 +2048,6 @@ impl YamlFrameReader {
                         should_snap: false,
                         paired_with_perspective: false,
                     },
-                    self.next_spatial_key(),
                 )
             };
             self.spatial_id_stack.push(reference_frame_id);

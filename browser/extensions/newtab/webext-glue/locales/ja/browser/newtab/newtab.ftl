@@ -8,8 +8,10 @@
 newtab-page-title = 新しいタブ
 newtab-settings-button =
     .title = 新しいタブページをカスタマイズ
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button =
     .title = このページをカスタマイズ
+#  (developer note): @nova-cleanup(remove-string): Remove newtab-customize-panel-icon-button-label once Nova lands, will be using newtab-customize-panel-label instead
 newtab-customize-panel-icon-button-label = カスタマイズ
 newtab-customize-panel-label =
     .label = カスタマイズ
@@ -44,14 +46,14 @@ newtab-search-box-handoff-text-no-engine = 検索語句、または URL を入�
 newtab-search-box-handoff-input =
     .placeholder = { $engine } で検索、または URL を入力します
     .title = { $engine } で検索、または URL を入力します
-    .aria-label = { $engine } で検索、または URL を入力します
+    .aria-label = { $engine } で検索、または URL を入力
 newtab-search-box-handoff-input-no-engine =
     .placeholder = 検索語句、または URL を入力します
     .title = 検索語句、または URL を入力します
-    .aria-label = 検索語句、または URL を入力します
+    .aria-label = 検索語句、または URL を入力
 newtab-search-box-text = ウェブを検索
 newtab-search-box-input =
-    .placeholder = ウェブを検索
+    .placeholder = ウェブを検索します
     .aria-label = ウェブを検索
 
 ## Clear text button for the URL and image URL input fields in the Top Sites form.
@@ -62,7 +64,7 @@ newtab-topsites-edit-topsites-header = トップサイトを編集
 newtab-topsites-edit-shortcut-header = ショートカットを編集
 newtab-topsites-add-shortcut-label = ショートカットを追加
 newtab-topsites-add-shortcut-title =
-    .title = ショートカットを追加
+    .title = ショートカットを追加します
     .aria-label = ショートカットを追加
 newtab-topsites-title-label = タイトル
 newtab-topsites-title-input =
@@ -111,7 +113,7 @@ topsite-label-pinned =
 # General tooltip for context menus.
 newtab-menu-section-tooltip =
     .title = メニューを開きます
-    .aria-label = メニューを開きます
+    .aria-label = メニューを開く
 # Tooltip for dismiss button
 newtab-dismiss-button-tooltip =
     .title = 削除
@@ -124,7 +126,7 @@ newtab-menu-content-tooltip =
     .aria-label = { $title } のコンテキストメニューを開く
 # Tooltip on an empty topsite box to open the New Top Site dialog.
 newtab-menu-topsites-placeholder-tooltip =
-    .title = このサイトを編集
+    .title = このサイトを編集します
     .aria-label = このサイトを編集
 
 ## Context Menu: These strings are displayed in a context menu and are meant as a call to action for a given page.
@@ -355,6 +357,8 @@ newtab-custom-widget-lists-toggle =
     .label = ToDo リスト
 newtab-custom-widget-timer-toggle =
     .label = タイマー
+newtab-custom-widget-sports-toggle =
+    .label = ワールドカップ
 newtab-custom-widget-section-title = ウィジェット
 newtab-custom-widget-section-toggle =
     .label = ウィジェット
@@ -372,7 +376,9 @@ newtab-custom-settings = 他の設定を管理
 
 newtab-wallpaper-title = 壁紙
 newtab-wallpaper-reset = 既定値にリセット
+#  (developer note): @nova-cleanup(remove-string): Remove old "Upload an image" string once Nova lands. The new "Add an image"  string will take over
 newtab-wallpaper-upload-image = 画像をアップロード
+newtab-wallpaper-add-an-image = 画像を追加
 newtab-wallpaper-custom-color = 色を選択
 newtab-wallpaper-toggle-title =
     .label = 壁紙
@@ -398,7 +404,9 @@ newtab-wallpaper-light-fox-anniversary = 霧がかかった山を背景に草原
 
 ## Solid Colors
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Solid colors" string once Nova lands. The simplified "Colors" string will take over
 newtab-wallpaper-category-title-colors = 無地
+newtab-wallpaper-colors = 無地
 newtab-wallpaper-blue = 空色
 newtab-wallpaper-light-blue = 白藍色
 newtab-wallpaper-light-purple = 紅藤
@@ -454,7 +462,7 @@ newtab-wallpaper-feature-highlight-button = 了解
 # Tooltip for dismiss button
 feature-highlight-dismiss-button =
     .title = 閉じる
-    .aria-label = ポップアップを閉じます
+    .aria-label = ポップアップを閉じる
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
@@ -487,8 +495,11 @@ newtab-weather-see-forecast =
 newtab-weather-sponsored = 提供: { $provider }
 newtab-weather-menu-change-location = 予報地点を変更
 newtab-weather-change-location-search-input-placeholder =
-    .placeholder = 場所を検索
+    .placeholder = 場所を検索します
     .aria-label = 場所を検索
+# "Current" refers to the user's physical/geographic location detected via geolocation.
+newtab-weather-change-location-search-use-current =
+    .label = 現在地を使用する
 newtab-weather-menu-weather-display = 天気表示
 newtab-weather-todays-forecast = 今日の天気予報
 newtab-weather-see-full-forecast = 天気予報の詳細を表示
@@ -514,6 +525,10 @@ newtab-weather-opt-in-not-now =
     .label = 後で
 newtab-weather-opt-in-yes =
     .label = はい
+newtab-weather-opt-in-headline = ローカルの天気予報を利用
+newtab-weather-opt-in-use-location =
+    .label = 位置情報を利用する
+newtab-weather-opt-in-choose-location = 場所を選択してください
 # We'll be showing static (fake) weather data if the user has not opted in to using their location
 newtab-weather-static-city = ニューヨーク
 # "Highest" here refers to the highest temperature of the day
@@ -573,8 +588,16 @@ newtab-topic-selection-button-pick-interests = 関心事を選ぶ
 ## e.g. Following the travel section of stories.
 
 newtab-section-follow-button = フォローする
+# Variables:
+#   $topic (string) - Topic that the user can follow
+newtab-section-follow-button-label =
+    .aria-label = { $topic } をフォロー
 newtab-section-following-button = フォロー中
 newtab-section-unfollow-button = フォロー解除
+# Variables:
+#   $topic (string) - Topic that the user is following and can unfollow
+newtab-section-unfollow-button-label =
+    .aria-label = フォロー中: { $topic } のフォローを解除
 # A modal may appear next to the Follow button, directing users to try out the feature
 newtab-section-follow-highlight-title = フィードを微調整
 newtab-section-follow-highlight-subtitle = 興味のあることをフォローして、お好みのコンテンツを多く表示します
@@ -586,6 +609,22 @@ newtab-section-follow-highlight-subtitle = 興味のあることをフォロー�
 newtab-section-block-button = ブロックする
 newtab-section-blocked-button = ブロック中
 newtab-section-unblock-button = ブロック解除
+# Variables:
+#   $topic (string) - Name of topic that user is following
+newtab-section-follow-topic =
+    .aria-label = { $topic } をフォロー
+# Variables:
+#   $topic (string) - Name of topic that user is unfollowing
+newtab-section-unfollow-topic =
+    .aria-label = { $topic } のフォローを解除
+# Variables:
+#   $topic (string) - Name of topic that user is blocking
+newtab-section-block-topic =
+    .aria-label = { $topic } をブロック
+# Variables:
+#   $topic (string) - Name of topic that user is unblocking
+newtab-section-unblock-topic =
+    .aria-label = { $topic } のブロックを解除
 
 ## Confirmation modal for blocking a section
 
@@ -619,6 +658,9 @@ newtab-new-user-custom-wallpaper-cta = 今すぐ試す
 
 ## Strings for Nova wallpaper feature highlight
 
+newtab-wallpaper-feature-highlight-title = 新しい壁紙が追加されました
+newtab-wallpaper-feature-highlight-subtitle = お気に入りの壁紙ですべての新しいタブをマイホームのようにしましょう。
+newtab-wallpaper-feature-highlight-cta = 壁紙を選ぶ
 
 ## Strings for download mobile highlight
 
@@ -688,6 +730,8 @@ newtab-widget-lists-label-beta =
 # Variables:
 #   $number (number) - Amount of list items marked complete
 newtab-widget-lists-completed-list = 完了 ({ $number })
+newtab-widget-lists-celebration-headline = よくできました
+newtab-widget-lists-celebration-subhead = すべて消去
 newtab-widget-task-list-menu-copy = コピー
 newtab-widget-lists-menu-edit = リスト名を編集
 newtab-widget-lists-menu-edit2 =
@@ -696,10 +740,10 @@ newtab-widget-lists-menu-create = 新しいリストを作成
 newtab-widget-lists-menu-delete = このリストを削除
 newtab-widget-lists-menu-copy = リストをクリップボードにコピー
 newtab-widget-lists-menu-learn-more = 詳細情報
-newtab-widget-lists-button-add-item = アイテムを追加します
+newtab-widget-lists-button-add-item = アイテムを追加
 newtab-widget-lists-input-add-an-item2 =
     .placeholder = アイテムを追加します
-    .aria-label = アイテムを追加します
+    .aria-label = アイテムを追加
 newtab-widget-lists-input-add-an-item =
     .placeholder = アイテムを追加します
 newtab-widget-lists-input-error = 追加するアイテムにテキストを含めてください
@@ -708,17 +752,26 @@ newtab-widget-lists-input-menu-move-up = 上へ移動
 newtab-widget-lists-input-menu-move-down = 下へ移動
 newtab-widget-lists-input-menu-delete = 削除
 newtab-widget-lists-input-menu-edit = 編集
+newtab-widget-lists-input-menu-edit2 =
+    .aria-label = アイテムを編集
 # the + symbol emphasises the functionality of adding a new list
 newtab-widget-lists-dropdown-create =
     .label = + 新しいリストを作成
 newtab-widget-lists-name-label-default =
     .label = ToDo リスト
+newtab-widget-lists-name-label-checklist =
+    .label = チェックリスト
 newtab-widget-lists-name-placeholder-default =
     .placeholder = ToDo リスト
+newtab-widget-lists-name-placeholder-checklist2 =
+    .placeholder = チェックリスト
+    .aria-label = リスト名を編集
 # The placeholder value of the name field for a newly created list
 newtab-widget-lists-name-placeholder-new2 =
     .placeholder = 新しいリスト
     .aria-label = リスト名を編集
+newtab-widget-lists-name-placeholder-checklist =
+    .placeholder = チェックリスト
 # The placeholder value of the name field for a newly created list
 newtab-widget-lists-name-placeholder-new =
     .placeholder = 新しいリスト
@@ -731,16 +784,23 @@ newtab-widget-size-large = 大
 # Tooltip for hide all widgets button
 newtab-widget-section-hide-all-button =
     .title = ウィジェットを隠します
-    .aria-label = すべてのウィジェットを隠します
+    .aria-label = すべてのウィジェットを隠す
 newtab-widget-section-maximize =
     .title = ウィジェットを展開します
-    .aria-label = すべてのウィジェットを最大サイズに展開します
+    .aria-label = すべてのウィジェットを最大サイズに展開する
 newtab-widget-section-minimize =
     .title = ウィジェットを最小化します
-    .aria-label = すべてのウィジェットをコンパクトサイズに折りたたみます
+    .aria-label = すべてのウィジェットをコンパクトサイズに折りたたむ
+newtab-widget-section-menu-button =
+    .title = ウィジェットメニューを開きます
+    .aria-label = ウィジェットメニューを開く
+newtab-widget-section-menu-manage = ウィジェットを管理
+newtab-widget-section-menu-hide-all = ウィジェットを隠す
+newtab-widget-section-menu-learn-more = 詳細情報
 newtab-widget-section-feedback = ご感想をお寄せください
+newtab-widget-lists-name-default = チェックリスト
 
-## Sports widget
+## Strings introduced by the Nova redesign of the Timer widget
 
 newtab-widget-timer-notification-title = タイマー
 newtab-widget-timer-notification-focus = 時間内に良い仕事をしましょう。休憩はいかが？
@@ -781,8 +841,83 @@ newtab-promo-card-dismiss-button =
     .title = 閉じる
     .aria-label = 閉じる
 
+## Strings introduced by the Nova redesign of the Timer widget
+
+# Variables:
+#   $minutes (number) - The currently selected timer duration in minutes
+newtab-widget-timer-start-aria =
+    .aria-label =
+        { $minutes ->
+           *[other] { $minutes } 分タイマーを開始
+        }
+newtab-widget-timer-pause-aria =
+    .aria-label = タイマーを一時停止
+# Variables:
+#   $minutes (number) - The currently selected timer duration in minutes
+newtab-widget-timer-spinbutton-name =
+    .aria-label = { $minutes } 分
+newtab-widget-timer-decrease-min =
+    .title = 1 分減らします
+newtab-widget-timer-increase-min =
+    .title = 1 分増やします
+newtab-widget-timer-mode-group =
+    .aria-label = タイマーモード
+# Small label shown beneath the live time while the focus timer is running or paused.
+newtab-widget-timer-running-focus = 集中
+# Small label shown beneath the live time while the break timer is running or paused.
+newtab-widget-timer-running-break = 休憩
+# Context-menu item to hide the Timer widget. Replaces the shared "Hide widget"
+# copy with a widget-specific string per the Nova design.
+newtab-widget-timer-menu-hide = タイマーを隠す
+# Heading shown inside the Timer widget after a focus session ends.
+newtab-widget-timer-celebration-heading-focus = よくできました
+# Heading shown inside the Timer widget after a break session ends.
+newtab-widget-timer-celebration-heading-break = 休憩時間終了
+# Message shown inside the Timer widget after a focus session ends.
+newtab-widget-timer-celebration-message-focus = 休憩しますか？
+# Message shown inside the Timer widget after a break session ends.
+newtab-widget-timer-celebration-message-break = 再開しますか？
+
 ## Sports widget
 
+newtab-sports-widget-menu-follow-teams = チームをフォロー
+newtab-sports-widget-menu-view-upcoming = 最新情報を見る
+newtab-sports-widget-menu-view-results = 結果を見る
+newtab-sports-widget-menu-learn-more = 詳細情報
+newtab-sports-widget-get-updates = 試合の最新情報などをリアルタイムでお届けします。
+newtab-sports-widget-view-schedule =
+    .label = スケジュールを見る
+newtab-sports-widget-follow-teams =
+    .label = チームをフォロー
+newtab-sports-widget-choose-wallpaper =
+    .label = 壁紙を選ぶ
+newtab-sports-widget-skip = スキップ
+newtab-sports-widget-done-button =
+    .label = 完了
+newtab-sports-widget-group-stage = グループステージ
+# The "LIVE" string is meant to be uppercase in English, but other languages and locales may vary in how they handle this.
+newtab-sports-widget-live = ライブ
+newtab-custom-widget-live-refresh =
+    .title = スコアを更新します
+    .aria-label = スコアを更新
+newtab-sports-widget-upcoming = 最新情報
+newtab-sports-widget-results = 結果
+newtab-sports-widget-semi-finals = 準決勝
+newtab-sports-widget-bronze-finals = 3 位決定戦
+# Final is the final match for 1st place.
+newtab-sports-widget-final = 決勝
+newtab-sports-widget-delayed = 遅延
+newtab-sports-widget-postponed = 延期
+newtab-sports-widget-suspended = 一時中断
+newtab-sports-widget-cancelled = 中止
+newtab-sports-widget-information = 試合についての情報
+newtab-sports-widget-no-live-data = 現在、ライブの試合データが更新されていません
+newtab-sports-widget-view-results-link = 結果を見る
+newtab-sports-widget-third-place = 3 位
+# Runner-up is the team in 2nd place.
+newtab-sports-widget-runner-up = 準優勝
+newtab-sports-widget-champions = 優勝
+newtab-sports-widget-world-cup-champions = 2026 ワールドカップ優勝者
 
 ## Strings for activation window message variants. In certain experiment configurations,
 ## the strings from these variants may be displayed in a message below the search input
@@ -805,3 +940,6 @@ newtab-activation-window-message-customization-focus-primary-button =
 # the existing widgetry that appears on it.
 newtab-activation-window-message-values-focus-header = ここはあなただけのスペースです
 newtab-activation-window-message-values-focus-message = { -brand-product-name } でブラウジングすると、お好みの方法でオンラインの一日を始められます。あなただけの { -brand-product-name } にしましょう。
+
+## Strings for the Clock widget
+

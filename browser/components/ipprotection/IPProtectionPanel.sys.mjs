@@ -54,6 +54,7 @@ const OPENED_WITH_LOCATION_PREF =
   "browser.ipProtection.openedPanelWithLocation";
 const LOCATION_BADGE_DISMISSED_PREF =
   "browser.ipProtection.locationButtonBadgeDismissed";
+const UPGRADE_NOT_AVAILABLE_PREF = "browser.ipProtection.upgradeNotAvailable";
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -67,6 +68,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "EGRESS_LOCATION",
   EGRESS_LOCATION_PREF,
   ""
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "UPGRADE_NOT_AVAILABLE",
+  UPGRADE_NOT_AVAILABLE_PREF,
+  false
 );
 
 let hasCustomElements = new WeakSet();
@@ -122,6 +130,8 @@ export class IPProtectionPanel {
    *  The error type as a string if an error occurred, or empty string if there are no errors.
    * @property {boolean} hasUpgraded
    *  True if a Mozilla VPN subscription is linked to the user's Mozilla account.
+   * @property {boolean} upgradeNotAvailable
+   *  True if upgrade-related messaging should be suppressed regardless of subscription state.
    * @property {string} onboardingMessage
    * Continuous onboarding message to display in-panel, empty string if none applicable
    * @property {boolean} paused
@@ -365,6 +375,7 @@ export class IPProtectionPanel {
       locationsList: lazy.IPProtectionServerlist.countries,
       error: "",
       hasUpgraded: lazy.IPProtectionService.authProvider.hasUpgraded,
+      upgradeNotAvailable: lazy.UPGRADE_NOT_AVAILABLE,
       onboardingMessage: "",
       bandwidthWarning: false,
       paused: lazy.IPPProxyManager.state === lazy.IPPProxyStates.PAUSED,
@@ -548,7 +559,7 @@ export class IPProtectionPanel {
     });
 
     if (this.state.bandwidthWarning) {
-      lazy.IPProtectionInfobarManager.hideInfobars();
+      lazy.IPProtectionInfobarManager.hideInfobars({ triggeredByPanel: true });
     }
 
     if (this.panel) {
@@ -715,7 +726,12 @@ export class IPProtectionPanel {
     // Asynchronously enroll and entitle the user.
     // It will only need to finish before the proxy can start.
     const enrolling = lazy.IPProtectionService.authProvider.enroll();
-    if (!this.active) {
+    // Only auto-open the panel if the toolbar widget is placed in a visible
+    // area.
+    let placement = lazy.CustomizableUI.getPlacementOfWidget(
+      IPProtectionPanel.WIDGET_ID
+    );
+    if (placement && !this.active) {
       await this.open();
     }
     const result = await enrolling;

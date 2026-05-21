@@ -19,6 +19,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
@@ -30,8 +31,13 @@ import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.SportsWidgetAction
 import org.mozilla.fenix.components.appstate.sports.SportsWidgetState
 import org.mozilla.fenix.compose.list.SwitchListItem
+import org.mozilla.fenix.home.sports.MatchCard
+import org.mozilla.fenix.home.sports.MatchStatus
+import org.mozilla.fenix.home.sports.SportCardErrorState
 import org.mozilla.fenix.home.sports.fake.FakeMatchCardScenario
 import org.mozilla.fenix.theme.FirefoxTheme
+
+private const val DISABLED_CHIP_ALPHA = 0.4f
 
 /**
  * Debug tool for the Homepage Sports Widget.
@@ -79,6 +85,19 @@ private fun SportsWidgetDebugToolContent(
         )
 
         SwitchListItem(
+            label = stringResource(R.string.debug_drawer_sports_widget_tool_one_week_to_world_cup),
+            checked = state.isOneWeekToWorldCup,
+            showSwitchAfter = true,
+            onClick = {
+                appStore.dispatch(
+                    SportsWidgetAction.OneWeekToWorldCupOverrideUpdated(
+                        isOneWeekToWorldCupOverride = it,
+                    ),
+                )
+            },
+        )
+
+        SwitchListItem(
             label = stringResource(R.string.debug_drawer_sports_widget_tool_skipped_follow_team),
             checked = state.hasSkippedFollowTeam,
             showSwitchAfter = true,
@@ -90,6 +109,10 @@ private fun SportsWidgetDebugToolContent(
         HorizontalDivider()
 
         MatchCardScenariosSection(state = state, appStore = appStore)
+
+        HorizontalDivider()
+
+        ErrorStateScenariosSection(state = state, appStore = appStore)
     }
 }
 
@@ -104,18 +127,55 @@ private fun MatchCardScenariosSection(
             .padding(horizontal = FirefoxTheme.layout.space.static200),
         horizontalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.static50),
     ) {
-        val currentCardState = state.matchCardState
+        val currentCardStates = state.matchCardStates
 
         FakeMatchCardScenario.entries.forEach { scenario ->
-            val matchCardState = scenario.build()
+            val matchCardStates: List<MatchCard> = scenario.build()
+            val isSelected = currentCardStates == matchCardStates
             SelectableChip(
                 text = scenario.label,
-                selected = currentCardState == matchCardState,
+                selected = isSelected,
                 onClick = {
                     appStore.dispatch(
-                        SportsWidgetAction.MatchCardStateUpdated(matchCardState = matchCardState),
+                        SportsWidgetAction.MatchCardStateUpdated(
+                            matchCardStates = if (isSelected) emptyList() else matchCardStates,
+                        ),
                     )
                 },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ErrorStateScenariosSection(
+    state: SportsWidgetState,
+    appStore: AppStore,
+) {
+    val hasLiveMatch = state.matchCardStates.any { card ->
+        card.matches.any { match ->
+            match.matchStatus is MatchStatus.Live || match.matchStatus is MatchStatus.Penalties
+        }
+    }
+
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = FirefoxTheme.layout.space.static200),
+        horizontalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.static50),
+    ) {
+        SportCardErrorState.entries.forEach { errorState ->
+            val isSelected = state.errorState == errorState
+            val action: SportsWidgetAction? = when {
+                !hasLiveMatch -> null
+                isSelected -> SportsWidgetAction.MatchCardStateUpdated(matchCardStates = state.matchCardStates)
+                else -> SportsWidgetAction.FetchFailed(error = errorState)
+            }
+            SelectableChip(
+                text = errorState.name,
+                selected = isSelected,
+                modifier = Modifier.alpha(if (hasLiveMatch) 1f else DISABLED_CHIP_ALPHA),
+                onClick = { action?.let(appStore::dispatch) },
             )
         }
     }
@@ -128,13 +188,13 @@ private class SportsWidgetDebugToolPreviewProvider : PreviewParameterProvider<Sp
             countriesSelected = setOf("USA", "PAR"),
             isCountdownWidgetVisible = true,
             hasSkippedFollowTeam = false,
-            matchCardState = FakeMatchCardScenario.Live.build(),
+            matchCardStates = FakeMatchCardScenario.Live.build(),
         ),
         SportsWidgetState(
             countriesSelected = setOf("USA"),
             isCountdownWidgetVisible = false,
             hasSkippedFollowTeam = true,
-            matchCardState = FakeMatchCardScenario.Final.build(),
+            matchCardStates = FakeMatchCardScenario.Final.build(),
         ),
     )
 }

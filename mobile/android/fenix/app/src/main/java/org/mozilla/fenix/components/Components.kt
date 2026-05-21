@@ -18,7 +18,6 @@ import mozilla.components.feature.addons.amo.AMOAddonsProvider
 import mozilla.components.feature.addons.migration.DefaultSupportedAddonsChecker
 import mozilla.components.feature.addons.update.DefaultAddonUpdater
 import mozilla.components.feature.autofill.AutofillConfiguration
-import mozilla.components.feature.ipprotection.IPProtectionStore
 import mozilla.components.feature.summarize.PageSummaryFeature
 import mozilla.components.feature.summarize.settings.SummarizationSettings
 import mozilla.components.lib.ai.controls.default
@@ -58,6 +57,8 @@ import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.setup.checklist.SetupChecklistState
 import org.mozilla.fenix.components.appstate.setup.checklist.getSetupChecklistCollection
 import org.mozilla.fenix.components.appstate.sports.SportsWidgetState
+import org.mozilla.fenix.components.ipprotection.IPProtection
+import org.mozilla.fenix.components.lens.GoogleLensAIControlFeature
 import org.mozilla.fenix.components.llm.Llm
 import org.mozilla.fenix.components.llm.ext.accessTokenProvider
 import org.mozilla.fenix.components.metrics.MetricsMiddleware
@@ -81,6 +82,8 @@ import org.mozilla.fenix.home.middleware.HomeTelemetryMiddleware
 import org.mozilla.fenix.home.setup.store.DefaultSetupChecklistRepository
 import org.mozilla.fenix.home.setup.store.SetupChecklistPreferencesMiddleware
 import org.mozilla.fenix.home.setup.store.SetupChecklistTelemetryMiddleware
+import org.mozilla.fenix.home.sports.SportsWidgetMiddleware
+import org.mozilla.fenix.home.sports.WorldCupMatchesRepository
 import org.mozilla.fenix.ipprotection.IPProtectionManager
 import org.mozilla.fenix.ipprotection.store.DefaultIPProtectionPromptRepository
 import org.mozilla.fenix.messaging.state.MessagingMiddleware
@@ -96,6 +99,8 @@ import org.mozilla.fenix.reviewprompt.ReviewPromptMiddleware
 import org.mozilla.fenix.search.VoiceSearchAIControlFeature
 import org.mozilla.fenix.settings.ai.AIControlsSearchProvider
 import org.mozilla.fenix.settings.datachoices.DataChoicesSearchProvider
+import org.mozilla.fenix.settings.emailmasks.middleware.DefaultEmailMasksRepository
+import org.mozilla.fenix.settings.emailmasks.middleware.EmailMasksRepository
 import org.mozilla.fenix.settings.labs.FirefoxLabsSettingsSearchProvider
 import org.mozilla.fenix.settings.pagesummaries.PageSummariesSettingsSearchProvider
 import org.mozilla.fenix.settings.settingssearch.DefaultFenixSettingsIndexer
@@ -236,6 +241,9 @@ class Components(private val context: Context) {
                 context.getString(R.string.remote_settings_server_prod) -> RemoteSettingsServer.Prod.into()
                 context.getString(R.string.remote_settings_server_dev) -> RemoteSettingsServer.Dev.into()
                 context.getString(R.string.remote_settings_server_stage) -> RemoteSettingsServer.Stage.into()
+                context.getString(R.string.remote_settings_server_prod_v2) -> RemoteSettingsServer.ProdV2.into()
+                context.getString(R.string.remote_settings_server_dev_v2) -> RemoteSettingsServer.DevV2.into()
+                context.getString(R.string.remote_settings_server_stage_v2) -> RemoteSettingsServer.StageV2.into()
                 else -> RemoteSettingsServer.Prod.into()
             },
             channel = BuildConfig.BUILD_TYPE,
@@ -254,7 +262,6 @@ class Components(private val context: Context) {
     val clipboardHandler by lazyMonitored { ClipboardHandler(context) }
     val performance by lazyMonitored { PerformanceComponent() }
     val push by lazyMonitored { Push(context, analytics.crashReporter) }
-    val ipProtectionStore by lazyMonitored { IPProtectionStore() }
     val wifiConnectionMonitor by lazyMonitored { WifiConnectionMonitor(context as Application) }
 
     val strictMode by lazyMonitored {
@@ -360,6 +367,7 @@ class Components(private val context: Context) {
                     settings.migrateLastReviewPromptTimePrefIfNeeded(nimbus.events)
                 },
                 AppVisualCompletenessMiddleware(performance.visualCompletenessQueue),
+                SportsWidgetMiddleware(sportsRepository = WorldCupMatchesRepository()),
             ),
         ).also {
             it.dispatch(AppAction.SetupChecklistAction.Init)
@@ -386,6 +394,7 @@ class Components(private val context: Context) {
         isVisible = settings.showHomepageSportsWidget,
         isFeatureEnabled = settings.enableHomepageSportsWidget,
         isCountdownWidgetVisible = settings.showHomepageCountdownWidget,
+        forceOneWeekToWorldCup = settings.forceOneWeekToWorldCup,
     )
 
     val fxSuggest by lazyMonitored { FxSuggest(context, remoteSettingsService.value, analytics.crashReporter) }
@@ -459,6 +468,10 @@ class Components(private val context: Context) {
         RelayEligibilityStore(middleware = listOf(ClearLastUsedMiddleware()))
     }
 
+    val emailMasksRepository: EmailMasksRepository by lazyMonitored {
+        DefaultEmailMasksRepository(settings)
+    }
+
     val relayFeatureIntegration by lazyMonitored {
         RelayFeatureIntegration(
             engine = core.engine,
@@ -483,6 +496,9 @@ class Components(private val context: Context) {
                     onUpdateWidget = { VoiceSearchAIControlFeature.updateWidget(context) },
                 ),
             )
+            if (settings.googleLensIntegrationEnabled) {
+                it.register(GoogleLensAIControlFeature(settings = context.settings()))
+            }
         }
     }
 
@@ -505,6 +521,17 @@ class Components(private val context: Context) {
     }
 
     val clientUUID by lazyMonitored { ClientUUID.build(context) }
+
+    val ipProtection by lazyMonitored {
+        IPProtection(
+            engine = core.engine,
+            browserStore = core.store,
+            syncStore = backgroundServices.syncStore,
+            lazyFxaAccountManager = lazy { backgroundServices.accountManager },
+            settings = settings,
+            context = context,
+        )
+    }
 }
 
 /**

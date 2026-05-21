@@ -1612,6 +1612,21 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
         "is refreshed.");
   }
 
+  if (zStats.stringsDeduplicationTruncated) {
+    MOZ_ASSERT(!zStats.isTotals);
+    nsAutoCString desc;
+    desc.AppendPrintf(
+        "String deduplication was stopped after 5 seconds because there "
+        "were too many strings (%zu total in this zone). The notable strings "
+        "listed above are only those seen before the cutoff.",
+        zStats.stringsTotalCount);
+    handleReport->Callback(
+        ""_ns,
+        pathPrefix + "strings/string(<deduplication-truncated>)/count"_ns,
+        nsIMemoryReporter::KIND_OTHER, nsIMemoryReporter::UNITS_COUNT,
+        zStats.stringsTotalCount, desc, data);
+  }
+
   const JS::ShapeInfo& shapeInfo = zStats.shapeInfo;
   if (shapeInfo.shapesGCHeapShared > 0) {
     REPORT_GC_BYTES(pathPrefix + "shapes/gc-heap/shared"_ns,
@@ -2342,6 +2357,13 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
         " to RSS, only vsize.");
   }
 
+  if (rtStats.runtime.wasmContStacks > 0) {
+    REPORT_BYTES(
+        "wasm-cont-stacks"_ns, KIND_OTHER, rtStats.runtime.wasmContStacks,
+        "Memory mapped for wasm continuation stacks (JS Promise Integration "
+        "and stack-switching), including guard pages.");
+  }
+
   // Report the numbers for memory outside of realms.
 
   REPORT_BYTES("js-main-runtime/gc-heap/unused-chunks"_ns, KIND_OTHER,
@@ -3003,7 +3025,7 @@ static nsresult ReadSourceFromFilename(JSContext* cx, const char* filename,
   // Allocate a buffer the size of the file to initially fill with the UTF-8
   // contents of the file.  Use the JS allocator so that if UTF-8 source was
   // requested, we can return this memory directly.
-  JS::UniqueChars buf(js_pod_malloc<char>(rawLen));
+  JS::UniqueChars buf(js_pod_malloc<char>(static_cast<size_t>(rawLen)));
   if (!buf) {
     return NS_ERROR_OUT_OF_MEMORY;
   }

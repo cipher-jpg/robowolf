@@ -511,6 +511,7 @@
 
       this.#commandButtons.shareTabGroup.addEventListener("command", () => {
         ContentSharingUtils.handleShareTabGroup(this.activeGroup);
+        this.close();
       });
 
       this.panel.addEventListener("popupshown", this);
@@ -740,7 +741,9 @@
         label.htmlFor = input.id;
         label.style.setProperty(
           "--tabgroup-swatch-color",
-          `var(--tab-group-color-${colorCode})`
+          Services.prefs.getBoolPref("browser.nova.enabled")
+            ? `var(--tab-group-${colorCode})`
+            : `var(--tab-group-color-${colorCode})`
         );
         label.style.setProperty(
           "--tabgroup-swatch-color-invert",

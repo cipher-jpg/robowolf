@@ -29,8 +29,6 @@ var gExceptionPaths = [
   "chrome://activity-stream/content/data/content/tippytop/images/",
   "chrome://activity-stream/content/data/content/tippytop/favicons/",
   // These resources are referenced by messages delivered through Remote Settings
-  "chrome://activity-stream/content/data/content/assets/mobile-download-qr-new-user-cn.svg",
-  "chrome://activity-stream/content/data/content/assets/mobile-download-qr-existing-user-cn.svg",
   "chrome://activity-stream/content/data/content/assets/mr-amo-collection.svg",
   "chrome://activity-stream/content/data/content/assets/person-typing.svg",
   "chrome://activity-stream/content/data/content/assets/tabs-side-zap-transparent.svg",
@@ -62,9 +60,6 @@ var gExceptionPaths = [
   "resource://gre-resources/autofill/",
   // Localization file added programatically in FormAutofillUtils.sys.mjs
   "resource://gre/localization/en-US/toolkit/formautofill",
-
-  // Exclude all search-extensions because they aren't referenced by filename
-  "resource://search-extensions/",
 
   // Exclude all services-automation because they are used through webdriver
   "resource://gre/modules/services-automation/",
@@ -197,9 +192,6 @@ var allowlist = [
   {
     file: "chrome://browser/content/preferences/more-from-mozilla-qr-code-simple.svg",
   },
-  {
-    file: "chrome://browser/content/preferences/more-from-mozilla-qr-code-simple-cn.svg",
-  },
 
   { file: "resource://gre/greprefs.js" },
 
@@ -241,12 +233,7 @@ var allowlist = [
 
   // File from the ipp-activator add-on
   { file: "resource://builtin-addons/ipp-activator/breakages/tab.json" },
-
-  // Referenced by devtools/client/themes/toolbox.css and
-  // devtools/client/debugger/src/components/PrimaryPanes/Tracer.css. The test
-  // splits devtools and non-devtools passes, so the non-devtools pass can't
-  // see those cross-domain references.
-  { file: "chrome://global/skin/icons/experiments.svg" },
+  { file: "resource://builtin-addons/ipp-activator/breakages/tabWC.json" },
 
   // Starting from here, files in the allowlist are bugs that need fixing.
   // Bug 1339424 (wontfix?)
@@ -336,6 +323,11 @@ var allowlist = [
   // and this file will be needed for that.
   {
     file: "resource://app/modules/backup/CookiesBackupResource.sys.mjs",
+  },
+
+  // Bug 2035340: TabManagementService will be used by AI Window for tab management
+  {
+    file: "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs",
   },
 
   // Bug 2023223: Replace loginOrigin, addresses, payments, and form history

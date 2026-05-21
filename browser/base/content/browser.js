@@ -1064,6 +1064,7 @@ const gStoragePressureObserver = {
     }
     this._lastNotificationTime = Date.now();
 
+    MozXULElement.insertFTLIfNeeded("branding/brand.ftl");
     MozXULElement.insertFTLIfNeeded("browser/preferences/preferences.ftl");
 
     const BYTES_IN_GIGABYTE = 1073741824;
@@ -3158,7 +3159,7 @@ function updateToggleControlLabel(control) {
 
 // Propagates Win10's tablet mode into the browser CSS. (Win11's tablet mode is
 // more like non-tablet mode and has no need for this.)
-const Win10TabletModeUpdater = {
+var Win10TabletModeUpdater = {
   init() {
     if (AppConstants.platform == "win") {
       this.update(WindowsUIUtils.inWin10TabletMode);
@@ -4064,8 +4065,16 @@ var MousePosTracker = {
       return;
     }
 
-    this._x = event.screenX - window.mozInnerScreenX;
-    this._y = event.screenY - window.mozInnerScreenY;
+    // event.screenX is in CSS pixels of the event target's document, which may
+    // be zoomed independently of the chrome window (e.g. devtools). Rescale to
+    // chrome CSS pixels so the comparison with chrome-side rects is valid.
+    const sourceWin = event.target.documentGlobal;
+    const scale =
+      sourceWin !== window
+        ? sourceWin.devicePixelRatio / window.devicePixelRatio
+        : 1;
+    this._x = event.screenX * scale - window.mozInnerScreenX;
+    this._y = event.screenY * scale - window.mozInnerScreenY;
 
     this._listeners.forEach(listener => {
       try {
@@ -4606,7 +4615,7 @@ var gDialogBox = {
       template,
       parentElement,
       id: "window-modal-dialog-subdialog",
-      options: {
+      dialogOptions: {
         consumeOutsideClicks: false,
       },
     });
@@ -4708,8 +4717,20 @@ var ConfirmationHint = {
    *         - descriptionId (string): message ID of the description text
    *         - position (string): position of the panel relative to the anchor.
    *         - l10nArgs (object): l10n arguments for the messageId.
+   *         - hideCheckmark: Whether to hide the animated checkmark
    */
-  show(anchor, messageId, options = {}) {
+  show(
+    anchor,
+    messageId,
+    {
+      hideCheckmark = false,
+      descriptionId,
+      l10nArgs,
+      showDescription,
+      position,
+      event,
+    } = {}
+  ) {
     this._reset();
 
     MozXULElement.insertFTLIfNeeded("toolkit/branding/brandings.ftl");
@@ -4723,9 +4744,9 @@ var ConfirmationHint = {
       MozXULElement.insertFTLIfNeeded("browser/ipProtection.ftl");
     }
 
-    document.l10n.setAttributes(this._message, messageId, options.l10nArgs);
-    if (options.descriptionId) {
-      document.l10n.setAttributes(this._description, options.descriptionId);
+    document.l10n.setAttributes(this._message, messageId, l10nArgs);
+    if (descriptionId) {
+      document.l10n.setAttributes(this._description, descriptionId);
       this._description.hidden = false;
       this._panel.classList.add("with-description");
     } else {
@@ -4735,10 +4756,14 @@ var ConfirmationHint = {
 
     this._panel.setAttribute("data-message-id", messageId);
 
+    if (!hideCheckmark) {
+      this._panel.classList.add("with-checkmark");
+    }
+
     // The timeout value used here allows the panel to stay open for
     // 3s after the text transition (duration=120ms) has finished.
     // If there is a description, we show for 6s after the text transition.
-    const DURATION = options.showDescription ? 6000 : 3000;
+    const DURATION = showDescription ? 6000 : 3000;
     this._panel.addEventListener(
       "popupshown",
       () => {
@@ -4760,8 +4785,8 @@ var ConfirmationHint = {
     );
 
     this._panel.openPopup(anchor, {
-      position: options.position ?? "bottomleft topleft",
-      triggerEvent: options.event,
+      position: position ?? "bottomleft topleft",
+      triggerEvent: event,
     });
   },
 
@@ -4773,6 +4798,7 @@ var ConfirmationHint = {
     if (this.__panel) {
       this._animationBox.removeAttribute("animate");
       this._panel.removeAttribute("data-message-id");
+      this._panel.classList.remove("with-checkmark");
     }
   },
 

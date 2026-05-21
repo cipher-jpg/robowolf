@@ -24,27 +24,62 @@ interface IPProtectionHandler {
     fun deactivate()
 
     /**
+     * Triggers enrollment via the active auth provider. The [onResult] callback is invoked once
+     * the enrollment attempt has completed, with the final outcome.
+     *
+     * @param onResult Called with the [EnrollResult] describing whether the user is now enrolled
+     *  and entitled, and the error string if not.
+     */
+    fun enroll(onResult: (EnrollResult) -> Unit)
+
+    /**
+     * Request for the current [ServiceState].
+     */
+    fun getState(onResult: (ServiceState) -> Unit)
+
+    /**
      * Initializes the proxy state machine.
      */
     fun init()
 
     /**
-     * Sets the [TokenProvider] used to supply authentication tokens to the IP protection service.
+     * Uninitializes the proxy state machine.
+     */
+    fun uninit()
+
+    /**
+     * Sets the [AuthProvider] used to supply authentication tokens to the IP protection service.
      * Pass null to sign out.
      *
-     * @param provider The [TokenProvider], or null to deauthenticate.
-     * @param onInitialState Called with the state resolved after the token provider is set.
+     * @param provider The [AuthProvider], or null to deauthenticate.
      */
-    fun setTokenProvider(
-        provider: TokenProvider?,
-        onInitialState: ((StateInfo) -> Unit)? = null,
+    // FIXME(IPP) move this to the IPProtectionDelegate.
+    fun setAuthProvider(
+        provider: AuthProvider?,
     )
+
+    /**
+     * Result of an enrollment attempt.
+     *
+     * @property isEnrolledAndEntitled Whether the user is now enrolled and entitled to use the
+     *  proxy.
+     * @property error Error string describing why enrollment failed, or null on success.
+     */
+    data class EnrollResult(
+        val isEnrolledAndEntitled: Boolean,
+        val error: String? = null,
+    )
+
+    /**
+     * Notify account state changed.
+     */
+    fun notifyAccountStatus(signedIn: Boolean)
 
     /**
      * Provides a fresh authentication token on demand. Invoked each time the engine needs to
      * authenticate with the Guardian API.
      */
-    interface TokenProvider {
+    interface AuthProvider {
         /**
          * Fetches a fresh authentication token and delivers it via [onComplete].
          * Pass null to [onComplete] if the token could not be obtained.
@@ -57,7 +92,7 @@ interface IPProtectionHandler {
      */
     // refactor to enum in https://bugzilla.mozilla.org/show_bug.cgi?id=2030410
     data class StateInfo(
-        val serviceState: Int = SERVICE_STATE_UNINITIALIZED,
+        val serviceState: ServiceState = ServiceState.Uninitialized,
         val proxyState: Int = PROXY_STATE_NOT_READY,
         val lastError: String? = null,
         val remaining: Long = -1L,
@@ -65,14 +100,9 @@ interface IPProtectionHandler {
         val resetTime: String? = null,
     ) {
         val isEnrollmentNeeded: Boolean
-            get() = serviceState == SERVICE_STATE_UNAUTHENTICATED
+            get() = serviceState == ServiceState.Unauthenticated
 
         companion object {
-            const val SERVICE_STATE_UNINITIALIZED = 0
-            const val SERVICE_STATE_UNAVAILABLE = 1
-            const val SERVICE_STATE_UNAUTHENTICATED = 2
-            const val SERVICE_STATE_READY = 3
-
             const val PROXY_STATE_NOT_READY = 0
             const val PROXY_STATE_READY = 1
             const val PROXY_STATE_ACTIVATING = 2
@@ -82,13 +112,6 @@ interface IPProtectionHandler {
         }
 
         override fun toString(): String {
-            val service = when (serviceState) {
-                SERVICE_STATE_UNINITIALIZED -> "UNINITIALIZED"
-                SERVICE_STATE_UNAVAILABLE -> "UNAVAILABLE"
-                SERVICE_STATE_UNAUTHENTICATED -> "UNAUTHENTICATED"
-                SERVICE_STATE_READY -> "READY"
-                else -> "UNKNOWN($serviceState)"
-            }
             val proxy = when (proxyState) {
                 PROXY_STATE_NOT_READY -> "NOT_READY"
                 PROXY_STATE_READY -> "READY"
@@ -98,9 +121,29 @@ interface IPProtectionHandler {
                 PROXY_STATE_PAUSED -> "PAUSED"
                 else -> "UNKNOWN($proxyState)"
             }
-            return "StateInfo(serviceState=$service, proxyState=$proxy," +
+            return "StateInfo(serviceState=$serviceState, proxyState=$proxy," +
                 " remaining=$remaining, max=$max, resetTime=$resetTime," +
                 " lastError=$lastError)"
         }
     }
+}
+
+/** The possible states of the IP protection service. */
+@ExperimentalAndroidComponentsApi
+enum class ServiceState {
+
+    /** The service has not been initialized yet. */
+    Uninitialized,
+
+    /** The user is not eligible or still not signed in. */
+    Unavailable,
+
+    /** The user is signed out but eligible. */
+    Unauthenticated,
+
+    /** The user has opted out from using VPN. */
+    OptedOut,
+
+    /** The service is ready to be activated. */
+    Ready,
 }

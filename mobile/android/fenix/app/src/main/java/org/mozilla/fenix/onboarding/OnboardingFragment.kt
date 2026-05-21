@@ -23,6 +23,8 @@ import androidx.fragment.compose.content
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import kotlinx.coroutines.launch
+import mozilla.components.browser.state.action.WebExtensionAction
+import mozilla.components.browser.state.state.extension.WebExtensionPromptRequest
 import mozilla.components.compose.base.LinkTextState
 import mozilla.components.concept.engine.webextension.InstallationMethod
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
@@ -40,6 +42,8 @@ import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.SupportedMenuNotifications
 import org.mozilla.fenix.components.initializeGlean
 import org.mozilla.fenix.components.metrics.Event
+import org.mozilla.fenix.components.metrics.InstallReferrerHandlingService
+import org.mozilla.fenix.components.metrics.RtamoAttributionHandler
 import org.mozilla.fenix.components.metrics.installSourcePackage
 import org.mozilla.fenix.components.startMetricsIfEnabled
 import org.mozilla.fenix.ext.application
@@ -77,6 +81,10 @@ class OnboardingFragment : Fragment() {
 
     private val removeMarketingFeature = ViewBoundFeatureWrapper<MarketingPageRemovalSupport>()
 
+    private val rtamoAttributionHandler by lazy {
+        RtamoAttributionHandler(requireContext(), requireContext().settings(), requireComponents.addonsProvider)
+    }
+
     private val termsOfServiceEventHandler by lazy {
         DefaultOnboardingTermsOfServiceEventHandler(
             telemetryRecorder = telemetryRecorder,
@@ -89,23 +97,13 @@ class OnboardingFragment : Fragment() {
 
     private val pagesToDisplay by lazy {
         with(requireContext()) {
-            if (settings().rtamoAddonDownloadUrl.isNotBlank()) {
-                pagesToDisplay(
-                    showDefaultBrowserPage = false,
-                    showNotificationPage = false,
-                    showAddWidgetPage = false,
-                ).filter {
-                    it.type == OnboardingPageUiData.Type.TERMS_OF_SERVICE
-                }.toMutableList()
-            } else {
-                pagesToDisplay(
-                    showDefaultBrowserPage = displayDefaultBrowserPage(this),
-                    showNotificationPage = canShowNotificationPage(this),
-                    showAddWidgetPage = AppWidgetManager.getInstance(requireContext())
-                        ?.let { canShowAddSearchWidgetPrompt(it) }
-                        ?: false,
-                ).toMutableList()
-            }
+            pagesToDisplay(
+                showDefaultBrowserPage = displayDefaultBrowserPage(this),
+                showNotificationPage = canShowNotificationPage(this),
+                showAddWidgetPage = AppWidgetManager.getInstance(requireContext())
+                    ?.let { canShowAddSearchWidgetPrompt(it) }
+                    ?: false,
+            ).toMutableList()
         }
     }
 
@@ -484,6 +482,8 @@ class OnboardingFragment : Fragment() {
             Pings.onboardingOptOut.submit()
         }
 
+        rtamoAttributionHandler.handleReferrer(InstallReferrerHandlingService.response)
+
         // The marketing telemetry may be enabled after finishing onboarding.
         startMetricsIfEnabled(
             logger = logger,
@@ -522,19 +522,27 @@ class OnboardingFragment : Fragment() {
 
         requireComponents.analytics.metrics.track(Event.GrowthData.ConversionEvent6)
 
-        val downloadUrl = settings.rtamoAddonDownloadUrl
-        if (downloadUrl.isNotBlank()) {
-            settings.rtamoAddonDownloadUrl = ""
-            requireComponents.addonManager.installAddon(
-                url = downloadUrl,
-                installationMethod = InstallationMethod.RTAMO,
-            )
-        }
-
         findNavController().nav(
             id = R.id.onboardingFragment,
             directions = OnboardingFragmentDirections.actionHome(),
         )
+
+        val downloadUrl = settings.rtamoAddonDownloadUrl
+        if (downloadUrl.isNotBlank()) {
+            requireComponents.core.store.dispatch(
+                WebExtensionAction.UpdatePromptRequestWebExtensionAction(
+                    WebExtensionPromptRequest.InstallationRequested(
+                        url = downloadUrl,
+                        name = settings.rtamoAddonName,
+                        iconUrl = settings.rtamoAddonImageUrl,
+                        installationMethod = InstallationMethod.RTAMO,
+                    ),
+                ),
+            )
+        }
+        settings.rtamoAddonDownloadUrl = ""
+        settings.rtamoAddonName = ""
+        settings.rtamoAddonImageUrl = ""
 
         maybeAddMenuNotification()
     }

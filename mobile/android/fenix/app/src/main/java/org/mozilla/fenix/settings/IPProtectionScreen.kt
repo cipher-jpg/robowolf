@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.settings
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,10 +16,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -31,7 +31,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -42,36 +41,25 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import mozilla.components.ExperimentalAndroidComponentsApi
+import mozilla.components.compose.base.LinkTextState
+import mozilla.components.compose.base.PromoCard
 import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import mozilla.components.compose.base.button.FilledButton
 import mozilla.components.concept.engine.ipprotection.IPProtectionHandler
-import mozilla.components.concept.engine.ipprotection.IPProtectionHandler.StateInfo.Companion.PROXY_STATE_ACTIVATING
-import mozilla.components.concept.engine.ipprotection.IPProtectionHandler.StateInfo.Companion.PROXY_STATE_ACTIVE
-import mozilla.components.concept.engine.ipprotection.IPProtectionHandler.StateInfo.Companion.PROXY_STATE_ERROR
-import mozilla.components.concept.engine.ipprotection.IPProtectionHandler.StateInfo.Companion.PROXY_STATE_PAUSED
-import mozilla.components.concept.engine.ipprotection.IPProtectionHandler.StateInfo.Companion.PROXY_STATE_READY
+import mozilla.components.concept.engine.ipprotection.ServiceState
+import mozilla.components.feature.ipprotection.store.state.Authorized
+import mozilla.components.feature.ipprotection.store.state.BYTES_PER_GB
+import mozilla.components.feature.ipprotection.store.state.EligibilityStatus
+import mozilla.components.feature.ipprotection.store.state.IPProtectionState
+import mozilla.components.feature.ipprotection.store.state.maxDataGb
+import mozilla.components.feature.ipprotection.store.state.usedDataGb
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.list.TextListItem
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 
-private const val BYTES_PER_GIB = 1024 * 1024 * 1024f
-private val PROMO_CARD_CORNER_RADIUS = 28.dp
 private val PROMO_ILLUSTRATION_SIZE = 60.dp
-
-@OptIn(ExperimentalAndroidComponentsApi::class)
-private fun IPProtectionHandler.StateInfo.isSwitchChecked() =
-    proxyState == PROXY_STATE_ACTIVE || proxyState == PROXY_STATE_ACTIVATING
-
-@OptIn(ExperimentalAndroidComponentsApi::class)
-private fun IPProtectionHandler.StateInfo.isToggleEnabled() =
-    proxyState == PROXY_STATE_ACTIVE || proxyState == PROXY_STATE_ACTIVATING ||
-        proxyState == PROXY_STATE_READY || proxyState == PROXY_STATE_ERROR
-
-@OptIn(ExperimentalAndroidComponentsApi::class)
-private fun IPProtectionHandler.StateInfo.useColorfulIllustration() =
-    proxyState == PROXY_STATE_ACTIVE || proxyState == PROXY_STATE_ACTIVATING
 
 /**
  * The main VPN / IP Protection settings screen.
@@ -81,10 +69,9 @@ private fun IPProtectionHandler.StateInfo.useColorfulIllustration() =
  * @param onLearnMoreClick Called when any "Learn more" link is tapped.
  * @param onGetStartedClick Called when the "Get started" button is tapped.
  */
-@OptIn(ExperimentalAndroidComponentsApi::class)
 @Composable
 fun IPProtectionScreen(
-    state: IPProtectionHandler.StateInfo,
+    state: IPProtectionState,
     onVpnToggle: (Boolean) -> Unit,
     onLearnMoreClick: () -> Unit,
     onGetStartedClick: () -> Unit,
@@ -99,7 +86,7 @@ fun IPProtectionScreen(
             Spacer(modifier = Modifier.height(FirefoxTheme.layout.space.static100))
 
             VpnPromoCard(
-                isActive = state.useColorfulIllustration(),
+                isActive = state.proxyStatus is Authorized.Active,
                 onLearnMoreClick = onLearnMoreClick,
                 modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.dynamic200),
             )
@@ -107,14 +94,14 @@ fun IPProtectionScreen(
             Spacer(modifier = Modifier.height(FirefoxTheme.layout.space.static200))
 
             VpnToggleRow(
-                checked = state.isSwitchChecked(),
-                enabled = state.isToggleEnabled(),
+                checked = state.proxyStatus is Authorized.Active,
+                enabled = state.proxyStatus is Authorized && state.proxyStatus !is Authorized.DataLimitReached,
                 onToggle = onVpnToggle,
             )
 
             HorizontalDivider()
 
-            if (!state.isEnrollmentNeeded) {
+            if (state.proxyStatus is Authorized) {
                 DataLimitSection(state = state, onLearnMoreClick = onLearnMoreClick)
 
                 HorizontalDivider()
@@ -140,10 +127,10 @@ fun IPProtectionScreen(
 @OptIn(ExperimentalAndroidComponentsApi::class)
 @Composable
 private fun DataLimitSection(
-    state: IPProtectionHandler.StateInfo,
+    state: IPProtectionState,
     onLearnMoreClick: () -> Unit,
 ) {
-    val isDataLimitReached = state.proxyState == PROXY_STATE_PAUSED
+    val isDataLimitReached = state.proxyStatus is Authorized.DataLimitReached
 
     Column(
         modifier = Modifier
@@ -161,16 +148,13 @@ private fun DataLimitSection(
 
         if (!isDataLimitReached) {
             Text(
-                text = dataLimitDescription(state, stringResource(R.string.ip_protection_data_limit_value)),
+                text = stringResource(R.string.ip_protection_data_limit_value, state.usedDataGb, state.maxDataGb),
                 style = FirefoxTheme.typography.body2,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
             Text(
-                text = stringResource(
-                    R.string.ip_protection_data_limit_reached_description,
-                    state.max / BYTES_PER_GIB,
-                ),
+                text = stringResource(R.string.ip_protection_data_limit_reached_description, state.maxDataGb),
                 style = FirefoxTheme.typography.body2,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -178,11 +162,11 @@ private fun DataLimitSection(
     }
 
     LinearProgressIndicator(
-        progress = { if (isDataLimitReached) 1f else dataProgress(state) },
+        progress = { if (isDataLimitReached) 1f else (state.usedDataGb / state.maxDataGb).coerceIn(0f, 1f) },
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = FirefoxTheme.layout.space.dynamic200)
-            .clip(RoundedCornerShape(percent = 50)),
+            .clip(CircleShape),
         color = MaterialTheme.colorScheme.primary,
         trackColor = MaterialTheme.colorScheme.surfaceVariant,
         drawStopIndicator = {},
@@ -193,7 +177,7 @@ private fun DataLimitSection(
     val linkColor = MaterialTheme.colorScheme.tertiary
     Text(
         text = buildAnnotatedString {
-            append(stringResource(R.string.ip_protection_data_reset_info, state.max / BYTES_PER_GIB))
+            append(stringResource(R.string.ip_protection_data_reset_info, state.maxDataGb))
             append(" ")
             withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
                 append(stringResource(R.string.ip_protection_learn_more))
@@ -277,41 +261,20 @@ private fun VpnPromoCard(
     onLearnMoreClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    val learnMoreText = stringResource(R.string.ip_protection_learn_more)
+    val description = stringResource(R.string.ip_protection_promo_body_2, learnMoreText)
+
+    PromoCard(
+        description = null,
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shape = RoundedCornerShape(PROMO_CARD_CORNER_RADIUS),
-    ) {
-        Row(
-            modifier = Modifier.padding(FirefoxTheme.layout.space.static200),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.ip_protection_promo_headline, stringResource(R.string.firefox)),
-                    style = FirefoxTheme.typography.headline7,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(FirefoxTheme.layout.space.static50))
-
-                val linkColor = MaterialTheme.colorScheme.tertiary
-                Text(
-                    text = buildAnnotatedString {
-                        append(stringResource(R.string.ip_protection_promo_body))
-                        append(" ")
-                        withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
-                            append(stringResource(R.string.ip_protection_learn_more))
-                        }
-                    },
-                    style = FirefoxTheme.typography.body2,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable { onLearnMoreClick() },
-                )
-            }
-
-            Spacer(modifier = Modifier.width(FirefoxTheme.layout.space.static200))
-
-            Icon(
+        title = stringResource(R.string.ip_protection_promo_headline, stringResource(R.string.firefox)),
+        footer = description to LinkTextState(
+            text = learnMoreText,
+            url = "",
+            onClick = { onLearnMoreClick() },
+        ),
+        illustration = {
+            Image(
                 painter = painterResource(
                     if (isActive) {
                         R.drawable.ic_kit_shield_on_state
@@ -321,27 +284,10 @@ private fun VpnPromoCard(
                 ),
                 contentDescription = null,
                 modifier = Modifier.size(PROMO_ILLUSTRATION_SIZE),
-                tint = Color.Unspecified,
             )
-        }
-    }
-}
-
-@OptIn(ExperimentalAndroidComponentsApi::class)
-private fun dataLimitDescription(state: IPProtectionHandler.StateInfo, format: String): String {
-    with(state) {
-        val remainingGib = remaining / BYTES_PER_GIB
-        val maxGib = max / BYTES_PER_GIB
-        return format.format(remainingGib, maxGib)
-    }
-}
-
-@OptIn(ExperimentalAndroidComponentsApi::class)
-private fun dataProgress(state: IPProtectionHandler.StateInfo): Float {
-    with(state) {
-        if (max <= 0L || remaining < 0L) return 0f
-        return (remaining.toFloat() / max.toFloat()).coerceIn(0f, 1f)
-    }
+        },
+        verticalAlignment = Alignment.CenterVertically,
+    )
 }
 
 @OptIn(ExperimentalAndroidComponentsApi::class)
@@ -352,10 +298,11 @@ private fun IPProtectionScreenActivePreview(
 ) {
     FirefoxTheme(theme = theme) {
         IPProtectionScreen(
-            state = IPProtectionHandler.StateInfo(
-                proxyState = PROXY_STATE_ACTIVE,
-                max = 47L * BYTES_PER_GIB.toLong(),
-                remaining = 50L * BYTES_PER_GIB.toLong(),
+            state = IPProtectionState(
+                eligibilityStatus = EligibilityStatus.Eligible,
+                proxyStatus = Authorized.Active,
+                remainingDataBytes = 40 * BYTES_PER_GB.toLong(),
+                maxDataBytes = 50 * BYTES_PER_GB.toLong(),
             ),
             onVpnToggle = {},
             onLearnMoreClick = {},
@@ -372,8 +319,9 @@ private fun IPProtectionScreenNotEnrolledPreview(
 ) {
     FirefoxTheme(theme = theme) {
         IPProtectionScreen(
-            state = IPProtectionHandler.StateInfo(
-                serviceState = IPProtectionHandler.StateInfo.SERVICE_STATE_UNAUTHENTICATED,
+            state = IPProtectionState(
+                eligibilityStatus = EligibilityStatus.Eligible,
+                serviceStatus = ServiceState.Unauthenticated,
             ),
             onVpnToggle = {},
             onLearnMoreClick = {},
@@ -390,10 +338,11 @@ private fun IPProtectionScreenPausedPreview(
 ) {
     FirefoxTheme(theme = theme) {
         IPProtectionScreen(
-            state = IPProtectionHandler.StateInfo(
-                proxyState = PROXY_STATE_PAUSED,
-                max = 50L * BYTES_PER_GIB.toLong(),
-                remaining = 0L,
+            state = IPProtectionState(
+                eligibilityStatus = EligibilityStatus.Eligible,
+                proxyStatus = Authorized.DataLimitReached,
+                maxDataBytes = 50 * BYTES_PER_GB.toLong(),
+                remainingDataBytes = 0L,
             ),
             onVpnToggle = {},
             onLearnMoreClick = {},

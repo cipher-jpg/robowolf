@@ -236,9 +236,6 @@ add_task(async function test_ui_state_signedin() {
     "fxa-menu-send-to-device",
     "'Send to Device' displayed on send tab button"
   );
-  // Ensure that the send tab button has the navigation arrow
-  // to indicate that there are sub menu items.
-  ok(sendTabButton.classList.contains("subviewbutton-nav"));
 
   checkFxaToolbarButtonPanel({
     headerTitle: "Manage account",
@@ -535,14 +532,6 @@ add_task(async function test_ui_state_signedin_mobile_only_send_tab() {
     "fxa-menu-send-to-mobile",
     "'Send to Mobile' displayed on send tab button when all targets are mobile"
   );
-
-  // Ensure that the send tab button has the navigation arrow
-  // to indicate that there are sub menu items.
-  let sendTabButton = PanelMultiView.getViewNode(
-    document,
-    "PanelUI-fxa-menu-sendtab-button"
-  );
-  ok(sendTabButton.classList.contains("subviewbutton-nav"));
 
   await closeFxaPanel();
   sandbox.restore();
@@ -1359,9 +1348,12 @@ async function closeTabAndMainPanel() {
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 }
 
-add_task(async function test_ui_state_signed_out_send_tab() {
+add_task(async function test_ui_state_unverified_send_tab() {
+  const sandbox = sinon.createSandbox();
+  sandbox.stub(gSync, "isUnverified").get(() => true);
+
   let state = {
-    status: UIState.STATUS_NOT_CONFIGURED,
+    status: UIState.STATUS_NOT_VERIFIED,
     syncEnabled: false,
     email: "foo@bar.com",
     displayName: "Foo Bar",
@@ -1378,14 +1370,95 @@ add_task(async function test_ui_state_signed_out_send_tab() {
     "PanelUI-fxa-menu-sendtab-button"
   );
 
-  // Check that the navigation arrow is removed from the send tab element
-  // since there aren't any submenu items.
-  ok(!sendTabButton.classList.contains("subviewbutton-nav"));
+  Assert.equal(
+    sendTabButton.getAttribute("data-l10n-id"),
+    "fxa-menu-send-to-mobile",
+    "'Send to Mobile' displayed on send tab button when all targets are mobile"
+  );
+
+  sendTabButton.click();
+
+  let verifyAccountView = PanelMultiView.getViewNode(
+    document,
+    "PanelUI-fxa-menu-sendtab-verify-account"
+  );
+  await BrowserTestUtils.waitForEvent(verifyAccountView, "ViewShown");
+
+  let unverifiedAccountButton = verifyAccountView.querySelector(
+    "#PanelUI-fxa-menu-sendtab-unverified-button"
+  );
+  ok(
+    BrowserTestUtils.isVisible(unverifiedAccountButton),
+    "expected unverified account button to be visible after opening"
+  );
+  Assert.equal(
+    unverifiedAccountButton.getAttribute("disabled"),
+    "true",
+    "expected unverified account button to be disabled"
+  );
+
+  let verifyAccountButton = verifyAccountView.querySelector(
+    "#PanelUI-fxa-menu-sendtab-verify-account-button"
+  );
+  ok(
+    BrowserTestUtils.isVisible(verifyAccountButton),
+    "expected verify account button to be visible after opening"
+  );
+
+  await closeFxaPanel();
+  sandbox.restore();
+});
+
+add_task(async function test_ui_state_signed_out_send_tab() {
+  let state = {
+    status: UIState.STATUS_NOT_CONFIGURED,
+    syncEnabled: false,
+    email: "foo@bar.com",
+    displayName: "Foo Bar",
+    avatarURL: "https://foo.bar",
+    lastSync: new Date(),
+    syncing: false,
+  };
+
+  gSync.updateAllUI(state);
+  await openFxaPanel();
+
+  let profilesButton = PanelMultiView.getViewNode(
+    document,
+    "PanelUI-fxa-menu-profiles-button"
+  );
+
+  let sendTabButton = PanelMultiView.getViewNode(
+    document,
+    "PanelUI-fxa-menu-sendtab-button"
+  );
+
+  Assert.equal(
+    profilesButton.compareDocumentPosition(sendTabButton),
+    4, // Equates to Node.DOCUMENT_POSITION_FOLLOWING (4)
+    "Profiles button is above the send tab button"
+  );
 
   Assert.equal(
     sendTabButton.getAttribute("data-l10n-id"),
     "fxa-menu-send-to-mobile",
     "'Send to Mobile' displayed on send tab button when all targets are mobile"
+  );
+
+  sendTabButton.click();
+
+  let signInView = PanelMultiView.getViewNode(
+    document,
+    "PanelUI-fxa-menu-sendtab-sign-in"
+  );
+  await BrowserTestUtils.waitForEvent(signInView, "ViewShown");
+
+  let signInButton = signInView.querySelector(
+    "#PanelUI-fxa-menu-sendtab-sign-in-button"
+  );
+  ok(
+    BrowserTestUtils.isVisible(signInButton),
+    "expected sign in button to be visible after opening"
   );
 
   await closeFxaPanel();
@@ -1434,10 +1507,6 @@ add_task(async function test_ui_state_sync_disabled_send_tab() {
     document,
     "PanelUI-fxa-menu-sendtab-button"
   );
-
-  // Ensure that the send tab button has the navigation arrow
-  // to indicate that there are sub menu items.
-  ok(sendTabButton.classList.contains("subviewbutton-nav"));
 
   Assert.equal(
     sendTabButton.getAttribute("data-l10n-id"),
@@ -1514,10 +1583,6 @@ add_task(async function test_ui_state_single_device_send_tab() {
     "fxa-menu-send-to-mobile",
     "'Send to Mobile' displayed on send tab button"
   );
-
-  // Ensure that the send tab button has the navigation arrow
-  // to indicate that there are sub menu items.
-  ok(sendTabButton.classList.contains("subviewbutton-nav"));
 
   sendTabButton.click();
 

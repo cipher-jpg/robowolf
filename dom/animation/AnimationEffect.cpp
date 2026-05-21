@@ -43,9 +43,23 @@ nsISupports* AnimationEffect::GetParentObject() const {
   return ToSupports(mDocument);
 }
 
-// https://drafts.csswg.org/web-animations/#current
+// https://drafts.csswg.org/web-animations-1/#current
 bool AnimationEffect::IsCurrent() const {
-  if (!mAnimation || mAnimation->PlayState() == AnimationPlayState::Finished) {
+  if (!mAnimation) {
+    return false;
+  }
+
+  // An animation effect is current if it is associated with an animation not
+  // in the idle play state with a non-null associated timeline that is not
+  // monotonically increasing.
+  // https://drafts.csswg.org/web-animations-1/#current (fourth bullet)
+  const AnimationTimeline* timeline = mAnimation->GetTimeline();
+  if (timeline && !timeline->IsMonotonicallyIncreasing() &&
+      mAnimation->PlayState() != AnimationPlayState::Idle) {
+    return true;
+  }
+
+  if (mAnimation->PlayState() == AnimationPlayState::Finished) {
     return false;
   }
 
@@ -308,14 +322,15 @@ void AnimationEffect::GetComputedTimingAsDict(
   // Specified timing
   GetEffectTimingDictionary(SpecifiedTiming(), aRetVal);
 
-  // Computed timing
+  // Computed timing. For progress-based timelines, use the normalized timing
+  // so duration/endTime reflect the timeline's progress range (100%).
   double playbackRate = mAnimation ? mAnimation->PlaybackRateInternal() : 1;
   const Nullable<TimeDuration> currentTime = GetLocalTime();
   const auto progressTimelinePosition =
       mAnimation ? mAnimation->AtProgressTimelineBoundary()
                  : Animation::ProgressTimelinePosition::NotBoundary;
   ComputedTiming computedTiming = GetComputedTimingAt(
-      currentTime, SpecifiedTiming(), playbackRate, progressTimelinePosition);
+      currentTime, NormalizedTiming(), playbackRate, progressTimelinePosition);
 
   aRetVal.mDuration.SetAsUnrestrictedDouble() =
       computedTiming.mDuration.ToMilliseconds();

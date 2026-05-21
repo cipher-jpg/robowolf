@@ -6290,9 +6290,8 @@ static void LoadDOMPrivate(MacroAssembler& masm, Register obj, Register priv,
       masm.assumeUnreachable("Expected a DOM proxy");
       masm.bind(&isDOMProxy);
 #endif
-      masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), priv);
-      masm.loadPrivate(
-          Address(priv, js::detail::ProxyReservedSlots::offsetOfSlot(0)), priv);
+      masm.loadPrivate(Address(obj, ProxyObject::offsetOfReservedSlot(0)),
+                       priv);
       break;
     }
   }
@@ -17584,11 +17583,9 @@ void CodeGenerator::visitLoadScriptedProxyHandler(
   Register obj = ToRegister(ins->object());
   Register output = ToRegister(ins->output());
 
-  masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), output);
-
   Label bail;
-  Address handlerAddr(output, js::detail::ProxyReservedSlots::offsetOfSlot(
-                                  ScriptedProxyHandler::HANDLER_EXTRA));
+  Address handlerAddr(obj, ProxyObject::offsetOfReservedSlot(
+                               ScriptedProxyHandler::HANDLER_EXTRA));
   masm.fallibleUnboxObject(handlerAddr, output, &bail);
   bailoutFrom(&bail, ins->snapshot());
 }
@@ -18462,6 +18459,9 @@ void CodeGenerator::visitLoadSlotByIteratorIndexCommon(Register object,
   masm.bind(&indexOkay);
 
   masm.loadValue(BaseObjectElementIndex(kindScratch, indexScratch), result);
+  masm.branchTestMagicValue(Assembler::NotEqual, result, JS_ELEMENTS_HOLE,
+                            &done);
+  masm.assumeUnreachable("Dense element is a hole");
   masm.bind(&done);
 }
 
@@ -20102,11 +20102,7 @@ void CodeGenerator::visitLoadDOMExpandoValue(LLoadDOMExpandoValue* ins) {
   Register proxy = ToRegister(ins->proxy());
   ValueOperand out = ToOutValue(ins);
 
-  masm.loadPtr(Address(proxy, ProxyObject::offsetOfReservedSlots()),
-               out.scratchReg());
-  masm.loadValue(Address(out.scratchReg(),
-                         js::detail::ProxyReservedSlots::offsetOfPrivateSlot()),
-                 out);
+  masm.loadValue(Address(proxy, ProxyObject::offsetOfPrivateSlot()), out);
 }
 
 void CodeGenerator::visitLoadDOMExpandoValueGuardGeneration(
@@ -20126,14 +20122,9 @@ void CodeGenerator::visitLoadDOMExpandoValueIgnoreGeneration(
   Register proxy = ToRegister(ins->proxy());
   ValueOperand out = ToOutValue(ins);
 
-  masm.loadPtr(Address(proxy, ProxyObject::offsetOfReservedSlots()),
-               out.scratchReg());
-
   // Load the ExpandoAndGeneration* from the PrivateValue.
-  masm.loadPrivate(
-      Address(out.scratchReg(),
-              js::detail::ProxyReservedSlots::offsetOfPrivateSlot()),
-      out.scratchReg());
+  masm.loadPrivate(Address(proxy, ProxyObject::offsetOfPrivateSlot()),
+                   out.scratchReg());
 
   // Load expandoAndGeneration->expando into the output Value register.
   masm.loadValue(
@@ -21917,12 +21908,9 @@ void CodeGenerator::visitLoadWrapperTarget(LLoadWrapperTarget* lir) {
   Register object = ToRegister(lir->object());
   Register output = ToRegister(lir->output());
 
-  masm.loadPtr(Address(object, ProxyObject::offsetOfReservedSlots()), output);
-
   // Bail for revoked proxies.
   Label bail;
-  Address targetAddr(output,
-                     js::detail::ProxyReservedSlots::offsetOfPrivateSlot());
+  Address targetAddr(object, ProxyObject::offsetOfPrivateSlot());
   if (lir->mir()->fallible()) {
     masm.fallibleUnboxObject(targetAddr, output, &bail);
     bailoutFrom(&bail, lir->snapshot());

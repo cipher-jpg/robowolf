@@ -8,21 +8,23 @@ import android.content.res.Configuration
 import androidx.compose.animation.core.DecayAnimationSpec
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.BoxWithConstraintsScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -34,7 +36,6 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -50,7 +51,6 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.LocalPinnableContainer
@@ -98,15 +98,17 @@ import org.mozilla.fenix.tabstray.ui.tabitems.TabGroupMenuButton
 import org.mozilla.fenix.tabstray.ui.tabitems.TabListBorderMiddleItemShape
 import org.mozilla.fenix.tabstray.ui.tabitems.TabListFirstItemShape
 import org.mozilla.fenix.tabstray.ui.tabitems.TabListLastItemShape
+import org.mozilla.fenix.tabstray.ui.tabitems.TabListShapeInfo
 import org.mozilla.fenix.tabstray.ui.tabitems.TabListSingleItemShape
 import org.mozilla.fenix.tabstray.ui.tabitems.TabListTabItem
 import org.mozilla.fenix.tabstray.ui.tabitems.TabsTrayItemClickHandler
 import org.mozilla.fenix.tabstray.ui.tabitems.TabsTrayItemSelectionState
 import org.mozilla.fenix.tabstray.ui.tabitems.gridItemAspectRatio
-import org.mozilla.fenix.tabstray.ui.tabitems.tabItemBorderFocused
+import org.mozilla.fenix.tabstray.ui.tabitems.tabListItemShapeStyling
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.ThemedValue
 import org.mozilla.fenix.theme.ThemedValueProvider
+import org.mozilla.fenix.trackingprotection.TrackersBlockedCard
 import kotlin.math.max
 
 // Key for the span item at the bottom of the tray, used to make the item not reorderable.
@@ -140,12 +142,13 @@ private val TabListPadding = 16.dp
  * @param selectedItemIndex The index of the currently selected tab. This will be scrolled to on first-render.
  * @param selectionMode [TabsTrayState.Mode] indicating whether the Tabs Tray is in single selection
  * or multi-selection and contains the set of selected tabs.
+ * @param focusEnabled Whether the focus indication state is enabled.
  * @param tabInteractionHandler Handles tab interactions such as moves and drag and drop.
  * @param modifier [Modifier] to be applied to the layout.
+ * @param trackersBlockedCount The number of trackers blocked to display in the footer card.
  * @param onTabClose Invoked when the user clicks to close a tab.
  * @param onItemClick Invoked when the user clicks on a tab.
  * @param onItemLongClick Invoked when the user long clicks a tab.
- * @param onTabDragStart Invoked when starting to drag a tab.
  * @param onDeleteTabGroupClick Invoked when the user clicks on delete tab group.
  * @param onEditTabGroupClick Invoked when the user clicks to edit a tab group.
  * @param onCloseTabGroupClick Invoked when the user clicks to close a tab group.
@@ -160,12 +163,13 @@ fun TabLayout(
     dragAndDropEnabled: Boolean,
     selectedItemIndex: Int,
     selectionMode: TabsTrayState.Mode,
+    focusEnabled: Boolean,
     tabInteractionHandler: TabInteractionHandler,
     modifier: Modifier = Modifier,
+    trackersBlockedCount: Int? = null,
     onTabClose: (TabsTrayItem.Tab) -> Unit,
     onItemClick: (TabsTrayItem) -> Unit,
     onItemLongClick: (TabsTrayItem) -> Unit,
-    onTabDragStart: () -> Unit,
     onDeleteTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     onEditTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     onCloseTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
@@ -179,16 +183,17 @@ fun TabLayout(
                 selectedItemIndex = selectedItemIndex,
                 selectionMode = selectionMode,
                 modifier = modifier,
+                trackersBlockedCount = trackersBlockedCount,
                 onTabClose = onTabClose,
                 onItemClick = onItemClick,
                 onItemLongClick = onItemLongClick,
                 tabInteractionHandler = tabInteractionHandler,
-                onTabDragStart = onTabDragStart,
                 onDeleteTabGroupClick = onDeleteTabGroupClick,
                 onEditTabGroupClick = onEditTabGroupClick,
                 onCloseTabGroupClick = onCloseTabGroupClick,
                 header = header,
                 contentPadding = contentPadding,
+                focusEnabled = focusEnabled,
             )
         } else {
             ReorderableTabGrid(
@@ -200,12 +205,12 @@ fun TabLayout(
                 onItemClick = onItemClick,
                 onItemLongClick = onItemLongClick,
                 tabInteractionHandler = tabInteractionHandler,
-                onTabDragStart = onTabDragStart,
                 onDeleteTabGroupClick = onDeleteTabGroupClick,
                 onEditTabGroupClick = onEditTabGroupClick,
                 onCloseTabGroupClick = onCloseTabGroupClick,
                 header = header,
                 contentPadding = contentPadding,
+                trackersBlockedCount = trackersBlockedCount,
             )
         }
     } else {
@@ -218,11 +223,12 @@ fun TabLayout(
             onItemClick = onItemClick,
             onItemLongClick = onItemLongClick,
             tabInteractionHandler = tabInteractionHandler,
-            onTabDragStart = onTabDragStart,
             onDeleteTabGroupClick = onDeleteTabGroupClick,
             onEditTabGroupClick = onEditTabGroupClick,
             onCloseTabGroupClick = onCloseTabGroupClick,
             header = header,
+            trackersBlockedCount = trackersBlockedCount,
+            focusEnabled = true, // todo bug 2037242: when drag and drop is implemented, focusEnabled can be false
         )
     }
 }
@@ -293,11 +299,11 @@ private fun ReorderableTabGrid(
     onItemClick: (TabsTrayItem) -> Unit,
     onItemLongClick: (TabsTrayItem) -> Unit,
     tabInteractionHandler: TabInteractionHandler,
-    onTabDragStart: () -> Unit,
     onDeleteTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     onEditTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     onCloseTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     header: (@Composable () -> Unit)? = null,
+    trackersBlockedCount: Int? = null,
 ) {
     val gridState = rememberLazyGridState()
     val tabGridBottomPadding = dimensionResource(id = R.dimen.tab_tray_grid_bottom_padding)
@@ -312,8 +318,7 @@ private fun ReorderableTabGrid(
         isHeaderPresent = header != null,
     )
 
-    val isInMultiSelectMode = selectionMode is TabsTrayState.Mode.Select
-
+    var isInMultiSelectMode by remember(selectionMode) { mutableStateOf(selectionMode is TabsTrayState.Mode.Select) }
     val reorderState = createGridReorderState(
         gridState = gridState,
         onMove = { initialTab, newTab ->
@@ -328,15 +333,9 @@ private fun ReorderableTabGrid(
                 onItemLongClick(tab)
             }
         },
-        onExitLongPress = onTabDragStart,
         ignoredItems = listOf(HEADER_ITEM_KEY, SPAN_ITEM_KEY),
+        tabInteractionHandler = tabInteractionHandler,
     )
-    var shouldLongPress by remember { mutableStateOf(!isInMultiSelectMode) }
-    LaunchedEffect(selectionMode, reorderState.draggingItemKey) {
-        if (reorderState.draggingItemKey == null) {
-            shouldLongPress = selectionMode == TabsTrayState.Mode.Normal
-        }
-    }
 
     BoxWithConstraints {
         LazyVerticalGrid(
@@ -346,7 +345,7 @@ private fun ReorderableTabGrid(
                 .detectGridPressAndDragGestures(
                     gridState = gridState,
                     reorderState = reorderState,
-                    shouldLongPressToDrag = shouldLongPress,
+                    isInMultiSelectMode = isInMultiSelectMode,
                 ),
             state = gridState,
             contentPadding = contentPadding,
@@ -381,7 +380,21 @@ private fun ReorderableTabGrid(
             }
 
             item(key = SPAN_ITEM_KEY, span = { GridItemSpan(maxLineSpan) }) {
-                Spacer(modifier = Modifier.height(tabGridBottomPadding))
+                val bottomBarHeight = dimensionResource(id = R.dimen.browser_toolbar_height)
+                Column(
+                    modifier = Modifier.thenConditional(
+                        Modifier.padding(top = FirefoxTheme.layout.space.static200),
+                        { trackersBlockedCount != null },
+                    ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (trackersBlockedCount != null) {
+                        TrackersBlockedCard(trackersBlockedCount = trackersBlockedCount)
+                        Spacer(modifier = Modifier.height(bottomBarHeight + 16.dp))
+                    } else {
+                        Spacer(modifier = Modifier.height(tabGridBottomPadding))
+                    }
+                }
             }
         }
     }
@@ -393,14 +406,15 @@ private fun ReorderableTabGrid(
 private fun InteractableTabGrid(
     tabs: List<TabsTrayItem>,
     selectedItemIndex: Int,
+    focusEnabled: Boolean,
     selectionMode: TabsTrayState.Mode,
     tabInteractionHandler: TabInteractionHandler,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues,
+    trackersBlockedCount: Int? = null,
     onTabClose: (TabsTrayItem.Tab) -> Unit,
     onItemClick: (TabsTrayItem) -> Unit,
     onItemLongClick: (TabsTrayItem) -> Unit,
-    onTabDragStart: () -> Unit,
     onDeleteTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     onEditTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     onCloseTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
@@ -419,8 +433,7 @@ private fun InteractableTabGrid(
         isHeaderPresent = header != null,
     )
 
-    val isInMultiSelectMode = selectionMode is TabsTrayState.Mode.Select
-
+    var isInMultiSelectMode by remember { mutableStateOf(selectionMode is TabsTrayState.Mode.Select) }
     val gridInteractionState = createGridInteractionState(
         gridState = gridState,
         tabInteractionHandler = tabInteractionHandler,
@@ -429,13 +442,11 @@ private fun InteractableTabGrid(
                 onItemLongClick(tab)
             }
         },
-        onExitLongPress = onTabDragStart,
         ignoredItems = listOf(HEADER_ITEM_KEY, SPAN_ITEM_KEY),
     )
-    var shouldLongPress by remember { mutableStateOf(!isInMultiSelectMode) }
     LaunchedEffect(selectionMode, gridInteractionState.draggedItem.key) {
         if (gridInteractionState.draggedItem.key == null) {
-            shouldLongPress = selectionMode == TabsTrayState.Mode.Normal
+            isInMultiSelectMode = selectionMode is TabsTrayState.Mode.Select
         }
     }
     BoxWithConstraints(
@@ -445,7 +456,7 @@ private fun InteractableTabGrid(
             }
             .detectGridPressAndDragGestures(
                 reorderState = gridInteractionState,
-                shouldLongPressToDrag = shouldLongPress,
+                isInMultiSelectMode = isInMultiSelectMode,
             )
             .drawVerticalReorderIndicator(
                 gridInteractionState = gridInteractionState,
@@ -485,6 +496,7 @@ private fun InteractableTabGrid(
                     thumbnailSizePx = thumbnailSizePx,
                     hasHeader = header != null,
                     isInMultiSelectMode = isInMultiSelectMode,
+                    focusEnabled = focusEnabled,
                     isMultiSelected = selectionMode.contains(tab),
                     reorderState = gridInteractionState,
                     gridState = gridState,
@@ -497,7 +509,21 @@ private fun InteractableTabGrid(
             }
 
             item(key = SPAN_ITEM_KEY, span = { GridItemSpan(maxLineSpan) }) {
-                Spacer(modifier = Modifier.height(tabGridBottomPadding))
+                val bottomBarHeight = dimensionResource(id = R.dimen.browser_toolbar_height)
+                Column(
+                    modifier = Modifier.thenConditional(
+                        Modifier.padding(top = FirefoxTheme.layout.space.static200),
+                        { trackersBlockedCount != null },
+                    ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (trackersBlockedCount != null) {
+                        TrackersBlockedCard(trackersBlockedCount = trackersBlockedCount)
+                        Spacer(modifier = Modifier.height(bottomBarHeight + 16.dp))
+                    } else {
+                        Spacer(modifier = Modifier.height(tabGridBottomPadding))
+                    }
+                }
             }
         }
     }
@@ -583,6 +609,7 @@ private fun LazyGridItemScope.InteractableTabGridItemContent(
     thumbnailSizePx: Int,
     hasHeader: Boolean,
     isInMultiSelectMode: Boolean,
+    focusEnabled: Boolean,
     isMultiSelected: Boolean,
     reorderState: GridInteractionState,
     gridState: LazyGridState,
@@ -617,6 +644,7 @@ private fun LazyGridItemScope.InteractableTabGridItemContent(
             isFocused = tabsTrayItem.isFocused,
             isSelected = isMultiSelected,
             multiSelectEnabled = isInMultiSelectMode,
+            focusEnabled = focusEnabled,
         )
         when (tabsTrayItem) {
             is TabsTrayItem.Tab -> {
@@ -679,7 +707,8 @@ private fun TabList(
     onEditTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     onCloseTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     header: (@Composable () -> Unit)? = null,
-    onTabDragStart: () -> Unit = {},
+    trackersBlockedCount: Int? = null,
+    focusEnabled: Boolean = true,
 ) {
     val state = rememberLazyListState()
     val tabListBottomPadding = dimensionResource(id = R.dimen.tab_tray_list_bottom_padding)
@@ -691,7 +720,7 @@ private fun TabList(
         isHeaderPresent = header != null,
     )
 
-    val isInMultiSelectMode = selectionMode is TabsTrayState.Mode.Select
+    var isInMultiSelectMode by remember { mutableStateOf(selectionMode is TabsTrayState.Mode.Select) }
     val reorderState = createListReorderState(
         listState = state,
         onMove = { initialTab, newTab ->
@@ -706,13 +735,14 @@ private fun TabList(
                 onItemLongClick(tab)
             }
         },
-        onExitLongPress = onTabDragStart,
         ignoredItems = listOf(HEADER_ITEM_KEY, SPAN_ITEM_KEY),
+        onExitLongPress = {
+            tabInteractionHandler.onDragStart(preserveSelectMode = isInMultiSelectMode)
+        },
     )
-    var shouldLongPress by remember { mutableStateOf(!isInMultiSelectMode) }
     LaunchedEffect(selectionMode, reorderState.draggingItemKey) {
         if (reorderState.draggingItemKey == null) {
-            shouldLongPress = selectionMode == TabsTrayState.Mode.Normal
+            isInMultiSelectMode = selectionMode is TabsTrayState.Mode.Select
         }
     }
 
@@ -731,7 +761,7 @@ private fun TabList(
                 .detectListPressAndDrag(
                     listState = state,
                     reorderState = reorderState,
-                    shouldLongPressToDrag = shouldLongPress,
+                    shouldLongPressToDrag = !isInMultiSelectMode,
                 ),
             state = state,
             contentPadding = PaddingValues(
@@ -760,6 +790,7 @@ private fun TabList(
                     isFocused = tab.isFocused,
                     multiSelectEnabled = isInMultiSelectMode,
                     isSelected = selectionMode.contains(tab),
+                    focusEnabled = focusEnabled,
                 )
                 when (tab) {
                     is TabsTrayItem.Tab -> {
@@ -773,7 +804,7 @@ private fun TabList(
                                 modifier = Modifier
                                     .tabListItemShapeStyling(
                                         tabShapeInfo = tabShapeInfo,
-                                        tab = tab,
+                                        selectionState = selectionState,
                                     ),
                                 selectionState = selectionState,
                                 shouldClickListen = reorderState.draggingItemKey != tab.id,
@@ -796,7 +827,7 @@ private fun TabList(
                                 modifier = Modifier
                                     .tabListItemShapeStyling(
                                         tabShapeInfo = tabShapeInfo,
-                                        tab = tab,
+                                        selectionState = selectionState,
                                     )
                                     .background(
                                         if (selectionState.isSelected) {
@@ -828,6 +859,18 @@ private fun TabList(
 
                 if (index != tabs.size - 1) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
+
+            if (trackersBlockedCount != null) {
+                item(key = SPAN_ITEM_KEY) {
+                    TrackersBlockedCard(
+                        trackersBlockedCount = trackersBlockedCount,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentWidth(Alignment.CenterHorizontally)
+                            .padding(top = FirefoxTheme.layout.space.static200),
+                    )
                 }
             }
         }
@@ -935,10 +978,10 @@ private fun TabListPreview(
                 onTabClose = tabs::remove,
                 onItemClick = {},
                 onItemLongClick = {},
-                onTabDragStart = {},
                 onDeleteTabGroupClick = {},
                 onEditTabGroupClick = {},
                 onCloseTabGroupClick = {},
+                focusEnabled = true,
             )
         }
     }
@@ -968,10 +1011,10 @@ private fun TabGridPreview(
             onTabClose = tabs::remove,
             onItemClick = {},
             onItemLongClick = {},
-            onTabDragStart = {},
             onDeleteTabGroupClick = {},
             onEditTabGroupClick = {},
             onCloseTabGroupClick = {},
+            focusEnabled = true,
         )
     }
 }
@@ -1045,10 +1088,10 @@ private fun MultiSelectPreview(
                 }
             },
             onItemLongClick = {},
-            onTabDragStart = {},
             onDeleteTabGroupClick = {},
             onEditTabGroupClick = {},
             onCloseTabGroupClick = {},
+            focusEnabled = true,
         )
     }
 }
@@ -1096,16 +1139,7 @@ private fun generateFakeTabsList(
     }
 }
 
-/**
- * Data class to store a TabList's item shape information.
- * @property borderShape: The [RoundedCornerShape] representing the item's border
- * @property clipTabToFit: Whether the TabItem will be clipped to fit the border shape
- */
-private data class TabListShapeInfo(
-    val borderShape: RoundedCornerShape,
-    val clipTabToFit: Boolean,
-)
-
+@Composable
 private fun getTabShapeInfo(
     firstVisibleIndex: Int,
     lastVisibleIndex: Int,
@@ -1154,26 +1188,6 @@ private fun defaultCrossAxisStartPadding(): Float =
     } else {
         0f
     }
-
-// todo (Bug 2032255): add a border on hovered when drag and drop for tab groups is added
-@Composable
-private fun Modifier.tabListItemShapeStyling(
-    tabShapeInfo: TabListShapeInfo,
-    tab: TabsTrayItem,
-): Modifier {
-    return this
-        .thenConditional(
-            Modifier.clip(tabShapeInfo.borderShape),
-            { tabShapeInfo.clipTabToFit },
-        )
-        .thenConditional(
-            modifier = Modifier.border(
-                border = tabItemBorderFocused(),
-                shape = tabShapeInfo.borderShape,
-            ),
-            { tab.isFocused },
-        )
-}
 
 /**
  * Draws a line in the 'gutters' between tab items to indicate to the user between which tabs they are attempting

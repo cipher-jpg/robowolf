@@ -480,15 +480,21 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolvePseudoElementStyle(
       return nullptr;
     }
     if (cacheable) {
-      // Don't cache styles with viewport units if the parent style differs from
-      // the element's primary frame style. This can happen with ::first-line,
-      // where text frames have a combined style. Cached lazy pseudos on such
-      // combined styles aren't findable during viewport invalidation, so we
-      // must recompute them each time to ensure correct values.
-      // Note: Container units that fall back to viewport size already set the
-      // USES_VIEWPORT_UNITS flag, so we only need to check that.
       const bool shouldCache = [&] {
+        if (style->HasAttrReferences()) {
+          // We can't cache styles referencing attr() functions here, because we
+          // don't make the relevant attribute part of the cache key.
+          return false;
+        }
         if (style->UsesViewportUnits()) {
+          // Don't cache styles with viewport units if the parent style differs
+          // from the element's primary frame style. This can happen with
+          // ::first-line, where text frames have a combined style. Cached lazy
+          // pseudos on such combined styles aren't findable during viewport
+          // invalidation, so we must recompute them each time to ensure correct
+          // values. Note: Container units that fall back to viewport size
+          // already set the USES_VIEWPORT_UNITS flag, so we only need to check
+          // that.
           if (const auto* primaryFrame =
                   aOriginatingElement.GetPrimaryFrame()) {
             if (primaryFrame->Style() != aParentStyle) {
@@ -609,9 +615,10 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolveXULTreePseudoStyle(
 }
 
 already_AddRefed<ComputedStyle> ServoStyleSet::ResolvePositionTry(
-    dom::Element& aElement, const ComputedStyle& aStyle,
+    StyleCascadeLevel aScope, dom::Element& aElement,
+    const ComputedStyle& aStyle,
     const StylePositionTryFallbacksItem& aFallback) {
-  return Servo_ComputedValues_GetForPositionTry(mRawData.get(), &aStyle,
+  return Servo_ComputedValues_GetForPositionTry(mRawData.get(), &aStyle, aScope,
                                                 &aElement, &aFallback)
       .Consume();
 }
@@ -1097,8 +1104,8 @@ void ServoStyleSet::RuleChanged(StyleSheet& aSheet, css::Rule* aRule,
     MarkOriginsDirty(ToOriginFlags(aSheet.GetOrigin()));
   } else {
     if (mStyleRuleMap && aChange.mOldBlock != aChange.mNewBlock) {
-      mStyleRuleMap->RuleDeclarationsChanged(*aRule, aChange.mOldBlock->Raw(),
-                                             aChange.mNewBlock->Raw());
+      mStyleRuleMap->RuleDeclarationsChanged(*aRule, aChange.mOldBlock,
+                                             aChange.mNewBlock);
     }
     RuleChangedInternal(aSheet, *aRule, aChange);
   }

@@ -13,24 +13,28 @@
     <attr name="scrim" format="reference" />
 
     <!-- Action -->
-    <!-- Primary button, Snackbar, Floating action button -->
-    <attr name="actionPrimary" format="reference" />
     <!-- Primary button in a disabled state -->
     <attr name="actionPrimaryDisabled" format="reference" />
 
     <!-- Text -->
-    <!-- Disabled text -->
-    <attr name="textDisabled" format="reference" />
     <!-- Text Inverted/On Color -->
     <attr name="textOnColorPrimary" format="reference" />
-    <!-- Action Primary text -->
-    <attr name="textActionPrimary" format="reference" />
     <!-- Action Primary disabled text -->
     <attr name="textActionPrimaryDisabled" format="reference" />
 
     <!-- Icon -->
     <!-- Icon inverted (on color) -->
     <attr name="iconOnColor" format="reference" />
+
+    <!-- Material3 extended palettes -->
+    <attr name="colorInformation" format="reference" />
+    <attr name="colorInformationContainer" format="reference" />
+    <attr name="colorOnInformationContainer" format="reference" />
+    <attr name="colorSuccess" format="reference" />
+    <attr name="colorWarning" format="reference" />
+    <attr name="colorWarningContainer" format="reference" />
+    <attr name="colorOnWarningContainer" format="reference" />
+    <attr name="colorSurfaceDimVariant" format="reference" />
 
     <!-- Color palette attributes -->
     <attr name="accent" format="reference" />

@@ -342,7 +342,7 @@ export const NET_ERRORS = [
     category: "net",
     bodyTitleL10nId: "neterror-dns-not-found-title",
     introContent: {
-      dataL10nId: "fp-neterror-offline-intro",
+      dataL10nId: "fp-neterror-offline-intro-2",
       dataL10nArgs: { hostname: null },
     },
     descriptionParts: DESCRIPTION_PARTS_MAP.dnsNotFoundDescription,
@@ -750,11 +750,6 @@ export const NET_ERRORS = [
     descriptionParts: [
       { tag: "li", dataL10nId: "neterror-nss-failure-not-verified" },
       { tag: "li", dataL10nId: "neterror-nss-failure-contact-website" },
-      {
-        tag: "li",
-        dataL10nId: "neterror-nss-failure-error-code",
-        dataL10nArgs: { errorCodeString: null },
-      },
     ],
     buttons: {
       showTryAgain: false,
