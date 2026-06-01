@@ -104,8 +104,7 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
     override fun onResume() {
         super.onResume()
 
-        val showSearch = requireContext().settings().isSettingsSearchEnabled &&
-            !args.searchInProgress
+        val showSearch = !args.searchInProgress
 
         if (showSearch) {
             showToolbarWithIconButton(
@@ -268,12 +267,6 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
                     return super.onPreferenceChange(preference, newValue)
                 }
             }
-        }
-
-        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_allow_settings_search).apply {
-            isVisible = Config.channel.isNightlyOrDebug
-            isChecked = context.settings().isSettingsSearchEnabled
-            onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_enable_fxsuggest).apply {
@@ -445,6 +438,12 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
+        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_tab_groups_onboarding).apply {
+            isVisible = Config.channel.isNightlyOrDebug
+            isChecked = context.settings().tabGroupsOnboardingEnabled
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_private_mode_and_stories_entry_point).apply {
             isChecked = context.settings().privateModeAndStoriesEntryPointEnabled
             onPreferenceChangeListener = SharedPreferenceUpdater()
@@ -465,6 +464,12 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_google_lens_integration).apply {
             isVisible = Config.channel.isNightlyOrDebug
             isChecked = context.settings().googleLensIntegrationEnabled
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_show_voice_search_in_display_toolbar).apply {
+            isVisible = Config.channel.isNightlyOrDebug
+            isChecked = context.settings().showVoiceSearchInDisplayToolbar
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 

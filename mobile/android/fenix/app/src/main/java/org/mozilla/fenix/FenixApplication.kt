@@ -669,7 +669,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
 
     private fun maybeSetupIPProtection() {
         components.ipProtection.feature.initialize()
-//        components.ipProtection.storageSynchronizer.onResume(ProcessLifecycleOwner.get())
+        components.ipProtection.storageSynchronizer.initialize()
     }
 
     private fun setupCrashReporting(): CrashReporter {
@@ -839,14 +839,14 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             WebExtensionSupport.initialize(
                 components.core.engine,
                 components.core.store,
-                onNewTabOverride = { _, engineSession, url ->
+                onNewTabOverride = { _, engineSession, url, selected ->
                     val shouldCreatePrivateSession =
                         components.core.store.state.selectedTab?.content?.private
                             ?: components.settings.openLinksInAPrivateTab
 
                     components.useCases.tabsUseCases.addTab(
                         url = url,
-                        selectTab = true,
+                        selectTab = selected,
                         engineSession = engineSession,
                         private = shouldCreatePrivateSession,
                     )
@@ -927,7 +927,6 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             adjustCreative.set(settings.adjustCreative)
             adjustNetwork.set(settings.adjustNetwork)
 
-            settings.migrateDeleteDownloadBehaviorIfNeeded()
             settings.migrateSearchWidgetInstalledPrefIfNeeded()
             searchWidgetInstalled.set(settings.searchWidgetInstalled)
 

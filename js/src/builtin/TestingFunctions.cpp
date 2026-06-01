@@ -790,12 +790,12 @@ static bool GC(JSContext* cx, unsigned argc, Value* vp) {
     if (arg.isString()) {
       bool shrinking = false;
       bool last_ditch = false;
+      bool debug_gc = false;
       if (!JS_StringEqualsLiteral(cx, arg.toString(), "shrinking",
-                                  &shrinking)) {
-        return false;
-      }
-      if (!JS_StringEqualsLiteral(cx, arg.toString(), "last-ditch",
-                                  &last_ditch)) {
+                                  &shrinking) ||
+          !JS_StringEqualsLiteral(cx, arg.toString(), "last-ditch",
+                                  &last_ditch) ||
+          !JS_StringEqualsLiteral(cx, arg.toString(), "debug-gc", &debug_gc)) {
         return false;
       }
       if (shrinking) {
@@ -803,6 +803,10 @@ static bool GC(JSContext* cx, unsigned argc, Value* vp) {
       } else if (last_ditch) {
         options = JS::GCOptions::Shrink;
         reason = JS::GCReason::LAST_DITCH;
+      } else if (debug_gc) {
+        // This reason is allowed to trigger high frequency GC mode by
+        // StartReasonCanTriggerHFMode.
+        reason = JS::GCReason::DEBUG_GC;
       }
     }
   }
@@ -3460,10 +3464,11 @@ class HasChildTracer final : public JS::CallbackTracer {
   RootedValue child_;
   bool found_;
 
-  void onChild(JS::GCCellPtr thing, const char* name) override {
+  bool onChild(JS::GCCellPtr thing, const char* name) override {
     if (thing.asCell() == child_.toGCThing()) {
       found_ = true;
     }
+    return true;
   }
 
  public:
@@ -3962,7 +3967,8 @@ static bool GetObjectFuseState(JSContext* cx, unsigned argc, Value* vp) {
   // definition order.
   Rooted<PropertyInfoWithKeyVector> propsVec(cx, PropertyInfoWithKeyVector(cx));
   for (ShapePropertyIter<CanGC> iter(cx, obj->shape()); !iter.done(); iter++) {
-    if (iter->hasSlot() && !propsVec.append(*iter)) {
+    if (iter->hasSlot() && ObjectFuse::tracksPropertyKey(iter->key()) &&
+        !propsVec.append(*iter)) {
       return false;
     }
   }
@@ -5042,6 +5048,34 @@ static bool ResolvePromise(JSContext* cx, unsigned argc, Value* vp) {
   }
   return result;
 }
+
+#ifdef NIGHTLY_BUILD
+static bool SafeResolvePromise(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  if (!args.requireAtLeast(cx, "safeResolvePromise", 2)) {
+    return false;
+  }
+  if (!args[0].isObject() ||
+      !UncheckedUnwrap(&args[0].toObject())->is<PromiseObject>()) {
+    JS_ReportErrorASCII(
+        cx, "first argument must be a maybe-wrapped Promise object");
+    return false;
+  }
+
+  RootedObject promise(cx, &args[0].toObject());
+  RootedValue resolution(cx, args[1]);
+
+  if (IsPromiseForAsyncFunctionOrGenerator(UncheckedUnwrap(promise))) {
+    JS_ReportErrorASCII(
+        cx,
+        "async function/generator's promise shouldn't be manually resolved");
+    return false;
+  }
+
+  args.rval().setUndefined();
+  return JS::SafeResolve(cx, promise, resolution);
+}
+#endif  // NIGHTLY_BUILD
 
 static bool RejectPromise(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -10266,13 +10300,14 @@ static bool GetLastOOMStackTrace(JSContext* cx, unsigned argc, Value* vp) {
 // clang-format off
 static const JSFunctionSpecWithHelp TestingFunctions[] = {
     JS_FN_HELP("gc", ::GC, 0, 0,
-"gc([obj] | 'zone' [, ('shrinking' | 'last-ditch') ])",
+"gc([obj] | 'zone' [, ('shrinking' | 'last-ditch' | 'debug-gc') ])",
 "  Run the garbage collector.\n"
 "  The first parameter describes which zones to collect: if an object is\n"
 "  given, GC only its zone. If 'zone' is given, GC any zones that were\n"
 "  scheduled via schedulegc.\n"
 "  The second parameter is optional and may be 'shrinking' to perform a\n"
-"  shrinking GC or 'last-ditch' for a shrinking, last-ditch GC."),
+"  shrinking GC, 'last-ditch' for a shrinking last-ditch GC or 'debug-gc' for\n"
+"  a GC with DEBUG_GC reason."),
 
     JS_FN_HELP("minorgc", ::MinorGC, 0, 0,
 "minorgc([aboutToOverflow])",
@@ -10558,6 +10593,13 @@ static const JSFunctionSpecWithHelp TestingFunctions[] = {
 JS_FN_HELP("resolvePromise", ResolvePromise, 2, 0,
 "resolvePromise(promise, resolution)",
 "  Resolve a Promise by calling the JSAPI function JS::ResolvePromise."),
+#ifdef NIGHTLY_BUILD
+JS_FN_HELP("safeResolvePromise", SafeResolvePromise, 2, 0,
+"safeResolvePromise(promise, resolution)",
+"  Resolve a Promise by calling the JSAPI function JS::SafeResolve, which\n"
+"  implements the MaybeDeferredPromiseResolve abstract operation from the\n"
+"  thenable-curtailment proposal."),
+#endif  // NIGHTLY_BUILD
 JS_FN_HELP("rejectPromise", RejectPromise, 2, 0,
 "rejectPromise(promise, reason)",
 "  Reject a Promise by calling the JSAPI function JS::RejectPromise."),

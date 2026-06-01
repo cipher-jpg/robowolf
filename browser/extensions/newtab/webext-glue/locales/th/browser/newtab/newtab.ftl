@@ -788,6 +788,15 @@ newtab-widget-lists-name-placeholder-new =
 newtab-widget-section-title = วิดเจ็ต
 newtab-widget-menu-hide = ซ่อนวิดเจ็ต
 newtab-widget-menu-change-size = เปลี่ยนขนาด
+# Parent label for a submenu in the widget menu that reorders the widget
+# among its siblings. "Left" and "Right" appear as items inside this submenu.
+newtab-widget-menu-move = ย้าย
+# Submenu item under "Move"; moves the widget one position to the left.
+# RTL locales should translate this as "Right".
+newtab-widget-menu-move-left = ซ้าย
+# Submenu item under "Move"; moves the widget one position to the right.
+# RTL locales should translate this as "Left".
+newtab-widget-menu-move-right = ขวา
 newtab-widget-size-small = เล็ก
 newtab-widget-size-medium = ปานกลาง
 newtab-widget-size-large = ใหญ่
@@ -804,6 +813,9 @@ newtab-widget-section-minimize =
 newtab-widget-section-menu-button =
     .title = เมนูวิดเจ็ต
     .aria-label = เปิดเมนูวิดเจ็ต
+newtab-widget-add-widgets-button =
+    .aria-label = เพิ่มวิดเจ็ต
+    .title = เพิ่มวิดเจ็ต
 newtab-widget-section-menu-manage = จัดการวิดเจ็ต
 newtab-widget-section-menu-hide-all = ซ่อนวิดเจ็ต
 newtab-widget-section-menu-learn-more = เรียนรู้เพิ่มเติม
@@ -885,9 +897,10 @@ newtab-widget-timer-celebration-message-focus = พักสักหน่อ�
 # Message shown inside the Timer widget after a break session ends.
 newtab-widget-timer-celebration-message-break = พร้อมที่จะโฟกัสหรือยัง?
 
-## Sports widget
+##
 
 newtab-sports-widget-menu-follow-teams = ติดตามทีม
+newtab-sports-widget-menu-view-schedule = ดูตารางการแข่ง
 newtab-sports-widget-menu-view-upcoming = ดูสิ่งที่กำลังจะมาถึง
 newtab-sports-widget-menu-view-results = ดูผลการแข่ง
 # Milestone dates (e.g. group stage, semifinals, etc.). Refers to calendar dates.
@@ -912,6 +925,8 @@ newtab-sports-widget-search-country =
     .placeholder = ค้นหาประเทศ
     .aria-label = ค้นหาประเทศ
 newtab-sports-widget-cancel = ยกเลิก
+newtab-sports-widget-back-button =
+    .aria-label = ย้อนกลับ
 newtab-sports-widget-done-button =
     .label = เสร็จสิ้น
 newtab-sports-widget-group-stage = รอบแบ่งกลุ่ม
@@ -926,6 +941,8 @@ newtab-custom-widget-live-refresh =
 # Milestone dates (e.g. group stage, semifinals, etc.). Refers to calendar dates.
 newtab-sports-widget-key-dates = วันสำคัญ
 newtab-sports-widget-upcoming = กำลังจะมาถึง
+# Used for a match currently ongoing
+newtab-sports-widget-now = ตอนนี้
 newtab-sports-widget-results = ผลลัพธ์
 newtab-sports-widget-semi-finals = รอบรองชนะเลิศ
 newtab-sports-widget-bronze-finals = รอบชิงเหรียญทองแดง
@@ -1020,6 +1037,10 @@ newtab-clock-widget-edit-clock-form =
 # It means "results of the search", not "search within the results".
 newtab-clock-widget-search-results =
     .aria-label = ผลการค้นหา
+# Shown in place of the search results when the user's query does not match any
+# supported city — e.g. typing a misspelled name or a place not in the IANA
+# time zone list.
+newtab-clock-widget-search-no-results = ไม่มีที่ตรงกัน
 # "Open menu for clock" is an icon-only button in the widget toolbar — the
 # attributes are consumed as tooltip/screen-reader label only. The button
 # never renders visible text.

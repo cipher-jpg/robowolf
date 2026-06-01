@@ -47,7 +47,6 @@ import mozprocess
 import mozrunner
 from manifestparser import TestManifest
 from manifestparser.filters import (
-    chunk_by_slice,
     failures,
     pathprefix,
     subsuite,
@@ -1696,12 +1695,6 @@ class MochitestDesktop:
             manifestFile.write(
                 f"content mochitests {chrometestDir} contentaccessible=yes\n"
             )
-            manifestFile.write(
-                f"content mochitests-any {chrometestDir} contentaccessible=yes remoteenabled=yes\n"
-            )
-            manifestFile.write(
-                f"content mochitests-content {chrometestDir} contentaccessible=yes remoterequired=yes\n"
-            )
 
             if options.testingModulesDir is not None:
                 manifestFile.write(
@@ -1856,9 +1849,6 @@ toolbar#nav-bar {
                 options.test_paths = self.normalize_paths(options.test_paths)
                 path_filter = pathprefix(options.test_paths)
                 filters.append(path_filter)
-
-            if options.totalChunks:
-                filters.append(chunk_by_slice(options.thisChunk, options.totalChunks))
 
             noDefaultFilters = False
             if options.runFailures:

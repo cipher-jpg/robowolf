@@ -317,6 +317,8 @@ newtab-custom-shortcuts-toggle =
     .description = Կայքեր, որոնք պահել կամ այցելել եք
 newtab-custom-shortcuts-nova =
     .label = Դյուրանցումներ
+newtab-custom-row-description =
+    .description = Տողերի քանակը
 # Variables
 #   $num (number) - Number of rows to display
 #  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. We won't be using "row"/"rows" anymore for the dropdown
@@ -335,8 +337,11 @@ newtab-custom-row-selector =
     }
 newtab-custom-sponsored-sites = Հովանավորված դյուրանցումներ
 newtab-custom-pocket-title = Խորհուրդ է տրվում { -pocket-brand-name }-ի կողմից
+newtab-recommended-stories-toggle =
+    .label = Առաջարկվող պատմություններ
 newtab-custom-stories-personalized-toggle =
     .label = Պատմություններ
+newtab-custom-stories-personalized-checkbox-label = Անհատականացված պատմություններ՝ հիմնված ձեր գործունեության վրա
 newtab-custom-pocket-sponsored = Հովանավորված պատմություններ
 newtab-custom-pocket-show-recent-saves = Ցուցադրել վերջին պահումները
 newtab-custom-recent-title = Վերջին ակտիվություն
@@ -510,6 +515,7 @@ newtab-weather-opt-in-yes =
     .label = Այո
 newtab-weather-opt-in-use-location =
     .label = Օգտագործել տեղադրությունը
+newtab-weather-opt-in-choose-location = Ընտրել տեղադրությունը
 # We'll be showing static (fake) weather data if the user has not opted in to using their location
 newtab-weather-static-city = Նյու Յորք քաղաք
 # "Highest" here refers to the highest temperature of the day
@@ -705,11 +711,15 @@ newtab-widget-lists-input-menu-move-up = Շարժել վերև
 newtab-widget-lists-input-menu-move-down = Շարժել ներքև
 newtab-widget-lists-input-menu-delete = Ջնջել
 newtab-widget-lists-input-menu-edit = Խմբագրել
+newtab-widget-lists-input-menu-edit2 =
+    .aria-label = Խմբագրել միավորը
 # the + symbol emphasises the functionality of adding a new list
 newtab-widget-lists-dropdown-create =
     .label = + Ստեղծել նոր ցուցակ
 newtab-widget-lists-name-label-default =
     .label = Առաջադրանքների ցանկ
+newtab-widget-lists-name-label-checklist =
+    .label = Ստուգաթերթիկ
 newtab-widget-lists-name-placeholder-default =
     .placeholder = Առաջադրանքների ցանկ
 newtab-widget-lists-name-placeholder-checklist2 =
@@ -719,11 +729,26 @@ newtab-widget-lists-name-placeholder-checklist2 =
 newtab-widget-lists-name-placeholder-new2 =
     .placeholder = Նոր ցանկ
     .aria-label = Խմբագրել ցանկի անունը
+newtab-widget-lists-name-placeholder-checklist =
+    .placeholder = Ստուգաթերթիկ
 # The placeholder value of the name field for a newly created list
 newtab-widget-lists-name-placeholder-new =
     .placeholder = Նոր ցանկ
 newtab-widget-section-title = Վիջեթներ
 newtab-widget-menu-hide = Թաքցնել վիջեթը
+newtab-widget-menu-change-size = Փոխել չափը
+# Parent label for a submenu in the widget menu that reorders the widget
+# among its siblings. "Left" and "Right" appear as items inside this submenu.
+newtab-widget-menu-move = Տեղափոխել
+# Submenu item under "Move"; moves the widget one position to the left.
+# RTL locales should translate this as "Right".
+newtab-widget-menu-move-left = Ձախ
+# Submenu item under "Move"; moves the widget one position to the right.
+# RTL locales should translate this as "Left".
+newtab-widget-menu-move-right = Աջ
+newtab-widget-size-small = Փոքր
+newtab-widget-size-medium = Միջին
+newtab-widget-size-large = Մեծ
 # Tooltip for hide all widgets button
 newtab-widget-section-hide-all-button =
     .title = Թաքցնել վիջեթները
@@ -767,6 +792,10 @@ newtab-widget-timer-menu-notifications-on = Միացնել ծանուցումն�
 newtab-widget-timer-menu-learn-more = Իմանալ ավելին
 # The title displays above a set of top news headlines.
 newtab-daily-briefing-card-title = Առաջատար վերնագրեր
+newtab-daily-briefing-card-menu-dismiss = Բաց թողնել
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp = Թարմացվել է { $minutes } րոպե առաջ
 newtab-widget-message-title = Մնացեք կենտրոնացած ցուցակների և ներկառուցված ժամանակաչափի միջոցով
 newtab-promo-card-body-addons = Ընտրեք պաստառ մեր հավաքածուից կամ ստեղծեք ձեր սեփականը։
 newtab-promo-card-cta-addons = Փորձել հիմա
@@ -779,44 +808,150 @@ newtab-promo-card-dismiss-button =
 
 ## Strings introduced by the Nova redesign of the Timer widget
 
+# Small label shown beneath the live time while the focus timer is running or paused.
+newtab-widget-timer-running-focus = Կենտրոնացում
+# Small label shown beneath the live time while the break timer is running or paused.
+newtab-widget-timer-running-break = Ընդմիջում
+# Context-menu item to hide the Timer widget. Replaces the shared "Hide widget"
+# copy with a widget-specific string per the Nova design.
+newtab-widget-timer-menu-hide = Թաքցնել ժամաչափը
+# Heading shown inside the Timer widget after a focus session ends.
+newtab-widget-timer-celebration-heading-focus = Լավ աշխատանք
+# Heading shown inside the Timer widget after a break session ends.
+newtab-widget-timer-celebration-heading-break = Ձեր ընդմիջումն ավարտվեց
 # Message shown inside the Timer widget after a focus session ends.
 newtab-widget-timer-celebration-message-focus = Հանգստի կարիք ունե՞ք։
 # Message shown inside the Timer widget after a break session ends.
 newtab-widget-timer-celebration-message-break = Պատրա՞ստ եք կենտրոնանալու։
 
-## Sports widget
+##
 
+newtab-sports-widget-menu-view-schedule = Դիտել ժամանակացույցը
+newtab-sports-widget-menu-view-results = Դիտել արդյունքները
 # Milestone dates (e.g. group stage, semifinals, etc.). Refers to calendar dates.
 newtab-sports-widget-menu-key-dates = Հիմնական ամսաթվերը
 newtab-sports-widget-menu-learn-more = Իմանալ ավելին
 # “Keep tabs on” is an informal expression meaning to stay updated on, stay informed on, or regularly follow something (in this case, World Cup matches and updates).
 newtab-sports-widget-keep-tabs = Հետևեք Աշխարհի գավաթին
+newtab-sports-widget-view-schedule =
+    .label = Դիտել ժամանակացույցը
+newtab-sports-widget-follow-teams =
+    .label = Հետևեք թիմերին
+newtab-sports-widget-view-matches =
+    .label = Դիտել խաղերը
+# Variables:
+#   $number (number) - Maximum number of teams a user can choose to follow in the team selection state
+newtab-sports-widget-follow-teams-title =
+    { $number ->
+        [one] Հետևեք { $number } թիմերի
+       *[other] Հետևեք { $number } թիմերի
+    }
+newtab-sports-widget-choose-wallpaper =
+    .label = Ընտրեք պաստառ
+newtab-sports-widget-skip = Բաց թողնել
+newtab-sports-widget-search-country =
+    .placeholder = Որոնել երկիր
+    .aria-label = Որոնել երկիր
 newtab-sports-widget-cancel = Չեղարկել
+newtab-sports-widget-back-button =
+    .aria-label = Նախորդը
 newtab-sports-widget-done-button =
     .label = Պատրաստ է
+newtab-sports-widget-view-all =
+    .label = Դիտել բոլորը
+newtab-sports-widget-show-less =
+    .label = Ցուցադրել ավելի քիչ
+# Watch is a verb (as in watch matches online).
+newtab-sports-widget-watch =
+    .label = Դիտել
+    .title = Դիտել ուղիղ եթերում
+# Watch is a verb (as in watch matches online).
+newtab-sports-widget-watch-icon =
+    .aria-label = Դիտեք ուղիղ եթերում
+    .title = Դիտեք ուղիղ եթերում
+newtab-sports-widget-watch-dialog-close =
+    .aria-label = Փակել
+    .title = Փակել
+# Tag: user can watch without paying (sign-in may still be required).
+newtab-sports-widget-watch-stream-free = Ազատ
+# Tag: user can start watching via a trial; continued access may require payment after it ends.
+newtab-sports-widget-watch-stream-free-trial = Անվճար փորձաշրջան
+# Tag: provider offers both a no-cost or trial path and a paid path.
+newtab-sports-widget-watch-stream-free-paid = Անվճար և վճարովի
+# Tag: user must pay to watch (subscription, TV provider, premium plan, or add-on).
+newtab-sports-widget-watch-stream-paid = Վճարված
+# Note: provider only streams some matches, not the full tournament.
+newtab-sports-widget-watch-stream-select-games-only = Ընտրեք միայն խաղեր
+# Heading for the list of streaming services available in the user’s country/region.
+newtab-sports-widget-watch-available-region = Հասանելի է ձեր տարածաշրջանում
+# Heading for the list of streaming services available outside the user’s country/region.
+newtab-sports-widget-watch-available-other-regions = Այլ տարածաշրջաններ
+# Button that opens the provider’s stream page in a new tab.
+newtab-sports-widget-watch-play =
+    .aria-label = Բաց հոսք
+    .title = Բաց հոսք
 newtab-sports-widget-group-stage = Խմբային փուլ
+newtab-sports-widget-group-a = Խումբ A
+newtab-sports-widget-group-b = Խումբ B
+newtab-sports-widget-group-c = Խումբ C
+newtab-sports-widget-group-d = Խումբ D
+newtab-sports-widget-group-e = Խումբ E
+newtab-sports-widget-group-f = Խումբ F
+newtab-sports-widget-group-g = Խումբ G
+newtab-sports-widget-group-h = Խումբ H
+newtab-sports-widget-group-i = Խումբ I
 newtab-sports-widget-round-32 = 32-ի փուլ
+newtab-sports-widget-round-16 = 16-ի փուլ
+newtab-sports-widget-quarter-finals = Քառորդ եզրափակիչներ
+# The "LIVE" string is meant to be uppercase in English, but other languages and locales may vary in how they handle this.
+newtab-sports-widget-live = ՈՒՂԻՂ
 newtab-custom-widget-live-refresh =
     .title = Թարմացնել միավորները
     .aria-label = Թարմացնել միավորները
+# Milestone dates (e.g. group stage, semifinals, etc.). Refers to calendar dates.
+newtab-sports-widget-key-dates = Հիմնական ամսաթվերը
 newtab-sports-widget-upcoming = Առաջիկա
+# Used for a match currently ongoing
+newtab-sports-widget-now = Հիմա
 newtab-sports-widget-results = Արդյունքներ
 newtab-sports-widget-semi-finals = Կիսաեզրափակիչներ
 newtab-sports-widget-bronze-finals = Բրոնզե եզրափակիչ
 # Final is the final match for 1st place.
 newtab-sports-widget-final = Եզրափակիչ
+# Variables:
+#   $start (Date) - Start date of a tournament stage
+#   $end (Date) - End date of a tournament stage
+newtab-sports-widget-key-date-range = { DATETIME($start, month: "short", day: "numeric") } – { DATETIME($end, month: "short", day: "numeric") }
+# Variables:
+#   $date (Date) - Date of a single tournament event
+newtab-sports-widget-key-date = { DATETIME($date, month: "short", day: "numeric") }
 newtab-sports-widget-delayed = Հետաձգված
+newtab-sports-widget-postponed = Հետաձգված է
+newtab-sports-widget-suspended = Կասեցված է
 newtab-sports-widget-cancelled = Չեղարկված
+newtab-sports-widget-information = Տեղեկություններ խաղի մասին
+newtab-sports-widget-no-live-data = Խաղի ուղիղ հեռարձակման տվյալները այս պահին չեն թարմացվում
 newtab-sports-widget-view-results-link = Դիտել արդյունքները
 newtab-sports-widget-third-place = Երրորդ տեղը
+# Runner-up is the team in 2nd place.
+newtab-sports-widget-runner-up = Երկրորդ տեղը գրավածները
 newtab-sports-widget-champions = Չեմպիոններ
 newtab-sports-widget-world-cup-champions = 2026 թվականի աշխարհի առաջնության չեմպիոններ
+
+## Sports widget OMC messages
+## Shown as on-screen messages promoting the Sports widget and World Cup wallpapers.
+
+newtab-sports-widget-message-add-widgets-cta =
+    .label = Ավելացնել վիջեթներ
 
 ## Strings for activation window message variants. In certain experiment configurations,
 ## the strings from these variants may be displayed in a message below the search input
 ## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
 ## labels, but not all.
 
+newtab-activation-window-message-dismiss-button =
+    .title = Բաց թողնել
+    .aria-label = Բաց թողնել
 newtab-activation-window-message-customization-focus-primary-button =
     .label = Սկսեք անհատականացնել
 # "This space" refers to about:newtab. The sentiment of "plays by your rules" is
@@ -827,7 +962,22 @@ newtab-activation-window-message-values-focus-header = Այս տարածքը խ�
 
 ## Strings for the Clock widget
 
+# Context menu item: toggle the clock card off.
+newtab-clock-widget-menu-hide = Թաքցնել ժամացույցը
+newtab-clock-widget-menu-learn-more = Իմանալ ավելին
 newtab-clock-widget-button-add-clock = Ավելացնել
 newtab-clock-widget-button-save = Պահել
+newtab-clock-widget-button-remove-clock =
+    .title = Հեռացնել ժամացույցը
+    .aria-label = Հեռացնել ժամացույցը
+newtab-clock-widget-add-clock-form =
+    .aria-label = Ավելացնել ժամացույց
+newtab-clock-widget-edit-clock-form =
+    .aria-label = Խմբագրել ժամացույցը
+# "Search results" is the accessible label for the listbox dropdown that appears
+# below the location search field, listing matching cities as the user types.
+# It means "results of the search", not "search within the results".
+newtab-clock-widget-search-results =
+    .aria-label = Որոնման արդյունքներ
 # $nickname (String) - The user-defined nickname for a saved clock location (e.g., "Home", "Office").
 newtab-clock-widget-label-nickname-with-value = Մականուն՝ { $nickname }

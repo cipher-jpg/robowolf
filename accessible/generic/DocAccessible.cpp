@@ -389,13 +389,19 @@ static uint64_t GetCacheDomainsQueueUpdateSuperset(uint64_t aCacheDomains) {
   return aCacheDomains;
 }
 
+bool DocAccessible::IsPrintDoc() const {
+  if (!mDocumentNode || !mDocumentNode->IsStaticDocument()) {
+    return false;
+  }
+  // A DocAccessible should only ever be created for a static document if it's a
+  // print document.
+  MOZ_ASSERT(mDocumentNode->GetBrowsingContext()->Top()->GetIsPrinting());
+  return true;
+}
+
 uint64_t DocAccessible::EffectiveCacheDomains() const {
-  if (mDocumentNode) {
-    if (dom::BrowsingContext* bc = mDocumentNode->GetBrowsingContext()) {
-      if (bc->Top()->GetIsPrinting()) {
-        return kPdfCacheDomains;
-      }
-    }
+  if (IsPrintDoc()) {
+    return kPdfCacheDomains;
   }
   return nsAccessibilityService::GetActiveCacheDomains();
 }
@@ -1212,6 +1218,10 @@ void DocAccessible::ElementStateChanged(dom::Document* aDocument,
     // (the popover tree might update to have new interactive elements,
     // which would change this association).
     QueueCacheUpdateForPopoverInvokers(aElement);
+  }
+
+  if (aStateMask.HasAtLeastOneOfStates(dom::ElementState::HEADING_LEVEL_BITS)) {
+    QueueCacheUpdate(accessible, CacheDomain::GroupInfo);
   }
 }
 

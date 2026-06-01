@@ -105,6 +105,9 @@ var gExceptionPaths = [
   // The profile avatars are directly referenced.
   "chrome://browser/content/profiles/assets/",
 
+  // The custom model choice icon is referenced programatically in input-model-select.mjs.
+  "chrome://browser/content/aiwindow/assets/model-choice-0.svg",
+
   // The picture-in-picture add-on.
   "resource://builtin-addons/pictureinpicture/",
 
@@ -177,7 +180,7 @@ var allowlist = [
 
   // devtools/client/inspector/bin/dev-server.js
   {
-    file: "chrome://devtools/content/inspector/markup/markup.xhtml",
+    file: "chrome://devtools/content/inspector/markup/markup.html",
     isFromDevTools: true,
   },
 
@@ -233,7 +236,6 @@ var allowlist = [
 
   // File from the ipp-activator add-on
   { file: "resource://builtin-addons/ipp-activator/breakages/tab.json" },
-  { file: "resource://builtin-addons/ipp-activator/breakages/tabWC.json" },
 
   // Starting from here, files in the allowlist are bugs that need fixing.
   // Bug 1339424 (wontfix?)
@@ -325,15 +327,16 @@ var allowlist = [
     file: "resource://app/modules/backup/CookiesBackupResource.sys.mjs",
   },
 
-  // Bug 2035340: TabManagementService will be used by AI Window for tab management
-  {
-    file: "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs",
-  },
-
   // Bug 2023223: Replace loginOrigin, addresses, payments, and form history
   // richlist items with autocomplete-row-item
   {
     file: "chrome://global/content/autocomplete-row-item/autocomplete-row-item.mjs",
+  },
+
+  // Bug 2041770: MemoriesSessions is introduced ahead of its production
+  // Remove this entry once the consumer lands.
+  {
+    file: "moz-src:///browser/components/aiwindow/models/memories/MemoriesSessions.sys.mjs",
   },
 
   // Referenced dynamically in newtab components via template literals:

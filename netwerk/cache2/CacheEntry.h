@@ -157,6 +157,8 @@ class CacheEntry final : public nsIRunnable,
   nsresult HashingKeyWithStorage(nsACString& aResult) const;
   nsresult HashingKey(nsACString& aResult) const;
 
+  void NoteNoVarySearchEntry(nsIURI* aURI);
+
   static nsresult HashingKey(const nsACString& aStorageID,
                              const nsACString& aEnhanceID, nsIURI* aURI,
                              nsACString& aResult);
@@ -332,7 +334,7 @@ class CacheEntry final : public nsIRunnable,
   ::mozilla::ThreadSafeAutoRefCnt mHandlesCount MOZ_GUARDED_BY(mLock);
 
   nsTArray<Callback> mCallbacks MOZ_GUARDED_BY(mLock);
-  nsCOMPtr<nsICacheEntryDoomCallback> mDoomCallback;
+  nsCOMPtr<nsICacheEntryDoomCallback> mDoomCallback MOZ_GUARDED_BY(mLock);
 
   // Set in CacheEntry::Load(), only - shouldn't need to be under lock
   // XXX FIX?  is this correct?

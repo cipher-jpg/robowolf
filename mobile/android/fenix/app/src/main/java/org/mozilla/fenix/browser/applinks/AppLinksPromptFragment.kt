@@ -15,6 +15,7 @@ import android.widget.FrameLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -60,6 +61,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import mozilla.components.feature.app.links.RedirectDialogFragment
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.compose.ExpandableMenuItemAnimation
+import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
@@ -111,18 +113,20 @@ class AppLinksPromptFragment : RedirectDialogFragment() {
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
         (super.onCreateDialog(savedInstanceState) as BottomSheetDialog).apply {
             setOnShowListener {
-                val bottomSheet = findViewById<FrameLayout>(materialR.id.design_bottom_sheet)
-                bottomSheet?.let {
-                    ViewCompat.setOnApplyWindowInsetsListener(it) { view, insets ->
-                        val systemBarInsets = insets.getInsets(systemBars())
-                        view.setPadding(0, systemBarInsets.top, 0, systemBarInsets.bottom)
-                        insets
+                runIfFragmentIsAttached {
+                    val bottomSheet = findViewById<FrameLayout>(materialR.id.design_bottom_sheet)
+                    bottomSheet?.let {
+                        ViewCompat.setOnApplyWindowInsetsListener(it) { view, insets ->
+                            val systemBarInsets = insets.getInsets(systemBars())
+                            view.setPadding(0, systemBarInsets.top, 0, systemBarInsets.bottom)
+                            insets
+                        }
                     }
-                }
-                bottomSheet?.setBackgroundResource(R.drawable.bottom_sheet_with_top_rounded_corners)
+                    bottomSheet?.setBackgroundResource(R.drawable.bottom_sheet_with_top_rounded_corners)
 
-                behavior.peekHeight = resources.displayMetrics.heightPixels
-                behavior.state = BottomSheetBehavior.STATE_EXPANDED
+                    behavior.peekHeight = context.resources.displayMetrics.heightPixels
+                    behavior.state = BottomSheetBehavior.STATE_EXPANDED
+                }
             }
         }
 
@@ -205,6 +209,8 @@ class AppLinksPromptFragment : RedirectDialogFragment() {
     }
 }
 
+private const val WWW_PREFIX = "www."
+
 private data class AppLinkRedirectConfig(
     val appName: String,
     val title: String,
@@ -227,7 +233,8 @@ private fun AppLinkRedirectBottomSheetContent(
     var isCheckboxChecked by remember { mutableStateOf(false) }
 
     val sourceDomain = if (config.sourceUrl.isNotEmpty()) {
-        config.sourceUrl.toUri().host ?: ""
+        // Strip "www." per design. Other prefixes are kept as they carry meaningful context.
+        config.sourceUrl.toUri().host?.removePrefix(WWW_PREFIX) ?: ""
     } else {
         ""
     }
@@ -263,12 +270,6 @@ private fun AppLinkRedirectBottomSheetContent(
                 ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
-                text = config.message,
-                style = FirefoxTheme.typography.subtitle1,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-
             AppLinkDetailsSection(config, initialExpanded = initialDetailsExpanded)
         }
 
@@ -280,6 +281,7 @@ private fun AppLinkRedirectBottomSheetContent(
         }
 
         AppLinkActionButtons(
+            appName = config.appName,
             onConfirm = { onConfirm(isCheckboxChecked) },
             onCancel = onCancel,
         )
@@ -325,7 +327,7 @@ private fun AppLinkDetailsSection(config: AppLinkRedirectConfig, initialExpanded
     var isExpanded by remember { mutableStateOf(initialExpanded) }
 
     Column(
-        modifier = Modifier.clip(shape = RoundedCornerShape(24.dp)),
+        modifier = Modifier.clip(shape = RoundedCornerShape(28.dp)),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         AppLinkItem(
@@ -446,6 +448,7 @@ private fun AppLinkCheckboxSection(
 
 @Composable
 private fun AppLinkActionButtons(
+    appName: String,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -456,7 +459,7 @@ private fun AppLinkActionButtons(
     ) {
         TextButton(onClick = onCancel) {
             Text(
-                text = stringResource(AppLinksR.string.mozac_feature_applinks_confirm_dialog_deny),
+                text = stringResource(R.string.applinks_prompt_negative_button, appName),
                 style = FirefoxTheme.typography.button,
                 color = MaterialTheme.colorScheme.secondary,
             )
@@ -471,7 +474,7 @@ private fun AppLinkActionButtons(
             ),
         ) {
             Text(
-                text = stringResource(AppLinksR.string.mozac_feature_applinks_confirm_dialog_confirm),
+                text = stringResource(AppLinksR.string.mozac_feature_applinks_confirm_dialog_confirm_2),
                 style = FirefoxTheme.typography.button,
                 color = MaterialTheme.colorScheme.onPrimary,
             )
@@ -492,24 +495,28 @@ private fun AppHeader(
             .semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (appIcon != null) {
-            Icon(
-                painter = rememberDrawablePainter(appIcon),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(40.dp)
-                    .padding(all = 4.dp),
-                tint = null,
-            )
-        } else {
-            Icon(
-                painter = painterResource(iconsR.drawable.mozac_ic_globe_24),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(40.dp)
-                    .padding(all = 4.dp),
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (appIcon != null) {
+                Icon(
+                    painter = rememberDrawablePainter(appIcon),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = null,
+                )
+            } else {
+                Icon(
+                    painter = painterResource(iconsR.drawable.mozac_ic_globe_24),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
 
         Spacer(modifier = Modifier.size(8.dp))
@@ -520,11 +527,13 @@ private fun AppHeader(
                 style = FirefoxTheme.typography.headline7,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Text(
-                text = url,
-                style = FirefoxTheme.typography.caption,
-                color = MaterialTheme.colorScheme.secondary,
-            )
+            if (url.isNotEmpty()) {
+                Text(
+                    text = stringResource(AppLinksR.string.mozac_feature_applinks_link_from, url),
+                    style = FirefoxTheme.typography.caption,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
         }
     }
 }

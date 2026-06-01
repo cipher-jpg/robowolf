@@ -792,6 +792,15 @@ newtab-widget-lists-name-placeholder-new =
 newtab-widget-section-title = Віджэты
 newtab-widget-menu-hide = Схаваць віджэт
 newtab-widget-menu-change-size = Змяніць памер
+# Parent label for a submenu in the widget menu that reorders the widget
+# among its siblings. "Left" and "Right" appear as items inside this submenu.
+newtab-widget-menu-move = Перанесці
+# Submenu item under "Move"; moves the widget one position to the left.
+# RTL locales should translate this as "Right".
+newtab-widget-menu-move-left = Улева
+# Submenu item under "Move"; moves the widget one position to the right.
+# RTL locales should translate this as "Left".
+newtab-widget-menu-move-right = Управа
 newtab-widget-size-small = Малы
 newtab-widget-size-medium = Сярэдні
 newtab-widget-size-large = Вялікі
@@ -808,6 +817,9 @@ newtab-widget-section-minimize =
 newtab-widget-section-menu-button =
     .title = Меню віджэтаў
     .aria-label = Адкрыць меню віджэтаў
+newtab-widget-add-widgets-button =
+    .aria-label = Дадаць віджэт
+    .title = Дадаць віджэт
 newtab-widget-section-menu-manage = Кіраванне віджэтамі
 newtab-widget-section-menu-hide-all = Схаваць віджэты
 newtab-widget-section-menu-learn-more = Падрабязней
@@ -899,9 +911,10 @@ newtab-widget-timer-celebration-message-focus = Патрэбен перапын�
 # Message shown inside the Timer widget after a break session ends.
 newtab-widget-timer-celebration-message-break = Гатовыя засяродзіцца?
 
-## Sports widget
+##
 
 newtab-sports-widget-menu-follow-teams = Падпісацца на каманды
+newtab-sports-widget-menu-view-schedule = Паглядзець расклад
 newtab-sports-widget-menu-view-upcoming = Праглядзець будучыя
 newtab-sports-widget-menu-view-results = Паглядзець вынікі
 # Milestone dates (e.g. group stage, semifinals, etc.). Refers to calendar dates.
@@ -931,6 +944,8 @@ newtab-sports-widget-search-country =
     .placeholder = Пошук краіны
     .aria-label = Пошук краіны
 newtab-sports-widget-cancel = Скасаваць
+newtab-sports-widget-back-button =
+    .aria-label = Назад
 newtab-sports-widget-done-button =
     .label = Гатова
 newtab-sports-widget-group-stage = Групавы этап
@@ -945,6 +960,8 @@ newtab-custom-widget-live-refresh =
 # Milestone dates (e.g. group stage, semifinals, etc.). Refers to calendar dates.
 newtab-sports-widget-key-dates = Ключавыя даты
 newtab-sports-widget-upcoming = Наступныя
+# Used for a match currently ongoing
+newtab-sports-widget-now = Зараз
 newtab-sports-widget-results = Вынікі
 newtab-sports-widget-semi-finals = Паўфіналы
 newtab-sports-widget-bronze-finals = Гульня за трэцяе месца
@@ -1039,6 +1056,10 @@ newtab-clock-widget-edit-clock-form =
 # It means "results of the search", not "search within the results".
 newtab-clock-widget-search-results =
     .aria-label = Вынікі пошуку
+# Shown in place of the search results when the user's query does not match any
+# supported city — e.g. typing a misspelled name or a place not in the IANA
+# time zone list.
+newtab-clock-widget-search-no-results = Няма супадзенняў
 # "Open menu for clock" is an icon-only button in the widget toolbar — the
 # attributes are consumed as tooltip/screen-reader label only. The button
 # never renders visible text.

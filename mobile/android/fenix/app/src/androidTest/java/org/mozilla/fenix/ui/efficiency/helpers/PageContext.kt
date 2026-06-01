@@ -20,6 +20,7 @@ import org.mozilla.fenix.ui.efficiency.pageObjects.SearchBarComponent
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsAboutPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsAccessibilityPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsAddonsManagerPage
+import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsAppIconPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsAutofillPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsCustomizePage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsDataCollectionPage
@@ -37,6 +38,7 @@ import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsPasswordsPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsPrivateBrowsingPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsSavePasswordsPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsSavedPasswordsPage
+import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsSearchDefaultSearchEnginePage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsSearchPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsSiteSettingsExceptionsPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsSiteSettingsPage
@@ -65,6 +67,7 @@ class PageContext(val composeRule: AndroidComposeTestRule<HomeActivityIntentTest
     val settingsAbout = SettingsAboutPage(composeRule)
     val settingsAccessibility = SettingsAccessibilityPage(composeRule)
     val settingsAddonsManager = SettingsAddonsManagerPage(composeRule)
+    val settingsAppIcon = SettingsAppIconPage(composeRule)
     val settingsAutofill = SettingsAutofillPage(composeRule)
     val settingsCustomize = SettingsCustomizePage(composeRule)
     val settingsDataCollection = SettingsDataCollectionPage(composeRule)
@@ -82,6 +85,7 @@ class PageContext(val composeRule: AndroidComposeTestRule<HomeActivityIntentTest
     val settingsSavePasswords = SettingsSavePasswordsPage(composeRule)
     val settingsSavedPasswords = SettingsSavedPasswordsPage(composeRule)
     val settingsSearch = SettingsSearchPage(composeRule)
+    val settingsSearchDefaultSearchEngine = SettingsSearchDefaultSearchEnginePage(composeRule)
     val settingsSiteSettings = SettingsSiteSettingsPage(composeRule)
     val settingsSiteSettingsExceptions = SettingsSiteSettingsExceptionsPage(composeRule)
     val settingsTabs = SettingsTabsPage(composeRule)

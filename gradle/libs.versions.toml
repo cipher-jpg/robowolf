@@ -32,6 +32,7 @@ datastore-core = "1.2.1"
 documentfile = "1.1.0"
 drawerlayout = "1.2.0"
 emoji2 = "1.6.0"
+exifinterface = "1.4.1"
 fragment = "1.8.9"
 lifecycle = "2.10.0"
 media = "1.7.1"
@@ -56,7 +57,7 @@ work = "2.11.2"
 accompanist = "0.37.3"
 firebase-messaging = "25.0.2"
 installreferrer = "2.2"
-ksp = "2.3.8"
+ksp = "2.3.9"
 material = "1.14.0"
 mlkit-prompt = "1.0.0-beta2"
 osslicenses-plugin = "0.12.0"
@@ -71,7 +72,6 @@ protobuf = "4.35.0" # Keep Protobuf in sync with the version used by AppServices
 dependency-analysis = "3.12.0"
 jacoco = "0.8.14"
 kaml = "0.104.0"
-kotlin-dsl = "6.5.7"
 protobuf-plugin = "0.10.0"
 python-envs-plugin = "0.0.31"
 semanticdb-javac = "0.12.0"
@@ -108,7 +108,7 @@ androidsvg = "1.4"
 disklrucache = "2.0.2"
 jetbrains-markdown = "0.7.3"
 jna = "5.18.1"
-json = "20251224"
+json = "20260522"
 jsoup = "1.22.2"
 okhttp = "5.3.2"
 okio = "3.17.0"
@@ -159,6 +159,7 @@ androidx-datastore-preferences = { module = "androidx.datastore:datastore-prefer
 androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile" }
 androidx-drawerlayout = { module = "androidx.drawerlayout:drawerlayout", version.ref = "drawerlayout" }
 androidx-emoji2 = { module = "androidx.emoji2:emoji2", version.ref = "emoji2" }
+androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exifinterface" }
 androidx-fragment = { module = "androidx.fragment:fragment", version.ref = "fragment" }
 androidx-fragment-compose = { module = "androidx.fragment:fragment-compose", version.ref = "fragment" }
 androidx-fragment-ktx = { module = "androidx.fragment:fragment-ktx", version.ref = "fragment" }
@@ -309,7 +310,6 @@ dependency-analysis = { id = "com.autonomousapps.dependency-analysis", version.r
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-kotlin-dsl = { id = "org.gradle.kotlin.kotlin-dsl", version.ref = "kotlin-dsl" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 protobuf-plugin = { id = "com.google.protobuf", version.ref = "protobuf-plugin" }

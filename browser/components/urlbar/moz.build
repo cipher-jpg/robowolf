@@ -19,7 +19,6 @@ MOZ_SRC_FILES += [
     "QuickSuggest.sys.mjs",
     "SmartbarMentionsPanelSearch.sys.mjs",
     "UrlbarController.sys.mjs",
-    "UrlbarEventBufferer.sys.mjs",
     "UrlbarMuxerStandard.sys.mjs",
     "UrlbarPrefs.sys.mjs",
     "UrlbarProviderAboutPages.sys.mjs",
@@ -53,14 +52,12 @@ MOZ_SRC_FILES += [
     "UrlbarProviderTokenAliasEngines.sys.mjs",
     "UrlbarProviderTopSites.sys.mjs",
     "UrlbarProviderUnitConversion.sys.mjs",
-    "UrlbarResult.sys.mjs",
     "UrlbarSearchOneOffs.sys.mjs",
     "UrlbarSearchTermsPersistence.sys.mjs",
     "UrlbarSearchUtils.sys.mjs",
     "UrlbarTokenizer.sys.mjs",
     "UrlbarUtils.sys.mjs",
     "UrlbarValueFormatter.sys.mjs",
-    "UrlbarView.sys.mjs",
 ]
 
 MOZ_SRC_FILES += [

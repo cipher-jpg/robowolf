@@ -138,10 +138,40 @@
             "default": "{button.background.color.ghost.hover}",
             "forcedColors": "{button.background.color.primary.@base}"
           }
+        },
+        "selected": {
+          "value": "{button.background.color.ghost.active}"
         }
       },
       "selected": {
         "value": "{button.background.color.active}"
+      },
+      "toolbar": {
+        "@base": {
+          "value": {
+            "default": "transparent",
+            "brand": {
+              "forcedColors": "{button.background.color.@base}"
+            }
+          }
+        },
+        "active": {
+          "value": "{toolbarbutton.background.color.active}"
+        },
+        "disabled": {
+          "value": {
+            "default": "{button.background.color.ghost.@base}",
+            "brand": {
+              "forcedColors": "{button.background.color.disabled}"
+            }
+          }
+        },
+        "hover": {
+          "value": "{toolbarbutton.background.color.hover}"
+        },
+        "selected": {
+          "value": "{button.background.color.ghost.active}"
+        }
       }
     }
   },
@@ -223,6 +253,31 @@
           "value": "{button.border.color.ghost.active}"
         }
       },
+      "menu": {
+        "@base": {
+          "value": {
+            "default": "{button.border.color.ghost.@base}"
+          }
+        },
+        "active": {
+          "value": {
+            "default": "{button.border.color.ghost.active}"
+          }
+        },
+        "disabled": {
+          "value": {
+            "default": "{button.border.color.ghost.disabled}"
+          }
+        },
+        "hover": {
+          "value": {
+            "default": "{button.border.color.ghost.hover}"
+          }
+        },
+        "selected": {
+          "value": "{button.border.color.menu.active}"
+        }
+      },
       "hover": {
         "value": {
           "default": "{button.border.color.@base}",
@@ -257,6 +312,31 @@
       },
       "selected": {
         "value": "{button.border.color.active}"
+      },
+      "toolbar": {
+        "@base": {
+          "value": {
+            "default": "{button.border.color.@base}"
+          }
+        },
+        "active": {
+          "value": {
+            "default": "{button.border.color.active}"
+          }
+        },
+        "disabled": {
+          "value": {
+            "default": "{button.border.color.disabled}"
+          }
+        },
+        "hover": {
+          "value": {
+            "default": "{button.border.color.hover}"
+          }
+        },
+        "selected": {
+          "value": "{button.border.color.ghost.active}"
+        }
       }
     },
     "radius": {
@@ -435,6 +515,9 @@
             "default": "{button.text.color.ghost.hover}",
             "forcedColors": "{button.text.color.primary.@base}"
           }
+        },
+        "selected": {
+          "value": "{button.text.color.ghost.active}"
         }
       },
       "primary": {
@@ -468,6 +551,43 @@
       },
       "selected": {
         "value": "{button.text.color.active}"
+      },
+      "toolbar": {
+        "@base": {
+          "value": {
+            "default": "inherit",
+            "brand": {
+              "prefersContrast": "{button.text.color.@base}",
+              "forcedColors": "{button.text.color.@base}"
+            }
+          }
+        },
+        "active": {
+          "value": {
+            "default": "inherit",
+            "prefersContrast": "{button.text.color.active}",
+            "forcedColors": "{button.text.color.active}"
+          }
+        },
+        "disabled": {
+          "value": {
+            "default": "inherit",
+            "brand": {
+              "prefersContrast": "{button.text.color.disabled}",
+              "forcedColors": "{button.text.color.disabled}"
+            }
+          }
+        },
+        "hover": {
+          "value": {
+            "default": "inherit",
+            "prefersContrast": "{button.text.color.hover}",
+            "forcedColors": "{button.text.color.hover}"
+          }
+        },
+        "selected": {
+          "value": "{button.text.color.ghost.active}"
+        }
       }
     }
   },
