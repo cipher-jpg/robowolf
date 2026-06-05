@@ -1565,6 +1565,20 @@
   <string name="tab_manager_multiselect_menu_item_add_to_collection">Aggiungi a una raccolta</string>
   <!-- Text shown in the multiselect menu for adding selected tabs to a tab group. -->
   <string name="tab_manager_multiselect_menu_item_add_to_tab_group">Aggiungi a un gruppo</string>
+  <!-- Content description for the "+" button in the bottom group tab strip. -->
+  <string name="group_tab_strip_add_tab">Aggiungi scheda al gruppo</string>
+  <!-- Content description for the close button on a tab in the bottom group tab strip. %s is the tab title. -->
+  <string name="group_tab_strip_close_tab">Chiudi %s nel gruppo</string>
+  <!-- Content description for the chevron button that hides the bottom group tab strip. -->
+  <string name="group_tab_strip_collapse">Nascondi la barra delle schede del gruppo</string>
+  <!-- Content description for the chevron button that re-opens the bottom group tab strip after it has been hidden. -->
+  <string name="group_tab_strip_expand">Mostra la barra delle schede del gruppo</string>
+  <!-- Title for the preference that toggles the bottom group tab strip. -->
+  <string name="preferences_group_tab_strip">Mostra la barra delle schede del gruppo</string>
+  <!-- Summary for the preference that toggles the bottom group tab strip. -->
+  <string name="preferences_group_tab_strip_summary">Mostra le schede del gruppo corrente nella parte inferiore della pagina</string>
+  <!-- Context menu item shown when long-pressing a link, to add the link to the active group tab strip. -->
+  <string name="context_menu_add_link_to_group_tab_strip">Aggiungi alla barra delle schede del gruppo</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">Menu schede selezionate</string>
   <!-- Title text displayed for a homepage tab in the tabs tray. -->
