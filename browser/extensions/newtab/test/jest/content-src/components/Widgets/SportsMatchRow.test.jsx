@@ -5,7 +5,10 @@
 import { fireEvent, render } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { actionTypes as at } from "common/Actions.mjs";
-import { SportsMatchRow } from "content-src/components/Widgets/SportsWidget/SportsMatchRow";
+import {
+  SportsMatchRow,
+  UpcomingMatchPlaceholder,
+} from "content-src/components/Widgets/SportsWidget/SportsMatchRow";
 
 const baseMatch = {
   home_team: { key: "ENG", name: "England" },
@@ -322,41 +325,39 @@ describe("<SportsMatchRow> aria-label l10n", () => {
 });
 
 describe("<SportsMatchRow> click handling", () => {
-  it("dispatches a newtab telemetry event and the open-search action on click", () => {
-    const { container, dispatch } = renderWithDispatch(
-      <SportsMatchRow match={baseMatch} variant="upcoming" />,
-      { widgetSize: "medium" }
-    );
+  it.each(["upcoming", "results", "now"])(
+    "dispatches a newtab telemetry event and the open-search action on click (variant=%s)",
+    variant => {
+      const { container, dispatch } = renderWithDispatch(
+        <SportsMatchRow match={baseMatch} variant={variant} />,
+        { widgetSize: "medium" }
+      );
 
-    fireEvent.click(container.querySelector("a.sports-match-row"));
+      fireEvent.click(container.querySelector("a.sports-match-row"));
 
-    expect(dispatch).toHaveBeenCalledTimes(2);
-    const [[userEvent], [openSearch]] = dispatch.mock.calls;
+      expect(dispatch).toHaveBeenCalledTimes(2);
+      const [[userEvent], [openSearch]] = dispatch.mock.calls;
 
-    // First dispatch: newtab-side telemetry. The widget_source is the row's
-    // variant so we can attribute clicks to the right tab in analytics; the
-    // widget_size comes from the pref (not the row's display `size`, which
-    // can be "list").
-    expect(userEvent).toMatchObject({
-      type: at.WIDGETS_USER_EVENT,
-      data: {
-        widget_name: "sports_widget",
-        widget_source: "upcoming",
-        user_action: "open_match_search",
-        widget_size: "medium",
-      },
-    });
+      expect(userEvent).toMatchObject({
+        type: at.WIDGETS_USER_EVENT,
+        data: {
+          widget_name: "sports",
+          widget_source: "widget",
+          user_action: "open_match_search",
+          action_value: variant,
+          widget_size: "medium",
+        },
+      });
 
-    // Second dispatch: the action the SportsFeed backend uses to call
-    // SearchUIUtils.loadSearch.
-    expect(openSearch).toMatchObject({
-      type: at.WIDGETS_SPORTS_OPEN_MATCH_SEARCH,
-      data: {
-        query: baseMatch.query,
-        eventInfo: expect.objectContaining({ button: 0 }),
-      },
-    });
-  });
+      expect(openSearch).toMatchObject({
+        type: at.WIDGETS_SPORTS_OPEN_MATCH_SEARCH,
+        data: {
+          query: baseMatch.query,
+          eventInfo: expect.objectContaining({ button: 0 }),
+        },
+      });
+    }
+  );
 
   it("propagates modifier key state in the dispatched eventInfo", () => {
     const { container, dispatch } = renderWithDispatch(
@@ -469,6 +470,97 @@ describe("<SportsMatchRow> click handling", () => {
   });
 });
 
+describe("<SportsMatchRow> followed teams", () => {
+  function getFlagWrappers(container) {
+    return container.querySelectorAll(".sports-match-flag-wrapper");
+  }
+  function getCodes(container) {
+    return container.querySelectorAll(".sports-match-code");
+  }
+
+  it("does not mark either side as followed when followedTeams is undefined", () => {
+    const { container } = renderWithDispatch(
+      <SportsMatchRow match={baseMatch} variant="upcoming" />
+    );
+    const wrappers = getFlagWrappers(container);
+    expect(wrappers[0].classList.contains("is-followed")).toBe(false);
+    expect(wrappers[1].classList.contains("is-followed")).toBe(false);
+    expect(container.querySelectorAll(".sports-match-flag-check")).toHaveLength(
+      0
+    );
+    const codes = getCodes(container);
+    expect(codes[0].querySelector("strong")).toBeNull();
+    expect(codes[1].querySelector("strong")).toBeNull();
+  });
+
+  it("marks only the home side when only the home team is followed", () => {
+    const { container } = renderWithDispatch(
+      <SportsMatchRow
+        match={baseMatch}
+        variant="upcoming"
+        followedTeams={new Set(["ENG"])}
+      />
+    );
+    const wrappers = getFlagWrappers(container);
+    expect(wrappers[0].classList.contains("is-followed")).toBe(true);
+    expect(wrappers[1].classList.contains("is-followed")).toBe(false);
+    const checks = container.querySelectorAll(".sports-match-flag-check");
+    expect(checks).toHaveLength(1);
+    expect(wrappers[0].querySelector(".sports-match-flag-check")).toBeTruthy();
+    const codes = getCodes(container);
+    expect(codes[0].querySelector("strong").textContent).toBe("ENG");
+    expect(codes[1].querySelector("strong")).toBeNull();
+  });
+
+  it("marks only the away side when only the away team is followed", () => {
+    const { container } = renderWithDispatch(
+      <SportsMatchRow
+        match={baseMatch}
+        variant="results"
+        followedTeams={new Set(["USA"])}
+      />
+    );
+    const wrappers = getFlagWrappers(container);
+    expect(wrappers[0].classList.contains("is-followed")).toBe(false);
+    expect(wrappers[1].classList.contains("is-followed")).toBe(true);
+    expect(wrappers[1].querySelector(".sports-match-flag-check")).toBeTruthy();
+    const codes = getCodes(container);
+    expect(codes[0].querySelector("strong")).toBeNull();
+    expect(codes[1].querySelector("strong").textContent).toBe("USA");
+  });
+
+  it("marks both sides when both teams are followed", () => {
+    const { container } = renderWithDispatch(
+      <SportsMatchRow
+        match={baseMatch}
+        variant="now"
+        followedTeams={new Set(["ENG", "USA"])}
+      />
+    );
+    const wrappers = getFlagWrappers(container);
+    expect(wrappers[0].classList.contains("is-followed")).toBe(true);
+    expect(wrappers[1].classList.contains("is-followed")).toBe(true);
+    expect(container.querySelectorAll(".sports-match-flag-check")).toHaveLength(
+      2
+    );
+  });
+
+  it("hides the check badge from assistive technology", () => {
+    const { container } = renderWithDispatch(
+      <SportsMatchRow
+        match={baseMatch}
+        variant="upcoming"
+        followedTeams={new Set(["ENG"])}
+      />
+    );
+    expect(
+      container
+        .querySelector(".sports-match-flag-check")
+        .getAttribute("aria-hidden")
+    ).toBe("true");
+  });
+});
+
 describe("<SportsMatchRow> flag accessibility", () => {
   it("sets alt and title on the home team flag image to the team name", () => {
     const { container } = renderWithDispatch(
@@ -495,5 +587,100 @@ describe("<SportsMatchRow> flag accessibility", () => {
     const teamDivs = container.querySelectorAll(".sports-match-team");
     expect(teamDivs[0].getAttribute("title")).toBeNull();
     expect(teamDivs[1].getAttribute("title")).toBeNull();
+  });
+});
+
+describe("<SportsMatchRow> undecided (TBD) teams", () => {
+  // A knockout fixture whose teams aren't decided yet: the backend sends
+  // home_team/away_team as null but still provides a query and stage.
+  const tbdMatch = {
+    ...baseMatch,
+    home_team: null,
+    away_team: null,
+    status_type: "scheduled",
+    query: "Quarter-finals World Cup 2026",
+  };
+
+  it("renders a placeholder rectangle and '--' for each undecided team", () => {
+    const { container } = renderWithDispatch(
+      <SportsMatchRow match={tbdMatch} variant="upcoming" />
+    );
+    // Placeholder spans stand in for the flag images, which are absent.
+    expect(container.querySelectorAll(".sports-match-flag-tbd")).toHaveLength(
+      2
+    );
+    expect(container.querySelectorAll("img.sports-match-flag")).toHaveLength(0);
+    const codes = container.querySelectorAll(".sports-match-code");
+    expect(codes[0].textContent).toBe("--");
+    expect(codes[1].textContent).toBe("--");
+  });
+
+  it("renders a real team on the decided side and a placeholder on the other", () => {
+    const { container } = renderWithDispatch(
+      <SportsMatchRow
+        match={{ ...tbdMatch, home_team: { key: "ENG", name: "England" } }}
+        variant="upcoming"
+      />
+    );
+    const flags = container.querySelectorAll("img.sports-match-flag");
+    expect(flags).toHaveLength(1);
+    expect(flags[0].getAttribute("alt")).toBe("England");
+    expect(container.querySelectorAll(".sports-match-flag-tbd")).toHaveLength(
+      1
+    );
+    const codes = container.querySelectorAll(".sports-match-code");
+    expect(codes[0].textContent).toBe("ENG");
+    expect(codes[1].textContent).toBe("--");
+  });
+
+  it("substitutes the tbdTeamName prop for an undecided team in the aria-label", () => {
+    const { container } = renderWithDispatch(
+      <SportsMatchRow
+        match={{ ...tbdMatch, home_team: { key: "ENG", name: "England" } }}
+        variant="upcoming"
+        tbdTeamName="To be determined"
+      />
+    );
+    const args = JSON.parse(
+      container
+        .querySelector("a.sports-match-row")
+        .getAttribute("data-l10n-args")
+    );
+    expect(args.homeTeam).toBe("England");
+    expect(args.awayTeam).toBe("To be determined");
+  });
+});
+
+describe("<UpcomingMatchPlaceholder>", () => {
+  it("renders two placeholder tiles with '--' and a vs separator", () => {
+    const { container } = render(<UpcomingMatchPlaceholder size="large" />);
+    expect(container.querySelectorAll(".sports-match-flag-tbd")).toHaveLength(
+      2
+    );
+    expect(container.querySelectorAll("img.sports-match-flag")).toHaveLength(0);
+    const codes = container.querySelectorAll(".sports-match-code");
+    expect(codes[0].textContent).toBe("--");
+    expect(codes[1].textContent).toBe("--");
+    expect(
+      container.querySelector("[data-l10n-id='newtab-sports-widget-match-vs']")
+    ).toBeInTheDocument();
+  });
+
+  it("shows the 'no upcoming matches' note at the large size", () => {
+    const { container } = render(<UpcomingMatchPlaceholder size="large" />);
+    expect(
+      container.querySelector(
+        "[data-l10n-id='newtab-sports-widget-no-upcoming-matches']"
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("hides the note at non-large sizes", () => {
+    const { container } = render(<UpcomingMatchPlaceholder size="medium" />);
+    expect(
+      container.querySelector(
+        "[data-l10n-id='newtab-sports-widget-no-upcoming-matches']"
+      )
+    ).not.toBeInTheDocument();
   });
 });

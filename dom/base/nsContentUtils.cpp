@@ -111,6 +111,7 @@
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/ReportDeliver.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
 #include "nsIOService.h"
@@ -233,7 +234,7 @@
 #include "mozilla/dom/ContentList.h"
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/ipc/ProtocolUtils.h"
-#include "mozilla/net/UrlClassifierCommon.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/widget/IMEData.h"
 #include "nsAboutProtocolUtils.h"
 #include "nsArrayUtils.h"
@@ -10248,7 +10249,7 @@ bool nsContentUtils::IsFirstPartyTrackingResourceWindow(
   uint32_t classificationFlags =
       classifiedChannel->GetFirstPartyClassificationFlags();
 
-  return mozilla::net::UrlClassifierCommon::IsTrackingClassificationFlag(
+  return mozilla::net::ChannelClassifierUtils::IsTrackingClassificationFlag(
       classificationFlags, NS_UsePrivateBrowsing(document->GetChannel()));
 }
 
@@ -10797,19 +10798,24 @@ static CheckedInt<uint32_t> ExtraSpaceNeededForAttrEncoding(
   return CheckedInt<uint32_t>(numEncodedChars) * maxCharExtraSpace;
 }
 
+static void AppendEncodedAtomAttributeValue(nsAtom* aAtom,
+                                            StringBuilder& aBuilder) {
+  nsDependentAtomString atomStr(aAtom);
+  auto space = ExtraSpaceNeededForAttrEncoding(atomStr);
+  if (space.isValid() && !space.value()) {
+    aBuilder.Append(aAtom);
+  } else {
+    aBuilder.AppendWithAttrEncode(nsString(atomStr), space + atomStr.Length());
+  }
+}
+
 static void AppendEncodedAttributeValue(const nsAttrValue& aValue,
                                         StringBuilder& aBuilder) {
   if (nsAtom* atom = aValue.GetStoredAtom()) {
-    nsDependentAtomString atomStr(atom);
-    auto space = ExtraSpaceNeededForAttrEncoding(atomStr);
-    if (space.isValid() && !space.value()) {
-      aBuilder.Append(atom);
-    } else {
-      aBuilder.AppendWithAttrEncode(nsString(atomStr),
-                                    space + atomStr.Length());
-    }
+    AppendEncodedAtomAttributeValue(atom, aBuilder);
     return;
   }
+
   // NOTE(emilio): In most cases this will just be a reference to the stored
   // nsStringBuffer.
   nsString str;
@@ -10838,7 +10844,7 @@ static void StartElement(Element* aElement, StringBuilder& aBuilder) {
     nsAtom* isAttr = ceData->GetIs(aElement);
     if (isAttr && !aElement->HasAttr(nsGkAtoms::is)) {
       aBuilder.Append(uR"( is=")");
-      aBuilder.Append(isAttr);
+      AppendEncodedAtomAttributeValue(isAttr, aBuilder);
       aBuilder.Append(uR"(")");
     }
   }

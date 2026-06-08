@@ -1190,8 +1190,14 @@ var gSync = {
     this.enableSendTabIfValidTab();
     let sendTabTargets = this.getSendTabTargets();
 
-    if (
-      fxaStatus == "unverified" ||
+    // If the user is unverified and the account menu is being opened from the app/hamburger
+    // menu, we hide the send tab menu.
+    if (fxaStatus === "unverified") {
+      const appMenuPanel = document.getElementById("appMenu-popup");
+      const anchorIsInAppMenu = appMenuPanel.contains(anchor);
+      sendTabButton.hidden = anchorIsInAppMenu;
+      sendTabButton.setAttribute("data-l10n-id", "fxa-menu-send-to-mobile");
+    } else if (
       !sendTabTargets.length ||
       this.hasOnlyMobileSendTabTargets(sendTabTargets)
     ) {
@@ -1215,15 +1221,6 @@ var gSync = {
       // Turn off the indicator so the user doesn't see it in subsequent openings
       Services.prefs.setBoolPref(SYNC_PANEL_ACCESSED_PREF, true);
     }
-  },
-
-  _shouldShowSyncOffIndicator() {
-    // We only ever want to show the user the dot once, once they've clicked into the panel
-    // we do not show them the dot anymore
-    return !Services.prefs.getBoolPref(
-      "identity.fxaccounts.toolbar.syncSetup.panelAccessed",
-      false
-    );
   },
 
   updateFxAPanel(state = {}) {
@@ -1410,12 +1407,8 @@ var gSync = {
           cadButtonEl.removeAttribute("hidden");
           syncSetupEl.setAttribute("hidden", "true");
         } else {
-          if (this._shouldShowSyncOffIndicator()) {
-            fxaToolbarMenuButton?.setAttribute("badge-status", "sync-disabled");
-          }
           syncSetupEl.removeAttribute("hidden");
         }
-
         if (state.syncEnabled) {
           cadButtonEl.removeAttribute("hidden");
           syncSetupSeparator.removeAttribute("hidden");
@@ -2266,7 +2259,7 @@ var gSync = {
   _appendSendTabVerify(fragment, createDeviceNodeFn) {
     const [notVerified, verifyAccount] = this.fluentStrings.formatValuesSync([
       "account-send-tab-to-device-verify-status",
-      "account-send-tab-to-device-verify",
+      "account-send-tab-to-device-verify2",
     ]);
     const actions = [
       { label: verifyAccount, command: () => this.openPrefs("sendtab") },

@@ -631,6 +631,10 @@ newtab-toast-thanks-for-reporting =
 newtab-toast-widgets-hidden =
     .message = حدّد رمز القلم لإضافة الأدوات مرة أخرى في أي وقت.
 # Variables:
+#   $topic (string) - Topic that the user has followed
+newtab-section-toast-follow =
+    .message = أنت الآن تتابع { $topic }.
+# Variables:
 #   $topic (string) - Topic that the user has unfollowed
 newtab-section-toast-unfollow =
     .message = لم تعد تتابع { $topic }.
@@ -676,6 +680,9 @@ newtab-widget-lists-input-menu-delete = احذف
 newtab-widget-lists-input-menu-edit = حرّر
 newtab-widget-lists-input-menu-edit2 =
     .aria-label = حرِّر العنصر
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = +أنشئ قائمة جديدة
 newtab-widget-lists-name-label-default =
     .label = قائمة المهام
 newtab-widget-lists-name-label-checklist =
@@ -776,7 +783,7 @@ newtab-widget-timer-celebration-message-focus = أتحتاج إلى استراح
 # Message shown inside the Timer widget after a break session ends.
 newtab-widget-timer-celebration-message-break = أمستعد للتركيز؟
 
-## Sports widget
+##
 
 newtab-sports-widget-menu-learn-more = اطّلع على المزيد
 newtab-sports-widget-skip = تخطَّ

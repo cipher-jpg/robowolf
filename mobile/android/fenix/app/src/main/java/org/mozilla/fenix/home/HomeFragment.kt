@@ -38,7 +38,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.getSystemService
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -63,7 +62,6 @@ import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.feature.accounts.push.SendTabUseCases
 import mozilla.components.feature.tab.collections.TabCollection
 import mozilla.components.feature.top.sites.presenter.DefaultTopSitesPresenter
-import mozilla.components.lib.state.ext.consumeFrom
 import mozilla.components.lib.state.ext.flow
 import mozilla.components.lib.state.ext.observeAsComposableState
 import mozilla.components.service.nimbus.messaging.Message
@@ -108,7 +106,6 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getRootView
 import org.mozilla.fenix.ext.hideToolbar
 import org.mozilla.fenix.ext.isOnline
-import org.mozilla.fenix.ext.isToolbarAtBottom
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.recordEventInNimbus
 import org.mozilla.fenix.ext.requireComponents
@@ -118,6 +115,7 @@ import org.mozilla.fenix.home.bookmarks.BookmarksFeature
 import org.mozilla.fenix.home.bookmarks.controller.DefaultBookmarksController
 import org.mozilla.fenix.home.ext.showWallpaperOnboardingDialog
 import org.mozilla.fenix.home.logo.LogoController
+import org.mozilla.fenix.home.logo.TrackingProtectionController
 import org.mozilla.fenix.home.pocket.controller.DefaultPocketStoriesController
 import org.mozilla.fenix.home.privatebrowsing.controller.DefaultPrivateBrowsingController
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTabFeature
@@ -280,7 +278,11 @@ class HomeFragment : Fragment() {
         ViewBoundFeatureWrapper()
     private val lensLauncher: ActivityResultLauncher<Intent> =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            lensFeature?.get()?.handleImageResult(result.resultCode, result.data)
+            lensFeature?.get()?.handleCameraActivityResult(
+                result.resultCode,
+                result.data,
+                qrScanFenixFeature?.get(),
+            )
         }
     private val lensCameraPermissionLauncher: ActivityResultLauncher<String> =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
@@ -413,7 +415,6 @@ class HomeFragment : Fragment() {
         }
 
         homeNavigationBar = HomeNavigationBar(
-            context = activity,
             toolbarStore = toolbarStore,
             settings = activity.settings(),
             hideWhenKeyboardShown = true,
@@ -440,7 +441,7 @@ class HomeFragment : Fragment() {
                 (awesomeBarComposable ?: initializeAwesomeBarComposable(toolbarStore, modifier))
                     ?.SearchSuggestions()
             },
-            navigationBarContent = null,
+            navigationBarContent = { homeNavigationBar?.Content() },
         )
     }
 
@@ -498,21 +499,12 @@ class HomeFragment : Fragment() {
             )
         }
 
-        toolbarView.build(requireComponents.core.store.state, requireContext().settings().enableHomepageSearchBar)
-
-        val showDivider = requireContext().isToolbarAtBottom() || !requireContext().settings().enableHomepageSearchBar
-        toolbarView.updateDividerVisibility(showDivider)
-
-        consumeFrom(requireComponents.core.store) {
-            toolbarView.updateTabCounter(it)
-        }
+        toolbarView.build(requireContext().settings().enableHomepageSearchBar)
 
         requireComponents.appStore.state.wasLastTabClosedPrivate?.also {
             showUndoSnackbar(requireContext().tabClosedUndoMessage(it))
             requireComponents.appStore.dispatch(AppAction.TabStripAction.UpdateLastTabClosed(null))
         }
-
-        toolbarView.updateTabCounter(requireComponents.core.store.state)
 
         qrScanFenixFeature = QrScanFenixFeature.register(this, qrScanLauncher)
         voiceSearchFeature = VoiceSearchFeature.register(this, voiceSearchLauncher)
@@ -604,16 +596,14 @@ class HomeFragment : Fragment() {
                         .imePadding(),
                     topBar = {
                         if (isToolbarAtTop) {
-                            AndroidView(factory = { toolbarView.layout })
+                            toolbarView.Content()
                         }
                     },
                     bottomBar = {
                         if (isToolbarAtTop) {
-                            homeNavigationBar?.let { navBar ->
-                                AndroidView(factory = { navBar.layout })
-                            }
+                            homeNavigationBar?.Content()
                         } else {
-                            AndroidView(factory = { toolbarView.layout })
+                            toolbarView.Content()
                         }
                     },
                     containerColor = Color.Transparent,
@@ -683,7 +673,6 @@ class HomeFragment : Fragment() {
                 onTopSitesItemBound = {
                     StartupTimeline.onTopSitesItemBound(activity = (requireActivity() as HomeActivity))
                 },
-                navigationBarContent = null,
             )
 
             if (microsurveyVisible) {
@@ -851,6 +840,7 @@ class HomeFragment : Fragment() {
         findNavController().addOnDestinationChangedListener(destinationChangedListener)
 
         subscribeToTabCollections()
+        updateLastHomeActivity()
 
         requireComponents.backgroundServices.accountManagerAvailableQueue.runIfReadyOrQueue {
             // By the time this code runs, we may not be attached to a context or have a view lifecycle owner.
@@ -946,17 +936,23 @@ class HomeFragment : Fragment() {
         evaluateMessagesForMicrosurvey(components)
 
         val sportsWidgetState = components.appStore.state.sportsWidgetState
-        if (sportsWidgetState.isShown &&
-            (sportsWidgetState.hasWorldCupStarted || sportsWidgetState.isOneWeekToWorldCup)
-        ) {
-            // Fetches the full tournament schedule. The middleware caches the response
-            // so a later team selection re-derives cards without another network call.
+        val needsFetch = sportsWidgetState.hasWorldCupStarted || sportsWidgetState.isOneWeekToWorldCup
+        if (sportsWidgetState.isShown && (needsFetch || sportsWidgetState.isCountdownShown)) {
+            // Fetches the full tournament schedule once we're within seven days of kickoff
+            // or past it. The middleware caches the response so a later team selection
+            // re-derives cards without another network call.
+            //
             // When offline, skip the fetch and surface ConnectionInterrupted so the widget
-            // shows an error card instead of silently rendering empty matches.
-            val action = if (requireContext().getSystemService<ConnectivityManager>()?.isOnline() == true) {
-                SportsWidgetAction.FetchMatches
-            } else {
-                SportsWidgetAction.FetchFailed(SportCardErrorState.ConnectionInterrupted)
+            // shows an error card instead of the countdown / promo flow. Countdown mode
+            // (pre-7-day window) has no data to fetch, but still flips to the error card
+            // when offline so the user knows the widget isn't current. Conversely, when
+            // back online with nothing to fetch (countdown phase), clear any stale error
+            // so the countdown UI returns without requiring a manual Refresh tap.
+            val isOnline = requireContext().getSystemService<ConnectivityManager>()?.isOnline() == true
+            val action = when {
+                !isOnline -> SportsWidgetAction.FetchFailed(SportCardErrorState.ConnectionInterrupted)
+                needsFetch -> SportsWidgetAction.FetchMatches
+                else -> SportsWidgetAction.ErrorStateCleared
             }
             components.appStore.dispatch(action)
         }
@@ -980,6 +976,7 @@ class HomeFragment : Fragment() {
 
     override fun onStop() {
         super.onStop()
+        updateLastHomeActivity()
 
         findNavController().removeOnDestinationChangedListener(destinationChangedListener)
     }
@@ -1107,9 +1104,10 @@ class HomeFragment : Fragment() {
         if (requireContext().settings().showPrivacyReportFeature) {
             trackersBlockedFeature.set(
                 feature = TrackersBlockedFeature(
+                    browserStore = requireComponents.core.store,
                     appStore = requireComponents.appStore,
-                    fetchTotalTrackersBlocked = requireComponents.useCases
-                        .trackingProtectionUseCases.fetchTotalTrackersBlocked,
+                    currentSessionId = requireComponents.core.store.state.selectedTabId,
+                    trackingProtectionUseCases = requireComponents.useCases.trackingProtectionUseCases,
                 ),
                 owner = viewLifecycleOwner,
                 view = view,
@@ -1215,6 +1213,7 @@ class HomeFragment : Fragment() {
         )
     }
 
+    @Suppress("LongMethod")
     private fun initInteractor() {
         _sessionControlInteractor = SessionControlInteractor(
             controller = sessionControlController,
@@ -1272,6 +1271,10 @@ class HomeFragment : Fragment() {
             topSiteController = buildTopSitesController(),
             privacyNoticeBannerController = DefaultPrivacyNoticeBannerController(
                 privacyNoticeBannerStore = privacyNoticeBannerStore,
+            ),
+            trackingProtectionController = TrackingProtectionController(
+                navController = findNavController(),
+                currentSessionId = requireComponents.core.store.state.selectedTabId,
             ),
             logoController = LogoController(
                 longFoxFeature = requireComponents.core.longFoxFeature,
@@ -1368,6 +1371,16 @@ class HomeFragment : Fragment() {
         }
 
         FxNimbus.features.homescreen.recordExposure()
+    }
+
+    /**
+     * Updates the last time the user was active on the [HomeFragment].
+     * This is useful to determine if the user has to start on the [HomeFragment]
+     * or it should go directly to the [BrowserFragment].
+     */
+    @VisibleForTesting
+    internal fun updateLastHomeActivity() {
+        requireContext().settings().lastHomeActivity = System.currentTimeMillis()
     }
 
     companion object {

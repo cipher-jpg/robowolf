@@ -255,7 +255,7 @@ void nsINode::nsSlots::Unlink(nsINode& aNode) {
 //----------------------------------------------------------------------
 
 #ifdef MOZILLA_INTERNAL_API
-nsINode::nsINode(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+nsINode::nsINode(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : mNodeInfo(std::move(aNodeInfo)),
       mParent(nullptr)
 #  ifndef BOOL_FLAGS_ON_WRAPPER_CACHE
@@ -291,6 +291,9 @@ class ChildIndexCache {
   static nsIContent* GetChildAt(const nsINode* aParent, uint32_t aIndex) {
     MOZ_ASSERT(aParent->GetChildCount() > aIndex,
                "Caller should have checked bounds");
+    if (aParent == sLastInvalidatedParent) {
+      sLastInvalidatedParent = nullptr;
+    }
     auto& entry =
         sCache.LookupOrInsertWith(aParent, [&] { return MakeEntry(aParent); });
     if (aIndex < entry.mChildren.Length()) {
@@ -304,6 +307,9 @@ class ChildIndexCache {
                                  const nsIContent* aChild) {
     MOZ_ASSERT(aChild->GetParentNode() == aParent,
                "Child is not actually a child of parent");
+    if (aParent == sLastInvalidatedParent) {
+      sLastInvalidatedParent = nullptr;
+    }
     auto& entry =
         sCache.LookupOrInsertWith(aParent, [&] { return MakeEntry(aParent); });
 
@@ -353,14 +359,37 @@ class ChildIndexCache {
   }
 
   static void Invalidate(const nsINode* aParent) {
+    MOZ_ASSERT(aParent);
+    if (aParent->GetChildCount() < kThreshold) {
+      return;
+    }
+    if (aParent->GetChildCount() == kThreshold) {
+      sCache.Remove(aParent);
+      sLastInvalidatedParent = nullptr;
+      return;
+    }
+    if (aParent == sLastInvalidatedParent) {
+      return;
+    }
+
     auto entry = sCache.Lookup(aParent);
     if (entry) {
       entry.Data().mChildren.ClearAndRetainStorage();
       entry.Data().mIndexMap.Clear();
     }
+
+    sLastInvalidatedParent = aParent;
   }
 
-  static void Remove(const nsINode* aParent) { sCache.Remove(aParent); }
+#ifdef DEBUG
+  static bool Contains(const nsINode* aParent) {
+    return sCache.Contains(aParent);
+  }
+
+  static const nsINode* LastInvalidatedParent() {
+    return sLastInvalidatedParent;
+  }
+#endif
 
  private:
   struct Entry {
@@ -393,12 +422,17 @@ class ChildIndexCache {
   }
 
   static nsTHashMap<const nsINode*, Entry> sCache;
+  static const nsINode* sLastInvalidatedParent;
 };
 
 nsTHashMap<const nsINode*, ChildIndexCache::Entry> ChildIndexCache::sCache;
+const nsINode* ChildIndexCache::sLastInvalidatedParent = nullptr;
 
 nsINode::~nsINode() {
-  ChildIndexCache::Remove(this);
+  MOZ_ASSERT(!ChildIndexCache::Contains(this),
+             "Node still in ChildIndexCache at destruction?");
+  MOZ_ASSERT(ChildIndexCache::LastInvalidatedParent() != this,
+             "ChildIndexCache should have cleaned last invalidated parent");
   MOZ_ASSERT(!HasSlots(), "LastRelease was not called?");
   MOZ_ASSERT(mSubtreeRoot == this, "Didn't restore state properly?");
 }
@@ -1055,11 +1089,14 @@ void nsINode::LastRelease() {
   FragmentOrElement::RemoveBlackMarkedNode(this);
 }
 
-std::ostream& operator<<(std::ostream& aStream, const nsINode& aNode) {
-  nsAutoString elemDesc;
-  const nsINode* curr = &aNode;
-  while (curr) {
-    nsString id, cls;
+void nsINode::GetDebugDescription(nsACString& aOutput,
+                                  const nsINode* aRoot /* = nullptr */) const {
+  aOutput.Truncate();
+
+  const nsINode* prev = nullptr;
+  for (const nsINode* curr = this; curr;
+       prev = curr, curr = curr->GetParentOrShadowHostNode()) {
+    nsAutoString id, cls;
     if (curr->IsElement()) {
       curr->AsElement()->GetId(id);
       if (const nsAttrValue* attrValue = curr->AsElement()->GetClasses()) {
@@ -1067,37 +1104,95 @@ std::ostream& operator<<(std::ostream& aStream, const nsINode& aNode) {
       }
     }
 
-    if (!elemDesc.IsEmpty()) {
-      elemDesc = elemDesc + u"."_ns;
+    if (!aOutput.IsEmpty()) {
+      aOutput.AppendLiteral(".");
     }
 
     if (!curr->LocalName().IsEmpty()) {
-      elemDesc.Append(curr->LocalName());
+      aOutput.Append(NS_ConvertUTF16toUTF8(curr->LocalName()));
     } else {
-      elemDesc.Append(curr->NodeName());
+      aOutput.Append(NS_ConvertUTF16toUTF8(curr->NodeName()));
     }
 
     if (!id.IsEmpty()) {
-      elemDesc = elemDesc + u"['"_ns + id + u"']"_ns;
+      aOutput.Append("['"_ns + NS_ConvertUTF16toUTF8(id) + "']"_ns);
     } else if (!cls.IsEmpty()) {
-      elemDesc = elemDesc + u"[class=\""_ns + cls + u"\"]"_ns;
+      aOutput.Append("[class=\""_ns + NS_ConvertUTF16toUTF8(cls) + "\"]"_ns);
     }
 
-    if (curr->IsElement() &&
-        curr->AsElement()->HasAttr(nsGkAtoms::contenteditable)) {
-      nsAutoString val;
-      curr->AsElement()->GetAttr(nsGkAtoms::contenteditable, val);
-      elemDesc = elemDesc + u"[contenteditable=\""_ns + val + u"\"]"_ns;
-    }
-    if (curr->IsDocument() && curr->IsInDesignMode()) {
-      elemDesc.Append(u"[designMode=\"on\"]"_ns);
+    if (const Element* const element = Element::FromNode(curr)) {
+      if (element->HasAttr(nsGkAtoms::contenteditable)) {
+        nsAutoString val;
+        element->GetAttr(nsGkAtoms::contenteditable, val);
+        aOutput.Append("[contenteditable=\""_ns + NS_ConvertUTF16toUTF8(val) +
+                       "\"]"_ns);
+      }
+      if (!prev ||
+          // Print the shadow root extant if the previous print is not shadow
+          // root...
+          (!prev->IsShadowRoot() &&
+           // and not assigned node to avoid to print the same information.
+           !prev->AsContent()->GetAssignedSlot())) {
+        if (ShadowRoot* const shadowRoot = element->GetShadowRoot()) {
+          // So, we want to print this if the previous node is a non-assigned
+          // slottable node.
+          aOutput.AppendFmt("(has a {}shadow)",
+                            shadowRoot->IsUAShadowRootSlow() ? "UA " : "");
+        }
+      }
+      if (element->HasFlag(ELEMENT_HAS_EDIT_CONTEXT)) {
+        aOutput.AppendLiteral("(has an edit context)");
+      }
+    } else if (curr->IsDocument() && curr->IsInDesignMode()) {
+      aOutput.AppendLiteral("[designMode=\"on\"]");
+    } else if (const ShadowRoot* shadowRoot = ShadowRoot::FromNode(curr)) {
+      aOutput.AppendFmt("({}shadow root)",
+                        shadowRoot->IsUAShadowRootSlow() ? "UA " : "");
+    } else if (const CharacterData* const charData =
+                   CharacterData::FromNode(curr)) {
+      // Don't export the text data in a text control because it may be a
+      // sensitive data for the user. Thus, we don't want to export it to log.
+      const TextControlElement* textControlElement =
+          TextControlElement::FromNodeOrNull(
+              charData->GetContainingShadowHost());
+      if (!textControlElement ||
+          !textControlElement->IsSingleLineTextControlOrTextArea()) {
+        nsAutoString data;
+        charData->GetData(data);
+        if (data.Length() > 8) {
+          data.Truncate(5);
+          data.AppendLiteral("...");
+        }
+        data.ReplaceSubstring(u"\n", u"\\n");
+        data.ReplaceSubstring(u"\"", u"\\\"");
+        data.ReplaceSubstring(u"\u00A0", u"&nbsp;");
+        aOutput.Append("(\""_ns + NS_ConvertUTF16toUTF8(data) + ")\""_ns);
+      }
     }
 
-    curr = curr->GetParentNode();
+    if (curr->IsContent()) {
+      if (const HTMLSlotElement* const slot =
+              curr->AsContent()->GetAssignedSlot()) {
+        aOutput.AppendFmt("(Assigned to {})",
+                          slot->FormatAs(slot->GetContainingShadow()));
+      }
+    }
+
+    if (aRoot == curr) {
+      break;
+    }
   }
+}
 
-  NS_ConvertUTF16toUTF8 str(elemDesc);
-  return aStream << str.get();
+nsCString nsINode::FormatAs(const nsINode* aRoot) const {
+  // To avoid to copy after return, let's not use nsAutoCString
+  nsCString elemDesc;
+  GetDebugDescription(elemDesc, aRoot);
+  return elemDesc;
+}
+
+std::ostream& operator<<(std::ostream& aStream, const nsINode& aNode) {
+  return aStream << aNode.FormatAs(nullptr);
 }
 
 nsIContent* nsINode::DoGetShadowHost() const {
@@ -1561,7 +1656,7 @@ bool nsINode::IsEqualNode(nsINode* aOther) {
       }
 
       // Find next sibling, possibly walking parent chain.
-      while (1) {
+      while (true) {
         if (node1 == this) {
           NS_ASSERTION(node2 == aOther,
                        "Should have reached the start node "
@@ -3803,8 +3898,8 @@ void nsINode::AddAnimationObserverUnlessExists(
 
 already_AddRefed<nsINode> nsINode::CloneAndAdopt(
     nsINode* aNode, bool aClone, bool aDeep,
-    nsNodeInfoManager* aNewNodeInfoManager, nsINode* aParent,
-    ErrorResult& aError) {
+    nsNodeInfoManager* aNewNodeInfoManager, nsIGlobalObject* aNewScope,
+    nsINode* aParent, ErrorResult& aError) {
   MOZ_ASSERT(!aParent || aNode->IsContent(),
              "Can't insert document or attribute nodes into a parent");
 
@@ -3983,8 +4078,12 @@ already_AddRefed<nsINode> nsINode::CloneAndAdopt(
       elem->RecompileScriptEventListeners();
     }
 
-    if (aNode->GetWrapper()) {
-      dom::PreserveWrapper(aNode);
+    if (JSObject* wrapper = aNode->GetWrapper()) {
+      // Keep the wrapper alive unless it already lives in the global we're
+      // adopting into.
+      if (xpc::NativeGlobal(wrapper) != aNewScope) {
+        dom::PreserveWrapper(aNode);
+      }
     }
 
     // At this point, a new node is added to the document, and this
@@ -4007,8 +4106,8 @@ already_AddRefed<nsINode> nsINode::CloneAndAdopt(
     // aNode's children.
     for (nsIContent* cloneChild = aNode->GetFirstChild(); cloneChild;
          cloneChild = cloneChild->GetNextSibling()) {
-      nsCOMPtr<nsINode> child = CloneAndAdopt(cloneChild, aClone, true,
-                                              nodeInfoManager, clone, aError);
+      nsCOMPtr<nsINode> child = CloneAndAdopt(
+          cloneChild, aClone, true, nodeInfoManager, aNewScope, clone, aError);
       if (NS_WARN_IF(aError.Failed())) {
         return nullptr;
       }
@@ -4044,7 +4143,7 @@ already_AddRefed<nsINode> nsINode::CloneAndAdopt(
                origChild; origChild = origChild->GetNextSibling()) {
             nsCOMPtr<nsINode> child =
                 CloneAndAdopt(origChild, aClone, aDeep, nodeInfoManager,
-                              newShadowRoot, aError);
+                              aNewScope, newShadowRoot, aError);
             if (NS_WARN_IF(aError.Failed())) {
               return nullptr;
             }
@@ -4053,8 +4152,9 @@ already_AddRefed<nsINode> nsINode::CloneAndAdopt(
       }
     } else {
       if (ShadowRoot* shadowRoot = aNode->AsElement()->GetShadowRoot()) {
-        nsCOMPtr<nsINode> child = CloneAndAdopt(shadowRoot, aClone, aDeep,
-                                                nodeInfoManager, clone, aError);
+        nsCOMPtr<nsINode> child =
+            CloneAndAdopt(shadowRoot, aClone, aDeep, nodeInfoManager, aNewScope,
+                          clone, aError);
         if (NS_WARN_IF(aError.Failed())) {
           return nullptr;
         }
@@ -4084,8 +4184,9 @@ already_AddRefed<nsINode> nsINode::CloneAndAdopt(
 
       for (nsIContent* origChild = originalShadowRoot->GetFirstChild();
            origChild; origChild = origChild->GetNextSibling()) {
-        nsCOMPtr<nsINode> child = CloneAndAdopt(
-            origChild, aClone, true, nodeInfoManager, newShadowRoot, aError);
+        nsCOMPtr<nsINode> child =
+            CloneAndAdopt(origChild, aClone, true, nodeInfoManager, aNewScope,
+                          newShadowRoot, aError);
         if (NS_WARN_IF(aError.Failed())) {
           return nullptr;
         }
@@ -4109,7 +4210,7 @@ already_AddRefed<nsINode> nsINode::CloneAndAdopt(
          cloneChild = cloneChild->GetNextSibling()) {
       nsCOMPtr<nsINode> child =
           CloneAndAdopt(cloneChild, aClone, aDeep, ownerNodeInfoManager,
-                        cloneContent, aError);
+                        aNewScope, cloneContent, aError);
       if (NS_WARN_IF(aError.Failed())) {
         return nullptr;
       }
@@ -4121,6 +4222,9 @@ already_AddRefed<nsINode> nsINode::CloneAndAdopt(
 
 void nsINode::Adopt(nsNodeInfoManager* aNewNodeInfoManager,
                     mozilla::ErrorResult& aError) {
+  // The global we're adopting into, used to decide whether a node's wrapper
+  // needs to be preserved. Constant for the whole subtree, so compute it once.
+  nsIGlobalObject* newScope = nullptr;
   if (aNewNodeInfoManager) {
     Document* beforeAdoptDoc = OwnerDoc();
     Document* afterAdoptDoc = aNewNodeInfoManager->GetDocument();
@@ -4140,12 +4244,14 @@ void nsINode::Adopt(nsNodeInfoManager* aNewNodeInfoManager,
             "is unsupported");
       }
     }
+
+    newScope = afterAdoptDoc->GetScopeObject();
   }
 
   // Just need to store the return value of CloneAndAdopt in a
   // temporary nsCOMPtr to make sure we release it.
-  nsCOMPtr<nsINode> node =
-      CloneAndAdopt(this, false, true, aNewNodeInfoManager, nullptr, aError);
+  nsCOMPtr<nsINode> node = CloneAndAdopt(this, false, true, aNewNodeInfoManager,
+                                         newScope, nullptr, aError);
 
   nsMutationGuard::DidMutate();
 }
@@ -4153,7 +4259,8 @@ void nsINode::Adopt(nsNodeInfoManager* aNewNodeInfoManager,
 already_AddRefed<nsINode> nsINode::Clone(bool aDeep,
                                          nsNodeInfoManager* aNewNodeInfoManager,
                                          ErrorResult& aError) {
-  return CloneAndAdopt(this, true, aDeep, aNewNodeInfoManager, nullptr, aError);
+  return CloneAndAdopt(this, true, aDeep, aNewNodeInfoManager,
+                       /* aNewScope = */ nullptr, nullptr, aError);
 }
 
 void nsINode::GenerateXPath(nsAString& aResult) {

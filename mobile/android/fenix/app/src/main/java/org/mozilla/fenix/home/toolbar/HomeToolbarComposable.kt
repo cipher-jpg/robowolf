@@ -20,7 +20,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -28,7 +30,6 @@ import kotlinx.coroutines.launch
 import mozilla.components.browser.state.action.AwesomeBarAction
 import mozilla.components.browser.state.ext.getUrl
 import mozilla.components.browser.state.selector.findTab
-import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.compose.base.utils.BackInvokedHandler
 import mozilla.components.compose.browser.toolbar.BrowserToolbar
@@ -73,7 +74,7 @@ internal const val EDIT_TOOLBAR_DELAY_AFTER_VOICE_REQUEST = 1_000L
  * @param tabStripContent [Composable] as the tab strip content to be displayed together with this toolbar.
  * @param searchSuggestionsContent [Composable] as the search suggestions content to be displayed
  * together with this toolbar.
- * @param navigationBarContent Composable content for the navigation bar.
+ * @param navigationBarContent [Composable] content for the navigation bar.
  */
 @Suppress("LongParameterList")
 internal class HomeToolbarComposable(
@@ -141,7 +142,12 @@ internal class HomeToolbarComposable(
         val shouldShowTabStrip: Boolean = remember { settings.isTabStripEnabled }
         val isAddressBarVisible = remember { addressBarVisibility }
 
-        Column {
+        Column(
+            modifier = Modifier.semantics {
+                testTagsAsResourceId = true
+                testTag = context.resources.getResourceName(R.id.composable_toolbar)
+            },
+        ) {
             if (shouldShowTabStrip) {
                 tabStripContent()
             }
@@ -184,40 +190,14 @@ internal class HomeToolbarComposable(
         }
     }
 
-    override val layout = ComposeView(context).apply {
-        id = R.id.composable_toolbar
-
-        setContent {
-            DefaultToolbar()
-        }
-        translationZ = context.resources.getDimension(R.dimen.browser_fragment_above_toolbar_panels_elevation)
-    }
-
-    /**
-     * Returns a [Composable] function that renders the default home toolbar content.
-     */
-    override fun asComposable(): @Composable () -> Unit = {
+    @Composable
+    override fun Content() {
         DefaultToolbar()
     }
 
-    override fun build(browserState: BrowserState, middleSearchEnabled: Boolean) {
+    override fun build(middleSearchEnabled: Boolean) {
         configureStartingInSearchMode()
         updateAddressBarVisibility(!middleSearchEnabled)
-    }
-
-    override fun updateDividerVisibility(isVisible: Boolean) {
-        // no-op
-        // For the toolbar redesign we will always show the toolbar divider
-    }
-
-    override fun updateButtonVisibility(
-        browserState: BrowserState,
-    ) {
-        // To be added later
-    }
-
-    override fun updateTabCounter(browserState: BrowserState) {
-        // To be added later
     }
 
     override fun updateAddressBarVisibility(isVisible: Boolean) {

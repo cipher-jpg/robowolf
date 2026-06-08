@@ -25,6 +25,7 @@
 #include "vm/PlainObject.h"    // js::PlainObject
 #include "vm/PromiseObject.h"  // js::PromiseObject
 #include "vm/SharedStencil.h"  // js::GCThingIndex
+#include "vm/StringType.h"     // js::IdToPrintableUTF8
 #include "wasm/WasmJS.h"       // js::WasmModuleObject
 
 #include "gc/GCContext-inl.h"
@@ -236,12 +237,12 @@ static bool GetModuleType(JSContext* cx,
       else if (JS::Prefs::experimental_import_bytes() &&
                js::EqualStrings(typeStr, cx->names().bytes)) {
         moduleType = JS::ModuleType::Bytes;
-      } else if (JS::Prefs::experimental_import_text() &&
-                 js::EqualStrings(typeStr, cx->names().text)) {
-        moduleType = JS::ModuleType::Text;
       }
 #endif
-      else {
+      else if (JS::Prefs::experimental_import_text() &&
+               js::EqualStrings(typeStr, cx->names().text)) {
+        moduleType = JS::ModuleType::Text;
+      } else {
         moduleType = JS::ModuleType::Unknown;
       }
 
@@ -457,6 +458,16 @@ bool ModuleNamespaceObject::addBinding(JSContext* cx,
 
 constexpr char ModuleNamespaceObject::ProxyHandler::family = 0;
 
+static void ReportUninitializedModuleBinding(JSContext* cx, HandleId id) {
+  // Module export names are property keys and may not be identifier names,
+  // so use IdIsPropertyKey rather than IdIsIdentifier.
+  if (UniqueChars printable =
+          IdToPrintableUTF8(cx, id, IdToPrintableBehavior::IdIsPropertyKey)) {
+    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                             JSMSG_UNINITIALIZED_LEXICAL, printable.get());
+  }
+}
+
 bool ModuleNamespaceObject::ProxyHandler::getPrototype(
     JSContext* cx, HandleObject proxy, MutableHandleObject protop) const {
   protop.set(nullptr);
@@ -523,7 +534,7 @@ bool ModuleNamespaceObject::ProxyHandler::getOwnPropertyDescriptor(
 
   RootedValue value(cx, env->getSlot(prop->slot()));
   if (value.isMagic(JS_UNINITIALIZED_LEXICAL)) {
-    ReportRuntimeLexicalError(cx, JSMSG_UNINITIALIZED_LEXICAL, id);
+    ReportUninitializedModuleBinding(cx, id);
     return false;
   }
 
@@ -588,7 +599,7 @@ bool ModuleNamespaceObject::ProxyHandler::defineProperty(
 
   RootedValue value(cx, env->getSlot(prop->slot()));
   if (value.isMagic(JS_UNINITIALIZED_LEXICAL)) {
-    ReportRuntimeLexicalError(cx, JSMSG_UNINITIALIZED_LEXICAL, id);
+    ReportUninitializedModuleBinding(cx, id);
     return false;
   }
 
@@ -630,7 +641,7 @@ bool ModuleNamespaceObject::ProxyHandler::get(JSContext* cx, HandleObject proxy,
 
   RootedValue value(cx, env->getSlot(prop->slot()));
   if (value.isMagic(JS_UNINITIALIZED_LEXICAL)) {
-    ReportRuntimeLexicalError(cx, JSMSG_UNINITIALIZED_LEXICAL, id);
+    ReportUninitializedModuleBinding(cx, id);
     return false;
   }
 
@@ -1837,7 +1848,21 @@ bool ModuleBuilder::buildTables(frontend::StencilModuleMetadata& metadata) {
         }
       } else {
         // All names should have already been marked as used-by-stencil.
-        if (!importEntry->importName) {
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+        bool isSourcePhase =
+            metadata.moduleRequests[importEntry->moduleRequest.value()].phase ==
+            ImportPhase::Source;
+#else
+        bool isSourcePhase = false;
+#endif
+        if (isSourcePhase) {
+          // A source-phase import binds the module-source object as a local
+          // lexical, so re-exporting it is a local export.
+          if (!metadata.localExportEntries.append(exp)) {
+            js::ReportOutOfMemory(fc_);
+            return false;
+          }
+        } else if (!importEntry->importName) {
           // This is a re-export of an imported module namespace object.
           auto entry = frontend::StencilModuleEntry::exportNamespaceFromEntry(
               importEntry->moduleRequest, exp.exportName, exp.lineno,

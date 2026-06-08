@@ -23,6 +23,8 @@
   <string name="content_description_normal_browsing">Navigazione normale</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Cerca o scrivi un indirizzo</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Cerca</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Cerca sul Web</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -464,6 +466,8 @@
   <string name="search_suggestions_delete_history_item_snackbar">Eliminato %1$s dalla cronologia</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Elimina questa voce dalla cronologia</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">Rimani in %1$s</string>
   <!--
     Home onboarding
 
@@ -731,8 +735,15 @@
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Aiutaci a far conoscere Robowolf a più persone permettendo a Mozilla di segnalare alla piattaforma tramite cui hai scoperto Robowolf che lo utilizzi. %1$s</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Come utilizziamo i dati</string>
+<<<<<<< HEAD
   <!-- Marketing onboarding primary button text. 'Robowolf' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Aiuta Robowolf</string>
+=======
+  <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Aiuta Firefox</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_2">Consenti e continua</string>
+>>>>>>> upstream/main
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text">No grazie</string>
   <!-- Notifications onboarding title. 'Robowolf' is intentionally hardcoded. -->
@@ -1649,6 +1660,8 @@
   <string name="tab_manager_search_bar_placeholder">Cerca nelle tue schede</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Schede chiuse di recente</string>
+  <!-- Text shown in the menu to select all tabs. -->
+  <string name="tab_tray_menu_select_all_tabs">Seleziona tutte</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Impostazioni account</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -2090,6 +2103,8 @@
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Scegli un motivo</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_description_2">Fornisci una descrizione dettagliata del problema per aiutarci a esaminarlo (facoltativo)</string>
+  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description">Descrivi il problema (facoltativo)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Aggiungi altre informazioni</string>
@@ -2100,7 +2115,11 @@
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">Segnalazione inviata</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
+  <string name="webcompat_reporter_problem_description_placeholder_text_2">Che cosa è successo? Cosa ti aspettavi che accadesse? Fornisci i passaggi per riprodurre il problema.</string>
+  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text">Che cosa è successo? Che cosa sarebbe dovuto succedere?</string>
+  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
+  <string name="webcompat_reporter_etp_checkbox_text_2">Invia l’elenco degli elementi bloccati dalla protezione antitracciamento</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text">Invia URL bloccati dalla protezione antitracciamento</string>
   <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
@@ -2733,6 +2752,15 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">%s ti protegge dagli elementi traccianti più comuni che cercano di seguire le tue attività online.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Ulteriori informazioni</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d elemento tracciante bloccato</item>
+    <item quantity="other">%d elementi traccianti bloccati</item>
+  </plurals>
   <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
@@ -2870,6 +2898,8 @@
   <string name="etp_suspected_fingerprinters_description">Attiva la protezione contro il fingerprinting per bloccare sospetti fingerprinter.</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">Fingerprinter conosciuti</string>
+  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
+  <string name="tracking_dashboard_fingerprinters_category_name">Fingerprinter</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3124,6 +3154,8 @@
   <string name="saved_logins_sort_strategy_last_used">Ultimo utilizzo</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Menu per ordinare le password</string>
+  <!-- Label for button to import passwords from file. -->
+  <string name="passwords_import_menu_button">Importa da file</string>
   <!--
     Email Masks
 
@@ -3154,7 +3186,13 @@
   <string name="ip_protection_title">VPN</string>
   <!-- Label for the browser VPN toggle on the settings screen -->
   <string name="ip_protection_toggle_label">VPN</string>
+<<<<<<< HEAD
   <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Robowolf"). -->
+=======
+  <!-- Content description for the browser VPN settings screen top bar back button -->
+  <string name="ip_protection_navigate_back_button_content_description">Torna indietro</string>
+  <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
+>>>>>>> upstream/main
   <string name="ip_protection_promo_headline">La VPN integrata di %s</string>
   <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
   <string name="ip_protection_promo_body_2">Naviga in modo ancora più sicuro nascondendo la tua posizione, anche quando usi reti Wi-Fi pubbliche. %s</string>
@@ -3211,7 +3249,13 @@
   <string name="ip_protection_toolbar_pill_description">La VPN è attiva.</string>
   <!-- Label for the button that starts the browser VPN authentication or authorization flow on the settings screen -->
   <string name="ip_protection_get_started">Inizia</string>
+<<<<<<< HEAD
   <!-- Headline for the browser VPN onboarding card. %s is the name of the app (for example "Robowolf"). -->
+=======
+  <!-- Label for the "connecting" state of the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_connecting">Connessione in corso…</string>
+  <!-- Headline for the browser VPN onboarding card. %s is the name of the app (for example "Firefox"). -->
+>>>>>>> upstream/main
   <string name="ip_protection_onboarding_card_headline">Prova la VPN integrata di %s</string>
   <!--
     The body of the VPN onboarding card.
@@ -3530,6 +3574,10 @@
   <string name="homepage_shortcuts_show_all_content_description">Mostra tutte le scorciatoie</string>
   <!-- Label for the "Add shortcut" button displayed as a tile. -->
   <string name="homepage_shortcuts_add_shortcut">Agg. scorciatoia</string>
+  <!-- Title for the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_to_homepage">Aggiungi alla pagina iniziale</string>
+  <!-- Label for the "Add website" button in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_website">Aggiungi sito web</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Inserire l’URL di un sito web</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
@@ -3931,6 +3979,19 @@
     %s is the name of the app (for example "Robowolf").
   -->
   <string name="protection_panel_banner_protected_title">%s è all’erta</string>
+  <plurals name="protection_panel_banner_protected_blocked_trackers_description">
+    <!--
+      Description text for the protection panel banner when privacy dashboard is enabled.
+      %1$d is the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d elemento tracciante bloccato in questo sito.</item>
+    <item quantity="other">%1$d elementi traccianti bloccati in questo sito.</item>
+  </plurals>
+  <!--
+    Description text for the protection panel banner when privacy dashboard is enabled.
+    and there are no trackers blocked.
+  -->
+  <string name="protection_panel_banner_protected_no_blocked_trackers_description">Sei protetto.</string>
   <!-- Description text for the protection panel banner when tracking protection is enabled. -->
   <string name="protection_panel_banner_protected_description">Sei protetto. Se rileviamo qualcosa, te lo faremo sapere.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
@@ -3967,6 +4028,11 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
+  <!--
+    Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+    %d is a placeholder for the number of trackers blocked this week.
+  -->
+  <string name="trackers_blocked_panel_num_trackers_blocked_this_week">Elementi traccianti bloccati questa settimana: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
@@ -4487,11 +4553,11 @@
   <!-- Label shown on the sports widget scoreboard when a match is currently being played live. -->
   <string name="sports_widget_match_live">LIVE</string>
   <!-- Title shown on the sports widget champion scoreboard row celebrating the soccer tournament winner. -->
-  <string name="sports_widget_champions_title" tools:ignore="UnusedResources">Campioni della Coppa del mondo 2026</string>
+  <string name="sports_widget_champions_title">Campioni della Coppa del mondo 2026</string>
   <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament runners-up. Runners-up means second place. -->
   <string name="sports_widget_runner_up_title" tools:ignore="UnusedResources">Secondi classificati</string>
   <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament third place winners. -->
-  <string name="sports_widget_third_place_title" tools:ignore="UnusedResources">Terzo posto</string>
+  <string name="sports_widget_third_place_title">Terzo posto</string>
   <!-- Round name shown on the sports widget for the Round of 32 stage in the soccer tournament. -->
   <string name="sports_widget_round_of_32">Sedicesimi di finale</string>
   <!-- Round name shown on the sports widget for the Round of 16 stage in the soccer tournament. -->
@@ -4651,6 +4717,8 @@
     %1$d is the current page number, and %2$d is the total number of pages.
   -->
   <string name="sports_widget_final_results_page_content_description" tools:ignore="UnusedResources">Risultati finali della Coppa del mondo, pagina %1$d di %2$d</string>
+  <!-- Content description (for accessibility, not displayed) for the World Cup final results page. -->
+  <string name="sports_widget_final_results_content_description">Risultati finali dei Mondiali</string>
   <!-- Content description (for accessibility, not displayed) for the remove button that removes the sports widget from the homepage. -->
   <string name="sports_widget_remove_content_description" tools:ignore="UnusedResources">Rimuovi Coppa del mondo dalla pagina iniziale</string>
   <!-- Title shown on the sports widget immediately after the user has followed a team. %s is the selected team (e.g., "USA"). -->
@@ -4671,6 +4739,8 @@
   <string name="sports_widget_error_load_failed_title">Le informazioni sulla partita non sono disponibili al momento.</string>
   <!-- Sports widget error card description shown when match data fails to load. -->
   <string name="sports_widget_error_load_failed_description">Prova ad aggiornare tra qualche minuto.</string>
+  <!-- Content description (for accessibility, not displayed) for teams which have not yet been determined in the match schedule. -->
+  <string name="sports_widget_team_to_be_determined">Squadra da definire</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 
   <!--
@@ -4685,4 +4755,42 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">informativa sulla privacy</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Ulteriori informazioni</string>
+  <!--
+    Firefox Labs
+
+    Firefox Labs is the name of a screen in Settings to allow users to learn about
+    experimental and in-development features, and turn those features on and off.
+    The "Labs" portion can be localized, "Firefox" must be treated as a brand and kept
+    in English.
+  -->
+  <string name="firefox_labs_title" tools:ignore="BrandUsage">Firefox Labs</string>
+  <!-- Banner title text on the Firefox Labs screen. -->
+  <string name="firefox_labs_banner_title_2">Prova le nostre funzioni sperimentali.</string>
+  <!--
+    Banner description text on the Firefox Labs screen. Provides information on what Firefox Labs does. %s is the name of the app (for example "Firefox Nightly").
+    Text will appear under the Firefox Labs banner title.
+  -->
+  <string name="firefox_labs_experimental_description">Sono in fase di sviluppo e continuo cambiamento, il che potrebbe influire sul funzionamento di %s.</string>
+  <!-- The link text shown when a feedback URL for a Firefox Labs feature is available. The feedback URL page will allow users to provide opinions and suggestions. -->
+  <string name="firefox_labs_share_feedback">Condividi feedback</string>
+  <!-- Content description for the share feedback link on a Firefox Labs feature. This text will be used by screen readers to provide more context on the feedback link. %s is the name of the Firefox Labs feature. -->
+  <string name="firefox_labs_share_feedback_content_description">Condividi feedback su %s.</string>
+  <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
+  <string name="firefox_labs_restore_default_button_text">Ripristina predefiniti</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
+  <string name="firefox_labs_feature_dialog_title">Riavvio necessario</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
+  <string name="firefox_labs_dialog_restart_button">Riavvia</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+  <string name="firefox_labs_dialog_cancel_button">Annulla</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. -->
+  <string name="firefox_labs_restore_defaults_dialog_title">Riavvio necessario</string>
+  <!-- The description used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_restore_defaults_dialog_message">Per ripristinare le impostazioni predefinite, riavvia %s.</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "on" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_enable_dialog_message">Per attivare questa funzione, riavvia %s.</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_disable_dialog_message">Per disattivare questa funzione, riavvia %s.</string>
+  <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
+  <string name="firefox_labs_no_labs_available_description">Al momento non ci sono funzionalità sperimentali disponibili</string>
 </resources>

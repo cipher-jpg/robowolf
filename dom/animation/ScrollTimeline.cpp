@@ -10,8 +10,11 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ServoStyleConsts.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/AnimationTimelinesController.h"
+#include "mozilla/dom/CSSNumericValueBinding.h"
+#include "mozilla/dom/CSSUnitValue.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/ElementInlines.h"
@@ -214,6 +217,29 @@ Nullable<TimeDuration> ScrollTimeline::GetCurrentTimeAsDuration() const {
                                         PROGRESS_TIMELINE_DURATION_MILLISEC);
 }
 
+void ScrollTimeline::GetCurrentTime(
+    Nullable<OwningCSSNumberish>& aRetVal) const {
+  if (!StaticPrefs::layout_css_typed_om_enabled()) {
+    // If Typed-OM isn't exposed, return progress encoded as milliseconds over
+    // PROGRESS_TIMELINE_DURATION_MILLISEC.
+    AnimationTimeline::GetCurrentTime(aRetVal);
+    return;
+  }
+
+  const auto& data = ComputeTimelineData();
+  if (!data) {
+    aRetVal.SetNull();
+    return;
+  }
+  // See the FIXME in our GetCurrentTimeAsDuration() override about
+  // RTL/sideways scrollers. We do the same here.
+  const double progress =
+      static_cast<double>(std::abs(data->mPosition) - data->mStart) /
+      static_cast<double>(data->mEnd - data->mStart);
+  aRetVal.SetValue().SetAsCSSNumericValue() =
+      MakeRefPtr<CSSUnitValue>(mWindow, progress * 100.0, "percent"_ns);
+}
+
 void ScrollTimeline::WillRefresh() {
   UpdateCachedCurrentTime();
 
@@ -293,7 +319,7 @@ StyleOverflow ScrollTimeline::State::SourceScrollStyle() const {
 
 bool ScrollTimeline::State::APZIsActiveForSource() const {
   auto* e = mSource.mElement;
-  MOZ_ASSERT(e);
+  MOZ_ASSERT(e, "HasNonMinimalNonZeroDisplayPort requires a source element");
   return gfxPlatform::AsyncPanZoomEnabled() &&
          !nsLayoutUtils::ShouldDisableApzForElement(e) &&
          DisplayPortUtils::HasNonMinimalNonZeroDisplayPort(e);
@@ -486,5 +512,22 @@ NonOwningAnimationTarget ScrollTimeline::ScrollerInfo::Source() const {
   return {mSourceOrTarget.mElement->OwnerDoc()->GetScrollingElementNoFlush(),
           PseudoStyleRequest{}};
 }
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(InactiveTimeline)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(InactiveTimeline,
+                                                ScrollTimeline)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(InactiveTimeline,
+                                                  ScrollTimeline)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(InactiveTimeline,
+                                               AnimationTimeline)
+
+InactiveTimeline::InactiveTimeline(Document* aDocument)
+    : ScrollTimeline{
+          aDocument,
+          ScrollerInfo::Anonymous(ScrollerInfo::Type::Provided, nullptr, {}),
+          StyleScrollAxis::Y} {}
 
 }  // namespace mozilla::dom

@@ -3,11 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { SearchModeSwitcher } from "chrome://browser/content/urlbar/SearchModeSwitcher.mjs";
+import { UrlbarEventBufferer } from "chrome://browser/content/urlbar/UrlbarEventBufferer.mjs";
+import { UrlbarView } from "chrome://browser/content/urlbar/UrlbarView.mjs";
 import { createEditor } from "chrome://browser/content/urlbar/SmartbarInputUtils.mjs";
+import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/aiwindow/components/ai-website-chip.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/aiwindow/components/input-cta.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://browser/content/aiwindow/components/input-model-select.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/aiwindow/components/memories-icon-button.mjs";
 // eslint-disable-next-line import/no-unassigned-import
@@ -44,6 +49,8 @@ const lazy = XPCOMUtils.declareLazy({
     "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   ExtensionSearchHandler:
     "resource://gre/modules/ExtensionSearchHandler.sys.mjs",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
@@ -58,8 +65,6 @@ const lazy = XPCOMUtils.declareLazy({
     "chrome://browser/content/urlbar/SmartbarInputController.mjs",
   UrlbarController:
     "moz-src:///browser/components/urlbar/UrlbarController.sys.mjs",
-  UrlbarEventBufferer:
-    "moz-src:///browser/components/urlbar/UrlbarEventBufferer.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarQueryContext:
     "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
@@ -69,12 +74,9 @@ const lazy = XPCOMUtils.declareLazy({
     "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
-  UrlbarTokenizer:
-    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   UrlbarValueFormatter:
     "moz-src:///browser/components/urlbar/UrlbarValueFormatter.sys.mjs",
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
   UrlbarSearchTermsPersistence:
     "moz-src:///browser/components/urlbar/UrlbarSearchTermsPersistence.sys.mjs",
   UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
@@ -204,6 +206,7 @@ ${
       <html:div class="smartbar-button-container">
         <html:context-icon-button></html:context-icon-button>
         <html:memories-icon-button></html:memories-icon-button>
+        <html:input-model-select></html:input-model-select>
         <html:input-cta action=""></html:input-cta>
       </html:div>
     `;
@@ -432,14 +435,14 @@ ${
 
     this.controller = new lazy.UrlbarController({ input: this });
     this.controller.addListener(this);
-    this.view = new lazy.UrlbarView(this);
+    this.view = new UrlbarView(this);
     this.searchModeSwitcher = new SearchModeSwitcher(this);
 
     // The event bufferer can be used to defer events that may affect users
     // muscle memory; for example quickly pressing DOWN+ENTER should end up
     // on a predictable result, regardless of the search status. The event
     // bufferer will invoke the handling code at the right time.
-    this.eventBufferer = new lazy.UrlbarEventBufferer(this);
+    this.eventBufferer = new UrlbarEventBufferer(this);
 
     // Forward certain properties.
     // Note if you are extending these, you'll also need to extend the inline
@@ -480,11 +483,7 @@ ${
       return;
     }
 
-    if (this.view.isOpen) {
-      this.startLayoutExtend();
-    } else {
-      this.endLayoutExtend();
-    }
+    this.updateLayoutExtend();
   }
 
   connectedCallback() {
@@ -2841,11 +2840,11 @@ ${
         value = value.slice(1);
       }
     } else if (
-      Object.values(lazy.UrlbarTokenizer.RESTRICT).includes(firstToken)
+      Object.values(UrlbarShared.RESTRICT_TOKENS).includes(firstToken)
     ) {
       this.searchMode = null;
       // If the entire value is a restricted token, append a space.
-      if (Object.values(lazy.UrlbarTokenizer.RESTRICT).includes(value)) {
+      if (Object.values(UrlbarShared.RESTRICT_TOKENS).includes(value)) {
         value += " ";
       }
     }
@@ -2875,14 +2874,14 @@ ${
    * Returns a search mode object if a token should enter search mode when
    * typed. This does not handle engine aliases.
    *
-   * @param {Values<typeof lazy.UrlbarTokenizer.RESTRICT>} token
+   * @param {Values<typeof UrlbarShared.RESTRICT_TOKENS>} token
    *   A restriction token to convert to search mode.
    * @returns {?object}
    *   A search mode object. Null if search mode should not be entered. See
    *   setSearchMode documentation for details.
    */
   searchModeForToken(token) {
-    if (token == lazy.UrlbarTokenizer.RESTRICT.SEARCH) {
+    if (token == UrlbarShared.RESTRICT_TOKENS.SEARCH) {
       return {
         engineName: lazy.UrlbarSearchUtils.getDefaultEngine(this.isPrivate)
           ?.name,
@@ -3156,6 +3155,7 @@ ${
         }
       }
     }
+    Services.obs.notifyObservers(null, "urlbar-searchmodechanged");
   }
 
   /**
@@ -3448,8 +3448,6 @@ ${
       return;
     }
     this.setSearchMode(searchMode, this.window.gBrowser.selectedBrowser);
-    this.searchModeSwitcher?.onSearchModeChanged();
-    lazy.UrlbarSearchTermsPersistence.onSearchModeChanged(this.window);
   }
 
   getBrowserState(browser) {
@@ -3515,6 +3513,14 @@ ${
 
     this.removeAttribute("breakout-extend");
     this.#updateTextboxPosition();
+  }
+
+  updateLayoutExtend() {
+    if (this.view.isOpen) {
+      this.startLayoutExtend();
+    } else {
+      this.endLayoutExtend();
+    }
   }
 
   /**
@@ -5207,7 +5213,7 @@ ${
       if (result.type == lazy.UrlbarUtils.RESULT_TYPE.RESTRICT) {
         searchMode.restrictType = "keyword";
       } else if (
-        lazy.UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(result.payload.keyword)
+        UrlbarShared.SEARCH_MODE_RESTRICT.has(result.payload.keyword)
       ) {
         searchMode.restrictType = "symbol";
       }
@@ -5574,7 +5580,7 @@ ${
     }
 
     let engine = lazy.SearchService.getEngineByName(engineName);
-    if (engine.isConfigEngine) {
+    if (engine instanceof lazy.ConfigSearchEngine) {
       this._setPlaceholder(engineName);
     } else {
       // Display the default placeholder string.
@@ -5700,10 +5706,15 @@ ${
 
     // Respect the autohide preference for easier inspecting/debugging via
     // the browser toolbox. Keep the view open when focus moves to any
-    // action button so the user can Tab back to the result list.
+    // action button so the user can Tab back to the result list. The
+    // ancestor walk crosses shadow roots because the action buttons are
+    // custom elements with their own shadow trees.
     if (
       !lazy.UrlbarPrefs.get("ui.popup.disable_autohide") &&
-      !this.smartbarButtonContainer?.contains(event.relatedTarget)
+      !this.#isInsideContainer(
+        event.relatedTarget,
+        this.smartbarButtonContainer
+      )
     ) {
       this.view.close();
     }
@@ -5855,7 +5866,12 @@ ${
           event.composedTarget != this.inputField &&
           event.composedTarget != this._inputContainer
         ) {
-          if (this.smartbarButtonContainer?.contains(event.composedTarget)) {
+          if (
+            this.#isInsideContainer(
+              event.composedTarget,
+              this.smartbarButtonContainer
+            )
+          ) {
             event.preventDefault();
           }
           break;

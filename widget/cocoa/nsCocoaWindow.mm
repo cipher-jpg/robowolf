@@ -389,7 +389,7 @@ void nsCocoaWindow::UnsuspendAsyncCATransactions() {
 
 nsresult nsCocoaWindow::SynthesizeNativeKeyEvent(
     int32_t aNativeKeyboardLayout, int32_t aNativeKeyCode,
-    uint32_t aModifierFlags, const nsAString& aCharacters,
+    nsIWidget::NativeModifiers aModifierFlags, const nsAString& aCharacters,
     const nsAString& aUnmodifiedCharacters,
     nsISynthesizedEventCallback* aCallback) {
   AutoSynthesizedEventCallbackNotifier notifier(aCallback);
@@ -400,7 +400,7 @@ nsresult nsCocoaWindow::SynthesizeNativeKeyEvent(
 
 nsresult nsCocoaWindow::SynthesizeNativeMouseEvent(
     LayoutDeviceIntPoint aPoint, NativeMouseMessage aNativeMessage,
-    MouseButton aButton, nsIWidget::Modifiers aModifierFlags,
+    MouseButton aButton, nsIWidget::NativeModifiers aModifierFlags,
     nsISynthesizedEventCallback* aCallback) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
@@ -520,13 +520,14 @@ nsresult nsCocoaWindow::SynthesizeNativeMouseMove(
 
   return SynthesizeNativeMouseEvent(
       aPoint, NativeMouseMessage::Move, mozilla::MouseButton::eNotPressed,
-      nsIWidget::Modifiers::NO_MODIFIERS, aCallback);
+      nsIWidget::NativeModifiers::NO_MODIFIERS, aCallback);
 }
 
 nsresult nsCocoaWindow::SynthesizeNativeMouseScrollEvent(
     mozilla::LayoutDeviceIntPoint aPoint, uint32_t aNativeMessage,
-    double aDeltaX, double aDeltaY, double aDeltaZ, uint32_t aModifierFlags,
-    uint32_t aAdditionalFlags, nsISynthesizedEventCallback* aCallback) {
+    double aDeltaX, double aDeltaY, double aDeltaZ,
+    nsIWidget::NativeModifiers aModifierFlags, uint32_t aAdditionalFlags,
+    nsISynthesizedEventCallback* aCallback) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   AutoSynthesizedEventCallbackNotifier notifier(aCallback);
@@ -545,7 +546,7 @@ nsresult nsCocoaWindow::SynthesizeNativeMouseScrollEvent(
           ? kCGScrollEventUnitLine
           : kCGScrollEventUnitPixel;
   CGEventRef cgEvent = CGEventCreateScrollWheelEvent(
-      NULL, units, 3, (int32_t)aDeltaY, (int32_t)aDeltaX, (int32_t)aDeltaZ);
+      nullptr, units, 3, (int32_t)aDeltaY, (int32_t)aDeltaX, (int32_t)aDeltaZ);
   if (!cgEvent) {
     return NS_ERROR_FAILURE;
   }
@@ -938,8 +939,8 @@ void nsCocoaWindow::GetCompositorWidgetInitData(
   MOZ_RELEASE_ASSERT(childEndpoint.IsValid());
 
   // Create our mNativeLayerRootRemoteMacParent.
-  RefPtr<NativeLayerRootRemoteMacParent> nativeLayerRemoteParent =
-      new NativeLayerRootRemoteMacParent(mNativeLayerRoot);
+  auto nativeLayerRemoteParent =
+      MakeRefPtr<NativeLayerRootRemoteMacParent>(mNativeLayerRoot);
 
   // Bind the parent endpoint compositor thread.
   MOZ_ASSERT(CompositorThread());
@@ -4875,6 +4876,8 @@ void nsCocoaWindow::DestroyNativeWindow() {
   MOZ_ASSERT(mWindowMadeHere,
              "We shouldn't be trying to destroy a window we didn't create.");
 
+  UnlockNativePointer();
+
   // Clear our class state that is keyed off of mWindow. It's our last
   // chance! This ensures that other nsCocoaWindow instances are not waiting
   // for us to finish a native transition that will have no listener once
@@ -5469,6 +5472,11 @@ void nsCocoaWindow::Show(bool aState) {
   }
 
   mWindow.isBeingShown = aState;
+  // isBeingShown is a transient flag that must be cleared on every exit path.
+  // If it stays set, isVisibleOrBeingShown gets stuck reporting true, which
+  // makes IsVisible() lie and causes the early-return guard above to refuse a
+  // later Show(true).
+  auto resetBeingShown = MakeScopeExit([&] { mWindow.isBeingShown = NO; });
   if (aState && !mWasShown) {
     mWasShown = true;
   }
@@ -5580,6 +5588,7 @@ void nsCocoaWindow::Show(bool aState) {
       }
     } else {
       NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
+      EnsureFrameIsOnScreen();
       if (mWindowType == WindowType::TopLevel &&
           [mWindow respondsToSelector:@selector(setAnimationBehavior:)]) {
         NSWindowAnimationBehavior behavior;
@@ -5650,8 +5659,6 @@ void nsCocoaWindow::Show(bool aState) {
                         object:@"org.mozilla.gecko.PopupWindow"];
     }
   }
-
-  mWindow.isBeingShown = NO;
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -5772,6 +5779,40 @@ void nsCocoaWindow::ConstrainPosition(DesktopIntPoint& aPoint) {
   aPoint = ConstrainPositionToBounds(aPoint, {width, height}, screenRect);
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
+}
+
+void nsCocoaWindow::EnsureFrameIsOnScreen() {
+  if (!mWindow || mWindowType != WindowType::TopLevel || mInFullScreenMode) {
+    return;
+  }
+
+  // If [NSWindow screen] is non-nil, the window's frame intersects an
+  // attached NSScreen and is reachable through normal user gestures, so
+  // there is nothing to do. When it is nil the frame doesn't intersect any
+  // attached screen: the window is still present in the NSApp window list
+  // (so it appears in the Window menu and Dock submenu) but cannot be
+  // brought forward, which is the case we defend against below.
+  if (mWindow.screen) {
+    return;
+  }
+
+  NSScreen* mainScreen = NSScreen.mainScreen;
+  if (!mainScreen) {
+    return;
+  }
+
+  NSRect screenFrame = mainScreen.visibleFrame;
+  NSRect frame = mWindow.frame;
+
+  frame.size.width = std::min(frame.size.width, screenFrame.size.width);
+  frame.size.height = std::min(frame.size.height, screenFrame.size.height);
+  frame.origin.x =
+      screenFrame.origin.x + (screenFrame.size.width - frame.size.width) / 2;
+  frame.origin.y =
+      screenFrame.origin.y + (screenFrame.size.height - frame.size.height) / 2;
+
+  [mWindow setFrame:frame display:NO];
+  UpdateBounds();
 }
 
 void nsCocoaWindow::SetSizeConstraints(const SizeConstraints& aConstraints) {
@@ -6240,13 +6281,6 @@ void nsCocoaWindow::CocoaWindowDidEnterFullscreen(bool aFullscreen) {
   EndOurNativeTransition();
   mHasStartedNativeFullscreen = false;
   DispatchOcclusionEvent();
-
-  // The fullscreen window transition leaves the screen-displayed cursor
-  // out of sync with our cached state until the next mouse-moved event
-  // re-evaluates cursor rects. Re-push the cached cursor now so that
-  // e.g. an autohide-driven `cursor: none` stays hidden across the
-  // transition (bug 2031413).
-  [MOZDynamicCursor.sharedInstance reassertCurrentCursor];
 
   // Check if aFullscreen matches our expected fullscreen state. It might not if
   // there was a failure somewhere along the way, in which case we'll recover
@@ -7538,21 +7572,31 @@ void nsCocoaWindow::LockNativePointer(
     MOZ_ASSERT(*GetNativePointerLockedMode() == aNativePointerLockMode,
                "Should not call LockNativePointer() with a different mode "
                "whenthe pointer is already locked");
+    MOZ_ASSERT(sNativeLockedWindow);
     // XXX Maybe we should avoid calling LockNativePointer() again when the
     // content changes the pointer lock element while the pointer is already
     // locked.
     return;
   }
 
+  MOZ_ASSERT(!sNativeLockedWindow);
+
+  sNativeLockedWindow = this;
   sNativePointerLockMode.emplace(aNativePointerLockMode);
   CGAssociateMouseAndMouseCursorPosition(false);
 }
 
 void nsCocoaWindow::UnlockNativePointer() {
   if (NS_WARN_IF(!GetNativePointerLockedMode())) {
+    MOZ_ASSERT(!sNativeLockedWindow);
+    MOZ_ASSERT(sNativeLockedPoint == LayoutDeviceIntPoint(0, 0));
+    return;
+  }
+  if (sNativeLockedWindow != this) {
     return;
   }
 
+  sNativeLockedWindow = nullptr;
   sNativePointerLockMode.reset();
   CGAssociateMouseAndMouseCursorPosition(true);
   sNativeLockedPoint = LayoutDeviceIntPoint(0, 0);
@@ -7561,6 +7605,11 @@ void nsCocoaWindow::UnlockNativePointer() {
 void nsCocoaWindow::SetNativePointerLockMode(
     NativePointerLockMode aNativePointerLockMode) {
   if (NS_WARN_IF(!GetNativePointerLockedMode())) {
+    MOZ_ASSERT(!sNativeLockedWindow);
+    MOZ_ASSERT(sNativeLockedPoint == LayoutDeviceIntPoint(0, 0));
+    return;
+  }
+  if (NS_WARN_IF(sNativeLockedWindow != this)) {
     return;
   }
   sNativePointerLockMode.ref() = aNativePointerLockMode;
@@ -7573,6 +7622,7 @@ bool nsCocoaWindow::SupportsUnadjustedMovement() {
 /* static */ Maybe<nsIWidget::NativePointerLockMode>
     nsCocoaWindow::sNativePointerLockMode;
 /* static */ LayoutDeviceIntPoint nsCocoaWindow::sNativeLockedPoint;
+/* static */ nsCocoaWindow* nsCocoaWindow::sNativeLockedWindow = nullptr;
 
 /* static */
 const Maybe<nsIWidget::NativePointerLockMode>&
@@ -8030,7 +8080,6 @@ static NSMutableSet* gSwizzledFrameViewClasses = nil;
   mTrackingArea = nil;
   mViewWithTrackingArea = nil;
   mDirtyRect = NSZeroRect;
-  mBeingShown = NO;
   mTouchBar = nil;
   mIsAnimationSuppressed = NO;
 
@@ -8112,16 +8161,8 @@ static NSImage* GetMenuMaskImage() {
   return mTouchBar;
 }
 
-- (void)setIsBeingShown:(BOOL)aValue {
-  mBeingShown = aValue;
-}
-
-- (BOOL)isBeingShown {
-  return mBeingShown;
-}
-
 - (BOOL)isVisibleOrBeingShown {
-  return [super isVisible] || mBeingShown;
+  return [super isVisible] || self.isBeingShown;
 }
 
 - (void)setIsAnimationSuppressed:(BOOL)aValue {
@@ -8997,6 +9038,14 @@ static const NSUInteger kWindowShadowOptionsTooltip = 4;
 
 - (NSPopover*)popover {
   return mPopover;
+}
+
+// When shown as a native NSPopover, the content lives in the popover's own
+// window and this backing window is never ordered front, so [super isVisible]
+// is NO. Report a shown popover as visible so IsVisible() stays correct once
+// the transient isBeingShown flag has been cleared.
+- (BOOL)isVisibleOrBeingShown {
+  return [super isVisibleOrBeingShown] || (mPopover && mPopover.shown);
 }
 
 - (BOOL)canBecomeMainWindow {

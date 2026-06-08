@@ -267,6 +267,10 @@ ASSERT_NODE_FLAGS_SPACE(NODE_TYPE_SPECIFIC_BITS_OFFSET);
  * nsMutationGuard on the stack before unexpected mutations could occur.
  * You can then at any time call Mutated to check if any unexpected mutations
  * have occurred.
+ *
+ * NOTE: There is SelectionChangeGuard which manages the generation of selection
+ * ranges. If you need to fix a bug of this class, you need to touch
+ * SelectionChangeGuard too.
  */
 class nsMutationGuard {
  public:
@@ -280,7 +284,7 @@ class nsMutationGuard {
    * finding the difference between two elements of the group Z < 2^64.  Once
    * we know the difference between two elements we only need to check that is
    * less than the given number of mutations to know less than that many
-   * mutations occured.  Assuming constant 1ns mutations it would take 584
+   * mutations occurred.  Assuming constant 1ns mutations it would take 584
    * years for sGeneration to fully wrap around so we can ignore a guard living
    * through a full wrap around.
    */
@@ -423,7 +427,7 @@ class nsINode : public mozilla::dom::EventTarget {
   friend class AttrArray;
 
 #ifdef MOZILLA_INTERNAL_API
-  explicit nsINode(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit nsINode(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 #endif
 
   virtual ~nsINode();
@@ -907,8 +911,27 @@ class nsINode : public mozilla::dom::EventTarget {
   /**
    * Print a debugger friendly descriptor of this element. This will describe
    * the position of this element in the document.
+   *
+   * @param aOutput [output] The result value.
+   * @param aRoot [optional] The root node which should be printed at last.
    */
-  friend std::ostream& operator<<(std::ostream& aStream, const nsINode& aNode);
+  void GetDebugDescription(nsACString& aOutput,
+                           const nsINode* aRoot = nullptr) const;
+
+  /**
+   * Return nsCString instance which is converted from the result of
+   * GetDebugDescription(). This is useful to dump the node path in an specific
+   * element like contenteditable or something and print it with fmt::format()
+   * or MOZ_LOG_FMT().
+   *
+   * @param aRoot The root node which should be printed at last. Can be null.
+   */
+  nsCString FormatAs(const nsINode* aRoot) const;
+
+  friend std::ostream& operator<<(std::ostream&, const nsINode&);
+  friend nsCString format_as(const nsINode& aNode) {
+    return aNode.FormatAs(nullptr);
+  }
 
  protected:
   // These 2 methods are useful for the recursive templates IsHTMLElement,
@@ -1415,6 +1438,8 @@ class nsINode : public mozilla::dom::EventTarget {
    *                            nodeinfos for aNode and its attributes and
    *                            descendants. May be null if the nodeinfos
    *                            shouldn't be changed.
+   * @param aNewScope The destination global. A node's wrapper is preserved
+   *                  unless it already lives in it. Unused when cloning.
    * @param aParent If aClone is true the cloned node will be appended to
    *                aParent's children. May be null. If not null then aNode
    *                must be an nsIContent.
@@ -1426,8 +1451,8 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   static already_AddRefed<nsINode> CloneAndAdopt(
       nsINode* aNode, bool aClone, bool aDeep,
-      nsNodeInfoManager* aNewNodeInfoManager, nsINode* aParent,
-      mozilla::ErrorResult& aError);
+      nsNodeInfoManager* aNewNodeInfoManager, nsIGlobalObject* aNewScope,
+      nsINode* aParent, mozilla::ErrorResult& aError);
 
  public:
   /**
@@ -2004,7 +2029,7 @@ class nsINode : public mozilla::dom::EventTarget {
       return nullptr;
     }
     const nsINode* cur = this;
-    while (1) {
+    while (true) {
       nsIContent* next = cur->GetNextSibling();
       if (next) {
         return next;

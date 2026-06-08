@@ -11,7 +11,7 @@ import React, {
 } from "react";
 import { useSelector, batch } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
-import { useIntersectionObserver } from "../../../lib/utils";
+import { useIntersectionObserver, useSizeSubmenu } from "../../../lib/utils";
 import { WIDGET_REGISTRY, resolveWidgetSize } from "common/WidgetsRegistry.mjs";
 import { WidgetCelebration } from "../WidgetCelebration";
 import { useWidgetCelebration } from "../useWidgetCelebration";
@@ -197,7 +197,6 @@ function Lists({
 
   const inputRef = useRef(null);
   const reorderListRef = useRef(null);
-  const sizeSubmenuRef = useRef(null);
   const widgetRef = useRef(null);
   const impressionFired = useRef(false);
   const {
@@ -734,7 +733,6 @@ function Lists({
         })
       );
     });
-    handleListInteraction();
   }
 
   function handleCopyListToClipboard() {
@@ -826,22 +824,7 @@ function Lists({
     [dispatch]
   );
 
-  useEffect(() => {
-    const el = sizeSubmenuRef.current;
-    if (!el) {
-      return undefined;
-    }
-
-    const listener = e => {
-      const item = e.composedPath().find(node => node.dataset?.size);
-      if (item) {
-        handleChangeSize(item.dataset.size);
-      }
-    };
-
-    el.addEventListener("click", listener);
-    return () => el.removeEventListener("click", listener);
-  }, [handleChangeSize]);
+  const sizeSubmenuRef = useSizeSubmenu(handleChangeSize);
 
   useEffect(() => {
     setIsAddingTask(false);
@@ -1344,6 +1327,9 @@ function EditableText({
 }) {
   const [tempValue, setTempValue] = useState(value);
   const inputRef = useRef(null);
+  const wrapperRef = useRef(null);
+  const previousFocusRef = useRef(null);
+  const cancellingRef = useRef(false);
 
   // True if tempValue is empty, null/undefined, or only whitespace
   const showPlaceholder = (tempValue ?? "").trim() === "";
@@ -1354,24 +1340,49 @@ function EditableText({
 
   useEffect(() => {
     if (isEditing) {
+      cancellingRef.current = false;
+      previousFocusRef.current = document.activeElement;
       inputRef.current?.focus();
-    } else {
+    }
+  }, [isEditing]);
+
+  useEffect(() => {
+    if (!isEditing) {
       setTempValue(value);
     }
   }, [isEditing, value]);
+
+  const handleRestoreFocus = () => {
+    const target = previousFocusRef.current;
+    if (target && document.contains(target)) {
+      target.focus();
+    }
+  };
 
   function handleKeyDown(e) {
     if (e.key === "Enter") {
       onSave(tempValue.trim());
       setIsEditing(false);
     } else if (e.key === "Escape") {
+      cancellingRef.current = true;
       setIsEditing(false);
       setTempValue(value);
       onCancel?.();
+      handleRestoreFocus();
     }
   }
 
-  function handleOnBlur() {
+  function handleOnBlur(e) {
+    // Skip save when cancelling via Escape or the clear button — the
+    // restored focus would otherwise trip handleOnBlur into saving.
+    if (cancellingRef.current) {
+      cancellingRef.current = false;
+      return;
+    }
+    // Skip save when focus moved to the cancel button so its click handler can run.
+    if (e.relatedTarget && wrapperRef.current?.contains(e.relatedTarget)) {
+      return;
+    }
     if (!saveOnBlur) {
       if (tempValue.trim()) {
         return;
@@ -1380,12 +1391,19 @@ function EditableText({
       onCancel?.();
       return;
     }
-
     onSave(tempValue.trim());
     setIsEditing(false);
   }
 
-  return isEditing ? (
+  function handleClear() {
+    cancellingRef.current = true;
+    setIsEditing(false);
+    setTempValue(value);
+    onCancel?.();
+    handleRestoreFocus();
+  }
+
+  const input = (
     <input
       className={`edit-${type}`}
       ref={inputRef}
@@ -1398,9 +1416,29 @@ function EditableText({
       {...(inputL10nId ? { "data-l10n-id": inputL10nId } : {})}
       {...(inputL10nId ? { "data-l10n-attrs": inputL10nAttrs } : {})}
     />
-  ) : (
-    [children]
   );
+
+  if (!isEditing) {
+    return [children];
+  }
+
+  if (type === "list") {
+    return (
+      <div className="edit-list-wrapper" ref={wrapperRef}>
+        {input}
+        <moz-button
+          className="edit-list-clear"
+          type="icon ghost"
+          size="small"
+          iconSrc="chrome://global/skin/icons/close.svg"
+          data-l10n-id="newtab-widget-lists-edit-clear"
+          onClick={handleClear}
+        />
+      </div>
+    );
+  }
+
+  return input;
 }
 
 export { Lists };

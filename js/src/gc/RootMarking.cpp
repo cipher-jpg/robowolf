@@ -296,8 +296,10 @@ void js::gc::GCRuntime::traceRuntimeCommon(JSTracer* trc,
     JSContext* cx = rt->mainContextFromOwnThread();
 
     // Trace active interpreter and JIT stack roots.
-    TraceInterpreterActivations(cx, trc);
-    jit::TraceJitActivations(cx, trc);
+    TraceActivations(cx, trc);
+#ifdef ENABLE_WASM_JSPI
+    jit::TraceWasmSuspendedContStacks(cx, trc);
+#endif
 
     // Trace legacy C stack roots.
     cx->traceAllGCRooters(trc);
@@ -396,7 +398,7 @@ IncrementalProgress GCRuntime::traceEmbeddingGrayRoots(JSTracer* trc,
 
 #ifdef DEBUG
 class AssertNoRootsTracer final : public JS::CallbackTracer {
-  void onChild(JS::GCCellPtr thing, const char* name) override {
+  bool onChild(JS::GCCellPtr thing, const char* name) override {
     MOZ_CRASH("There should not be any roots during runtime shutdown");
   }
 

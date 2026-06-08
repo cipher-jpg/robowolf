@@ -151,8 +151,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(DocAccessible, LocalAccessible)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DocAccessible)
-  NS_INTERFACE_MAP_ENTRY(nsIDocumentObserver)
-  NS_INTERFACE_MAP_ENTRY(nsIMutationObserver)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
 NS_INTERFACE_MAP_END_INHERITING(HyperTextAccessible)
 
@@ -389,13 +387,19 @@ static uint64_t GetCacheDomainsQueueUpdateSuperset(uint64_t aCacheDomains) {
   return aCacheDomains;
 }
 
+bool DocAccessible::IsPrintDoc() const {
+  if (!mDocumentNode || !mDocumentNode->IsStaticDocument()) {
+    return false;
+  }
+  // A DocAccessible should only ever be created for a static document if it's a
+  // print document.
+  MOZ_ASSERT(mDocumentNode->GetBrowsingContext()->Top()->GetIsPrinting());
+  return true;
+}
+
 uint64_t DocAccessible::EffectiveCacheDomains() const {
-  if (mDocumentNode) {
-    if (dom::BrowsingContext* bc = mDocumentNode->GetBrowsingContext()) {
-      if (bc->Top()->GetIsPrinting()) {
-        return kPdfCacheDomains;
-      }
-    }
+  if (IsPrintDoc()) {
+    return kPdfCacheDomains;
   }
   return nsAccessibilityService::GetActiveCacheDomains();
 }
@@ -715,9 +719,6 @@ nsRect DocAccessible::RelativeBounds(nsIFrame** aRelativeFrame) const {
 // DocAccessible protected member
 nsresult DocAccessible::AddEventListeners() {
   SelectionMgr()->AddDocSelectionListener(mPresShell);
-
-  // Add document observer.
-  mDocumentNode->AddObserver(this);
   return NS_OK;
 }
 
@@ -725,10 +726,6 @@ nsresult DocAccessible::AddEventListeners() {
 nsresult DocAccessible::RemoveEventListeners() {
   // Remove listeners associated with content documents
   NS_ASSERTION(mDocumentNode, "No document during removal of listeners.");
-
-  if (mDocumentNode) {
-    mDocumentNode->RemoveObserver(this);
-  }
 
   if (mScrollWatchTimer) {
     mScrollWatchTimer->Cancel();
@@ -832,12 +829,6 @@ std::pair<nsPoint, nsRect> DocAccessible::ComputeScrollData(
 
   return {scrollPoint, scrollRange};
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// nsIDocumentObserver
-
-NS_IMPL_NSIDOCUMENTOBSERVER_CORE_STUB(DocAccessible)
-NS_IMPL_NSIDOCUMENTOBSERVER_LOAD_STUB(DocAccessible)
 
 // When a reflected element IDL attribute changes, we might get the following
 // synchronous calls:
@@ -1083,11 +1074,6 @@ void DocAccessible::ARIAActiveDescendantChanged(LocalAccessible* aAccessible) {
   }
 }
 
-void DocAccessible::ContentAppended(nsIContent* aFirstNewContent,
-                                    const ContentAppendInfo&) {
-  MaybeHandleChangeToHiddenNameOrDescription(aFirstNewContent);
-}
-
 void DocAccessible::ElementStateChanged(dom::Document* aDocument,
                                         dom::Element* aElement,
                                         dom::ElementState aStateMask) {
@@ -1213,35 +1199,11 @@ void DocAccessible::ElementStateChanged(dom::Document* aDocument,
     // which would change this association).
     QueueCacheUpdateForPopoverInvokers(aElement);
   }
-}
 
-void DocAccessible::CharacterDataWillChange(nsIContent* aContent,
-                                            const CharacterDataChangeInfo&) {}
-
-void DocAccessible::CharacterDataChanged(nsIContent* aContent,
-                                         const CharacterDataChangeInfo&) {
-  MaybeHandleChangeToHiddenNameOrDescription(aContent);
-}
-
-void DocAccessible::ContentInserted(nsIContent* aChild,
-                                    const ContentInsertInfo&) {
-  MaybeHandleChangeToHiddenNameOrDescription(aChild);
-}
-
-void DocAccessible::ContentWillBeRemoved(nsIContent* aChildNode,
-                                         const ContentRemoveInfo&) {
-#ifdef A11Y_LOG
-  if (logging::IsEnabled(logging::eTree)) {
-    logging::MsgBegin("TREE", "DOM content removed; doc: %p", this);
-    logging::Node("container node", aChildNode->GetParent());
-    logging::Node("content node", aChildNode);
-    logging::MsgEnd();
+  if (aStateMask.HasAtLeastOneOfStates(dom::ElementState::HEADING_LEVEL_BITS)) {
+    QueueCacheUpdate(accessible, CacheDomain::GroupInfo);
   }
-#endif
-  ContentRemoved(aChildNode);
 }
-
-void DocAccessible::ParentChainChanged(nsIContent* aContent) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // LocalAccessible

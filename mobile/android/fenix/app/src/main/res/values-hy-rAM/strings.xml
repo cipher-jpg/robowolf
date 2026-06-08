@@ -23,6 +23,8 @@
   <string name="content_description_normal_browsing">Սովորական դիտարկում</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Որոնեք կամ մուտքագրեք հասցե</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Որոնում</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Որոնեք համացանցում</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -464,6 +466,8 @@
   <string name="search_suggestions_delete_history_item_snackbar">%1$s-ը ջնջվեց պատմությունից</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Ջնջել այս պատմության գրառումը</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">Մնացեք %1$s-ում</string>
   <!--
     Home onboarding
 
@@ -1643,6 +1647,8 @@
   <string name="tab_manager_search_bar_placeholder">Որոնեք ձեր ներդիրներում</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Վերջերս փակված ներդիրներ</string>
+  <!-- Text shown in the menu to select all tabs. -->
+  <string name="tab_tray_menu_select_all_tabs">Նշել բոլորը</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Հաշվի կարգավորումներ</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1705,6 +1711,14 @@
   <string name="pwa_site_controls_title_private">%1$s (Գաղտնի կերպ)</string>
   <!-- Content description (not visible, for screen readers etc.) for the button to open the Tab Search feature to search through tabs. -->
   <string name="tab_manager_open_tab_search">Բացել ներդիրների որոնումը</string>
+  <!-- Title for introducing tab groups via an onboarding card shown in the tab manager. -->
+  <string name="tab_group_onboarding_item_title">Ստեղծել ներդիրների խումբ</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in grid view. -->
+  <string name="tab_group_onboarding_grid_item_description">Քաշեք մեկ ներդիրը մյուսի վրա՝ դրանք խմբավորելու համար։</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in list view. -->
+  <string name="tab_group_onboarding_list_item_description">Ընտրեք մի քանի ներդիրներ՝ խումբ ստեղծելու համար։</string>
+  <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
+  <string name="tab_group_onboarding_item_dismiss_content_description">Անջատել ներդիրների խմբի գրանցումը</string>
   <!-- The header text displayed on the tab groups page when no tab groups are open -->
   <string name="tab_manager_empty_tab_groups_page_header">Փորձեք ներդիրների խմբերը՝ ավելի քիչ գլորելու և ավելի շատ գործելու համար</string>
   <!-- The description displayed on the tab groups page when no tab groups are open -->
@@ -2073,6 +2087,8 @@
   <string name="webcompat_reporter_success_snackbar_text_2">Զեկույցն ուղարկվեց</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text">Ի՞նչ պատահեց։ Ի՞նչ պետք է պատահեր։</string>
+  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
+  <string name="webcompat_reporter_etp_checkbox_text_2">Ուղարկել հետագծման պաշտպանության կողմից արգելափակված տարրերի ցանկը</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text">Ուղարկել URL-ներն արգելափակված են հետագծման պաշտպանության կողմից</string>
   <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
@@ -2687,6 +2703,15 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">%s-ը պաշտպանում է ամենատարածված հետագծիչներից, որոնք հետևում են այն ամենին, ինչ որ անում եք առցանց:</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Իմանալ ավելին</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d հետագծիչն արգելափակված է</item>
+    <item quantity="other">%d հետագծիչներն արգելափակված են</item>
+  </plurals>
   <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
@@ -2824,6 +2849,8 @@
   <string name="etp_suspected_fingerprinters_description">Միացնում է մատնահետքի պաշտպանությունը՝ կասկածելի մատնահետքերը դադարեցնելու համար:</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">Հայտնի մատնահետքեր</string>
+  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
+  <string name="tracking_dashboard_fingerprinters_category_name">Մատնահետքեր</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3078,6 +3105,8 @@
   <string name="saved_logins_sort_strategy_last_used">Վերջին օգտագործվածը</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Տեսակավորել գաղտնաբառերի ցանկը</string>
+  <!-- Label for button to import passwords from file. -->
+  <string name="passwords_import_menu_button">Ներմուծել ֆայլից</string>
   <!--
     Email Masks
 
@@ -3484,6 +3513,10 @@
   <string name="homepage_shortcuts_show_all_content_description">Ցուցադրել բոլոր դյուրացումները</string>
   <!-- Label for the "Add shortcut" button displayed as a tile. -->
   <string name="homepage_shortcuts_add_shortcut">Հավելել դյուրանցում</string>
+  <!-- Title for the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_to_homepage">Ավելացնել տնէջին</string>
+  <!-- Label for the "Add website" button in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_website">Հավելել կայք</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Մուտքագրեք կայքի URL-ը</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
@@ -3885,6 +3918,19 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">%s-ը հսկվում է</string>
+  <plurals name="protection_panel_banner_protected_blocked_trackers_description">
+    <!--
+      Description text for the protection panel banner when privacy dashboard is enabled.
+      %1$d is the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d հետագծող արգելափակված է այս շաբաթ</item>
+    <item quantity="other">%1$d հետագծողներ արգելափակված են այս շաբաթ</item>
+  </plurals>
+  <!--
+    Description text for the protection panel banner when privacy dashboard is enabled.
+    and there are no trackers blocked.
+  -->
+  <string name="protection_panel_banner_protected_no_blocked_trackers_description">Դուք պաշտպանված եք։</string>
   <!-- Description text for the protection panel banner when tracking protection is enabled. -->
   <string name="protection_panel_banner_protected_description">Դուք պաշտպանված եք: Եթե ինչ-որ բան նկատենք, ձեզ կտեղեկացնենք։</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
@@ -4441,11 +4487,11 @@
   <!-- Label shown on the sports widget scoreboard when a match is currently being played live. -->
   <string name="sports_widget_match_live">ԿԵՆԴԱՆԻ</string>
   <!-- Title shown on the sports widget champion scoreboard row celebrating the soccer tournament winner. -->
-  <string name="sports_widget_champions_title" tools:ignore="UnusedResources">2026 թվականի աշխարհի առաջնության չեմպիոններ</string>
+  <string name="sports_widget_champions_title">2026 թվականի աշխարհի առաջնության չեմպիոններ</string>
   <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament runners-up. Runners-up means second place. -->
   <string name="sports_widget_runner_up_title" tools:ignore="UnusedResources">Երկրորդ տեղը գրավածները</string>
   <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament third place winners. -->
-  <string name="sports_widget_third_place_title" tools:ignore="UnusedResources">Երրորդ տեղը</string>
+  <string name="sports_widget_third_place_title">Երրորդ տեղը</string>
   <!-- Round name shown on the sports widget for the Round of 32 stage in the soccer tournament. -->
   <string name="sports_widget_round_of_32">32-ի փուլ</string>
   <!-- Round name shown on the sports widget for the Round of 16 stage in the soccer tournament. -->
@@ -4605,6 +4651,8 @@
     %1$d is the current page number, and %2$d is the total number of pages.
   -->
   <string name="sports_widget_final_results_page_content_description" tools:ignore="UnusedResources">Աշխարհի առաջնության եզրափակիչ արդյունքներ, էջ %1$d՝ %2$d-ից</string>
+  <!-- Content description (for accessibility, not displayed) for the World Cup final results page. -->
+  <string name="sports_widget_final_results_content_description">Աշխարհի առաջնության եզրափակիչ արդյունքները</string>
   <!-- Content description (for accessibility, not displayed) for the remove button that removes the sports widget from the homepage. -->
   <string name="sports_widget_remove_content_description" tools:ignore="UnusedResources">Հեռացնել Աշխարհի գավաթը տնէջից</string>
   <!-- Title shown on the sports widget immediately after the user has followed a team. %s is the selected team (e.g., "USA"). -->
@@ -4621,6 +4669,12 @@
   <string name="sports_widget_error_connection_offline_description">Ստուգեք Ձեր համացանցային կապը և փորձեք կրկին:</string>
   <!-- Sports widget general group stage label in the soccer tournament. -->
   <string name="sports_widget_group_stage">Խմբային փուլ</string>
+  <!-- Sports widget error card title shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_title">Խաղի մասին տեղեկատվությունն այս պահին հասանելի չէ։</string>
+  <!-- Sports widget error card description shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_description">Փորձեք թարմացնել մի քանի րոպեից։</string>
+  <!-- Content description (for accessibility, not displayed) for teams which have not yet been determined in the match schedule. -->
+  <string name="sports_widget_team_to_be_determined">Թիմը կորոշվի</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 
   <!--
@@ -4635,4 +4689,42 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">Գաղտնիության դրույթներ</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Իմանալ ավելին</string>
+  <!--
+    Firefox Labs
+
+    Firefox Labs is the name of a screen in Settings to allow users to learn about
+    experimental and in-development features, and turn those features on and off.
+    The "Labs" portion can be localized, "Firefox" must be treated as a brand and kept
+    in English.
+  -->
+  <string name="firefox_labs_title" tools:ignore="BrandUsage">Firefox-ի լաբորատորիաներ</string>
+  <!-- Banner title text on the Firefox Labs screen. -->
+  <string name="firefox_labs_banner_title_2">Փորձեք մեր փորձարարական հնարավորությունները։</string>
+  <!--
+    Banner description text on the Firefox Labs screen. Provides information on what Firefox Labs does. %s is the name of the app (for example "Firefox Nightly").
+    Text will appear under the Firefox Labs banner title.
+  -->
+  <string name="firefox_labs_experimental_description">Դրանք մշակման և զարգացման փուլում են, ինչը կարող է ազդել %s-ի աշխատանքի վրա։</string>
+  <!-- The link text shown when a feedback URL for a Firefox Labs feature is available. The feedback URL page will allow users to provide opinions and suggestions. -->
+  <string name="firefox_labs_share_feedback">Կիսվեք ձեր կարծիքով</string>
+  <!-- Content description for the share feedback link on a Firefox Labs feature. This text will be used by screen readers to provide more context on the feedback link. %s is the name of the Firefox Labs feature. -->
+  <string name="firefox_labs_share_feedback_content_description">Կիսվեք %s-ի հետ կապված կարծիքով։</string>
+  <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
+  <string name="firefox_labs_restore_default_button_text">Վերականգնել սկզբնադիրը</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
+  <string name="firefox_labs_feature_dialog_title">Պահանջվում է վերամեկնարկել</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
+  <string name="firefox_labs_dialog_restart_button">Վերամեկնարկել</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+  <string name="firefox_labs_dialog_cancel_button">Չեղարկել</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. -->
+  <string name="firefox_labs_restore_defaults_dialog_title">Պահանջվում է վերամեկնարկել</string>
+  <!-- The description used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_restore_defaults_dialog_message">Սկզբնադիրը վերականգնելու համար վերամեկնարկեք %s-ը։</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "on" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_enable_dialog_message">Այս յուրահատկությունը միացնելու համար վերամեկնարկեք %s-ը։</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_disable_dialog_message">Այս յուրահատկությունն անջատելու համար վերամեկնարկեք %s-ը։</string>
+  <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
+  <string name="firefox_labs_no_labs_available_description">Այս պահին փորձարկման համար փորձնական գործառույթներ չկան</string>
 </resources>

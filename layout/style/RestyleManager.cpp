@@ -478,7 +478,7 @@ void RestyleManager::ContentWillBeRemoved(nsIContent* aOldChild) {
         break;
       }
     }
-    if (isEmpty && containerIsElement) {
+    if (isEmpty) {
       RestyleForEmptyChange(container->AsElement());
       return;
     }
@@ -2736,6 +2736,15 @@ static bool NeedsToReframeForConditionallyCreatedPseudoElement(
     RefPtr<ComputedStyle> pseudoStyle =
         aRestyleState.StyleSet().ProbePseudoElementStyle(
             *aElement, PseudoStyleType::Backdrop, nullptr, aNewStyle);
+    if (pseudoStyle) {
+      return true;
+    }
+  }
+  if (aElement->IsHTMLElement(nsGkAtoms::option) && !aStyleFrame->IsLeaf() &&
+      !nsLayoutUtils::GetCheckmarkPseudo(aElement)) {
+    RefPtr<ComputedStyle> pseudoStyle =
+        aRestyleState.StyleSet().ProbePseudoElementStyle(
+            *aElement, PseudoStyleType::Checkmark, nullptr, aNewStyle);
     if (pseudoStyle) {
       return true;
     }

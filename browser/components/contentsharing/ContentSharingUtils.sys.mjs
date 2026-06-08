@@ -14,6 +14,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
 });
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -114,6 +115,10 @@ class ContentSharingUtilsClass {
     return lazy.CONTENT_SHARING_SERVER_URL;
   }
 
+  get redirectURL() {
+    return this.serverURL + "/auth-complete";
+  }
+
   disable() {
     Services.prefs.setBoolPref("browser.contentsharing.enabled", false);
     Services.prefs.setStringPref("browser.contentsharing.server.url", "");
@@ -160,12 +165,7 @@ class ContentSharingUtilsClass {
       return;
     }
 
-    const title = await lazy.contentSharingL10n.formatValue(
-      "content-sharing-tabs-title",
-      {
-        count: tabs.length,
-      }
-    );
+    const title = "tab share title";
 
     const shareObject = {
       type: "tabs",
@@ -176,6 +176,13 @@ class ContentSharingUtilsClass {
       })),
     };
     const result = this.buildShare(shareObject);
+
+    result.share.title = await lazy.contentSharingL10n.formatValue(
+      "content-sharing-tabs-title",
+      {
+        count: this.countItems(result.share),
+      }
+    );
     await this.#createLinkAndOpenModal(result, "tabs");
   }
 
@@ -203,7 +210,7 @@ class ContentSharingUtilsClass {
       }),
     };
     const result = this.buildShare(shareObject);
-    await this.#createLinkAndOpenModal(result, "tab group");
+    await this.#createLinkAndOpenModal(result, "tab_group");
   }
 
   /**
@@ -339,6 +346,7 @@ class ContentSharingUtilsClass {
 
     share.links = links;
     shareResult.share = share;
+
     return shareResult;
   }
 
@@ -349,25 +357,48 @@ class ContentSharingUtilsClass {
    * open a new tab at the share URL.
    *
    * @param {ShareResult} shareResult An object containing the share object and any warnings
-   * @param {string} context Used in error logging (e.g. "tabs", "tab group")
+   * @param {string} context Used in error logging (e.g. "tabs", "tab_group")
    */
   async #createLinkAndOpenModal(shareResult, context) {
-    // Note: the result object contains either the URL or an error. It's safe
-    // to pass into the modal, which handles error UI as needed.
-    shareResult = await this.createShareableLink(shareResult);
-    shareResult.isSignedIn =
-      this.isSignedIn() && shareResult.error !== ERRORS.UNAUTHORIZED;
+    let resolveLoading;
+    const loadingPromise = new Promise(resolve => {
+      resolveLoading = resolve;
+    });
 
     let window = Services.wm.getMostRecentBrowserWindow();
 
-    // Note: we deliberately do not await the open.
-    window.gDialogBox.open(CONTENT_SHARING_MODAL_URL, shareResult);
+    window.gDialogBox.open(CONTENT_SHARING_MODAL_URL, {
+      shareResult,
+      loadingPromise,
+      size: window.innerWidth,
+    });
+
+    // Note: the result object contains either the URL or an error. It's safe
+    // to pass into the modal, which handles error UI as needed.
+    try {
+      shareResult = await this.createShareableLink(shareResult);
+      shareResult.isSignedIn =
+        this.isSignedIn() && shareResult.error !== ERRORS.UNAUTHORIZED;
+    } finally {
+      // Resolve with a new object so Lit detects the shareResult change
+      resolveLoading({
+        shareResult,
+        loadingPromise: null,
+        size: window.innerWidth,
+      });
+    }
+
     if (shareResult.error && !shareResult.isSignedIn) {
       console.error(
         `ContentSharingUtils: failed to share ${context}`,
         shareResult.error
       );
     }
+
+    Glean.collectionShare.dialogOpen.record({
+      signed_in: shareResult.isSignedIn,
+      share_type: context,
+    });
 
     // After the dialog box closes, attempt login if needed.
     if (shareResult.isSignedIn) {
@@ -387,14 +418,20 @@ class ContentSharingUtilsClass {
         return;
       }
 
-      // The most recent window may have changed during the login flow.
+      // If we're able to find the auth-complete tab, reuse it.
+      let foundTab = lazy.URILoadingHelper.switchToTabHavingURI(
+        window,
+        this.redirectURL,
+        false,
+        { ignoreQueryString: true }
+      );
       window = Services.wm.getMostRecentBrowserWindow();
 
       // Borrowing a hack from unexpectedScriptLoad.js, which we use to ensure
       // opened tabs are foregrounded. To be fixed in bug 2040823.
       window.top.document.documentElement.removeAttribute("window-modal-open");
 
-      window.openWebLinkIn(shareResult.url, "tab");
+      window.openWebLinkIn(shareResult.url, foundTab ? "current" : "tab");
     } catch (ex) {
       // Either we timed out waiting for the cookie to be set, or something
       // else went wrong. The user will have to try again.
@@ -424,6 +461,7 @@ class ContentSharingUtilsClass {
     if (!this.serverURL) {
       console.error("ContentSharingUtils: server URL is not set");
       shareResult.error = ERRORS.GENERIC;
+      Glean.collectionShare.error.record({ error_type: ERRORS.GENERIC });
       return shareResult;
     }
 
@@ -469,14 +507,19 @@ class ContentSharingUtilsClass {
           body: JSON.stringify(shareResult.share),
         });
 
+        if (!response.ok) {
+          Glean.collectionShare.error.record({
+            status_code: response.status,
+          });
+        }
+
         if (!response.ok && response.status >= 500) {
           canRetry = true;
         } else if (!response.ok && response.status >= 400) {
           canRetry = false;
           if (response.status === 401) {
             shareResult.error = ERRORS.UNAUTHORIZED;
-          }
-          if (response.status === 410) {
+          } else if (response.status === 410) {
             shareResult.error = ERRORS.DISABLED;
             this.disable();
           } else {
@@ -492,7 +535,10 @@ class ContentSharingUtilsClass {
       } catch (error) {
         console.error(error);
         canRetry = false;
-        shareResult.error = ERRORS.MAX_REQUEST_ATTEMPTS;
+        shareResult.error = ERRORS.MAX_RETRY_ATTEMPTS;
+        Glean.collectionShare.error.record({
+          error_type: ERRORS.MAX_RETRY_ATTEMPTS,
+        });
       }
 
       attempts += 1;
@@ -558,6 +604,7 @@ class ContentSharingUtilsClass {
     shareResult.isSchemaValid = result.valid;
     if (!result.valid || this.countItems(shareResult.share) > MAX_ITEM_COUNT) {
       shareResult.error = ERRORS.INVALID_SCHEMA;
+      Glean.collectionShare.error.record({ error_type: ERRORS.INVALID_SCHEMA });
     }
 
     return shareResult;

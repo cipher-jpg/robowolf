@@ -3673,12 +3673,13 @@ void nsHttpConnectionMgr::DoSpeculativeConnectionInternal(
     return;
   }
 
-  ProxyDNSStrategy strategy = GetProxyDNSStrategyHelper(
+  nsIHttpChannelInternal::ProxyDNSStrategy strategy = GetProxyDNSStrategyHelper(
       aEnt->mConnInfo->ProxyType(), aEnt->mConnInfo->ProxyFlag());
   // Speculative connections can be triggered by non-Necko consumers,
   // so add an extra check to ensure HTTPS RR isn't fetched when a proxy is
   // used.
-  if (aFetchHTTPSRR && strategy == ProxyDNSStrategy::ORIGIN &&
+  if (aFetchHTTPSRR &&
+      strategy == nsIHttpChannelInternal::PROXY_DNS_STRATEGY_ORIGIN &&
       NS_SUCCEEDED(aTrans->FetchHTTPSRR())) {
     // nsHttpConnectionMgr::DoSpeculativeConnection will be called again
     // when HTTPS RR is available.
@@ -4041,7 +4042,6 @@ nsHttpConnectionMgr::GetServerCertHashes(nsHttpConnectionInfo* aConnInfo) {
 }
 
 void nsHttpConnectionMgr::CheckTransInPendingQueue(nsHttpTransaction* aTrans) {
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   // We only do this check on socket thread. When this function is called on
   // main thread, the transaction is newly created, so we can skip this check.
   if (!OnSocketThread()) {
@@ -4055,8 +4055,10 @@ void nsHttpConnectionMgr::CheckTransInPendingQueue(nsHttpTransaction* aTrans) {
   }
 
   bool foundInPendingQ = RemoveTransFromConnEntry(aTrans, hashKey);
-  MOZ_DIAGNOSTIC_ASSERT(!foundInPendingQ);
-#endif
+  if (foundInPendingQ) {
+    glean::networking::trans_found_in_pending_queue.Add(1);
+  }
+  MOZ_ASSERT(!foundInPendingQ);
 }
 
 bool nsHttpConnectionMgr::AllowToRetryDifferentIPFamilyForHttp3(

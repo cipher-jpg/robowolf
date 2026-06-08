@@ -20,9 +20,9 @@
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/HashTable.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/RWLock.h"
+#include "mozilla/StaticMutex.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/FontPaletteCache.h"
@@ -299,19 +299,29 @@ struct FontCacheSizes {
 };
 
 class gfxFontCache final
-    : public ExpirationTrackerImpl<gfxFont, 3, mozilla::Mutex,
-                                   mozilla::MutexAutoLock> {
+    : public ExpirationTrackerImpl<gfxFont, 3, mozilla::StaticMutex> {
  protected:
   // Expiration tracker implementation.
   enum { FONT_TIMEOUT_SECONDS = 10 };
 
-  typedef mozilla::Mutex Lock;
-  typedef mozilla::MutexAutoLock AutoLock;
+  typedef mozilla::StaticMutex Lock;
+  typedef mozilla::StaticMutexAutoLock AutoLock;
 
   // This protects the ExpirationTracker tables.
-  Lock mMutex = Lock("fontCacheExpirationMutex");
+  static Lock gMutex;
 
-  Lock& GetMutex() override { return mMutex; }
+  Lock& GetMutex() override { return gMutex; }
+
+  already_AddRefed<ExpirationTrackerObserver> CreateObserver() final {
+    return mozilla::MakeAndAddRef<InternalTrackerObserver>()
+        .downcast<ExpirationTrackerObserver>();
+  }
+
+  class InternalTrackerObserver final : public ExpirationTrackerObserver {
+   public:
+    explicit InternalTrackerObserver() = default;
+    void NotifyHandlerEnd() final;
+  };
 
  public:
   explicit gfxFontCache(nsIEventTarget* aEventTarget);
@@ -357,7 +367,7 @@ class gfxFontCache final
 
   void RunWordCacheExpirationTimer() {
     if (!mTimerRunning) {
-      mozilla::MutexAutoLock lock(mMutex);
+      AutoLock lock(gMutex);
       if (!mTimerRunning && mWordCacheExpirationTimer) {
         mWordCacheExpirationTimer->InitWithNamedFuncCallback(
             WordCacheExpirationTimerCallback, this,
@@ -369,7 +379,7 @@ class gfxFontCache final
   }
   void PauseWordCacheExpirationTimer() {
     if (mTimerRunning) {
-      mozilla::MutexAutoLock lock(mMutex);
+      AutoLock lock(gMutex);
       if (mTimerRunning && mWordCacheExpirationTimer) {
         mWordCacheExpirationTimer->Cancel();
         mTimerRunning = false;
@@ -401,17 +411,16 @@ class gfxFontCache final
   };
 
   nsresult AddObject(gfxFont* aFont) {
-    AutoLock lock(mMutex);
+    AutoLock lock(gMutex);
     return AddObjectLocked(aFont, lock);
   }
 
   // This gets called when the timeout has expired on a single-refcount
   // font; we just delete it.
   void NotifyExpiredLocked(gfxFont* aFont, const AutoLock&)
-      MOZ_REQUIRES(mMutex) override;
-  void NotifyHandlerEnd() override;
+      MOZ_REQUIRES(gMutex) override;
 
-  void DestroyDiscard(nsTArray<gfxFont*>& aDiscard);
+  static void DestroyDiscard(nsTArray<gfxFont*>& aDiscard);
 
   static gfxFontCache* gGlobalCache;
 
@@ -446,13 +455,13 @@ class gfxFontCache final
     gfxFont* MOZ_UNSAFE_REF("tracking for deferred deletion") mFont = nullptr;
   };
 
-  nsTHashtable<HashEntry> mFonts MOZ_GUARDED_BY(mMutex);
+  nsTHashtable<HashEntry> mFonts MOZ_GUARDED_BY(gMutex);
 
-  nsTArray<gfxFont*> mTrackerDiscard MOZ_GUARDED_BY(mMutex);
+  nsTArray<gfxFont*> mTrackerDiscard MOZ_GUARDED_BY(gMutex);
 
   static void WordCacheExpirationTimerCallback(nsITimer* aTimer, void* aCache);
 
-  nsCOMPtr<nsITimer> mWordCacheExpirationTimer MOZ_GUARDED_BY(mMutex);
+  nsCOMPtr<nsITimer> mWordCacheExpirationTimer MOZ_GUARDED_BY(gMutex);
   std::atomic<bool> mTimerRunning = false;
 };
 
@@ -754,7 +763,7 @@ class gfxShapedText {
    */
   class CompressedGlyph {
    public:
-    enum {
+    enum Flags : uint32_t {
       // Indicates that a cluster and ligature group starts at this
       // character; this character has a single glyph with a reasonable
       // advance and zero offsets. A "reasonable" advance
@@ -770,12 +779,12 @@ class gfxShapedText {
       // indicating the kind of linebreak (if any) allowed here.
       FLAGS_CAN_BREAK_BEFORE = 0x60000000U,
 
-      FLAGS_CAN_BREAK_SHIFT = 29,
-      FLAG_BREAK_TYPE_NONE = 0,
-      FLAG_BREAK_TYPE_NORMAL = 1,
-      FLAG_BREAK_TYPE_HYPHEN = 2,
+      FLAGS_CAN_BREAK_SHIFT = 29U,
+      FLAG_BREAK_TYPE_NONE = 0U,
+      FLAG_BREAK_TYPE_NORMAL = 1U,
+      FLAG_BREAK_TYPE_HYPHEN = 2U,
       // Allow break before this position if needed to avoid overflow:
-      FLAG_BREAK_TYPE_EMERGENCY_WRAP = 3,
+      FLAG_BREAK_TYPE_EMERGENCY_WRAP = 3U,
 
       FLAG_CHAR_IS_SPACE = 0x10000000U,
 
@@ -797,27 +806,27 @@ class gfxShapedText {
       // Unicode value in some special way). If there are glyphs,
       // the mGlyphID is actually the UTF16 character code. The bit is
       // inverted so we can memset the array to zero to indicate all missing.
-      FLAG_NOT_MISSING = 0x010000,
-      FLAG_NOT_CLUSTER_START = 0x020000,
-      FLAG_NOT_LIGATURE_GROUP_START = 0x040000,
+      FLAG_NOT_MISSING = 0x010000U,
+      FLAG_NOT_CLUSTER_START = 0x020000U,
+      FLAG_NOT_LIGATURE_GROUP_START = 0x040000U,
       // Flag bit 0x080000 is currently unused.
 
       // Certain types of characters are marked so that they can be given
       // special treatment in rendering. This may require use of a "complex"
       // CompressedGlyph record even for a character that would otherwise be
       // treated as "simple".
-      CHAR_TYPE_FLAGS_MASK = 0xF00000,
-      FLAG_CHAR_IS_TAB = 0x100000,
-      FLAG_CHAR_IS_NEWLINE = 0x200000,
+      CHAR_TYPE_FLAGS_MASK = 0xF00000U,
+      FLAG_CHAR_IS_TAB = 0x100000U,
+      FLAG_CHAR_IS_NEWLINE = 0x200000U,
       // Per CSS Text Decoration Module Level 3, emphasis marks are not
       // drawn for any character in Unicode categories Z*, Cc, Cf, and Cn
       // which is not combined with any combining characters. This flag is
       // set for all those characters except 0x20 whitespace.
-      FLAG_CHAR_NO_EMPHASIS_MARK = 0x400000,
+      FLAG_CHAR_NO_EMPHASIS_MARK = 0x400000U,
       // Per CSS Text, letter-spacing is not applied to formatting chars
       // (category Cf). We mark those in the textrun so as to be able to
       // skip them when setting up spacing in nsTextFrame.
-      FLAG_CHAR_IS_FORMATTING_CONTROL = 0x800000,
+      FLAG_CHAR_IS_FORMATTING_CONTROL = 0x800000U,
 
       // The bits 0x0F000000 are currently unused in non-simple glyphs.
     };
@@ -846,6 +855,11 @@ class gfxShapedText {
     uint32_t GetSimpleGlyph() const {
       MOZ_ASSERT(IsSimpleGlyph());
       return mValue & GLYPH_MASK;
+    }
+
+    bool IsSimpleGlyphNoBreakBefore() const {
+      return (mValue & (FLAG_IS_SIMPLE_GLYPH | FLAGS_CAN_BREAK_BEFORE)) ==
+             FLAG_IS_SIMPLE_GLYPH;
     }
 
     bool IsMissing() const {
@@ -1354,8 +1368,10 @@ class gfxShapedWord final : public gfxShapedText {
 
   gfxFontShaper::RoundingFlags GetRounding() const { return mRounding; }
 
-  void ResetAge() { mAgeCounter = 0; }
-  uint32_t IncrementAge() { return ++mAgeCounter; }
+  void ResetAge() { mAgeCounter.store(0, std::memory_order_relaxed); }
+  uint32_t IncrementAge() {
+    return mAgeCounter.fetch_add(1, std::memory_order_relaxed) + 1;
+  }
 
   // Helper used when hashing a word for the shaped-word caches
   static uint32_t HashMix(uint32_t aHash, char16_t aCh) {
@@ -2172,7 +2188,10 @@ class gfxFont {
     uint32_t mLength;
     ShapedTextFlags mFlags;
     Script mScript;
-    RefPtr<nsAtom> mLanguage;
+    // Raw pointer is safe: for lookup keys, the caller holds the atom alive;
+    // for keys stored in the cache, the corresponding gfxShapedWord value
+    // holds a RefPtr<nsAtom> to the same atom.
+    nsAtom* mLanguage;
     int32_t mAppUnitsPerDevUnit;
     PLDHashNumber mHashKey;
     bool mTextIs8Bit;

@@ -24,9 +24,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AboutPagesUtils: "resource://gre/modules/AboutPagesUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
-  UrlbarTokenizer:
-    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
 });
 
@@ -432,8 +431,8 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
     if (
       queryContext.tokens.some(
         t =>
-          t.type == lazy.UrlbarTokenizer.TYPE.RESTRICT_TAG ||
-          t.type == lazy.UrlbarTokenizer.TYPE.RESTRICT_TITLE
+          t.type == lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_TAG ||
+          t.type == lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_TITLE
       )
     ) {
       return false;
@@ -533,6 +532,8 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
     }
 
     if (didRemove) {
+      UrlbarUtils.clearAutofillBackspaceEntryForUrl(result.payload.url);
+
       // Upon removing the autofill, we should do another search.
       controller.input._setValue(queryContext.searchString);
       controller.input.startQuery({
@@ -676,7 +677,7 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
       searchString: searchStr.toLowerCase(),
       nowMs: Date.now(),
       adaptiveAutofillEnabled: lazy.UrlbarPrefs.get(
-        "autoFillAdaptiveHistoryEnabled"
+        "autoFill.adaptiveHistory.enabled"
       )
         ? 1
         : 0,
@@ -761,7 +762,7 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
     if (historyAllowed && bookmarksAllowed) {
       opts.pageFrecencyThreshold = lazy.pageFrecencyThreshold;
       opts.adaptiveAutofillEnabled = lazy.UrlbarPrefs.get(
-        "autoFillAdaptiveHistoryEnabled"
+        "autoFill.adaptiveHistory.enabled"
       )
         ? 1
         : 0;
@@ -829,7 +830,7 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
       ),
       nowMs: Date.now(),
       adaptiveAutofillEnabled: lazy.UrlbarPrefs.get(
-        "autoFillAdaptiveHistoryEnabled"
+        "autoFill.adaptiveHistory.enabled"
       )
         ? 1
         : 0,
@@ -1122,8 +1123,8 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
 
     // We try to autofill with adaptive history first.
     if (
-      lazy.UrlbarPrefs.get("autoFillAdaptiveHistoryEnabled") &&
-      lazy.UrlbarPrefs.get("autoFillAdaptiveHistoryMinCharsThreshold") <=
+      lazy.UrlbarPrefs.get("autoFill.adaptiveHistory.enabled") &&
+      lazy.UrlbarPrefs.get("autoFill.adaptiveHistory.minCharsThreshold") <=
         queryContext.searchString.length
     ) {
       const [query, params] = this._getAdaptiveHistoryQuery(queryContext);

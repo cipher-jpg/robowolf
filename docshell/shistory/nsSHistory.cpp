@@ -37,6 +37,7 @@
 #include "mozilla/dom/Navigation.h"
 #include "mozilla/dom/RemoteWebProgressRequest.h"
 #include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/glean/DocshellMetrics.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Preferences.h"
@@ -1415,6 +1416,10 @@ static void FinishRestore(CanonicalBrowsingContext* aBrowsingContext,
     // the right focus events are fired.
     frameLoaderOwner->UpdateFocusAndMouseEnterStateAfterFrameLoaderChange();
 
+    glean::bfcache::page_restored
+        .EnumGet(glean::bfcache::PageRestoredLabel::eTrue)
+        .Add();
+
     return;
   }
 
@@ -1422,6 +1427,10 @@ static void FinishRestore(CanonicalBrowsingContext* aBrowsingContext,
 
   // Fall back to do a normal load.
   aBrowsingContext->LoadURI(aLoadState, false);
+
+  glean::bfcache::page_restored
+      .EnumGet(glean::bfcache::PageRestoredLabel::eFalse)
+      .Add();
 }
 
 MOZ_CAN_RUN_SCRIPT
@@ -1501,6 +1510,10 @@ void nsSHistory::LoadURIOrBFCache(const LoadEntryResult& aLoadEntry) {
     if (MaybeLoadBFCache(aLoadEntry)) {
       return;
     }
+
+    glean::bfcache::page_restored
+        .EnumGet(glean::bfcache::PageRestoredLabel::eFalse)
+        .Add();
   }
 
   RefPtr<BrowsingContext> bc = aLoadEntry.mBrowsingContext;
@@ -2307,7 +2320,7 @@ nsresult nsSHistory::GotoIndex(BrowsingContext* aSourceBrowsingContext,
 
 NS_IMETHODIMP_(bool)
 nsSHistory::HasUserInteractionAtIndex(int32_t aIndex) {
-  RefPtr<SessionHistoryEntry> entry = mEntries[aIndex];
+  RefPtr<SessionHistoryEntry> entry = mEntries.SafeElementAt(aIndex);
   if (!entry) {
     return false;
   }
@@ -2527,7 +2540,12 @@ mozilla::dom::SessionHistoryEntry* nsSHistory::FindAdjacentEntryFor(
 
   nextEntry = mEntries[i];
   if (ancestors.IsEmpty()) {
-    return static_cast<SessionHistoryEntry*>(nextEntry.get());
+    // This can happen if we somehow have duplicates in mEntries. This should
+    // ideally never happen, but since it does we need to protect against it.
+    // See bug 2042897.
+    return nextEntry != aEntry
+               ? static_cast<SessionHistoryEntry*>(nextEntry.get())
+               : nullptr;
   }
 
   foundParent =
@@ -2684,7 +2702,7 @@ void nsSHistory::InitiateLoad(BrowsingContext* aSourceBrowsingContext,
   loadResult->mBrowsingContext = aFrameBC;
 
   nsCOMPtr<nsIURI> newURI = aFrameEntry->GetURI();
-  RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(newURI);
+  RefPtr loadState = MakeRefPtr<nsDocShellLoadState>(newURI);
 
   loadState->SetSourceBrowsingContext(aSourceBrowsingContext);
 
@@ -2738,7 +2756,7 @@ NS_IMETHODIMP
 nsSHistory::CreateEntry(nsISHEntry** aEntry) {
   nsCOMPtr<nsISHEntry> entry;
   if (XRE_IsParentProcess()) {
-    entry = new SessionHistoryEntry();
+    entry = MakeRefPtr<SessionHistoryEntry>();
   }
   entry.forget(aEntry);
   return NS_OK;

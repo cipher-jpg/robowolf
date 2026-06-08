@@ -6,11 +6,14 @@ package org.mozilla.fenix.components
 
 import android.app.Application
 import android.content.Context
+import android.net.ConnectivityManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.getSystemService
 import com.google.android.play.core.review.ReviewManagerFactory
+import kotlinx.coroutines.MainScope
 import mozilla.components.concept.ai.controls.AIFeatureBlock
 import mozilla.components.concept.ai.controls.AIFeatureRegistry
 import mozilla.components.feature.addons.AddonManager
@@ -24,9 +27,6 @@ import mozilla.components.lib.ai.controls.default
 import mozilla.components.lib.crash.store.CrashAction
 import mozilla.components.lib.crash.store.CrashMiddleware
 import mozilla.components.lib.integrity.googleplay.GooglePlayIntegrityClient
-import mozilla.components.lib.integrity.googleplay.GoogleProjectNumber
-import mozilla.components.lib.integrity.googleplay.IntegrityManagerProvider
-import mozilla.components.lib.integrity.googleplay.TokenProviderFactory
 import mozilla.components.lib.llm.mlpa.MlpaTokenStorage
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
 import mozilla.components.service.fxrelay.eligibility.RelayEligibilityStore
@@ -84,6 +84,8 @@ import org.mozilla.fenix.home.setup.store.SetupChecklistPreferencesMiddleware
 import org.mozilla.fenix.home.setup.store.SetupChecklistTelemetryMiddleware
 import org.mozilla.fenix.home.sports.SportsWidgetMiddleware
 import org.mozilla.fenix.home.sports.WorldCupMatchesRepository
+import org.mozilla.fenix.home.sports.client.AppServicesWorldCupMatchesClient
+import org.mozilla.fenix.home.sports.client.mockWorldCupBaseHost
 import org.mozilla.fenix.ipprotection.IPProtectionManager
 import org.mozilla.fenix.ipprotection.store.DefaultIPProtectionPromptRepository
 import org.mozilla.fenix.messaging.state.MessagingMiddleware
@@ -312,7 +314,6 @@ class Components(private val context: Context) {
                 expandedCollections = emptySet(),
                 topSites = core.topSitesStorage.cachedTopSites.sort(),
                 bookmarks = emptyList(),
-                showCollectionPlaceholder = settings.showCollectionsPlaceholderOnHome,
                 // Provide an initial state for recent tabs to prevent re-rendering on the home screen.
                 //  This will otherwise cause a visual jump as the section gets rendered from no state
                 //  to some state.
@@ -367,7 +368,24 @@ class Components(private val context: Context) {
                     settings.migrateLastReviewPromptTimePrefIfNeeded(nimbus.events)
                 },
                 AppVisualCompletenessMiddleware(performance.visualCompletenessQueue),
-                SportsWidgetMiddleware(sportsRepository = WorldCupMatchesRepository()),
+                SportsWidgetMiddleware(
+                    sportsRepository = WorldCupMatchesRepository(
+                        client = AppServicesWorldCupMatchesClient(
+                            baseHostProvider = {
+                                if (settings.useMockWorldCupServer) {
+                                    mockWorldCupBaseHost(settings.mockWorldCupServerSession)
+                                } else {
+                                    null
+                                }
+                            },
+                        ),
+                    ),
+                    connectivityManager = requireNotNull(context.getSystemService<ConnectivityManager>()) {
+                        "ConnectivityManager unavailable"
+                    },
+                    fetchMinIntervalSeconds = settings.sportsWidgetFetchThrottleSeconds,
+                    bypassThrottle = { settings.useMockWorldCupServer },
+                ),
             ),
         ).also {
             it.dispatch(AppAction.SetupChecklistAction.Init)
@@ -410,12 +428,10 @@ class Components(private val context: Context) {
     }
 
     val integrityClient by lazyMonitored {
-        GooglePlayIntegrityClient(
-            TokenProviderFactory.create(
-                IntegrityManagerProvider.create(context),
-                GoogleProjectNumber.create(BuildConfig.GPS_INTEGRITY_TOKEN),
-            ),
-            clientUUID,
+        GooglePlayIntegrityClient.create(
+            context = context,
+            projectNumberToken = BuildConfig.GPS_INTEGRITY_TOKEN,
+            requestHashProvider = clientUUID,
         )
     }
 
@@ -486,7 +502,7 @@ class Components(private val context: Context) {
     }
 
     val aiFeatureRegistry by lazyMonitored {
-        AIFeatureRegistry.default().also {
+        AIFeatureRegistry.default(scope = MainScope(), context = context).also {
             if (settings.shakeToSummarizeFeatureFlagEnabled) {
                 it.register(PageSummaryFeature(SummarizationSettings.dataStore(context)))
             }

@@ -53,6 +53,7 @@ STATIC_ATOMS = [
     Atom("mozgeneratedcontentmarker", "_moz_generated_content_marker"),
     Atom("mozgeneratedcontentimage", "_moz_generated_content_image"),
     Atom("mozgeneratedcontentbackdrop", "_moz_generated_content_backdrop"),
+    Atom("mozgeneratedcontentcheckmark", "_moz_generated_content_checkmark"),
     Atom("mozquote", "_moz_quote"),
     Atom("mozsignature", "moz-signature"),  # Used by MailNews.
     Atom("_moz_bullet_font", "-moz-bullet-font"),
@@ -237,6 +238,7 @@ STATIC_ATOMS = [
     Atom("checkbox", "checkbox"),
     Atom("checkboxLabel", "checkbox-label"),
     Atom("checked", "checked"),
+    Atom("checkmark", "checkmark"),
     Atom("child", "child"),
     Atom("children", "children"),
     Atom("childList", "childList"),
@@ -365,6 +367,8 @@ STATIC_ATOMS = [
     Atom("disablehistory", "disablehistory"),
     Atom("disablefullscreen", "disablefullscreen"),
     Atom("disablepictureinpicture", "disablepictureinpicture"),
+    Atom("onenterpictureinpicture", "onenterpictureinpicture"),
+    Atom("onleavepictureinpicture", "onleavepictureinpicture"),
     Atom("disclosure_closed", "disclosure-closed"),
     Atom("disclosure_open", "disclosure-open"),
     Atom("display", "display"),
@@ -531,6 +535,8 @@ STATIC_ATOMS = [
     Atom("head", "head"),
     Atom("header", "header"),
     Atom("headers", "headers"),
+    Atom("headingoffset", "headingoffset"),
+    Atom("headingreset", "headingreset"),
     Atom("hebrew", "hebrew"),
     Atom("height", "height"),
     Atom("hgroup", "hgroup"),
@@ -1360,6 +1366,7 @@ STATIC_ATOMS = [
     Atom("viewport_minimum_scale", "viewport-minimum-scale"),
     Atom("viewport_user_scalable", "viewport-user-scalable"),
     Atom("viewport_width", "viewport-width"),
+    Atom("viewsource", "viewsource"),
     Atom("visibility", "visibility"),
     Atom("visuallyselected", "visuallyselected"),
     Atom("vlink", "vlink"),
@@ -1635,6 +1642,8 @@ STATIC_ATOMS = [
     Atom("targetX", "targetX"),
     Atom("targetY", "targetY"),
     Atom("text_anchor", "text-anchor"),
+    Atom("text_css", "text/css"),
+    Atom("text_javascript", "text/javascript"),
     Atom("text_overflow", "text-overflow"),
     Atom("text_rendering", "text-rendering"),
     Atom("textLength", "textLength"),
@@ -2067,6 +2076,7 @@ STATIC_ATOMS = [
     Atom("moz", "moz"),
     Atom("moz_icon", "moz-icon"),
     Atom("proxy", "proxy"),
+    Atom("fileSchemeAllowedPermission", "internal:fileSchemeAllowed"),
     Atom("privateBrowsingAllowedPermission", "internal:privateBrowsingAllowed"),
     Atom("svgContextPropertiesAllowedPermission", "internal:svgContextPropertiesAllowed"),
     Atom("theme", "theme"),
@@ -2230,6 +2240,7 @@ STATIC_ATOMS = [
     Atom("manualNACProperty", "ManualNACProperty"),  # ManualNAC*
     Atom("markerPseudoProperty", "markerPseudoProperty"),  # nsXMLElement*
     Atom("backdropPseudoProperty", "backdropPseudoProperty"),  # nsXMLElement*
+    Atom("checkmarkPseudoProperty", "checkmarkPseudoProperty"),  # nsXMLElement*
     # Languages for lang-specific transforms
     Atom("Japanese", "ja"),
     Atom("Chinese", "zh-CN"),
@@ -2467,6 +2478,7 @@ STATIC_ATOMS = [
     Atom("onmetadatachange", "onmetadatachange"),
     Atom("onplaybackstatechange", "onplaybackstatechange"),
     Atom("onpositionstatechange", "onpositionstatechange"),
+    Atom("oneffectiveaudiosessiontypechange", "oneffectiveaudiosessiontypechange"),
     Atom("onsupportedkeyschange", "onsupportedkeyschange"),
     # Media query prefs for UA sheets.
     Atom("dom_image_sizes_auto_enabled", "dom.image.sizes_auto.enabled"),
@@ -2477,6 +2489,7 @@ STATIC_ATOMS = [
     Atom("layout_css_appearance_base_enabled", "layout.css.appearance-base.enabled"),
     Atom("layout_css_cached_scrollbar_styles_enabled", "layout.css.cached-scrollbar-styles.enabled"),
     Atom("layout_testing_scrollbars_always_hidden", "layout.testing.scrollbars.always-hidden"),
+    Atom("dom_headingoffset_enabled", "dom.headingoffset.enabled"),
     # Contextual Identity / Containers
     Atom("usercontextid", "usercontextid"),
     Atom("geckoViewSessionContextId", "geckoViewSessionContextId"),
@@ -2558,6 +2571,7 @@ STATIC_ATOMS = [
     Atom("PseudoStyle_FirstLine", ":first-line"),
     Atom("PseudoStyle_Highlight", ":highlight"),
     Atom("PseudoStyle_Picker", ":picker"),
+    Atom("PseudoStyle_Checkmark", ":checkmark"),
     Atom("PseudoStyle_Selection", ":selection"),
     Atom("PseudoStyle_TargetText", ":target-text"),
     Atom("PseudoStyle_ViewTransition", ":view-transition"),

@@ -167,7 +167,7 @@ void MacroAssemblerCompat::boxValue(Register type, Register src,
     Label upperBitsZeroed;
     Lsr(ARMRegister(scratch, 64), ARMRegister(src, 64),
         ARMRegister(scratch, 64));
-    Cbz(ARMRegister(scratch, 64), &upperBitsZeroed);
+    asMasm().branchTestPtr(Assembler::Zero, scratch, scratch, &upperBitsZeroed);
     breakpoint();
     bind(&upperBitsZeroed);
   }
@@ -1650,6 +1650,9 @@ CodeOffset MacroAssembler::call(const Address& addr) {
 }
 
 void MacroAssembler::call(JitCode* c) {
+  // CodeFromJump doesn't support nop sequences.
+  AutoForbidNops afn(this);
+
   vixl::UseScratchRegisterScope temps(this);
   const ARMRegister scratch64 = temps.AcquireX();
   // This sync has been observed (and is expected) to be necessary.

@@ -66,6 +66,7 @@ pub use self::color::{
     Color, ColorOrAuto, ColorPropertyValue, ColorScheme, ForcedColorAdjust, PrintColorAdjust,
 };
 pub use self::column::ColumnCount;
+pub use self::corner_shape::{CornerShape, CornerShapeRect};
 pub use self::counters::{Content, ContentItem, CounterIncrement, CounterReset, CounterSet};
 pub use self::easing::TimingFunction;
 pub use self::effects::{BoxShadow, Filter, SimpleShadow};
@@ -88,6 +89,7 @@ pub use self::list::Quotes;
 pub use self::motion::{OffsetPath, OffsetPosition, OffsetRotate};
 pub use self::outline::OutlineStyle;
 pub use self::page::{PageName, PageOrientation, PageSize, PageSizeOrientation, PaperSize};
+pub use self::param::LinkParameters;
 pub use self::percentage::{NonNegativePercentage, Percentage};
 pub use self::position::AnchorFunction;
 pub use self::position::AnchorName;
@@ -139,8 +141,10 @@ pub mod basic_shape;
 pub mod border;
 #[path = "box.rs"]
 pub mod box_;
+pub mod calc;
 pub mod color;
 pub mod column;
+pub mod corner_shape;
 pub mod counters;
 pub mod easing;
 pub mod effects;
@@ -153,6 +157,7 @@ pub mod list;
 pub mod motion;
 pub mod outline;
 pub mod page;
+pub mod param;
 pub mod percentage;
 pub mod position;
 pub mod ratio;

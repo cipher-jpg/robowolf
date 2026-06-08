@@ -85,6 +85,10 @@ aiwindow-input-cta-search-submenu-header = Search
 
 smartbar-placeholder =
     .placeholder = Ask, search, or type a URL
+smartbar-placeholder-hint-1 = Use @ to mention recent tabs…
+smartbar-placeholder-hint-2 = Ask anything…
+smartbar-placeholder-hint-3 = Enter a web address…
+smartbar-placeholder-hint-4 = Search the web…
 
 ## Mentions
 
@@ -122,6 +126,23 @@ aiwindow-firstrun-model-personal-body = Most tailored answers
 aiwindow-firstrun-button = Let’s go!
 aiwindow-firstrun-back-button = Back
 aiwindow-firstrun-next-button = Next
+
+## These are labels describing model types in the smartbar model select.
+
+aiwindow-input-model-select-button-label-fast = Fast
+aiwindow-input-model-select-button-label-allpurpose = Flexible
+aiwindow-input-model-select-button-label-personal = Personal
+aiwindow-input-model-select-button-label-custom = Custom
+
+# Variables:
+# $ownerName (string) - The name of the model owner/provider
+# $model (string) - The model name
+aiwindow-input-model-select-menu-item-description = { $ownerName } { $model }
+aiwindow-input-model-select-menu-item-description-custom = Use your own LLM
+aiwindow-input-model-select-default-badge =
+    .label = Default
+    .title = The selected default model
+aiwindow-input-model-select-settings-link = Model settings
 
 ## Firstrun memories onboarding
 
@@ -199,7 +220,7 @@ smartwindow-footer-history =
 ## Disclaimer
 ## Text displayed to user to warn user about potential mistakes.
 
-smartwindow-disclaimer = AI can make mistakes. <a data-l10n-name="report-link">Report any issues</a>.
+smartwindow-disclaimer = AI can make mistakes.
 
 ## FirefoxView Chats
 ## Chats in this context refers to chats saved from the Smart Window Assistant
@@ -269,6 +290,13 @@ smart-window-confirm-close-tabs =
         [one] Close { $count } tab
        *[other] Close { $count } tabs
     }
+
+## Natural Language action callouts
+
+# Shown after the Smart Window closes the user's current tab in response to a
+# natural language prompt action, anchored to the toolbar menu button.
+smartwindow-close-tab-callout-title = Tab closed
+smartwindow-close-tab-callout-subtitle = Reopen tabs from History anytime.
 
 ## Smart Window new tab promo
 

@@ -20,6 +20,86 @@ const isMSIX =
 
 const MESSAGES = () => [
   {
+    weight: 100,
+    id: "FEATURE_CALLOUT_EMBEDDED_LINKS_TEST",
+    template: "feature_callout",
+    description: "Test embedded links in above_button_content paragraphs",
+    content: {
+      id: "FEATURE_CALLOUT_EMBEDDED_LINKS_TEST",
+      template: "multistage",
+      backdrop: "transparent",
+      transitions: false,
+      disableHistoryUpdates: true,
+      metrics: "block",
+      screens: [
+        {
+          id: "FEATURE_CALLOUT_EMBEDDED_LINKS_TEST",
+          anchors: [
+            {
+              selector: "#PanelUI-menu-button",
+              panel_position: {
+                anchor_attachment: "bottomcenter",
+                callout_attachment: "topright",
+              },
+            },
+          ],
+          content: {
+            position: "callout",
+            title: {
+              raw: "I'm an example of embedded links",
+              marginInline: "0 42px",
+            },
+            above_button_content: [
+              {
+                type: "text",
+                text: [
+                  "Read the release notes ",
+                  {
+                    raw: {
+                      $l10n: {
+                        id: "id",
+                        text: "here",
+                        comment: "text",
+                      },
+                    },
+                    href: "https://www.mozilla.org/en-US/firefox/releases/",
+                    where: "tabshifted",
+                  },
+                  ", or open ",
+                  {
+                    raw: "settings",
+                    link_key: "settings",
+                  },
+                  ".",
+                ],
+                textAlign: "start",
+                fontSize: "0.8125em",
+                marginBlock: "0",
+              },
+            ],
+            settings: {
+              action: {
+                type: "OPEN_ABOUT_PAGE",
+                data: {
+                  args: "preferences",
+                  where: "tab",
+                },
+              },
+            },
+            dismiss_button: {
+              action: {
+                dismiss: true,
+              },
+            },
+          },
+        },
+      ],
+    },
+    targeting: 'providerCohorts.panel_local_testing == "SHOW_TEST"',
+    groups: [],
+    provider: "panel_local_testing",
+  },
+  {
     id: "WRITE_IN_MICROSURVEY_TEST",
     template: "feature_callout",
     groups: [],
@@ -1986,10 +2066,6 @@ const MESSAGES = () => [
     content: {
       promoEnabled: true,
       promoType: "VPN",
-      infoEnabled: true,
-      infoBody: "fluent:about-private-browsing-info-description-private-window",
-      infoLinkText: "fluent:about-private-browsing-learn-more-link",
-      infoTitleEnabled: false,
       promoLinkType: "button",
       promoLinkText: "fluent:about-private-browsing-prominent-cta",
       promoSectionStyle: "below-search",
@@ -2015,12 +2091,6 @@ const MESSAGES = () => [
     template: "pb_newtab",
     groups: ["pbNewtab"],
     content: {
-      infoBody: "fluent:about-private-browsing-info-description-simplified",
-      infoEnabled: true,
-      infoIcon: "chrome://global/skin/icons/indicator-private-browsing.svg",
-      infoLinkText: "fluent:about-private-browsing-learn-more-link",
-      infoTitle: "",
-      infoTitleEnabled: false,
       promoEnabled: true,
       promoType: "PIN",
       promoHeader: "Private browsing freedom in one click",

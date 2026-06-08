@@ -232,10 +232,10 @@ pub enum CascadeMode<'a, 'b> {
     },
 }
 
-fn iter_declarations<'builder, 'decls: 'builder>(
+fn iter_declarations<'custom_builder, 'decls: 'custom_builder, 'builder>(
     iter: impl Iterator<Item = (&'decls PropertyDeclaration, CascadePriority)>,
     declarations: &mut Declarations<'decls>,
-    mut custom_builder: Option<&mut CustomPropertiesBuilder<'builder, 'decls>>,
+    mut custom_builder: Option<&mut CustomPropertiesBuilder<'custom_builder, 'builder>>,
     attribute_tracker: &mut AttributeTracker,
 ) {
     for (declaration, priority) in iter {
@@ -257,32 +257,31 @@ fn iter_declarations<'builder, 'decls: 'builder>(
 
 /// NOTE: This function expects the declaration with more priority to appear
 /// first.
-pub fn apply_declarations<'a, E, I>(
-    stylist: &'a Stylist,
-    pseudo: Option<&'a PseudoElement>,
+pub fn apply_declarations<'decls, E, I>(
+    stylist: &Stylist,
+    pseudo: Option<&PseudoElement>,
     rules: &StrongRuleNode,
     guards: &StylesheetGuards,
     iter: I,
-    parent_style: Option<&'a ComputedValues>,
+    parent_style: Option<&ComputedValues>,
     layout_parent_style: Option<&ComputedValues>,
-    first_line_reparenting: FirstLineReparenting<'a>,
-    try_tactic: &'a PositionTryFallbacksTryTactic,
+    first_line_reparenting: FirstLineReparenting<'_>,
+    try_tactic: &PositionTryFallbacksTryTactic,
     cascade_mode: CascadeMode,
     cascade_input_flags: ComputedValueFlags,
     included_cascade_flags: RuleCascadeFlags,
-    rule_cache: Option<&'a RuleCache>,
-    rule_cache_conditions: &'a mut RuleCacheConditions,
+    rule_cache: Option<&RuleCache>,
+    rule_cache_conditions: &mut RuleCacheConditions,
     element: Option<E>,
 ) -> Arc<ComputedValues>
 where
-    E: TElement + 'a,
-    I: Iterator<Item = (&'a PropertyDeclaration, CascadePriority)>,
+    E: TElement,
+    I: Iterator<Item = (&'decls PropertyDeclaration, CascadePriority)>,
 {
     debug_assert!(layout_parent_style.is_none() || parent_style.is_some());
     let device = stylist.device();
     let inherited_style = parent_style.unwrap_or(device.default_computed_values());
     let is_root_element = pseudo.is_none() && element.map_or(false, |e| e.is_root());
-
     let container_size_query =
         ContainerSizeQuery::for_option_element(element, Some(inherited_style), pseudo.is_some());
 
@@ -505,7 +504,7 @@ fn tweak_when_ignoring_colors(
             // broken in other applications as well, and not honoring
             // transparent makes stuff uglier or break unconditionally
             // (bug 1666059, bug 1755713).
-            if color.honored_in_forced_colors_mode(/* allow_transparent = */ true) {
+            if color.honored_in_forced_colors_mode(context, /* allow_transparent = */ true) {
                 return;
             }
             // For background-color, we revert or initial-with-preserved-alpha
@@ -524,7 +523,7 @@ fn tweak_when_ignoring_colors(
             // We honor color: transparent and system colors.
             if color
                 .0
-                .honored_in_forced_colors_mode(/* allow_transparent = */ true)
+                .honored_in_forced_colors_mode(context, /* allow_transparent = */ true)
             {
                 return;
             }
@@ -572,7 +571,9 @@ fn tweak_when_ignoring_colors(
             // caret-color doesn't make sense (using currentColor is fine), and
             // we ignore accent-color in high-contrast-mode anyways.
             if let Some(color) = declaration.color_value() {
-                if color.honored_in_forced_colors_mode(/* allow_transparent = */ false) {
+                if color
+                    .honored_in_forced_colors_mode(context, /* allow_transparent = */ false)
+                {
                     return;
                 }
             }
@@ -1187,6 +1188,7 @@ impl<'b> Cascade<'b> {
             | ComputedValueFlags::IS_IN_APPEARANCE_BASE_SUBTREE
             | ComputedValueFlags::USES_CONTAINER_UNITS
             | ComputedValueFlags::USES_VIEWPORT_UNITS
+            | ComputedValueFlags::USES_FONT_RELATIVE_UNITS
             | ComputedValueFlags::DEPENDS_ON_CONTAINER_STYLE_QUERY;
         context.builder.add_flags(style.flags & bits_to_copy);
 

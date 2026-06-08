@@ -6,6 +6,7 @@ import { NetUtil } from "resource://gre/modules/NetUtil.sys.mjs";
 
 const SERVER_PATH = "/api/v1/create";
 const SHARE_PATH = "/share/mockShare001";
+const AUTH_COMPLETE_PATH = "/auth-complete";
 
 const COOKIE_CONTENTS = "auth=1; Path=/; Max-Age=6000; HttpOnly; SameSite=Lax";
 
@@ -21,6 +22,7 @@ class ContentSharingMockServerClass {
   #originalServerUrl = null;
   #mockResponse = null;
   #mockResponseStatus = 201;
+  #blockedRespondFns = [];
   get url() {
     return this.#url;
   }
@@ -47,10 +49,19 @@ class ContentSharingMockServerClass {
     this.#mockResponseStatus = value;
   }
 
+  blockNextResponse() {
+    return new Promise(resolve => {
+      this.#blockedRespondFns.push(resolve);
+    });
+  }
+
   constructor() {
     this.#httpServer = new HttpServer();
     this.#httpServer.registerPathHandler(SERVER_PATH, (req, resp) =>
       this.#handleRequest(req, resp)
+    );
+    this.#httpServer.registerPathHandler(AUTH_COMPLETE_PATH, (req, resp) =>
+      this.#handleAuthComplete(req, resp)
     );
   }
 
@@ -99,6 +110,7 @@ class ContentSharingMockServerClass {
     this.#requests = [];
     this.#mockResponse = { url: this.#mockShareURL };
     this.#mockResponseStatus = 201;
+    this.#blockedRespondFns = [];
   }
 
   #handleRequest(httpRequest, httpResponse) {
@@ -119,14 +131,31 @@ class ContentSharingMockServerClass {
     this.#requests.push({ body });
 
     httpResponse.processAsync();
-    httpResponse.setStatusLine("", this.#mockResponseStatus, "");
 
-    if (this.#mockResponseStatus !== 401) {
-      httpResponse.setHeader("Set-Cookie", COOKIE_CONTENTS);
+    const respond = () => {
+      httpResponse.setStatusLine("", this.#mockResponseStatus, "");
+      if (this.#mockResponseStatus !== 401) {
+        httpResponse.setHeader("Set-Cookie", COOKIE_CONTENTS);
+      }
+      httpResponse.setHeader("Content-Type", "application/json", false);
+      httpResponse.write(JSON.stringify(this.#mockResponse));
+      httpResponse.finish();
+    };
+
+    if (this.#blockedRespondFns.length) {
+      const resolveBlocked = this.#blockedRespondFns.shift();
+      resolveBlocked(respond);
+    } else {
+      respond();
     }
-    httpResponse.setHeader("Content-Type", "application/json", false);
-    httpResponse.write(JSON.stringify(this.#mockResponse));
-    httpResponse.finish();
+  }
+
+  #handleAuthComplete(httpRequest, httpResponse) {
+    httpResponse.setStatusLine("", 200, "OK");
+    httpResponse.setHeader("Content-Type", "text/html", false);
+    httpResponse.write(
+      "<!doctype html><title>Signed in</title><p>Signed in.</p>"
+    );
   }
 }
 

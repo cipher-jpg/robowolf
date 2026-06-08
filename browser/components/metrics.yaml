@@ -216,7 +216,6 @@ browser.startup:
       - perf-telemetry-alerts@mozilla.com
     expires: never
     unit: CACHE_RESULT_SCALARS
-    telemetry_mirror: BROWSER_STARTUP_ABOUTHOME_CACHE_RESULT
     no_lint:
       - COMMON_PREFIX
 
@@ -251,7 +250,6 @@ browser.startup:
       - mconley@mozilla.com
       - perf-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: BROWSER_STARTUP_ABOUTHOME_CACHE_SHUTDOWNWRITE
     no_lint:
       - COMMON_PREFIX
   kiosk_mode:
@@ -1155,7 +1153,7 @@ browser:
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2013077
     notification_emails:
-      - nimbus-team@mozilla.com
+      - project-nimbus@mozilla.com
     data_sensitivity:
       - interaction
     expires: never
@@ -1189,7 +1187,7 @@ browser:
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2012214
     notification_emails:
-      - nimbus-team@mozilla.com
+      - project-nimbus@mozilla.com
     data_sensitivity:
       - interaction
     expires: never

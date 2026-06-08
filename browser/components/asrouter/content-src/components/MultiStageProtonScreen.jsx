@@ -208,7 +208,6 @@ export const MultiStageProtonScreen = props => {
       addonIconURL={props.addonIconURL}
       themeScreenshots={props.themeScreenshots}
       messageId={props.messageId}
-      writeInMicrosurvey={props.writeInMicrosurvey}
       negotiatedLanguage={props.negotiatedLanguage}
       langPackInstallPhase={props.langPackInstallPhase}
       forceHideStepsIndicator={props.forceHideStepsIndicator}
@@ -488,19 +487,19 @@ export class ProtonScreen extends React.PureComponent {
       <picture className={className} style={pictureStyle}>
         {darkModeReducedMotionImageURL ? (
           <source
-            srcSet={darkModeReducedMotionImageURL}
+            srcset={darkModeReducedMotionImageURL}
             media="(prefers-color-scheme: dark) and (prefers-reduced-motion: reduce)"
           />
         ) : null}
         {darkModeImageURL ? (
           <source
-            srcSet={darkModeImageURL}
+            srcset={darkModeImageURL}
             media="(prefers-color-scheme: dark)"
           />
         ) : null}
         {reducedMotionImageURL ? (
           <source
-            srcSet={reducedMotionImageURL}
+            srcset={reducedMotionImageURL}
             media="(prefers-reduced-motion: reduce)"
           />
         ) : null}
@@ -539,7 +538,6 @@ export class ProtonScreen extends React.PureComponent {
         negotiatedLanguage={this.props.negotiatedLanguage}
         langPackInstallPhase={this.props.langPackInstallPhase}
         messageId={this.props.messageId}
-        writeInMicrosurvey={this.props.writeInMicrosurvey}
       />
     ) : null;
   }

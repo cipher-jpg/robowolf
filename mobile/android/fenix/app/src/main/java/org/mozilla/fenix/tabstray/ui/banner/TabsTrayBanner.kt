@@ -80,6 +80,7 @@ private val RowHeight = 48.dp
  * @param shouldShowTabAutoCloseBanner Whether the tab auto-close banner should be displayed.
  * @param shouldShowLockPbmBanner Whether the lock private browsing mode banner should be displayed.
  * @param shouldShowAddToTabGroupButton Whether the add to tab group button should be displayed.
+ * @param hasTabDataLoaded Whether the tab data has loaded.
  * @param onTabPageIndicatorClicked Invoked when the user clicks on a tab page indicator.
  * @param onSaveToCollectionClick Invoked when the user clicks the "Save to Collection" button in multi-select mode.
  * @param onShareSelectedTabsClick Invoked when the user clicks the "Share" button in multi-select mode.
@@ -109,6 +110,7 @@ fun TabsTrayBanner(
     shouldShowTabAutoCloseBanner: Boolean,
     shouldShowLockPbmBanner: Boolean,
     shouldShowAddToTabGroupButton: Boolean,
+    hasTabDataLoaded: Boolean,
     onTabPageIndicatorClicked: (Page) -> Unit,
     onSaveToCollectionClick: () -> Unit,
     onShareSelectedTabsClick: () -> Unit,
@@ -169,6 +171,7 @@ fun TabsTrayBanner(
                 tabGroupCount = tabGroupCount,
                 syncedTabCount = syncedTabCount,
                 onTabPageIndicatorClicked = onTabPageIndicatorClicked,
+                hasTabDataLoaded = hasTabDataLoaded,
             )
         }
 
@@ -224,6 +227,7 @@ fun TabsTrayBanner(
  * @param shouldShowTabGroupsPage Whether to show the tab groups page.
  * @param tabGroupCount The amount of tab groups.
  * @param syncedTabCount The amount of synced tabs.
+ * @param hasTabDataLoaded Whether the tab data has loaded.
  * @param onTabPageIndicatorClicked Invoked when the user clicks on a tab page button. Passes along the
  * [Page] that was clicked.
  */
@@ -236,9 +240,9 @@ private fun TabPageBanner(
     shouldShowTabGroupsPage: Boolean,
     tabGroupCount: Int,
     syncedTabCount: Int,
+    hasTabDataLoaded: Boolean,
     onTabPageIndicatorClicked: (Page) -> Unit,
 ) {
-    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
     val selectedTabIndex = Page.pageToPosition(
         page = selectedPage,
         shouldShowTabGroupsPage = shouldShowTabGroupsPage,
@@ -263,6 +267,7 @@ private fun TabPageBanner(
                         topStartPercent = 50,
                         topEndPercent = 50,
                     ),
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             },
             divider = {},
@@ -274,8 +279,8 @@ private fun TabPageBanner(
                 shouldShowTabGroupsPage = shouldShowTabGroupsPage,
                 tabGroupCount = tabGroupCount,
                 syncedTabCount = syncedTabCount,
-                inactiveColor = inactiveColor,
                 onTabPageIndicatorClicked = onTabPageIndicatorClicked,
+                hasTabDataLoaded = hasTabDataLoaded,
             )
         }
     }
@@ -290,7 +295,7 @@ private fun TabPageBannerTabs(
     shouldShowTabGroupsPage: Boolean,
     tabGroupCount: Int,
     syncedTabCount: Int,
-    inactiveColor: Color,
+    hasTabDataLoaded: Boolean,
     onTabPageIndicatorClicked: (Page) -> Unit,
 ) {
     val privateTabDescription = stringResource(
@@ -315,7 +320,6 @@ private fun TabPageBannerTabs(
         selected = selectedPage == Page.PrivateTabs,
         testTag = TabsTrayTestTag.PRIVATE_TABS_PAGE_BUTTON,
         contentDescription = privateTabDescription,
-        inactiveColor = inactiveColor,
         onClick = { onTabPageIndicatorClicked(Page.PrivateTabs) },
     ) {
         Icon(painterResource(iconsR.drawable.mozac_ic_private_mode_24), null)
@@ -325,10 +329,12 @@ private fun TabPageBannerTabs(
         selected = selectedPage == Page.NormalTabs,
         testTag = TabsTrayTestTag.NORMAL_TABS_PAGE_BUTTON,
         contentDescription = normalTabDescription,
-        inactiveColor = inactiveColor,
         onClick = { onTabPageIndicatorClicked(Page.NormalTabs) },
     ) {
-        TabCounter(tabCount = normalTabCount)
+        TabCounter(
+            tabCount = normalTabCount,
+            showTabCount = hasTabDataLoaded,
+        )
     }
 
     if (shouldShowTabGroupsPage) {
@@ -336,7 +342,6 @@ private fun TabPageBannerTabs(
             selected = selectedPage == Page.TabGroups,
             testTag = TabsTrayTestTag.TAB_GROUPS_PAGE_BUTTON,
             contentDescription = tabGroupsDescription,
-            inactiveColor = inactiveColor,
             onClick = { onTabPageIndicatorClicked(Page.TabGroups) },
         ) {
             Icon(painterResource(iconsR.drawable.mozac_ic_tab_group_24), null)
@@ -347,7 +352,6 @@ private fun TabPageBannerTabs(
         selected = selectedPage == Page.SyncedTabs,
         testTag = TabsTrayTestTag.SYNCED_TABS_PAGE_BUTTON,
         contentDescription = syncedTabDescription,
-        inactiveColor = inactiveColor,
         onClick = { onTabPageIndicatorClicked(Page.SyncedTabs) },
     ) {
         Icon(painterResource(iconsR.drawable.mozac_ic_sync_tabs_24), null)
@@ -359,7 +363,6 @@ private fun BannerTab(
     selected: Boolean,
     testTag: String,
     contentDescription: String,
-    inactiveColor: Color,
     onClick: () -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -370,7 +373,8 @@ private fun BannerTab(
             .testTag(testTag)
             .semantics { this.contentDescription = contentDescription }
             .height(RowHeight),
-        unselectedContentColor = inactiveColor,
+        selectedContentColor = MaterialTheme.colorScheme.onSurface,
+        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
         content()
     }
@@ -617,6 +621,7 @@ private fun TabsTrayBannerPreviewRoot(
                 syncedTabCount = 0,
                 selectionMode = state.mode,
                 isInDebugMode = false,
+                hasTabDataLoaded = true,
                 shouldShowTabAutoCloseBanner = shouldShowTabAutoCloseBanner,
                 shouldShowLockPbmBanner = shouldShowLockPbmBanner,
                 shouldShowAddToTabGroupButton = shouldShowAddToTabGroupButton,

@@ -16,7 +16,6 @@
 #    include "mozilla/a11y/nsWinUtils.h"
 #  endif
 #endif
-#include "js/LocaleSensitive.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/BindingIPCUtils.h"
@@ -51,6 +50,7 @@
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/WindowProxyHolder.h"
+#include "mozilla/dom/workerinternals/RuntimeService.h"
 #include "mozilla/dom/SyncedContextInlines.h"
 #include "mozilla/dom/XULFrameElement.h"
 #include "mozilla/ipc/ProtocolUtils.h"
@@ -1036,7 +1036,8 @@ void BrowsingContext::Attach(bool aFromIPC, ContentParent* aOriginProcess) {
     // We want to create a BrowsingContextWebProgress for all content
     // BrowsingContexts.
     if (IsContent() && !Canonical()->mWebProgress) {
-      Canonical()->mWebProgress = new BrowsingContextWebProgress(Canonical());
+      Canonical()->mWebProgress =
+          MakeRefPtr<BrowsingContextWebProgress>(Canonical());
     }
   }
 
@@ -1632,7 +1633,7 @@ bool BrowsingContext::IsSandboxedFrom(BrowsingContext* aTarget) {
 RefPtr<SessionStorageManager> BrowsingContext::GetSessionStorageManager() {
   RefPtr<SessionStorageManager>& manager = Top()->mSessionStorageManager;
   if (!manager) {
-    manager = new SessionStorageManager(this);
+    manager = MakeRefPtr<SessionStorageManager>(this);
   }
   return manager;
 }
@@ -2339,14 +2340,11 @@ nsresult BrowsingContext::LoadURI(nsDocShellLoadState* aLoadState,
     }
   } else if (XRE_IsParentProcess()) {
     if (ContentParent* cp = Canonical()->GetContentParent()) {
-      // Attempt to initiate this load immediately in the parent, if it succeeds
-      // it'll return a unique identifier so that we can find it later.
-      uint64_t loadIdentifier = 0;
-      if (Canonical()->AttemptSpeculativeLoadInParent(aLoadState)) {
-        MOZ_DIAGNOSTIC_ASSERT(GetCurrentLoadIdentifier().isSome());
-        loadIdentifier = GetCurrentLoadIdentifier().value();
-        aLoadState->SetChannelInitialized(true);
-      }
+      // Attempt to initiate this load immediately in the parent, if it
+      // succeeds, aLoadState will have a reference to the pending
+      // DocumentLoadListener, which will be recovered when the DocumentChannel
+      // is created.
+      Canonical()->AttemptSpeculativeLoadInParent(aLoadState);
 
       cp->TransmitBlobDataIfBlobURL(aLoadState->URI(), mOriginAttributes);
 
@@ -2392,20 +2390,8 @@ nsresult BrowsingContext::LoadURI(nsDocShellLoadState* aLoadState,
                           aLoadState->URI()->GetSpecOrDefault().get());
 #endif
 
-      // Setup a confirmation callback once the content process receives this
-      // load. Normally we'd expect a PDocumentChannel actor to have been
-      // created to claim the load identifier by that time. If not, then it
-      // won't be coming, so make sure we clean up and deregister.
-      cp->SendLoadURI(this, mozilla::WrapNotNull(aLoadState), aSetNavigating)
-          ->Then(GetMainThreadSerialEventTarget(), __func__,
-                 [loadIdentifier](
-                     const PContentParent::LoadURIPromise::ResolveOrRejectValue&
-                         aValue) {
-                   if (loadIdentifier) {
-                     net::DocumentLoadListener::CleanupParentLoadAttempt(
-                         loadIdentifier);
-                   }
-                 });
+      (void)cp->SendLoadURI(this, mozilla::WrapNotNull(aLoadState),
+                            aSetNavigating);
     }
   } else {
     if (!sourceBC) {
@@ -2525,7 +2511,7 @@ BrowsingContext::CheckURLAndCreateLoadState(nsIURI* aURI,
   }
 
   // Create load info
-  RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(aURI);
+  RefPtr loadState = MakeRefPtr<nsDocShellLoadState>(aURI);
 
   if (!aSourceDocument) {
     // No document; just use our subject principal as the triggering principal.
@@ -2546,7 +2532,7 @@ BrowsingContext::CheckURLAndCreateLoadState(nsIURI* aURI,
     principal->EqualsURI(docOriginalURI, &urisEqual);
   }
   if (urisEqual) {
-    referrerInfo = new ReferrerInfo(docCurrentURI, referrerPolicy);
+    referrerInfo = MakeRefPtr<ReferrerInfo>(docCurrentURI, referrerPolicy);
   } else {
     principal->CreateReferrerInfo(referrerPolicy, getter_AddRefs(referrerInfo));
   }
@@ -3522,6 +3508,9 @@ void BrowsingContext::DidSet(FieldIndex<IDX_LanguageOverride>,
 
   const nsCString& languageOverride = GetLanguageOverride();
 
+  workerinternals::RuntimeService* rts =
+      workerinternals::RuntimeService::GetService();
+
   PreOrderWalk([&](BrowsingContext* aBrowsingContext) {
     if (RefPtr<WindowContext> windowContext =
             aBrowsingContext->GetCurrentWindowContext()) {
@@ -3531,17 +3520,8 @@ void BrowsingContext::DidSet(FieldIndex<IDX_LanguageOverride>,
             nsGlobalWindowInner::Cast(window)->GetGlobalJSObject();
         JS::Realm* realm = JS::GetObjectRealmOrNull(global);
 
-        if (mDefaultLocale == nullptr) {
-          AutoJSAPI jsapi;
-          if (jsapi.Init(window)) {
-            JSContext* context = jsapi.cx();
-            mDefaultLocale = JS_GetDefaultLocale(context);
-          }
-        }
-
         if (languageOverride.IsEmpty()) {
-          JS::SetRealmLocaleOverride(realm, mDefaultLocale.get());
-          mDefaultLocale = nullptr;
+          JS::SetRealmLocaleOverride(realm, nullptr);
         } else {
           JS::SetRealmLocaleOverride(
               realm, PromiseFlatCString(languageOverride).get());
@@ -3550,6 +3530,13 @@ void BrowsingContext::DidSet(FieldIndex<IDX_LanguageOverride>,
         if (Navigator* navigator = window->Navigator()) {
           navigator->ClearLanguageCache();
         }
+
+        if (rts) {
+          rts->UpdateWorkersLanguageOverride(*window, languageOverride);
+        }
+
+        nsGlobalWindowInner::Cast(window)->UpdateSharedWorkersLanguageOverride(
+            languageOverride);
       }
     }
   });
@@ -3834,7 +3821,7 @@ void BrowsingContext::SetGeolocationServiceOverride(
       "Should only set GeolocationServiceOverride in the top browsing context");
   if (aGeolocationOverride.WasPassed()) {
     if (!mGeolocationServiceOverride) {
-      mGeolocationServiceOverride = new nsGeolocationService();
+      mGeolocationServiceOverride = MakeRefPtr<nsGeolocationService>();
       mGeolocationServiceOverride->Init();
     }
     mGeolocationServiceOverride->Update(aGeolocationOverride.Value());
@@ -4173,7 +4160,7 @@ void BrowsingContext::AddDeprioritizedLoadRunner(nsIRunnable* aRunner) {
   MOZ_ASSERT(IsLoading());
   MOZ_ASSERT(Top() == this);
 
-  RefPtr<DeprioritizedLoadRunner> runner = new DeprioritizedLoadRunner(aRunner);
+  RefPtr runner = MakeRefPtr<DeprioritizedLoadRunner>(aRunner);
   mDeprioritizedLoadRunner.insertBack(runner);
   NS_DispatchToCurrentThreadQueue(runner.forget(), EventQueuePriority::Low);
 }
@@ -4231,7 +4218,7 @@ void BrowsingContext::CreateChildSHistory() {
   // that has access to a browsing context tree needs access to its session
   // history. That is why we create the ChildSHistory object in every process
   // where we have access to this browsing context (which is the top one).
-  mChildSessionHistory = new ChildSHistory(this);
+  mChildSessionHistory = MakeRefPtr<ChildSHistory>(this);
 }
 
 void BrowsingContext::DidSet(FieldIndex<IDX_HasSessionHistory>,

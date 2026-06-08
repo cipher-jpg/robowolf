@@ -24,6 +24,7 @@ import org.mozilla.fenix.tabstray.syncedtabs.SyncedTabsListItem
  * @property config The configuration flags for the Tabs Tray (e.g., grid display, feature flags).
  * @property tabSearchState The state of the tab search feature.
  * @property backStack The navigation history of the Tab Manager feature.
+ * @property hasTabDataLoaded Whether the tab data has loaded.
  */
 data class TabsTrayState(
     val selectedPage: Page = Page.NormalTabs,
@@ -37,6 +38,7 @@ data class TabsTrayState(
     val config: TabsTrayConfig = TabsTrayConfig(),
     val tabSearchState: TabSearchState = TabSearchState(),
     val backStack: List<TabManagerNavDestination> = listOf(TabManagerNavDestination.Root),
+    val hasTabDataLoaded: Boolean = false,
 ) : State {
 
     /**
@@ -177,6 +179,7 @@ data class TabsTrayState(
      * @property displayTabsInGrid Whether normal and private tabs are displayed in a grid (vs list).
      * @property tabGroupsEnabled Whether the Tab Groups feature is enabled.
      * @property tabGroupsDragAndDropEnabled:  Whether drag and drop is enabled for Tab Groups.
+     * @property tabGroupsOnboardingEnabled Whether the onboarding card for Tab Groups is enabled.
      * @property isInDebugMode Whether the app is in a debug state or has secret menu enabled.
      * @property showTabAutoCloseBanner Whether the banner for the tab auto-closer feature is visible.
      */
@@ -184,6 +187,7 @@ data class TabsTrayState(
         val displayTabsInGrid: Boolean = false,
         val tabGroupsEnabled: Boolean = false,
         val tabGroupsDragAndDropEnabled: Boolean = false,
+        val tabGroupsOnboardingEnabled: Boolean = false,
         val isInDebugMode: Boolean = false,
         val showTabAutoCloseBanner: Boolean = false,
     )
@@ -213,5 +217,35 @@ data class TabsTrayState(
             selectedPage == Page.NormalTabs && normalTabsState.items.isNotEmpty() -> true
             selectedPage == Page.PrivateTabs && privateBrowsing.tabs.isNotEmpty() -> true
             else -> false
+        }
+
+    /**
+     * Show onboarding for tab groups if these conditions are met:
+     *  - Onboarding for tab groups is enabled.
+     *  - Drag and drop to create tab groups is enabled.
+     *  - The user has a selected tab.
+     *  - The user has no existing tab groups.
+     *  - The user has at least [MIN_TABS_FOR_TAB_GROUP_ONBOARDING] tabs.
+     */
+    val shouldShowTabGroupOnboarding: Boolean
+        get() = config.tabGroupsOnboardingEnabled &&
+            config.tabGroupsDragAndDropEnabled &&
+            normalTabsState.selectedItemIndex in normalTabsState.items.indices &&
+            tabGroupState.groups.isEmpty() &&
+            normalTabsState.items.count { it is TabsTrayItem.Tab } >= MIN_TABS_FOR_TAB_GROUP_ONBOARDING
+
+    private companion object {
+        const val MIN_TABS_FOR_TAB_GROUP_ONBOARDING = 2
+    }
+
+    /**
+     * Whether the floating toolbar should be visible.
+     */
+    val isFloatingToolbarVisible: Boolean
+        get() {
+            val privateTabsLocked = privateBrowsing.isLocked && selectedPage == Page.PrivateTabs
+            val tabGroupsPageSelected = config.tabGroupsEnabled && selectedPage == Page.TabGroups
+
+            return mode is Mode.Normal && !privateTabsLocked && !tabGroupsPageSelected
         }
 }

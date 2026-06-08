@@ -21,21 +21,33 @@ const DROP_BEFORE = -1;
 const DROP_ON = 0;
 const DROP_AFTER = 1;
 
+// Matches the legacy bookmarks sidebar tree's drag-hover-to-expand delay,
+// which uses LookAndFeel::IntID::TreeOpenDelay (1000ms on all platforms).
+const DRAG_HOVER_EXPAND_DELAY_MS = 1000;
+
 let activeDropList = null;
 
 export class SidebarBookmarkList extends SidebarTabList {
   static properties = {
     ...SidebarTabList.properties,
     expandedFolderGuids: { type: Object },
+    readOnly: { type: Boolean },
   };
 
   #draggedGuid = null;
   #dropTarget = null;
+  #hoverFolderGuid = null;
+  #hoverFolderTimer = null;
 
   constructor() {
     super();
     this.bookmarksContext = true;
     this.expandedFolderGuids = new Set();
+    // True when this list shows the contents of a fixed-sort query folder
+    // (e.g. Recently Bookmarked or a tag under Recent Tags). Items in such a
+    // folder can't be reordered, so dragging from or dropping into the list is
+    // disabled, matching the legacy bookmarks sidebar.
+    this.readOnly = false;
     this.getItemHeight = (item, h) => this.#itemHeightGetter(item, h);
   }
 
@@ -70,6 +82,7 @@ export class SidebarBookmarkList extends SidebarTabList {
       this.#onContainingDetailsToggle
     );
     this.#containingDetails = null;
+    this.#clearHoverFolderExpand();
   }
 
   /**
@@ -131,12 +144,22 @@ export class SidebarBookmarkList extends SidebarTabList {
       ></div>`;
     }
     if (tabItem.children !== undefined) {
+      let folderKind = null;
+      if (tabItem.isTagsRoot) {
+        folderKind = "tags-root";
+      } else if (tabItem.isTagContainer) {
+        folderKind = "tag-container";
+      } else if (tabItem.isPlaceContainer) {
+        folderKind = "place-container";
+      }
       if (!tabItem.children.length) {
         return html`<div
           class="bookmark-folder-label"
+          data-folder-kind=${ifDefined(folderKind)}
           tabindex="0"
           draggable="true"
           data-guid=${tabItem.guid}
+          @auxclick=${e => this.#onFolderAuxClick(e, tabItem.guid)}
           .guid=${tabItem.guid}
         >
           ${tabItem.title}
@@ -146,9 +169,15 @@ export class SidebarBookmarkList extends SidebarTabList {
         <details
           ?open=${this.expandedFolderGuids.has(tabItem.guid)}
           @toggle=${e => this.#onFolderToggle(e, tabItem.guid)}
+          data-folder-kind=${ifDefined(folderKind)}
           .guid=${tabItem.guid}
         >
-          <summary draggable="true" part="summary" data-guid=${tabItem.guid}>
+          <summary
+            draggable="true"
+            part="summary"
+            data-guid=${tabItem.guid}
+            @auxclick=${e => this.#onFolderAuxClick(e, tabItem.guid)}
+          >
             ${tabItem.title}
           </summary>
           <div id="content">
@@ -157,6 +186,7 @@ export class SidebarBookmarkList extends SidebarTabList {
               secondaryActionClass="delete-button"
               .tabItems=${tabItem.children}
               .expandedFolderGuids=${this.expandedFolderGuids}
+              .readOnly=${this.readOnly || !!tabItem.isPlaceContainer}
               @fxview-tab-list-primary-action=${this.onPrimaryAction}
               @fxview-tab-list-secondary-action=${this.onSecondaryAction}
             >
@@ -242,6 +272,20 @@ export class SidebarBookmarkList extends SidebarTabList {
         bubbles: true,
         composed: true,
         detail: { guid, open: e.target.open },
+      })
+    );
+  }
+
+  #onFolderAuxClick(e, guid) {
+    if (e.button !== 1) {
+      return;
+    }
+    e.preventDefault();
+    this.dispatchEvent(
+      new CustomEvent("bookmark-folder-middleclick", {
+        bubbles: true,
+        composed: true,
+        detail: { guid, isFolder: true },
       })
     );
   }
@@ -344,8 +388,9 @@ export class SidebarBookmarkList extends SidebarTabList {
 
   #showDropIndicator(target) {
     if (activeDropList && activeDropList !== this) {
-      activeDropList.#cleanupIndicator();
-      activeDropList.#dropTarget = null;
+      const previousList = activeDropList;
+      previousList.#cleanupIndicator();
+      previousList.#dropTarget = null;
     }
     activeDropList = this;
     const listEl = this.shadowRoot?.querySelector("#fxview-tab-list");
@@ -380,9 +425,51 @@ export class SidebarBookmarkList extends SidebarTabList {
     if (activeDropList === this) {
       activeDropList = null;
     }
+    this.#clearHoverFolderExpand();
+  }
+
+  // Arms a timer that expands a collapsed folder when the user dwells over it
+  // during a drag, so they can drop into nested folders without first opening
+  // them by hand. Only non-empty folders (rendered as <details>) participate.
+  #scheduleHoverFolderExpand(target) {
+    const shouldArm =
+      target?.isFolder &&
+      target.orientation === DROP_ON &&
+      target.element.localName === "details" &&
+      !target.element.open;
+    if (!shouldArm) {
+      this.#clearHoverFolderExpand();
+      return;
+    }
+    if (this.#hoverFolderGuid === target.guid) {
+      return;
+    }
+    this.#clearHoverFolderExpand();
+    this.#hoverFolderGuid = target.guid;
+    const detailsEl = target.element;
+    this.#hoverFolderTimer = setTimeout(() => {
+      this.#hoverFolderTimer = null;
+      this.#hoverFolderGuid = null;
+      if (detailsEl.isConnected && !detailsEl.open) {
+        detailsEl.open = true;
+      }
+    }, DRAG_HOVER_EXPAND_DELAY_MS);
+  }
+
+  #clearHoverFolderExpand() {
+    if (this.#hoverFolderTimer) {
+      clearTimeout(this.#hoverFolderTimer);
+      this.#hoverFolderTimer = null;
+    }
+    this.#hoverFolderGuid = null;
   }
 
   #onDragStart(e) {
+    if (this.readOnly) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const item = this.#findBookmarkElement(e.composedPath());
     if (!item) {
       e.preventDefault();
@@ -429,6 +516,11 @@ export class SidebarBookmarkList extends SidebarTabList {
 
   #onDragOver(e) {
     e.stopPropagation();
+    if (this.readOnly) {
+      this.#cleanupIndicator();
+      this.#dropTarget = null;
+      return;
+    }
     const flavor = this.#getSupportedFlavor(e.dataTransfer);
     if (!flavor) {
       return;
@@ -437,8 +529,13 @@ export class SidebarBookmarkList extends SidebarTabList {
     if (!target) {
       target = this.#getFolderDropTarget();
     }
-    if (!target || target.guid === this.#draggedGuid) {
+    if (
+      !target ||
+      target.guid === this.#draggedGuid ||
+      this.#isFixedSortFolderTarget(target)
+    ) {
       this.#cleanupIndicator();
+      this.#dropTarget = null;
       return;
     }
     e.preventDefault();
@@ -451,6 +548,7 @@ export class SidebarBookmarkList extends SidebarTabList {
     }
     this.#showDropIndicator(target);
     this.#dropTarget = target;
+    this.#scheduleHoverFolderExpand(target);
     e.dataTransfer.dropEffect = lazy.PlacesUIUtils.PLACES_FLAVORS.includes(
       flavor
     )
@@ -469,6 +567,17 @@ export class SidebarBookmarkList extends SidebarTabList {
       };
     }
     return null;
+  }
+
+  // A query folder (Recently Bookmarked, Recent Tags, or a tag container) has
+  // a forced sort order, so we can't drop into it. Such folders are the only
+  // ones tagged with `data-folder-kind`.
+  #isFixedSortFolderTarget(target) {
+    return (
+      target.isFolder &&
+      target.orientation === DROP_ON &&
+      !!target.element?.dataset?.folderKind
+    );
   }
 
   #onDragLeave(e) {
@@ -491,6 +600,11 @@ export class SidebarBookmarkList extends SidebarTabList {
   #onDrop(e) {
     e.preventDefault();
     e.stopPropagation();
+    if (this.readOnly) {
+      this.#cleanupIndicator();
+      this.#dropTarget = null;
+      return;
+    }
     const target = this.#dropTarget;
     this.#cleanupIndicator();
     this.#dropTarget = null;

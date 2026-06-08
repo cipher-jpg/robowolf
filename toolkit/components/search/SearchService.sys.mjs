@@ -544,6 +544,7 @@ export const SearchService = new (class SearchService {
     await this.#migrateLegacyEngines();
     await this.#checkWebExtensionEngines();
     await this.#addOpenSearchTelemetry();
+    this.#updateEngineTotalsTelemetry();
   }
 
   /**
@@ -638,7 +639,11 @@ export const SearchService = new (class SearchService {
     let searchProvider =
       extension.manifest.chrome_settings_overrides.search_provider;
     let engine = this.getEngineByName(searchProvider.name);
-    if (!engine || !engine.isConfigEngine || engine.hidden) {
+    if (
+      !engine ||
+      !(engine instanceof lazy.ConfigSearchEngine) ||
+      engine.hidden
+    ) {
       // We should only default to config engines.
       // If the engine is a hidden config engine, then we don't
       // switch to it, nor do we try to install it.
@@ -1034,7 +1039,7 @@ export const SearchService = new (class SearchService {
     this.#ensureInitialized();
     for (let e of this._engines.values()) {
       // Unhide all default engines
-      if (e.hidden && e.isAppProvided) {
+      if (e.hidden && e instanceof lazy.AppProvidedConfigEngine) {
         e.hidden = false;
       }
     }
@@ -1451,7 +1456,7 @@ export const SearchService = new (class SearchService {
       engine &&
       this._settings.getVerifiedMetaDataAttribute(
         attributeName,
-        engine.isConfigEngine
+        engine instanceof lazy.ConfigSearchEngine
       )
     ) {
       if (privateMode) {
@@ -2116,7 +2121,7 @@ export const SearchService = new (class SearchService {
     // overridden by an OpenSearch engine, and we need to re-apply the override.
     for (let engine of this._engines.values()) {
       if (
-        engine.isConfigEngine &&
+        engine instanceof lazy.ConfigSearchEngine &&
         engine.getAttr("overriddenByOpenSearch") &&
         engine.id == savedDefaultEngineId
       ) {
@@ -2754,7 +2759,7 @@ export const SearchService = new (class SearchService {
     // override the application provided engine.
     let existingEngine = this.#getEngineByName(engine.name);
     if (
-      existingEngine?.isConfigEngine &&
+      existingEngine instanceof lazy.ConfigSearchEngine &&
       (await lazy.defaultOverrideAllowlist.canEngineOverride(
         engine,
         existingEngine?.id
@@ -2998,6 +3003,82 @@ export const SearchService = new (class SearchService {
     Glean.browserSearchinit.insecureOpensearchUpdateCount.set(
       totalWithInsecureUpdates
     );
+  }
+
+  /**
+   * Counts and reports the number of installed search engines with different
+   * metrics for visible and hidden search engines.
+   *
+   * Run during the background checks, or when the list of engines changes.
+   */
+  #updateEngineTotalsTelemetry() {
+    /** @type {(keyof typeof Glean.searchCounts.totals)[]} */
+    const SEARCH_COUNTS_TOTALS_LABELS = [
+      "addon",
+      "appProvidedConfig",
+      "userInstalledConfig",
+      "openSearch",
+      "policy",
+      "user",
+    ];
+
+    /** @type {Map<keyof typeof Glean.searchCounts.totals, number>} */
+    let totals = new Map(SEARCH_COUNTS_TOTALS_LABELS.map(l => [l, 0]));
+    let disabledEngines = 0;
+    let hiddenFromOneOffs = 0;
+    for (let engine of this._engines.values()) {
+      // For engines that are hidden, aka disabled, we only need to record that
+      // fact.
+      // This does mean that for users that previously have hidden the engine
+      // and turned off the one-off button option, we won't record the fact
+      // that the one-off was turned off as well. However, in the case the fact
+      // it is hidden is more important than the fact it was also hidden from
+      // the one-offs.
+      if (engine.hidden) {
+        disabledEngines++;
+        continue;
+      }
+
+      if (engine.hideOneOffButton) {
+        hiddenFromOneOffs++;
+      }
+
+      /** @type {?keyof typeof Glean.searchCounts.totals} */
+      let key;
+      switch (true) {
+        case engine instanceof lazy.AppProvidedConfigEngine:
+          key = "appProvidedConfig";
+          break;
+        case engine instanceof lazy.UserInstalledConfigEngine:
+          key = "userInstalledConfig";
+          break;
+        case engine instanceof lazy.AddonSearchEngine:
+          key = "addon";
+          break;
+        case engine instanceof lazy.OpenSearchEngine:
+          key = "openSearch";
+          break;
+        case engine instanceof lazy.PolicySearchEngine:
+          key = "policy";
+          break;
+        case engine instanceof lazy.UserSearchEngine:
+          key = "user";
+          break;
+      }
+      if (key) {
+        totals.set(key, totals.getOrInsert(key, 0) + 1);
+      } else {
+        lazy.logConsole.error(
+          "Failed to report type of search engine for",
+          engine.id
+        );
+      }
+    }
+    Glean.searchCounts.hiddenEngines.disabled.set(disabledEngines);
+    Glean.searchCounts.hiddenEngines.oneOff.set(hiddenFromOneOffs);
+    for (let [label, value] of totals.entries()) {
+      Glean.searchCounts.totals[label].set(value);
+    }
   }
 
   /**
@@ -3271,7 +3352,7 @@ export const SearchService = new (class SearchService {
       throw new Error("Unable to find the new engine in the engine store");
     }
 
-    if (!newCurrentEngine.isConfigEngine) {
+    if (!(newCurrentEngine instanceof lazy.ConfigSearchEngine)) {
       // If a non config engine is being set as the current engine,
       // ensure its loadPath has a verification hash.
       if (!newCurrentEngine._loadPath) {
@@ -3421,7 +3502,8 @@ export const SearchService = new (class SearchService {
     let isOverridden = !!engine.overriddenById;
 
     let engineInfo = {
-      providerId: engine.isConfigEngine ? engine.id : "other",
+      providerId:
+        engine instanceof lazy.ConfigSearchEngine ? engine.id : "other",
       partnerCode: isOverridden ? "" : engine.partnerCode,
       overriddenByThirdParty: isOverridden,
       telemetryId: engine.telemetryId,
@@ -3432,13 +3514,13 @@ export const SearchService = new (class SearchService {
     };
 
     // For privacy, we only collect the submission URL for config engines...
-    let sendSubmissionURL = engine.isConfigEngine;
+    let sendSubmissionURL = engine instanceof lazy.ConfigSearchEngine;
 
     if (!sendSubmissionURL) {
       // ... or engines that are the same domain as a config engine.
       let engineHost = engine.searchUrlDomain;
       for (let innerEngine of this._engines.values()) {
-        if (!innerEngine.isConfigEngine) {
+        if (!(innerEngine instanceof lazy.ConfigSearchEngine)) {
           continue;
         }
 
@@ -3717,6 +3799,7 @@ export const SearchService = new (class SearchService {
         switch (verb) {
           case lazy.SearchUtils.MODIFIED_TYPE.ADDED:
             this.#parseSubmissionMap = null;
+            this.#updateEngineTotalsTelemetry();
             break;
           case lazy.SearchUtils.MODIFIED_TYPE.CHANGED: {
             let engine = /** @type {SearchEngine} */ (subject.wrappedJSObject);
@@ -3732,11 +3815,13 @@ export const SearchService = new (class SearchService {
               );
             }
             this.#parseSubmissionMap = null;
+            this.#updateEngineTotalsTelemetry();
             break;
           }
           case lazy.SearchUtils.MODIFIED_TYPE.REMOVED:
             // Invalidate the map used to parse URLs to search engines.
             this.#parseSubmissionMap = null;
+            this.#updateEngineTotalsTelemetry();
             break;
         }
         break;

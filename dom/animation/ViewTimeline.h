@@ -13,6 +13,8 @@ struct TimelineRangeOffset;
 }  // namespace mozilla
 
 namespace mozilla::dom {
+class CSSNumericValue;
+struct ViewTimelineOptions;
 
 /*
  * A view progress timeline is a segment of a scroll progress timeline that are
@@ -45,12 +47,13 @@ class ViewTimeline final : public ScrollTimeline {
                        JS::Handle<JSObject*> aGivenProto) override;
 
   // ViewTimeline methods.
-  Element* Subject() const {
-    MOZ_ASSERT(mSubject);
-    return mSubject;
-  }
-  Nullable<double> GetStartOffset() const;
-  Nullable<double> GetEndOffset() const;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  static already_AddRefed<ViewTimeline> Constructor(
+      const GlobalObject& aGlobal, const ViewTimelineOptions& aOptions,
+      ErrorResult& aRv);
+  Element* GetSubject() const { return mSubject; }
+  already_AddRefed<CSSNumericValue> GetStartOffset(ErrorResult& aRv) const;
+  already_AddRefed<CSSNumericValue> GetEndOffset(ErrorResult& aRv) const;
 
   bool IsViewTimeline() const override { return true; }
   const ViewTimeline* AsViewTimeline() const override { return this; }

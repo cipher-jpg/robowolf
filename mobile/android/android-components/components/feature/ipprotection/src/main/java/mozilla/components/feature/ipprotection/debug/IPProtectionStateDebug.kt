@@ -103,6 +103,10 @@ fun IPProtectionStateDebugContent(
                     stringResource(R.string.mozac_feature_ipprotection_servicestatus),
                     state.serviceStatus.name,
                 )
+                DebugRow(
+                    stringResource(R.string.mozac_feature_ipprotection_lasterror),
+                    state.lastError ?: "null",
+                )
             }
 
             DataUsageSection(state = state)
@@ -209,9 +213,9 @@ private fun IPProtectionStateDebugPreview() {
                 maxDataBytes = 5_000_000_000L,
                 resetDate = "2026-06-01",
                 accountState = AccountState(
-                    isFirstEnrollment = false,
-                    status = AccountStatus.Ready,
+                    status = AccountStatus.EnrolledAndEntitled,
                 ),
+                lastError = "invalid_response",
                 activate = true,
             ),
         )

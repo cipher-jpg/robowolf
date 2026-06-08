@@ -273,6 +273,9 @@ impl BatchKind {
             }
             BatchKind::TextRun(_) => GPU_TAG_PRIM_TEXT_RUN,
             BatchKind::Quad(PatternKind::ColorOrTexture) => GPU_TAG_PRIMITIVE,
+            BatchKind::Quad(PatternKind::TextureExternal) => GPU_TAG_PRIMITIVE,
+            BatchKind::Quad(PatternKind::TextureExternalBT709) => GPU_TAG_PRIMITIVE,
+            BatchKind::Quad(PatternKind::TextureRect) => GPU_TAG_PRIMITIVE,
             BatchKind::Quad(PatternKind::Gradient) => GPU_TAG_GRADIENT,
             BatchKind::Quad(PatternKind::Repeat) => GPU_TAG_REPEAT,
             BatchKind::Quad(PatternKind::BoxShadow) => GPU_TAG_PRIMITIVE,
@@ -1668,6 +1671,10 @@ impl Renderer {
             &frame.deferred_resolves,
             &mut frame.gpu_buffer_f,
         );
+
+        // Now that external images are resolved, copy their (potentially Y-flipped) uv
+        // rects into the quad segment blocks that reference them.
+        frame.gpu_buffer_f.apply_deferred_uv_copies();
 
         self.draw_frame(
             frame,

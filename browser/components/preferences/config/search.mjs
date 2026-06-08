@@ -12,6 +12,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 const lazy = XPCOMUtils.declareLazy({
   AddonSearchEngine:
     "moz-src:///toolkit/components/search/AddonSearchEngine.sys.mjs",
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   CustomizableUI:
     "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
@@ -854,7 +856,7 @@ Preferences.addSetting(
     handleDeletionOptions(engine) {
       /** @type {SettingControlConfig} */
       let deletionOptions;
-      if (engine.isConfigEngine) {
+      if (engine instanceof lazy.ConfigSearchEngine) {
         let toggleId = `toggleEngine-${engine.id}`;
         maybeMakeSetting(ToggleSetting(toggleId, engine));
 
@@ -926,6 +928,7 @@ Preferences.addSetting(
         maybeMakeSetting(EngineListItemSetting(settingId, engine));
         maybeMakeSetting({
           id: editId,
+          deps: [settingId],
           disabled: () => engine.hidden,
           onUserClick() {
             window.gSubDialog.open(
@@ -1035,13 +1038,13 @@ Preferences.addSetting(
 
     /** @param {CustomEvent} event */
     async onUserReorder(event) {
-      const { draggedElement, targetIndex } = event.detail;
+      const { draggedElement, insertAt } = event.detail;
       let draggedEngineName = draggedElement.label;
       let draggedEngine = lazy.SearchService.getEngineByName(draggedEngineName);
       if (!draggedEngine) {
         return;
       }
-      await lazy.SearchService.moveEngine(draggedEngine, targetIndex);
+      await lazy.SearchService.moveEngine(draggedEngine, insertAt);
     }
     async getControlConfig() {
       /** @type {Partial<SettingControlConfig>} */
@@ -1143,6 +1146,9 @@ SettingGroupManager.registerGroups({
             id: "urlBarSuggestionPermanentPBMessage",
             l10nId: "search-suggestions-cant-show-2",
             control: "moz-message-bar",
+            controlAttrs: {
+              role: "status",
+            },
           },
         ],
       },
@@ -1150,7 +1156,7 @@ SettingGroupManager.registerGroups({
   },
   firefoxSuggest: {
     id: "locationBarGroup",
-    subcategory: "firefoxSuggest",
+    subcategory: "locationBar",
     items: [
       {
         id: "locationBarGroupHeader",

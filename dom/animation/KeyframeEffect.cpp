@@ -1376,6 +1376,32 @@ KeyframeEffect::OverflowRegionRefreshInterval() {
   return kOverflowRegionRefreshInterval;
 }
 
+static bool OpacityAnimationsAreFinishedAndFilling(const nsIFrame* aFrame) {
+  EffectSet* effects =
+      EffectSet::GetForFrame(aFrame, nsCSSPropertyIDSet::OpacityProperties());
+  if (!effects) {
+    return false;
+  }
+
+  bool hasOpacityAnimation = false;
+  for (const KeyframeEffect* effect : *effects) {
+    const Animation* animation = effect->GetAnimation();
+    if (!animation || !animation->IsRelevant() || !effect->HasOpacityChange()) {
+      continue;
+    }
+    hasOpacityAnimation = true;
+
+    // If there's any animation that are not fill or not finished, we don't
+    // optimize.
+    if (animation->PlayState() != AnimationPlayState::Finished ||
+        effect->GetComputedTiming().mProgress.IsNull()) {
+      return false;
+    }
+  }
+
+  return hasOpacityAnimation;
+}
+
 static bool CanOptimizeAwayDueToOpacity(const KeyframeEffect& aEffect,
                                         const nsIFrame& aFrame) {
   if (!aFrame.Style()->IsInOpacityZeroSubtree()) {
@@ -1394,11 +1420,14 @@ static bool CanOptimizeAwayDueToOpacity(const KeyframeEffect& aEffect,
 
   MOZ_ASSERT(root && root->Style()->IsInOpacityZeroSubtree());
 
+  if (root == &aFrame && aEffect.HasOpacityChange()) {
+    return false;
+  }
   // Even if we're in an opacity: zero subtree, if the root of the subtree may
   // have an opacity animation, we can't optimize us away, as we may become
-  // visible ourselves.
-  return (root != &aFrame || !aEffect.HasOpacityChange()) &&
-         !root->HasAnimationOfOpacity();
+  // visible ourselves, but if the animation is fill:forwards we do optimize.
+  return !root->HasAnimationOfOpacity() ||
+         OpacityAnimationsAreFinishedAndFilling(root);
 }
 
 bool KeyframeEffect::CanThrottleIfNotVisible(nsIFrame& aFrame) const {
@@ -2021,12 +2050,16 @@ KeyframeEffect::MatchForCompositor KeyframeEffect::IsMatchForCompositor(
     const ScrollTimeline* scrollTimeline =
         mAnimation->GetTimeline()->AsScrollTimeline();
     const auto state = scrollTimeline->GetState();
-    // We don't send this animation to the compositor if
-    // 1. the APZ is disabled entirely or for the source, or
+    // We don't send this animation to the compositor if:
+    // 1. The timeline doesn't have a source, in which case we don't need to
+    //    run the compositor animations since we don't have its ViewID info for
+    //    APZ, or
     // 2. the associated scroll-timeline is inactive, or
-    // 3. the scrolling direction is not available (i.e. no scroll range).
-    // 4. the scroll style of the scroller is overflow:hidden.
-    if (!state.APZIsActiveForSource() || !state.IsActive() ||
+    // 3. the APZ is disabled entirely or for the source, or
+    // 4. the scrolling direction is not available (i.e. no scroll range).
+    // 5. the scroll style of the scroller is overflow:hidden.
+    if (!state.SourceElement() || !state.IsActive() ||
+        !state.APZIsActiveForSource() ||
         !state.ScrollingDirectionIsAvailable() ||
         state.SourceScrollStyle() == StyleOverflow::Hidden) {
       return KeyframeEffect::MatchForCompositor::No;

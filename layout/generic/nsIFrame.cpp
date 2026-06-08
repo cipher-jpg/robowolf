@@ -201,8 +201,12 @@ const nsIFrame::ClassFlags nsIFrame::sLayoutFrameClassFlags[kFrameClassCount] =
 #undef ABSTRACT_FRAME_ID
 };
 
-std::ostream& operator<<(std::ostream& aStream, const nsDirection& aDirection) {
-  return aStream << (aDirection == eDirNext ? "eDirNext" : "eDirPrevious");
+std::string format_as(nsDirection aDirection) {
+  return aDirection == eDirNext ? "eDirNext" : "eDirPrevious";
+}
+
+std::ostream& operator<<(std::ostream& aStream, nsDirection aDirection) {
+  return aStream << format_as(aDirection);
 }
 
 struct nsContentAndOffset {
@@ -3524,7 +3528,13 @@ void nsIFrame::BuildDisplayListForStackingContext(
     MarkAbsoluteFramesForDisplayList(aBuilder);
     aBuilder->Check();
     BuildDisplayList(aBuilder, set);
-    SetBuiltDisplayList(true);
+    // mBuiltDisplayList is observed only by painting-related tests (reftests
+    // and paint-regression mochitests via nsIDOMWindowUtils), so record the
+    // build only for painting display lists, not hit-testing, frame
+    // visibility, or glyph-mask builds.
+    if (aBuilder->IsForPainting()) {
+      SetBuiltDisplayList(true);
+    }
     aBuilder->Check();
     aBuilder->DisplayCaret(this, set.Outlines());
 
@@ -4173,7 +4183,9 @@ void nsIFrame::BuildDisplayListForSimpleChild(nsDisplayListBuilder* aBuilder,
   aBuilder->AdjustWindowDraggingRegion(aChild);
   aBuilder->Check();
   aChild->BuildDisplayList(aBuilder, aLists);
-  aChild->SetBuiltDisplayList(true);
+  if (aBuilder->IsForPainting()) {
+    aChild->SetBuiltDisplayList(true);
+  }
   aBuilder->Check();
   aBuilder->DisplayCaret(aChild, aLists.Outlines());
 }
@@ -4581,7 +4593,9 @@ void nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder* aBuilder,
     }
 
     child->MarkAbsoluteFramesForDisplayList(aBuilder);
-    child->SetBuiltDisplayList(true);
+    if (aBuilder->IsForPainting()) {
+      child->SetBuiltDisplayList(true);
+    }
 
     // Some SVG frames might change opacity without invalidating the frame, so
     // exclude them from the fast-path.
@@ -4791,57 +4805,47 @@ nsresult nsIFrame::GetDataForTableSelection(
   bool foundCell = false;
   bool foundTable = false;
 
-  // Get the limiting node to stop parent frame search
   const Element* const independentSelectionLimiter =
       aFrameSelection->GetIndependentSelectionRootElement();
 
-  // If our content node is not under the limiting node,
-  // we should stop the search right now.
   if (independentSelectionLimiter &&
       !independentSelectionLimiter->Contains(GetContent())) {
+    // If our content is not under the limiting node, stop the search right now.
     return NS_OK;
   }
 
-  // We don't initiate row/col selection from here now,
-  //  but we may in future
-  // bool selectColumn = false;
-  // bool selectRow = false;
-
-  while (frame) {
+  for (; frame; frame = frame->GetParent()) {
     // Check for a table cell by querying to a known CellFrame interface
-    nsITableCellLayout* cellElement = do_QueryFrame(frame);
-    if (cellElement) {
+    if (static_cast<nsITableCellLayout*>(do_QueryFrame(frame))) {
       foundCell = true;
       // TODO: If we want to use proximity to top or left border
       //      for row and column selection, this is the place to do it
       break;
-    } else {
-      // If not a cell, check for table
-      // This will happen when starting frame is the table or child of a table,
-      //  such as a row (we were inbetween cells or in table border)
-      nsTableWrapperFrame* tableFrame = do_QueryFrame(frame);
-      if (tableFrame) {
-        foundTable = true;
-        // TODO: How can we select row when along left table edge
-        //  or select column when along top edge?
-        break;
-      } else {
-        frame = frame->GetParent();
-        // Stop if we have hit the selection's limiting content node
-        if (frame && frame->GetContent() == independentSelectionLimiter) {
-          break;
-        }
-      }
+    }
+    if (frame->IsTableWrapperFrame()) {
+      // If not a cell, check for table. This will happen when the starting
+      // frame is the table or child of a table, such as a row (we were
+      // in-between cells or in table border).
+      // TODO: How can we select row when along left table edge
+      //       or select column when along top edge?
+      foundTable = true;
+      break;
     }
   }
-  // We aren't in a cell or table
+
   if (!foundCell && !foundTable) {
+    // We aren't in a cell or table.
     return NS_OK;
   }
 
   nsIContent* tableOrCellContent = frame->GetContent();
   if (!tableOrCellContent) {
-    return NS_ERROR_FAILURE;
+    return NS_OK;
+  }
+
+  if (independentSelectionLimiter &&
+      !independentSelectionLimiter->Contains(tableOrCellContent)) {
+    return NS_OK;
   }
 
   nsCOMPtr<nsIContent> parentContent = tableOrCellContent->GetParent();
@@ -5157,7 +5161,7 @@ nsresult nsIFrame::MoveCaretToEventPoint(nsPresContext* aPresContext,
     }
   }
 
-  fc->SetDelayedCaretData(0);
+  fc->SetDelayedCaretData(nullptr);
 
   if (isPrimaryButtonDown) {
     // Check if any part of this frame is selected, and if the user clicked
@@ -5632,7 +5636,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY static nsresult HandleFrameSelection(
         return rv;
       }
     }
-    aFrameSelection->SetDelayedCaretData(0);
+    aFrameSelection->SetDelayedCaretData(nullptr);
   }
 
   aFrameSelection->SetDragState(false);

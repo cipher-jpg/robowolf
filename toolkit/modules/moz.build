@@ -183,7 +183,6 @@ EXTRA_JS_MODULES += [
     "JsonSchema.sys.mjs",
     "KeyboardLockUtils.sys.mjs",
     "KeywordUtils.sys.mjs",
-    "LayoutUtils.sys.mjs",
     "Log.sys.mjs",
     "LogManager.sys.mjs",
     "NewTabUtils.sys.mjs",
@@ -365,4 +364,5 @@ XPIDL_MODULE = "toolkit_modules"
 
 MOZ_SRC_FILES += [
     "PrefUtils.sys.mjs",
+    "WebAuthnPromptHelper.sys.mjs",
 ]

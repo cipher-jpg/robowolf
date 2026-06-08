@@ -69,7 +69,7 @@ ContentCompositorBridgeParent::AllocPAPZCTreeManagerParent(
     LayersId dummyId{0};
     const bool connectedToWebRender = false;
     RefPtr<APZCTreeManager> temp = APZCTreeManager::Create(dummyId);
-    RefPtr<APZUpdater> tempUpdater = new APZUpdater(temp, connectedToWebRender);
+    RefPtr tempUpdater = MakeRefPtr<APZUpdater>(temp, connectedToWebRender);
     tempUpdater->ClearTree(dummyId);
     return MakeAndAddRef<APZCTreeManagerParent>(aLayersId, temp, tempUpdater);
   }
@@ -394,6 +394,11 @@ ContentCompositorBridgeParent::AllocPTextureParent(
     const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
     const uint64_t& aSerial, const wr::MaybeExternalImageId& aExternalImageId) {
   if (aSharedData.type() == SurfaceDescriptor::TSurfaceDescriptorDcompSurface) {
+    return nullptr;
+  }
+  if (aExternalImageId.isSome() &&
+      !OwnsExternalImageId(aExternalImageId.ref())) {
+    NS_ERROR("We do not own this external image id.");
     return nullptr;
   }
   return TextureHost::CreateIPDLActor(

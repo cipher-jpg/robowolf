@@ -76,9 +76,8 @@ pub mod owned_str;
 
 pub use crate::specified_value_info::{CssType, KeywordsCollectFn, SpecifiedValueInfo};
 pub use crate::values::{
-    Comma, CommaWithSpace, CssString, CssStringWriter, CssWriter, KeywordValue, MathSum,
-    NumericValue, OneOrMoreSeparated, Separator, Space, ToCss, ToTyped, TypedValue, TypedValueList,
-    UnitValue, UnparsedSegment, UnparsedValue, VariableReferenceValue,
+    Comma, CommaWithSpace, CssString, CssStringWriter, CssWriter, OneOrMoreSeparated, Separator,
+    Space, ToCss,
 };
 
 /// The error type for all CSS parsing routines.
@@ -260,6 +259,8 @@ bitflags! {
         /// independent.
         /// <https://drafts.css-houdini.org/css-properties-values-api-1/#ref-for-computationally-independent%E2%91%A0>
         const DISALLOW_COMPUTATIONALLY_DEPENDENT = 1 << 2;
+        /// In Typed OM; unitless zero must not be interpreted as a length.
+        const DISALLOW_UNITLESS_ZERO_LENGTH = 1 << 3;
     }
 }
 
@@ -280,6 +281,12 @@ impl ParsingMode {
     #[inline]
     pub fn allows_computational_dependence(&self) -> bool {
         !self.intersects(ParsingMode::DISALLOW_COMPUTATIONALLY_DEPENDENT)
+    }
+
+    /// Whether the parsing mode allows unitless zero lengths to be interpreted as px.
+    #[inline]
+    pub fn allows_unitless_zero_lengths(&self) -> bool {
+        !self.intersects(ParsingMode::DISALLOW_UNITLESS_ZERO_LENGTH)
     }
 }
 

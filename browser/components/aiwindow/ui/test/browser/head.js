@@ -13,6 +13,8 @@ ChromeUtils.defineESModuleGetters(this, {
   Chat: "moz-src:///browser/components/aiwindow/models/Chat.sys.mjs",
   ChatConversation:
     "moz-src:///browser/components/aiwindow/ui/modules/ChatConversation.sys.mjs",
+  getModelForChoice:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindowConstants.sys.mjs",
   IntentClassifier:
     "moz-src:///browser/components/aiwindow/models/IntentClassifier.sys.mjs",
   openAIEngine: "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs",
@@ -21,13 +23,92 @@ ChromeUtils.defineESModuleGetters(this, {
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
+const { _setLoadPromptForTesting } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/ui/modules/ChatConversation.sys.mjs"
+);
+
 /**
  * @import { SmartbarAction } from "chrome://browser/content/aiwindow/components/input-cta/input-cta.mjs"
  */
 
+async function modelFor(choiceId) {
+  return (await getModelForChoice(choiceId)).model;
+}
+
 const AIWINDOW_URL = "chrome://browser/content/aiwindow/aiWindow.html";
 
 let gIntentEngineStub;
+let gRemoteClientStub;
+
+// Minimal RS records returned by the global getRemoteClient stub.
+// Version numbers must match FEATURE_MAJOR_VERSIONS in models/Utils.sys.mjs.
+const MOCK_RS_RECORDS = [
+  ["chat", 5],
+  ["title-generation", 1],
+  ["conversation-starters-sidebar-system", 1],
+  ["conversation-suggestions-sidebar-starter", 2],
+  ["conversation-suggestions-followup", 1],
+  ["conversation-suggestions-assistant-limitations", 1],
+  ["conversation-suggestions-memories", 1],
+  ["memories-initial-generation-system", 2],
+  ["memories-initial-generation-user", 2],
+  ["memories-deduplication-system", 1],
+  ["memories-deduplication-user", 1],
+  ["memories-sensitivity-filter-system", 1],
+  ["memories-sensitivity-filter-user", 1],
+  ["memories-quality-filter-system", 1],
+  ["memories-quality-filter-user", 1],
+  ["memories-message-classification-system", 1],
+  ["memories-message-classification-user", 1],
+  ["memories-relevant-context", 2],
+]
+  .map(([feature, major]) => ({
+    feature,
+    // chat uses "generic" as the fallback model name (see selectMainConfig);
+    // all other features use "test-model" with is_default: true.
+    model: feature === "chat" ? "generic" : "test-model",
+    service_type: "ai",
+    parameters: {},
+    prompts:
+      feature === "conversation-suggestions-sidebar-starter"
+        ? "Generate {n} prompts for {current_tab}.\nOpen tabs: {open_tabs}"
+        : "Test system prompt.",
+    version: `v${major}.0`,
+    is_default: true,
+  }))
+  // Per-choice records for chat so resolveChatModelChoice returns correct model names.
+  .concat([
+    {
+      feature: "chat",
+      model: "gemini-3.1-flash-lite",
+      model_choice_id: "1",
+      service_type: "ai",
+      purpose: "chat",
+      parameters: {},
+      prompts: "Test system prompt.",
+      version: "v5.0",
+    },
+    {
+      feature: "chat",
+      model: "qwen3-235b-a22b-instruct-2507-maas",
+      model_choice_id: "2",
+      service_type: "ai",
+      purpose: "chat",
+      parameters: {},
+      prompts: "Test system prompt.",
+      version: "v5.0",
+    },
+    {
+      feature: "chat",
+      model: "gpt-oss-120b",
+      model_choice_id: "3",
+      service_type: "ai",
+      purpose: "chat",
+      parameters: {},
+      prompts: "Test system prompt.",
+      version: "v5.0",
+    },
+  ]);
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
@@ -52,13 +133,23 @@ add_setup(async function () {
     .stub(IntentClassifier, "_createEngine")
     .resolves(fakeIntentEngine);
   registerCleanupFunction(() => gIntentEngineStub.restore());
+
+  // Stub getRemoteClient so loadCallContext never hits real Remote Settings.
+  gRemoteClientStub = sinon
+    .stub(openAIEngine, "getRemoteClient")
+    .returns({ get: async () => MOCK_RS_RECORDS });
+  registerCleanupFunction(() => gRemoteClientStub.restore());
+
+  // Stub ChatConversation's loadPrompt so generatePrompt doesn't hit RS.
+  _setLoadPromptForTesting(async () => "Test system prompt.");
+  registerCleanupFunction(() => _setLoadPromptForTesting(null));
 });
 
 /**
  * Opens a new AI Window
  *
  * @param {object} options
- * @param {string|boolean} options.waitForTabURL - URL to wait for or false to skip waiting
+ * @param {string} [options.waitForTabURL] - URL to wait for, or empty string to skip waiting
  * @returns {Promise<Window>}
  */
 async function openAIWindow({ waitForTabURL = AIWINDOW_URL } = {}) {
@@ -207,19 +298,26 @@ async function stubEngineNetworkBoundaries({
   const originalBuild = openAIEngine.build.bind(openAIEngine);
   const buildStub = sinon
     .stub(openAIEngine, "build")
-    .callsFake(async (feature, ...rest) => {
+    .callsFake(async (featureOrConfig, ...rest) => {
+      const feature =
+        typeof featureOrConfig === "object" && featureOrConfig !== null
+          ? featureOrConfig.feature
+          : featureOrConfig;
       if (passthroughFeatures.has(feature)) {
-        return originalBuild(feature, ...rest);
+        return originalBuild(featureOrConfig, ...rest);
       }
       // Non-passthrough features get a mock engine whose methods resolve
       // synchronously, preventing dangling async chains.
       return {
-        loadPrompt: () => "",
-        getConfig: () => ({}),
         feature,
+        model:
+          typeof featureOrConfig === "object"
+            ? featureOrConfig.model
+            : "test-model",
         async run() {
           return engineRunResponse;
         },
+        runWithGenerator() {},
       };
     });
 
@@ -799,6 +897,62 @@ async function getSmartbarContextChips(browser) {
 }
 
 /**
+ * Gets the smartbar model select data.
+ *
+ * @param {MozBrowser} browser - The browser element
+ * @returns {Promise<object>} Returns model select data
+ */
+async function getSmartbarModelSelectData(browser) {
+  return SpecialPowers.spawn(browser, [], async () => {
+    const aiWindowElement = content.document.querySelector("ai-window");
+    const smartbar = aiWindowElement.shadowRoot.querySelector(
+      "#ai-window-smartbar"
+    );
+    const modelSelect = smartbar.querySelector("input-model-select");
+
+    return {
+      availableModels: modelSelect.availableModels,
+      selectedModelId: aiWindowElement.selectedModelId,
+    };
+  });
+}
+
+/**
+ * Switches to a different model in the smartbar.
+ *
+ * @param {MozBrowser} browser - The browser element
+ * @param {number} modelIndex - Model index to switch to
+ */
+async function switchSmartbarModel(browser, modelIndex) {
+  return SpecialPowers.spawn(browser, [modelIndex], async index => {
+    const aiWindowElement = content.document.querySelector("ai-window");
+    const smartbar = aiWindowElement.shadowRoot.querySelector(
+      "#ai-window-smartbar"
+    );
+    const modelSelect = smartbar.querySelector("input-model-select");
+    const triggerButton = modelSelect.shadowRoot.querySelector("moz-button");
+    triggerButton.click();
+
+    const panelList = modelSelect.shadowRoot.querySelector("panel-list");
+    await ContentTaskUtils.waitForMutationCondition(
+      panelList,
+      { attributes: true },
+      () => panelList.hasAttribute("open")
+    );
+
+    const modelKeys = Object.keys(modelSelect.availableModels);
+    const targetModelId = modelSelect.availableModels[modelKeys[index]].model;
+    panelList.querySelectorAll("button.model-item")[index].click();
+
+    await ContentTaskUtils.waitForMutationCondition(
+      aiWindowElement,
+      { attributes: true },
+      () => aiWindowElement.selectedModelId === targetModelId
+    );
+  });
+}
+
+/**
  * Returns the chat messages currently displayed in the sidebar.
  *
  * @param {MozBrowser} sidebarBrowser - The sidebar browser element
@@ -874,6 +1028,10 @@ function readRequestBody(request) {
  */
 
 /**
+ *
+ * @deprecated - Please use MockEngineManager in AIWindowTestUtils.sys.mjs unless
+ * a test is explicitly needing to test the network layer of the OpenAI chat protocol.
+ *
  * Starts a local HTTP server that mimics the OpenAI chat completions API.
  *
  * Handles both streaming (SSE) and non-streaming (JSON) requests to

@@ -23,6 +23,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/webdriver-bidi/modules/Intercept.sys.mjs",
   RealmType: "chrome://remote/content/shared/Realm.sys.mjs",
   RemoteAgent: "chrome://remote/content/components/RemoteAgent.sys.mjs",
+  SessionDataCategory:
+    "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.sys.mjs",
   SessionDataMethod:
     "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.sys.mjs",
   setDefaultAndAssertSerializationOptions:
@@ -275,7 +277,7 @@ class ScriptModule extends RootBiDiModule {
     this.#preloadScriptMap.set(script, preloadScript);
 
     const preloadScriptDataItem = {
-      category: "preload-script",
+      category: lazy.SessionDataCategory.PreloadScript,
       moduleName: "_configuration",
       values: [
         {
@@ -755,7 +757,7 @@ class ScriptModule extends RootBiDiModule {
 
     const preloadScript = this.#preloadScriptMap.get(script);
     const sessionDataItem = {
-      category: "preload-script",
+      category: lazy.SessionDataCategory.PreloadScript,
       moduleName: "_configuration",
       values: [
         {
@@ -1125,12 +1127,15 @@ class ScriptModule extends RootBiDiModule {
   };
 
   #onContextDiscarded = (eventName, data) => {
-    const { browsingContext } = data;
+    const { browsingContext, why } = data;
 
-    const contextId =
-      lazy.NavigableManager.getIdForBrowsingContext(browsingContext);
-
-    this.#submittedContextsCreated.delete(contextId);
+    // Filter out top-level browsing contexts that are destroyed because of a
+    // cross-group navigation.
+    if (why !== "replace") {
+      const contextId =
+        lazy.NavigableManager.getIdForBrowsingContext(browsingContext);
+      this.#submittedContextsCreated.delete(contextId);
+    }
   };
 
   #onContextCreatedSubmitted = (eventName, { browsingContext }) => {

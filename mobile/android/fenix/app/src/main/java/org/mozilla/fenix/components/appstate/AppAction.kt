@@ -9,6 +9,7 @@ import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.sync.TabData
+import mozilla.components.feature.protection.dashboard.TrackersBlockedCategory
 import mozilla.components.feature.tab.collections.TabCollection
 import mozilla.components.feature.top.sites.TopSite
 import mozilla.components.lib.crash.Crash.NativeCodeCrash
@@ -71,7 +72,6 @@ sealed class AppAction : Action {
         val topSites: List<TopSite>,
         val mode: BrowsingMode,
         val collections: List<TabCollection>,
-        val showCollectionPlaceholder: Boolean,
         val recentTabs: List<RecentTab>,
         val bookmarks: List<Bookmark>,
         val recentHistory: List<RecentlyVisitedItem>,
@@ -119,8 +119,6 @@ sealed class AppAction : Action {
      * Removes a set of items, previously marked for removal, to be displayed again in the UI.
      */
     data class UndoPendingDeletionSet(val historyItems: Set<PendingDeletionHistory>) : AppAction()
-
-    data object RemoveCollectionsPlaceholder : AppAction()
 
     /**
      * Action dispatched when the user has authenticated with their account.
@@ -826,6 +824,13 @@ sealed class AppAction : Action {
     data class UpdateTrackersBlockedCount(val count: Int) : AppAction()
 
     /**
+     * Updates the details about what trackers have been blocked this week.
+     *
+     * @property blockedTrackerCategories The list of trackers blocked this week as a tracker category split.
+     */
+    data class UpdateTrackersBlockedThisWeek(val blockedTrackerCategories: List<TrackersBlockedCategory>) : AppAction()
+
+    /**
      * [AppAction]s related to the sports widget.
      */
     sealed class SportsWidgetAction : AppAction() {
@@ -864,6 +869,15 @@ sealed class AppAction : Action {
         data class MatchCardStateUpdated(val matchCardStates: List<MatchCard>) : SportsWidgetAction()
 
         /**
+         * Dispatched when the set of teams eliminated from the tournament changes,
+         * derived from the latest fetched match data. Drives the eliminated-team
+         * styling in the country selector bottom sheet.
+         *
+         * @property countryCodes ISO codes of teams flagged eliminated in the last response.
+         */
+        data class EliminatedCountriesUpdated(val countryCodes: Set<String>) : SportsWidgetAction()
+
+        /**
          * Dispatched when the sport widget's debug tool visibility changes.
          *
          * @property visible Whether the debug tool should be displayed.
@@ -898,6 +912,14 @@ sealed class AppAction : Action {
          * @property error The [SportCardErrorState] describing the failure.
          */
         data class FetchFailed(val error: SportCardErrorState) : SportsWidgetAction()
+
+        /**
+         * Dispatched to clear any active [SportsWidgetState.errorState] without otherwise
+         * touching widget data. Used on resume to retire a stale ConnectionInterrupted
+         * banner once the device is back online and there's no fetch to schedule (e.g.
+         * during the pre-7-day countdown phase).
+         */
+        data object ErrorStateCleared : SportsWidgetAction()
 
         /**
          * Dispatched when the user toggles the one week to the world cup override setting

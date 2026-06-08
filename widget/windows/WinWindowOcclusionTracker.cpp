@@ -19,6 +19,7 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/StaticMonitor.h"
 #include "mozilla/StaticPtr.h"
 #include "nsIWidget.h"
 #include "nsWindow.h"
@@ -27,6 +28,9 @@
 #include "WinUtils.h"
 
 namespace mozilla::widget {
+
+static StaticMonitor sShutdownMonitor;
+static bool sShutdownComplete MOZ_GUARDED_BY(sShutdownMonitor) = false;
 
 // Can be called on Main thread
 LazyLogModule gWinOcclusionTrackerLog("WinOcclusionTracker");
@@ -201,8 +205,7 @@ void SerializedTaskDispatcher::PostDelayedTaskToCalculator(
   CALC_LOG(LogLevel::Debug,
            "SerializedTaskDispatcher::PostDelayedTaskToCalculator()");
 
-  RefPtr<DelayedTaskRunnable> runnable =
-      new DelayedTaskRunnable(this, std::move(aTask));
+  auto runnable = MakeRefPtr<DelayedTaskRunnable>(this, std::move(aTask));
   MessageLoop* targetLoop =
       WinWindowOcclusionTracker::OcclusionCalculatorLoop();
   targetLoop->PostDelayedTask(runnable.forget(), aDelayMs);
@@ -385,13 +388,13 @@ void WinWindowOcclusionTracker::ShutDown() {
   // to be deallocated and join the thread. If it times out,
   // we do nothing, which means that the thread will not be
   // joined and sTracker memory will leak.
-  CVStatus status;
+  bool shutdownComplete = false;
   {
     // It's important to hold the lock before posting the
     // runnable. This ensures that the runnable can't begin
     // until we've started our Wait, which prevents us from
     // Waiting on a monitor that has already been notified.
-    MonitorAutoLock lock(sTracker->mMonitor);
+    StaticMonitorAutoLock lock(sShutdownMonitor);
 
     static const TimeDuration TIMEOUT = TimeDuration::FromSeconds(2.0);
     RefPtr<Runnable> runnable =
@@ -400,7 +403,7 @@ void WinWindowOcclusionTracker::ShutDown() {
                      &WindowOcclusionCalculator::Shutdown);
     OcclusionCalculatorLoop()->PostTask(runnable.forget());
 
-    // Monitor uses SleepConditionVariableSRW, which can have
+    // sShutdownMonitor can wake up spuriously, which can have
     // spurious wakeups which are reported as timeouts, so we
     // check timestamps to ensure that we've waited as long we
     // intended to. If we wake early, we don't bother calculating
@@ -409,12 +412,16 @@ void WinWindowOcclusionTracker::ShutDown() {
     // much as 2x the TIMEOUT time.
     TimeStamp timeStart = TimeStamp::NowLoRes();
     do {
-      status = sTracker->mMonitor.Wait(TIMEOUT);
-    } while ((status == CVStatus::Timeout) &&
+      sShutdownMonitor.Wait(TIMEOUT);
+    } while (!sShutdownComplete &&
              ((TimeStamp::NowLoRes() - timeStart) < TIMEOUT));
+
+    // Make a local copy of sShutdownComplete, for use outside of
+    // the lock.
+    shutdownComplete = sShutdownComplete;
   }
 
-  if (status == CVStatus::NoTimeout) {
+  if (shutdownComplete) {
     WindowOcclusionCalculator::ClearInstance();
     sTracker = nullptr;
   }
@@ -500,7 +507,7 @@ void WinWindowOcclusionTracker::OnWindowVisibilityChanged(nsIWidget* aWindow,
 
 WinWindowOcclusionTracker::WinWindowOcclusionTracker(
     UniquePtr<base::Thread> aThread)
-    : mThread(std::move(aThread)), mMonitor("WinWindowOcclusionTracker") {
+    : mThread(std::move(aThread)) {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(LogLevel::Info, "WinWindowOcclusionTracker::WinWindowOcclusionTracker()");
 
@@ -825,8 +832,7 @@ StaticRefPtr<WinWindowOcclusionTracker::WindowOcclusionCalculator>
     WinWindowOcclusionTracker::WindowOcclusionCalculator::sCalculator;
 
 WinWindowOcclusionTracker::WindowOcclusionCalculator::
-    WindowOcclusionCalculator()
-    : mMonitor(WinWindowOcclusionTracker::Get()->mMonitor) {
+    WindowOcclusionCalculator() {
   MOZ_ASSERT(NS_IsMainThread());
   LOG(LogLevel::Info, "WindowOcclusionCalculator()");
 
@@ -865,10 +871,10 @@ void WinWindowOcclusionTracker::WindowOcclusionCalculator::Initialize() {
 }
 
 void WinWindowOcclusionTracker::WindowOcclusionCalculator::Shutdown() {
-  MonitorAutoLock lock(mMonitor);
-
   MOZ_ASSERT(IsInWinWindowOcclusionThread());
   CALC_LOG(LogLevel::Info, "Shutdown()");
+
+  StaticMonitorAutoLock lock(sShutdownMonitor);
 
   UnregisterEventHooks();
   if (mOcclusionUpdateRunnable) {
@@ -877,7 +883,8 @@ void WinWindowOcclusionTracker::WindowOcclusionCalculator::Shutdown() {
   }
   mVirtualDesktopManager = nullptr;
 
-  mMonitor.NotifyAll();
+  sShutdownComplete = true;
+  sShutdownMonitor.NotifyAll();
 }
 
 void WinWindowOcclusionTracker::WindowOcclusionCalculator::
@@ -1103,7 +1110,7 @@ void WinWindowOcclusionTracker::WindowOcclusionCalculator::
 
   CALC_LOG(LogLevel::Debug, "ScheduleOcclusionCalculationIfNeeded()");
 
-  RefPtr<CancelableRunnable> task = new OcclusionUpdateRunnable(this);
+  auto task = MakeRefPtr<OcclusionUpdateRunnable>(this);
   mOcclusionUpdateRunnable = task;
   mSerializedTaskDispatcher->PostDelayedTaskToCalculator(
       task.forget(), kOcclusionUpdateRunnableDelayMs);

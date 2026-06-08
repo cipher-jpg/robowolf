@@ -65,8 +65,8 @@ use style::gecko_bindings::bindings::{
     Gecko_HaveSeenPtr, IterationCompositeOperation, Loader, LoaderReusableStyleSheets,
     MallocSizeOf as GeckoMallocSizeOf, NonCustomCSSPropertyId, OriginFlags, PropertyValuePair,
     PseudoStyleType, SeenPtrs, ServoElementSnapshotTable, ServoStyleSetSizes, ServoTraversalFlags,
-    ShadowRoot as RawShadowRoot, SheetLoadData, SheetLoadDataHolder, SheetParsingMode,
-    StyleRuleInclusion, StyleSheet as DomStyleSheet, URLExtraData,
+    ShadowRoot as RawShadowRoot, SheetLoadData, SheetLoadDataHolder, StyleRuleInclusion,
+    StyleSheet as DomStyleSheet, URLExtraData,
 };
 use style::gecko_bindings::structs;
 use style::gecko_bindings::sugar::ownership::Strong;
@@ -129,6 +129,7 @@ use style::traversal::DomTraversal;
 use style::traversal_flags::{self, TraversalFlags};
 use style::typed_om::numeric_declaration::NumericDeclaration;
 use style::typed_om::sum_value::SumValue;
+use style::typed_om::{ImageValue, NumericValue, ToTyped, TypedValue, TypedValueList, UnitValue};
 use style::url;
 use style::use_counters::{CustomUseCounter, UseCounters};
 use style::values::animated::{Animate, Procedure, ToAnimatedZero};
@@ -155,10 +156,7 @@ use style::values::specified::source_size_list::SourceSizeList;
 use style::values::specified::svg_path::PathCommand;
 use style::values::specified::{LengthUnit, NoCalcLength};
 use style::values::{specified, AtomIdent, CustomIdent, KeyframesName};
-use style_traits::{
-    CssWriter, NumericValue, ParseError, ParsingMode, SpecifiedValueInfo, ToCss, ToTyped,
-    TypedValue, TypedValueList, UnitValue,
-};
+use style_traits::{CssWriter, ParseError, ParsingMode, SpecifiedValueInfo, ToCss};
 use thin_vec::ThinVec as nsTArray;
 use to_shmem::SharedMemoryBuilder;
 
@@ -1588,18 +1586,9 @@ pub extern "C" fn Servo_Element_ReferencesAttribute(
     false
 }
 
-fn mode_to_origin(mode: SheetParsingMode) -> Origin {
-    match mode {
-        SheetParsingMode::eAuthorSheetFeatures => Origin::Author,
-        SheetParsingMode::eUserSheetFeatures => Origin::User,
-        SheetParsingMode::eAgentSheetFeatures => Origin::UserAgent,
-    }
-}
-
 #[no_mangle]
-pub extern "C" fn Servo_StyleSheet_Empty(mode: SheetParsingMode) -> Strong<StylesheetContents> {
+pub extern "C" fn Servo_StyleSheet_Empty(origin: Origin) -> Strong<StylesheetContents> {
     let global_style_data = &*GLOBAL_STYLE_DATA;
-    let origin = mode_to_origin(mode);
     let shared_lock = &global_style_data.shared_lock;
     StylesheetContents::from_str(
         "",
@@ -1624,7 +1613,7 @@ pub unsafe extern "C" fn Servo_StyleSheet_FromUTF8Bytes(
     stylesheet: *mut DomStyleSheet,
     load_data: *mut SheetLoadData,
     bytes: &nsACString,
-    mode: SheetParsingMode,
+    origin: Origin,
     extra_data: *mut URLExtraData,
     quirks_mode: nsCompatibility,
     reusable_sheets: *mut LoaderReusableStyleSheets,
@@ -1663,7 +1652,7 @@ pub unsafe extern "C" fn Servo_StyleSheet_FromUTF8Bytes(
     let contents = StylesheetContents::from_str(
         input,
         url_data.clone(),
-        mode_to_origin(mode),
+        origin,
         &global_style_data.shared_lock,
         loader,
         reporter.as_ref().map(|r| r as &dyn ParseErrorReporter),
@@ -1686,7 +1675,7 @@ pub unsafe extern "C" fn Servo_StyleSheet_FromUTF8BytesAsync(
     load_data: *mut SheetLoadDataHolder,
     extra_data: *mut URLExtraData,
     bytes: &nsACString,
-    mode: SheetParsingMode,
+    origin: Origin,
     quirks_mode: nsCompatibility,
     allow_import_rules: AllowImportRules,
 ) {
@@ -1700,7 +1689,7 @@ pub unsafe extern "C" fn Servo_StyleSheet_FromUTF8BytesAsync(
         load_data,
         extra_data,
         sheet_bytes,
-        mode_to_origin(mode),
+        origin,
         quirks_mode.into(),
         allow_import_rules,
     );
@@ -5122,6 +5111,83 @@ pub extern "C" fn Servo_ParseProperty(
 }
 
 #[no_mangle]
+pub extern "C" fn Servo_ParseAndComputeViewTimelineInset(
+    inset: &nsACString,
+    // view timeline subject doesn't support pseudo element, so only element here.
+    subject: &RawGeckoElement,
+    style: Option<&ComputedValues>,
+    raw_data: &PerDocumentStyleData,
+    output: &mut computed::ViewTimelineInset,
+) -> bool {
+    use style::properties::longhands::view_timeline_inset;
+    use style::values::specified::length::LengthPercentageOrAuto;
+
+    let inset = unsafe { inset.as_str_unchecked() };
+    let mut input = ParserInput::new(&inset);
+    let mut parser = Parser::new(&mut input);
+    let context = ParserContext::new(
+        Origin::Author,
+        unsafe { dummy_url_data() },
+        Some(CssRuleType::Style),
+        ParsingMode::DEFAULT,
+        QuirksMode::NoQuirks,
+        /* namespaces = */ Default::default(),
+        None,
+        None,
+        /* attr_taint */ Default::default(),
+    );
+    let Ok(specified) =
+        parser.parse_entirely(|p| view_timeline_inset::single_value::parse(&context, p))
+    else {
+        return false;
+    };
+
+    // If the subject is detached from the document, we don't have the style so we cannot get the
+    // computed value. However, we still can convert the specified value into the computed value
+    // for some simple cases (as the fallback way), e.g. auto, px only, or percentage only. This is
+    // not spec'ed so we just follow Blink's behavior here.
+    let Some(style) = style else {
+        let to_computed_value_without_context = |lp: &LengthPercentageOrAuto| {
+            let LengthPercentageOrAuto::LengthPercentage(ref lp) = lp else {
+                return Some(computed::LengthPercentageOrAuto::Auto);
+            };
+            lp.compute_without_context()
+                .map(computed::LengthPercentageOrAuto::LengthPercentage)
+        };
+        let Some(start) = to_computed_value_without_context(&specified.start) else {
+            return false;
+        };
+        let Some(end) = to_computed_value_without_context(&specified.end) else {
+            return false;
+        };
+        output.start = start;
+        output.end = end;
+        return true;
+    };
+
+    let data = raw_data.borrow();
+    let element = GeckoElement(subject);
+    let parent_element = element.inheritance_parent();
+    let parent_data = parent_element.as_ref().and_then(|e| e.borrow_data());
+    let parent_style = parent_data
+        .as_ref()
+        .map(|d| d.styles.primary())
+        .map(|x| &**x);
+    let container_size_query =
+        ContainerSizeQuery::for_element(element, None, /* is_pseudo = */ false);
+    let mut conditions = Default::default();
+    let context = create_context_for_animation(
+        &data,
+        &style,
+        parent_style,
+        &mut conditions,
+        container_size_query,
+    );
+    *output = specified.to_computed_value(&context);
+    true
+}
+
+#[no_mangle]
 pub extern "C" fn Servo_ParseEasing(
     easing: &nsACString,
     output: &mut ComputedTimingFunction,
@@ -5729,7 +5795,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetPropertyTypedValue(
         value,
         Origin::Author,
         unsafe { UrlExtraData::from_ptr_ref(&url_extra_data) },
-        ParsingMode::DEFAULT,
+        ParsingMode::DISALLOW_UNITLESS_ZERO_LENGTH,
         QuirksMode::NoQuirks,
         CssRuleType::Style,
         None,
@@ -5896,6 +5962,11 @@ pub extern "C" fn Servo_SumValue_Create(numeric_value: &NumericValue) -> *mut Su
 #[no_mangle]
 pub unsafe extern "C" fn Servo_SumValue_Drop(sum_value: *mut SumValue) {
     let _ = Box::from_raw(sum_value);
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_ImageValue_ToCss(image_value: &ImageValue, value: &mut nsACString) {
+    image_value.to_css(&mut CssWriter::new(value)).unwrap();
 }
 
 /// A result of attempting to convert a sum value to a concrete unit.
@@ -9249,6 +9320,26 @@ pub unsafe extern "C" fn Servo_IsValidCSSColor(value: &nsACString) -> bool {
     specified::Color::is_valid(&context, &mut input)
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn Servo_IsValidCSSImage(value: &nsACString) -> bool {
+    let mut input = ParserInput::new(value.as_str_unchecked());
+    let mut input = Parser::new(&mut input);
+    let context = ParserContext::new(
+        Origin::Author,
+        dummy_url_data(),
+        Some(CssRuleType::Style),
+        ParsingMode::DEFAULT,
+        QuirksMode::NoQuirks,
+        /* namespaces = */ Default::default(),
+        None,
+        None,
+        /* attr_taint */ Default::default(),
+    );
+    input
+        .parse_entirely(|input| specified::Image::parse(&context, input))
+        .is_ok()
+}
+
 struct ComputeColorResult {
     result_color: AbsoluteColor,
     was_current_color: bool,
@@ -9462,6 +9553,22 @@ pub extern "C" fn Servo_ConvertColorSpace(
     color_space: ColorSpace,
 ) -> AbsoluteColor {
     color.to_color_space(color_space)
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_GamutMapColorUsingBinarySearchMINDE(
+    color: &AbsoluteColor,
+    destination_color_space: ColorSpace,
+) -> AbsoluteColor {
+    color.gamut_map_binary_search(destination_color_space)
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_GamutMapColorUsingRaytrace(
+    color: &AbsoluteColor,
+    destination_color_space: ColorSpace,
+) -> AbsoluteColor {
+    color.gamut_map_raytrace(destination_color_space)
 }
 
 #[no_mangle]

@@ -319,6 +319,8 @@ export const SpecialMessageActions = {
       "browser.smartwindow.memories.generateFromHistory",
       "browser.crashReports.unsubmittedCheck.autoSubmit2",
       "browser.dataFeatureRecommendations.enabled",
+      "browser.ipProtection.bandwidth.enabled",
+      "browser.ipProtection.blockIPProtectionCallouts",
       "browser.ipProtection.enabled",
       "browser.ipProtection.optedOut",
       "browser.migrate.content-modal.about-welcome-behavior",

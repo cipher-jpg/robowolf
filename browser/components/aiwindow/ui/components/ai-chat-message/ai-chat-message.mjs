@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* global Sanitizer */
-
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import {
@@ -300,8 +298,16 @@ export class AIChatMessage extends MozLitElement {
   static #chatMessageSanitizer;
   static {
     this.#chatMessageSanitizer = new Sanitizer();
-    for (const element of Object.values(CHAT_WRAPPER_ELEMENTS)) {
+    for (const { element, attributes } of Object.values(
+      CHAT_WRAPPER_ELEMENTS
+    )) {
       this.#chatMessageSanitizer.allowElement(element);
+      for (const attr of attributes) {
+        this.#chatMessageSanitizer.allowAttribute({
+          name: attr,
+          elements: [element],
+        });
+      }
     }
   }
 
@@ -315,6 +321,12 @@ export class AIChatMessage extends MozLitElement {
     element.setHTML(parseMarkdown(markdown), {
       sanitizer: AIChatMessage.#chatMessageSanitizer,
     });
+    // Pass messageId to table elements for copy functionality.
+    if (this.messageId) {
+      for (const table of element.querySelectorAll("ai-chat-table")) {
+        table.setAttribute("message-id", this.messageId);
+      }
+    }
   }
 
   /**

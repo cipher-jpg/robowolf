@@ -38,36 +38,6 @@ export let ProfileDataUpgrader = {
       });
   },
 
-  _migrateBackupProfilesPref() {
-    const oldPref = "browser.backup.enabled_on.profiles";
-    try {
-      let rawValue = Services.prefs.getStringPref(oldPref, "");
-      if (!rawValue) {
-        return;
-      }
-
-      let parsed;
-      try {
-        parsed = JSON.parse(rawValue);
-      } catch {
-        console.error(
-          `Failed to parse ${oldPref} during migration. Value: ${rawValue}`
-        );
-        return;
-      }
-
-      if (Array.isArray(parsed)) {
-        return;
-      }
-
-      // Convert keys to array
-      let profilesArray = Object.keys(parsed);
-      Services.prefs.setStringPref(oldPref, JSON.stringify(profilesArray));
-    } catch (e) {
-      console.error(`Error during migration of ${oldPref}:`, e);
-    }
-  },
-
   /**
    * This method transforms data in the profile directory so that it can be
    * used in the current version of Firefox. It is organized similar to
@@ -1015,12 +985,6 @@ export let ProfileDataUpgrader = {
       Services.prefs.clearUserPref("widget.macos.native-anchored-select");
     }
 
-    // Updating from 170 to 171 to trigger re-migrations of the Rusts store.
-    if (existingDataVersion < 171) {
-      // Force all logins to be re-migrated to the rust store.
-      Services.prefs.setBoolPref("signon.rustMirror.migrationNeeded", true);
-    }
-
     if (existingDataVersion < 172) {
       if (Services.prefs.getBoolPref("browser.smartwindow.enabled", false)) {
         Services.prefs.setBoolPref(
@@ -1030,8 +994,32 @@ export let ProfileDataUpgrader = {
       }
     }
 
-    if (existingDataVersion < 173) {
-      this._migrateBackupProfilesPref();
+    // The migration for 173 was applied in Nightly but was removed
+    // for causing failures Bug 2043185
+
+    if (existingDataVersion < 174) {
+      // Remove same-site (ABA) 3rdPartyFrameStorage permissions that were
+      // unnecessarily saved when a same-site-to-top iframe called
+      // requestStorageAccess().
+      for (let perm of Services.perms.getAllWithTypePrefix(
+        "3rdPartyFrameStorage^"
+      )) {
+        let typeSite = perm.type.substring("3rdPartyFrameStorage^".length);
+        try {
+          let originSite = Services.eTLD.getSite(perm.principal.URI);
+          if (typeSite === originSite) {
+            Services.perms.removePermission(perm);
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+
+    // 170 and 171 were updated to 175 to retrigger the migrations of the Rusts store.
+    if (existingDataVersion < 175) {
+      // Force all logins to be re-migrated to the rust store.
+      Services.prefs.setBoolPref("signon.rustMirror.migrationNeeded", true);
     }
 
     // Update the migration version.

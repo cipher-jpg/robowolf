@@ -320,14 +320,15 @@
                 "type": "string",
                 "enum": [
                   "blue",
-                  "turquoise",
+                  "cyan",
                   "green",
                   "yellow",
                   "orange",
                   "red",
                   "pink",
                   "purple",
-                  "toolbar"
+                  "violet",
+                  "gray"
                 ]
               }
             },
@@ -489,7 +490,8 @@
             "reject",
             "limit-foreign",
             "reject-tracker",
-            "reject-tracker-and-partition-foreign"
+            "reject-tracker-and-partition-foreign",
+            "partition-foreign"
           ]
         },
 
@@ -501,7 +503,8 @@
             "reject",
             "limit-foreign",
             "reject-tracker",
-            "reject-tracker-and-partition-foreign"
+            "reject-tracker-and-partition-foreign",
+            "partition-foreign"
           ]
         }
       }
@@ -655,6 +658,10 @@
     },
 
     "DisableRemoteImprovements": {
+      "type": "boolean"
+    },
+
+    "DisableRemoteSettingsAndAcceptSecurityConsequences": {
       "type": "boolean"
     },
 
@@ -866,6 +873,18 @@
                 "type": "string"
               }
             },
+            "runtime_allowed_hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "runtime_blocked_hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "temporarily_allow_weak_signatures": {
               "type": "boolean"
             }
@@ -900,6 +919,18 @@
             "default_area": {
               "type": "string",
               "enum": ["navbar", "menupanel"]
+            },
+            "runtime_allowed_hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "runtime_blocked_hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             },
             "temporarily_allow_weak_signatures": {
               "type": "boolean"

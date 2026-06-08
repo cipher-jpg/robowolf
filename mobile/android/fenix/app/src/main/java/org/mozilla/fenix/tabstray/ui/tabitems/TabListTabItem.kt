@@ -6,7 +6,6 @@ package org.mozilla.fenix.tabstray.ui.tabitems
 
 import androidx.compose.animation.core.DecayAnimationSpec
 import androidx.compose.animation.rememberSplineBasedDecay
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.RadioCheckmark
@@ -40,6 +41,7 @@ import org.mozilla.fenix.compose.SwipeToDismissState2
 import org.mozilla.fenix.compose.TabThumbnail
 import org.mozilla.fenix.ext.toShortUrl
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
+import org.mozilla.fenix.tabstray.browser.compose.TabItemInteractionState
 import org.mozilla.fenix.tabstray.data.TabsTrayItem
 import org.mozilla.fenix.tabstray.data.createTab
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -47,6 +49,10 @@ import mozilla.components.browser.tabstray.R as tabstrayR
 
 private val ThumbnailWidth = 78.dp
 private val ThumbnailHeight = 68.dp
+internal val TabListItemHeight: Dp
+    @Composable
+    @ReadOnlyComposable
+    get() = ThumbnailHeight + FirefoxTheme.layout.space.static100 * 2
 
 /**
  * List item used to display a tab that supports clicks,
@@ -54,6 +60,7 @@ private val ThumbnailHeight = 68.dp
  *
  * @param tab The given tab to render as list item.
  * @param modifier [Modifier] to be applied to the tab list item content.
+ * @param interactionState: [TabItemInteractionState] holding hovered and dragged status.
  * @param selectionState: The tab item's [TabsTrayItemSelectionState]
  * @param shouldClickListen Whether the item should stop listening to click events.
  * @param swipingEnabled Whether the item is swipeable.
@@ -65,6 +72,7 @@ private val ThumbnailHeight = 68.dp
 fun TabListTabItem(
     tab: TabsTrayItem.Tab,
     modifier: Modifier = Modifier,
+    interactionState: TabItemInteractionState = TabItemInteractionState(),
     selectionState: TabsTrayItemSelectionState = TabsTrayItemSelectionState(),
     shouldClickListen: Boolean = true,
     swipingEnabled: Boolean = true,
@@ -100,6 +108,7 @@ fun TabListTabItem(
         TabContent(
             tab = tab,
             selectionState = selectionState,
+            interactionState = interactionState,
             shouldClickListen = shouldClickListen,
             modifier = modifier,
             onCloseClick = onCloseClick,
@@ -113,6 +122,7 @@ fun TabListTabItem(
 @Composable
 private fun TabContent(
     tab: TabsTrayItem.Tab,
+    interactionState: TabItemInteractionState,
     selectionState: TabsTrayItemSelectionState,
     shouldClickListen: Boolean,
     modifier: Modifier = Modifier,
@@ -128,6 +138,9 @@ private fun TabContent(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .tabItemListInteractionAnimation(
+                interactionState = interactionState,
+            )
             .background(contentBackgroundColor)
             .tabItemClickable(
                 clickHandler = TabsTrayItemClickHandler(
@@ -216,7 +229,7 @@ private fun Thumbnail(
             )
             .testTag(TabsTrayTestTag.TAB_ITEM_THUMBNAIL),
         shape = MaterialTheme.shapes.extraSmall,
-        border = BorderStroke(width = 1.dp, color = MaterialTheme.colorScheme.outlineVariant),
+        border = tablistItemThumbnailBorder,
         contentDescription = stringResource(id = tabstrayR.string.mozac_browser_tabstray_open_tab),
     )
 }
@@ -225,6 +238,7 @@ private data class TabListItemPreviewState(
     val tabItemSelectionState: TabsTrayItemSelectionState,
     val url: String = "www.mozilla.org",
     val title: String = "Mozilla Domain",
+    val tabItemInteractionState: TabItemInteractionState = TabItemInteractionState(),
 )
 
 private class TabListItemParameterProvider : PreviewParameterProvider<TabListItemPreviewState> {
@@ -232,7 +246,7 @@ private class TabListItemParameterProvider : PreviewParameterProvider<TabListIte
         Pair(
             "Not focused or selected",
             TabListItemPreviewState(
-                TabsTrayItemSelectionState(
+                tabItemSelectionState = TabsTrayItemSelectionState(
                     isFocused = false,
                     multiSelectEnabled = false,
                     isSelected = false,
@@ -242,7 +256,7 @@ private class TabListItemParameterProvider : PreviewParameterProvider<TabListIte
         Pair(
             "Focused, not selected",
             TabListItemPreviewState(
-                TabsTrayItemSelectionState(
+                tabItemSelectionState = TabsTrayItemSelectionState(
                     isFocused = true,
                     multiSelectEnabled = false,
                     isSelected = false,
@@ -252,7 +266,7 @@ private class TabListItemParameterProvider : PreviewParameterProvider<TabListIte
         Pair(
             "Multiselection enabled, not focused or selected",
             TabListItemPreviewState(
-                TabsTrayItemSelectionState(
+                tabItemSelectionState = TabsTrayItemSelectionState(
                     isFocused = false,
                     multiSelectEnabled = true,
                     isSelected = false,
@@ -262,7 +276,7 @@ private class TabListItemParameterProvider : PreviewParameterProvider<TabListIte
         Pair(
             "Multiselection enabled, focused, not selected",
             TabListItemPreviewState(
-                TabsTrayItemSelectionState(
+                tabItemSelectionState = TabsTrayItemSelectionState(
                     isFocused = true,
                     multiSelectEnabled = true,
                     isSelected = false,
@@ -272,7 +286,7 @@ private class TabListItemParameterProvider : PreviewParameterProvider<TabListIte
         Pair(
             "Multiselection enabled, not focused, selected",
             TabListItemPreviewState(
-                TabsTrayItemSelectionState(
+                tabItemSelectionState = TabsTrayItemSelectionState(
                     isFocused = false,
                     multiSelectEnabled = true,
                     isSelected = true,
@@ -282,7 +296,7 @@ private class TabListItemParameterProvider : PreviewParameterProvider<TabListIte
         Pair(
             "Multiselection enabled, focused and selected",
             TabListItemPreviewState(
-                TabsTrayItemSelectionState(
+                tabItemSelectionState = TabsTrayItemSelectionState(
                     isFocused = true,
                     multiSelectEnabled = true,
                     isSelected = true,
@@ -292,13 +306,41 @@ private class TabListItemParameterProvider : PreviewParameterProvider<TabListIte
         Pair(
             "Not focused or selected, long title",
             TabListItemPreviewState(
-                TabsTrayItemSelectionState(
+                tabItemSelectionState = TabsTrayItemSelectionState(
                     isFocused = false,
                     multiSelectEnabled = false,
                     isSelected = false,
                 ),
                 url = "www.google.com/superlongurl",
                 title = LOREM_IPSUM,
+            ),
+        ),
+        Pair(
+            "Dragged",
+            TabListItemPreviewState(
+                tabItemSelectionState = TabsTrayItemSelectionState(
+                    isFocused = false,
+                    multiSelectEnabled = false,
+                    isSelected = false,
+                ),
+                tabItemInteractionState = TabItemInteractionState(
+                    isDragged = true,
+                    isHoveredByItem = false,
+                ),
+            ),
+        ),
+        Pair(
+            "Hovered",
+            TabListItemPreviewState(
+                tabItemSelectionState = TabsTrayItemSelectionState(
+                    isFocused = false,
+                    multiSelectEnabled = false,
+                    isSelected = false,
+                ),
+                tabItemInteractionState = TabItemInteractionState(
+                    isDragged = false,
+                    isHoveredByItem = true,
+                ),
             ),
         ),
     )
@@ -325,6 +367,7 @@ private fun TabListTabItemPreview(
             onCloseClick = {},
             onClick = {},
             selectionState = tabListItemState.tabItemSelectionState,
+            interactionState = tabListItemState.tabItemInteractionState,
         )
     }
 }

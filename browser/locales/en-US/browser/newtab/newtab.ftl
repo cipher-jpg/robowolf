@@ -264,10 +264,10 @@ newtab-custom-widget-lists-toggle =
   .label = Lists
 newtab-custom-widget-timer-toggle =
   .label = Timer
-newtab-custom-widget-sports-toggle =
-  .label = World Cup
 newtab-custom-widget-clock-toggle =
   .label = Clock
+newtab-custom-widget-sports-toggle2 =
+  .label = Sports
 newtab-custom-widget-section-title = Widgets
 newtab-custom-widget-section-toggle =
     .label = Widgets
@@ -663,6 +663,14 @@ newtab-widget-section-menu-manage = Manage widgets
 newtab-widget-section-menu-hide-all = Hide widgets
 newtab-widget-section-menu-learn-more = Learn more
 newtab-widget-section-feedback = Tell us what you think
+# Button shown when additional widgets are hidden beyond the
+# first row, allowing users to show them.
+newtab-widget-section-show-more =
+    .label = Show more widgets
+# Button shown when the widgets row is expanded to multiple rows,
+# allowing users to collapse it back to one row.
+newtab-widget-section-show-less =
+    .label = Show fewer widgets
 newtab-widget-lists-name-default = Checklist
 newtab-widget-lists-name-label-default =
     .label = Task list
@@ -711,6 +719,9 @@ newtab-widget-lists-input-menu-delete = Delete
 newtab-widget-lists-input-menu-edit = Edit
 newtab-widget-lists-input-menu-edit2 =
     .aria-label = Edit item
+newtab-widget-lists-edit-clear =
+    .aria-label = Cancel
+    .title = Cancel
 
 # the + symbol emphasises the functionality of adding a new list
 newtab-widget-lists-dropdown-create =
@@ -772,10 +783,34 @@ newtab-sports-widget-back-button =
     .aria-label = Back
 newtab-sports-widget-done-button =
     .label = Done
+# Shown in the follow-teams list for a team that has been knocked out of the tournament.
+# Variables:
+#   $teamName (string) - the localized team name (e.g. "Canada").
+newtab-sports-widget-team-name-eliminated = { $teamName } (eliminated)
 newtab-sports-widget-view-all =
     .label = View all
 newtab-sports-widget-show-less =
     .label = Show less
+# Toggle that filters the list of teams the user follows
+newtab-sports-widget-followed-only-toggle =
+    .label = Only followed teams
+
+## Sports widget live-games pagination. Shown when 2+ matches are live at the same time
+
+# arrow button that goes to the previous page of live matches.
+newtab-sports-widget-pagination-previous =
+    .aria-label = Previous
+    .title = Previous
+# arrow button that goes to the next page of live matches.
+newtab-sports-widget-pagination-next =
+    .aria-label = Next
+    .title = Next
+# Dot indicator that jumps directly to a given live match.
+# $index (number) - 1-based position of this dot in the list.
+# $total (number) - Total number of live matches.
+newtab-sports-widget-pagination-dot =
+    .aria-label = Live match { $index } of { $total }
+    .title = Live match { $index } of { $total }
 
 ## Watch live stream dialog
 ## Shown when the user clicks the “Watch live” button on a live match.
@@ -889,7 +924,14 @@ newtab-sports-widget-world-cup-champions = 2026 World Cup Champions
 #   $date (Date) - The match start time
 newtab-sports-widget-match-time = { DATETIME($date, hour: "2-digit", minute: "2-digit") }
 newtab-sports-widget-match-full-time = Full time
+newtab-sports-widget-match-halftime = Halftime
+newtab-sports-widget-match-extra-time = Extra time
 newtab-sports-widget-match-penalties = Penalties
+# Separator shown between two teams in a placeholder match row when no upcoming
+# match details are available yet.
+newtab-sports-widget-match-vs = vs
+# Note shown in the Upcoming tab when no match details are available yet.
+newtab-sports-widget-no-upcoming-matches = Stay tuned for upcoming match details
 
 ## Accessible labels for match rows in the sports widget. These are read by
 ## screen readers to announce the match details and status.
@@ -957,6 +999,9 @@ newtab-sports-widget-team-name-label-eng =
     .label = England
 newtab-sports-widget-team-name-label-sco =
     .label = Scotland
+
+# Placeholder used in a match row's aria-label for an undecided team (shown visually as "--").
+newtab-sports-widget-team-tbd = To be determined
 
 ## Sports widget OMC messages
 ## Shown as on-screen messages promoting the Sports widget and World Cup wallpapers.
@@ -1107,6 +1152,19 @@ newtab-clock-widget-button-save = Save
 newtab-clock-widget-button-remove-clock =
     .title = Remove clock
     .aria-label = Remove clock
+# Accessible name for a clock row in the "Your clocks" management panel
+# when the row has no user-provided nickname. Read aloud by screen
+# readers when focus lands on the row.
+# Variables:
+#   $city (string) - The city name displayed in the row.
+newtab-clock-widget-edit-item =
+    .aria-label = { $city }
+# Accessible name for a clock row when a user nickname has been set.
+# Variables:
+#   $city (string) - The city name displayed in the row.
+#   $nickname (string) - The user-provided nickname for the row.
+newtab-clock-widget-edit-item-with-nickname =
+    .aria-label = { $city }, nickname: { $nickname }
 newtab-clock-widget-add-clock-form =
     .aria-label = Add clock
 newtab-clock-widget-edit-clock-form =

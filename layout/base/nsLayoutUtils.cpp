@@ -837,7 +837,8 @@ static Element* GetPseudo(const nsIContent* aContent, nsAtom* aPseudoProperty) {
   MOZ_ASSERT(aPseudoProperty == nsGkAtoms::beforePseudoProperty ||
              aPseudoProperty == nsGkAtoms::afterPseudoProperty ||
              aPseudoProperty == nsGkAtoms::markerPseudoProperty ||
-             aPseudoProperty == nsGkAtoms::backdropPseudoProperty);
+             aPseudoProperty == nsGkAtoms::backdropPseudoProperty ||
+             aPseudoProperty == nsGkAtoms::checkmarkPseudoProperty);
   if (!aContent->MayHaveAnonymousChildren()) {
     return nullptr;
   }
@@ -887,6 +888,17 @@ nsIFrame* nsLayoutUtils::GetBackdropFrame(const nsIContent* aContent) {
 }
 
 /*static*/
+Element* nsLayoutUtils::GetCheckmarkPseudo(const nsIContent* aContent) {
+  return GetPseudo(aContent, nsGkAtoms::checkmarkPseudoProperty);
+}
+
+/*static*/
+nsIFrame* nsLayoutUtils::GetCheckmarkFrame(const nsIContent* aContent) {
+  Element* pseudo = GetCheckmarkPseudo(aContent);
+  return pseudo ? pseudo->GetPrimaryFrame() : nullptr;
+}
+
+/*static*/
 void nsLayoutUtils::AppendGeneratedContentPseudos(
     const Element* aElement, nsTArray<nsIContent*>& aPseudos) {
   if (aElement->HasProperties()) {
@@ -895,6 +907,9 @@ void nsLayoutUtils::AppendGeneratedContentPseudos(
     }
     if (auto* marker = nsLayoutUtils::GetMarkerPseudo(aElement)) {
       aPseudos.AppendElement(marker);
+    }
+    if (auto* checkmark = nsLayoutUtils::GetCheckmarkPseudo(aElement)) {
+      aPseudos.AppendElement(checkmark);
     }
     if (auto* before = nsLayoutUtils::GetBeforePseudo(aElement)) {
       aPseudos.AppendElement(before);
@@ -1154,16 +1169,18 @@ bool nsLayoutUtils::IsProperAncestorFrameConsideringContinuations(
     const nsIFrame* aCommonAncestor) {
   MOZ_ASSERT(aAncestorFrame);
   const nsIFrame* ancestorFirstContinuation =
-      aAncestorFrame->FirstContinuation();
-  if (!aFrame || aFrame->FirstContinuation() == ancestorFirstContinuation) {
+      FirstContinuationOrIBSplitSibling(aAncestorFrame);
+  if (!aFrame ||
+      FirstContinuationOrIBSplitSibling(aFrame) == ancestorFirstContinuation) {
     return false;
   }
   const nsIFrame* commonFirstContinuation =
-      aCommonAncestor ? aCommonAncestor->FirstContinuation() : nullptr;
+      aCommonAncestor ? FirstContinuationOrIBSplitSibling(aCommonAncestor)
+                      : nullptr;
   const nsIFrame* f = aFrame;
-  for (; f && f->FirstContinuation() != commonFirstContinuation;
+  for (; f && FirstContinuationOrIBSplitSibling(f) != commonFirstContinuation;
        f = f->GetParent()) {
-    if (f->FirstContinuation() == ancestorFirstContinuation) {
+    if (FirstContinuationOrIBSplitSibling(f) == ancestorFirstContinuation) {
       return true;
     }
   }
@@ -8790,7 +8807,8 @@ ScrollMetadata nsLayoutUtils::ComputeScrollMetadata(
         // Restore the visual viewport offset to the copy stored on the
         // main thread.
         presShell->ScrollToVisual(presShell->GetVisualViewportOffset(),
-                                  FrameMetrics::eRestore, ScrollMode::Instant);
+                                  ScrollOffsetUpdateType::Restore,
+                                  ScrollMode::Instant);
       }
     }
 

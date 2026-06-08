@@ -423,8 +423,8 @@ void CycleCollectedJSContext::PromiseRejectionTrackerCallback(
             PromiseRejectionEvent::Constructor(owner, u"rejectionhandled"_ns,
                                                init);
 
-        RefPtr<AsyncEventDispatcher> asyncDispatcher =
-            new AsyncEventDispatcher(owner, event.forget());
+        RefPtr asyncDispatcher =
+            MakeRefPtr<AsyncEventDispatcher>(owner, event.forget());
         asyncDispatcher->PostDOMEvent();
       }
     }
@@ -537,7 +537,7 @@ void CycleCollectedJSContext::AfterProcessMicrotasks() {
   // Notify unhandled promise rejections:
   // https://html.spec.whatwg.org/multipage/webappapis.html#notify-about-rejected-promises
   if (mAboutToBeNotifiedRejectedPromises.Length()) {
-    RefPtr<NotifyUnhandledRejections> runnable = new NotifyUnhandledRejections(
+    RefPtr runnable = MakeRefPtr<NotifyUnhandledRejections>(
         std::move(mAboutToBeNotifiedRejectedPromises));
     NS_DispatchToCurrentThread(runnable);
   }
@@ -589,7 +589,7 @@ uint32_t CycleCollectedJSContext::RecursionDepth() const {
 }
 
 void CycleCollectedJSContext::RunInStableState(
-    already_AddRefed<nsIRunnable>&& aRunnable) {
+    already_AddRefed<nsIRunnable> aRunnable) {
   MOZ_ASSERT(mJSContext);
   nsCOMPtr<nsIRunnable> runnable = std::move(aRunnable);
   PROFILER_MARKER("CycleCollectedJSContext::RunInStableState", OTHER, {},
@@ -598,7 +598,7 @@ void CycleCollectedJSContext::RunInStableState(
 }
 
 void CycleCollectedJSContext::AddPendingIDBTransaction(
-    already_AddRefed<nsIRunnable>&& aTransaction) {
+    already_AddRefed<nsIRunnable> aTransaction) {
   MOZ_ASSERT(mJSContext);
 
   PendingIDBTransactionData data;

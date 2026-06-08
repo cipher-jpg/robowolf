@@ -58,6 +58,7 @@
             android:title="@string/preferences_inactive_tabs_title"/>
     </androidx.preference.PreferenceCategory>
 
+<<<<<<< HEAD
     <androidx.preference.PreferenceCategory
         android:layout="@layout/preference_cat_style"
         android:title="@string/preferences_group_tab_strip"
@@ -69,4 +70,10 @@
             android:title="@string/preferences_group_tab_strip"
             android:summary="@string/preferences_group_tab_strip_summary" />
     </androidx.preference.PreferenceCategory>
+=======
+    <androidx.preference.SwitchPreferenceCompat
+        android:defaultValue="true"
+        android:key="@string/pref_key_privacy_report_tab_manager"
+        android:title="@string/customize_toggle_privacy_report" />
+>>>>>>> upstream/main
 </androidx.preference.PreferenceScreen>

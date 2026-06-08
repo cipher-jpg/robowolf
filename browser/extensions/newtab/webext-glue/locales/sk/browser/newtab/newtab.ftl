@@ -58,7 +58,7 @@ newtab-search-box-input =
 
 ## Clear text button for the URL and image URL input fields in the Top Sites form.
 
-newtab-topsites-add-search-engine-header = Pridať vyhľadávací modul
+newtab-topsites-add-search-engine-header = Pridať vyhľadávač
 newtab-topsites-add-shortcut-header = Nová skratka
 newtab-topsites-edit-topsites-header = Upraviť top stránku
 newtab-topsites-edit-shortcut-header = Upraviť skratku
@@ -229,7 +229,7 @@ newtab-section-menu-expand-section = Rozbaliť sekciu
 newtab-section-menu-manage-section = Spravovať sekciu
 newtab-section-menu-manage-webext = Spravovať rozšírenie
 newtab-section-menu-add-topsite = Pridať top stránku
-newtab-section-menu-add-search-engine = Pridať vyhľadávací modul
+newtab-section-menu-add-search-engine = Pridať vyhľadávač
 newtab-section-menu-move-up = Posunúť vyššie
 newtab-section-menu-move-down = Posunúť nižšie
 newtab-section-menu-privacy-notice = Vyhlásenie o ochrane osobných údajov
@@ -369,6 +369,8 @@ newtab-custom-widget-sports-toggle =
     .label = Majstrovstvá sveta
 newtab-custom-widget-clock-toggle =
     .label = Hodiny
+newtab-custom-widget-sports-toggle2 =
+    .label = Šport
 newtab-custom-widget-section-title = Miniaplikácie
 newtab-custom-widget-section-toggle =
     .label = Miniaplikácie
@@ -764,6 +766,9 @@ newtab-widget-lists-input-menu-delete = Odstrániť
 newtab-widget-lists-input-menu-edit = Upraviť
 newtab-widget-lists-input-menu-edit2 =
     .aria-label = Upraviť položku
+newtab-widget-lists-edit-clear =
+    .aria-label = Zrušiť
+    .title = Zrušiť
 # the + symbol emphasises the functionality of adding a new list
 newtab-widget-lists-dropdown-create =
     .label = + Vytvoriť nový zoznam
@@ -788,6 +793,15 @@ newtab-widget-lists-name-placeholder-new =
 newtab-widget-section-title = Miniaplikácie
 newtab-widget-menu-hide = Skryť miniaplikáciu
 newtab-widget-menu-change-size = Zmeniť veľkosť
+# Parent label for a submenu in the widget menu that reorders the widget
+# among its siblings. "Left" and "Right" appear as items inside this submenu.
+newtab-widget-menu-move = Presunúť
+# Submenu item under "Move"; moves the widget one position to the left.
+# RTL locales should translate this as "Right".
+newtab-widget-menu-move-left = Doľava
+# Submenu item under "Move"; moves the widget one position to the right.
+# RTL locales should translate this as "Left".
+newtab-widget-menu-move-right = Doprava
 newtab-widget-size-small = Malá
 newtab-widget-size-medium = Stredná
 newtab-widget-size-large = Veľká
@@ -804,10 +818,21 @@ newtab-widget-section-minimize =
 newtab-widget-section-menu-button =
     .title = Ponuka Miniaplikácie
     .aria-label = Otvorí ponuku Miniaplikácie
+newtab-widget-add-widgets-button =
+    .aria-label = Pridať miniaplikáciu
+    .title = Pridať miniaplikáciu
 newtab-widget-section-menu-manage = Spravovať miniaplikácie
 newtab-widget-section-menu-hide-all = Skryť miniaplikácie
 newtab-widget-section-menu-learn-more = Ďalšie informácie
 newtab-widget-section-feedback = Povedzte nám váš názor
+# Button shown when additional widgets are hidden beyond the
+# first row, allowing users to show them.
+newtab-widget-section-show-more =
+    .label = Zobraziť ďalšie miniaplikácie
+# Button shown when the widgets row is expanded to multiple rows,
+# allowing users to collapse it back to one row.
+newtab-widget-section-show-less =
+    .label = Zobraziť menej miniaplikácií
 newtab-widget-lists-name-default = Kontrolný zoznam
 
 ## Strings introduced by the Nova redesign of the Timer widget
@@ -838,6 +863,9 @@ newtab-daily-briefing-card-timestamp = Aktualizované pred { $minutes } min.
 newtab-widget-message-title = Zostaňte sústredení vďaka zoznamom a vstavanému časovaču
 # to-dos stands for "things to do".
 newtab-widget-message-copy = Od rýchlych pripomienok až po denné úlohy, od sústredených stretnutí až po prestávky – sústreďte sa na úlohy a dodržujte čas.
+# One spot refers to a dedicated section on new tab to manage and use widgets
+newtab-widget-message-focus-forecasts-title = Jedno miesto pre sústredenie, predpovede počasia a ďalšie
+newtab-widget-message-focus-forecasts-body = Využite svoj deň naplno s miniaplikáciami vo { -brand-product-name(case: "loc") }. Pozrite si predpoveď počasia, sústreďte sa na úlohy alebo sledujte čas na celom svete.
 # "Make Firefox yours" refers to about:newtab. The call to action here ("Try it now")
 # is to customize the new tab page with a background image or color from
 # the built-in wallpaper collection or uploading your own image.
@@ -897,9 +925,10 @@ newtab-widget-timer-celebration-message-focus = Potrebujete si oddýchnuť?
 # Message shown inside the Timer widget after a break session ends.
 newtab-widget-timer-celebration-message-break = Pripravení sústrediť sa?
 
-## Sports widget
+##
 
 newtab-sports-widget-menu-follow-teams = Sledovať tímy
+newtab-sports-widget-menu-view-schedule = Zobraziť rozpis zápasov
 newtab-sports-widget-menu-view-upcoming = Zobraziť nadchádzajúce
 newtab-sports-widget-menu-view-results = Zobraziť výsledky
 # Milestone dates (e.g. group stage, semifinals, etc.). Refers to calendar dates.
@@ -912,6 +941,8 @@ newtab-sports-widget-view-schedule =
     .label = Zobraziť rozpis zápasov
 newtab-sports-widget-follow-teams =
     .label = Sledovať tímy
+newtab-sports-widget-view-matches =
+    .label = Zobraziť zápasy
 # Variables:
 #   $number (number) - Maximum number of teams a user can choose to follow in the team selection state
 newtab-sports-widget-follow-teams-title =
@@ -928,9 +959,63 @@ newtab-sports-widget-search-country =
     .placeholder = Hľadať krajinu
     .aria-label = Hľadať krajinu
 newtab-sports-widget-cancel = Zrušiť
+newtab-sports-widget-back-button =
+    .aria-label = Naspäť
 newtab-sports-widget-done-button =
     .label = Hotovo
+# Shown in the follow-teams list for a team that has been knocked out of the tournament.
+# Variables:
+#   $teamName (string) - the localized team name (e.g. "Canada").
+newtab-sports-widget-team-name-eliminated = { $teamName } (vyradený)
+newtab-sports-widget-view-all =
+    .label = Zobraziť všetky
+newtab-sports-widget-show-less =
+    .label = Zobraziť menej
+# Toggle that filters the list of teams the user follows
+newtab-sports-widget-followed-only-toggle =
+    .label = Iba sledované tímy
+# Watch is a verb (as in watch matches online).
+newtab-sports-widget-watch =
+    .label = Sledovať
+    .title = Sledovať naživo
+# Watch is a verb (as in watch matches online).
+newtab-sports-widget-watch-icon =
+    .aria-label = Sledovať naživo
+    .title = Sledovať naživo
+newtab-sports-widget-watch-dialog-close =
+    .aria-label = Zavrieť
+    .title = Zavrieť
+# Tag: user can watch without paying (sign-in may still be required).
+newtab-sports-widget-watch-stream-free = Zadarmo
+# Tag: user can start watching via a trial; continued access may require payment after it ends.
+newtab-sports-widget-watch-stream-free-trial = Bezplatná skúšobná doba
+# Tag: provider offers both a no-cost or trial path and a paid path.
+newtab-sports-widget-watch-stream-free-paid = Zadarmo aj platené
+# Tag: user must pay to watch (subscription, TV provider, premium plan, or add-on).
+newtab-sports-widget-watch-stream-paid = Platené
+# Note: provider only streams some matches, not the full tournament.
+newtab-sports-widget-watch-stream-select-games-only = Iba vybrané zápasy
+# Heading for the list of streaming services available in the user’s country/region.
+newtab-sports-widget-watch-available-region = Dostupné vo vašom regióne
+# Heading for the list of streaming services available outside the user’s country/region.
+newtab-sports-widget-watch-available-other-regions = Ostatné regióny
+# Button that opens the provider’s stream page in a new tab.
+newtab-sports-widget-watch-play =
+    .aria-label = Otvoriť stream
+    .title = Otvoriť stream
 newtab-sports-widget-group-stage = Skupinová fáza
+newtab-sports-widget-group-a = Skupina A
+newtab-sports-widget-group-b = Skupina B
+newtab-sports-widget-group-c = Skupina C
+newtab-sports-widget-group-d = Skupina D
+newtab-sports-widget-group-e = Skupina E
+newtab-sports-widget-group-f = Skupina F
+newtab-sports-widget-group-g = Skupina G
+newtab-sports-widget-group-h = Skupina H
+newtab-sports-widget-group-i = Skupina I
+newtab-sports-widget-group-j = Skupina J
+newtab-sports-widget-group-k = Skupina K
+newtab-sports-widget-group-l = Skupina L
 newtab-sports-widget-round-32 = Najlepších 32
 newtab-sports-widget-round-16 = Najlepších 16
 newtab-sports-widget-quarter-finals = Štvrťfinále
@@ -942,6 +1027,8 @@ newtab-custom-widget-live-refresh =
 # Milestone dates (e.g. group stage, semifinals, etc.). Refers to calendar dates.
 newtab-sports-widget-key-dates = Kľúčové dátumy
 newtab-sports-widget-upcoming = Nadchádzajúce
+# Used for a match currently ongoing
+newtab-sports-widget-now = Teraz
 newtab-sports-widget-results = Výsledky
 newtab-sports-widget-semi-finals = Semifinále
 newtab-sports-widget-bronze-finals = O tretie miesto
@@ -966,6 +1053,86 @@ newtab-sports-widget-third-place = Tretie miesto
 newtab-sports-widget-runner-up = Druhé miesto
 newtab-sports-widget-champions = Víťaz
 newtab-sports-widget-world-cup-champions = Majstrovstvá sveta vo futbale 2026
+# Variables:
+#   $date (Date) - The match start time
+newtab-sports-widget-match-time = { DATETIME($date, hour: "2-digit", minute: "2-digit") }
+newtab-sports-widget-match-full-time = Koniec zápasu
+newtab-sports-widget-match-halftime = Polčas
+newtab-sports-widget-match-extra-time = Predĺženie
+newtab-sports-widget-match-penalties = Penalty
+
+## Accessible labels for match rows in the sports widget. These are read by
+## screen readers to announce the match details and status.
+## Variables shared by all messages in this group:
+##   $homeTeam (String) - The full name of the home team (e.g. "Mexico")
+##   $awayTeam (String) - The full name of the away team (e.g. "Russia")
+
+# A finished match row (regular full-time result).
+# Variables:
+#   $homeScore (number) - The home team's regular-time score
+#   $awayScore (number) - The away team's regular-time score
+newtab-sports-widget-match-aria-label-results =
+    .aria-label = { $homeTeam }  { $homeScore } - { $awayTeam }  { $awayScore }
+# A finished match row that went to a penalty shootout.
+# Parenthesized values are the shootout score.
+# Variables:
+#   $homeScore (number) - The home team's regular-time score
+#   $awayScore (number) - The away team's regular-time score
+#   $homePenalty (number) - The home team's penalty shootout score
+#   $awayPenalty (number) - The away team's penalty shootout score
+newtab-sports-widget-match-aria-label-results-penalties =
+    .aria-label = { $homeTeam }  { $homeScore } ({ $homePenalty }) - { $awayTeam }  { $awayScore } ({ $awayPenalty })
+# A match that is currently in progress.
+# Variables:
+#   $homeScore (number) - The home team's current score
+#   $awayScore (number) - The away team's current score
+newtab-sports-widget-match-aria-label-now =
+    .aria-label = Naživo: { $homeTeam }  { $homeScore } - { $awayTeam }  { $awayScore }
+# An upcoming scheduled match row. Announces kickoff time and date.
+# Variables:
+#   $date (Date) - The scheduled kickoff date/time
+newtab-sports-widget-match-aria-label-upcoming =
+    .aria-label = { $homeTeam } - { $awayTeam }, { DATETIME($date, hour: "numeric", minute: "numeric") }, { DATETIME($date, day: "numeric", month: "long") }
+# An upcoming match row whose status is "delayed".
+newtab-sports-widget-match-aria-label-upcoming-delayed =
+    .aria-label = { $homeTeam } - { $awayTeam }, meškanie
+# An upcoming match row whose status is "postponed".
+newtab-sports-widget-match-aria-label-upcoming-postponed =
+    .aria-label = { $homeTeam } - { $awayTeam }, odložené
+# An upcoming match row whose status is "suspended".
+newtab-sports-widget-match-aria-label-upcoming-suspended =
+    .aria-label = { $homeTeam } - { $awayTeam }, prerušené
+# An upcoming match row whose status is "cancelled".
+newtab-sports-widget-match-aria-label-upcoming-cancelled =
+    .aria-label = { $homeTeam } - { $awayTeam }, zrušené
+
+## Sports widget — team names (FIFA country codes)
+## Only includes names not adequately covered by standard country-code
+## internationalization tooling.
+
+newtab-sports-widget-team-name-label-bih =
+    .label = Bosna a Hercegovina
+newtab-sports-widget-team-name-label-civ =
+    .label = Pobrežie Slonoviny
+newtab-sports-widget-team-name-label-cod =
+    .label = DR Kongo
+newtab-sports-widget-team-name-label-eng =
+    .label = Anglicko
+newtab-sports-widget-team-name-label-sco =
+    .label = Škótsko
+
+## Sports widget OMC messages
+## Shown as on-screen messages promoting the Sports widget and World Cup wallpapers.
+
+newtab-sports-widget-message-wallpapers-title = Začnite Majstrovstvá sveta vo futbale s novými tapetami
+newtab-sports-widget-message-wallpapers-body = Prineste si do prehliadača energiu na zápasový deň počas turnaja.
+newtab-sports-widget-message-wallpapers-cta = Vyberte si tapetu
+newtab-sports-widget-message-add-widgets-cta =
+    .label = Pridať miniaplikácie
+newtab-sports-widget-message-day-in-play-title = Využite svoj deň naplno s miniaplikáciami vo { -brand-product-name(case: "loc") }
+newtab-sports-widget-message-day-in-play-body = Sledujte Majstrovstvá sveta, sústreďte sa na úlohy, sledujte čas po celom svete a mnoho ďalšieho.
+newtab-sports-widget-message-explore-widgets-cta =
+    .label = Preskúmajte miniaplikácie
 
 ## Strings for activation window message variants. In certain experiment configurations,
 ## the strings from these variants may be displayed in a message below the search input
@@ -1027,6 +1194,19 @@ newtab-clock-widget-button-save = Uložiť
 newtab-clock-widget-button-remove-clock =
     .title = Odstrániť hodiny
     .aria-label = Odstrániť hodiny
+# Accessible name for a clock row in the "Your clocks" management panel
+# when the row has no user-provided nickname. Read aloud by screen
+# readers when focus lands on the row.
+# Variables:
+#   $city (string) - The city name displayed in the row.
+newtab-clock-widget-edit-item =
+    .aria-label = { $city }
+# Accessible name for a clock row when a user nickname has been set.
+# Variables:
+#   $city (string) - The city name displayed in the row.
+#   $nickname (string) - The user-provided nickname for the row.
+newtab-clock-widget-edit-item-with-nickname =
+    .aria-label = { $city }, prezývka: { $nickname }
 newtab-clock-widget-add-clock-form =
     .aria-label = Pridať hodiny
 newtab-clock-widget-edit-clock-form =
@@ -1036,6 +1216,10 @@ newtab-clock-widget-edit-clock-form =
 # It means "results of the search", not "search within the results".
 newtab-clock-widget-search-results =
     .aria-label = Výsledky vyhľadávania
+# Shown in place of the search results when the user's query does not match any
+# supported city — e.g. typing a misspelled name or a place not in the IANA
+# time zone list.
+newtab-clock-widget-search-no-results = Nenájdené
 # "Open menu for clock" is an icon-only button in the widget toolbar — the
 # attributes are consumed as tooltip/screen-reader label only. The button
 # never renders visible text.

@@ -275,7 +275,7 @@ static const char kGrandTotalsStr[] = "Grand Totals";
 class ReflowCounter {
  public:
   explicit ReflowCounter(ReflowCountMgr* aMgr = nullptr);
-  ~ReflowCounter();
+  ~ReflowCounter() = default;
 
   void ClearTotals();
   void DisplayTotals(const char* aStr);
@@ -3818,27 +3818,30 @@ void PresShell::ScrollFrameIntoVisualViewport(
     // or the visual viewport. Likewise, if the right bottom position of the
     // fixed element is (110vw, 110vh), it's also outside of the scrollable
     // range.
-    const nsRect clampedPositionFixedRect =
-        aPositionFixedRect.MoveInsideAndClamp(layoutViewport);
-    // If the position:fixed element is already inside the visual viewport, we
-    // don't need to scroll visually.
-    if (clampedPositionFixedRect.y >= 0 &&
-        clampedPositionFixedRect.YMost() <= visualViewportSize.height &&
-        clampedPositionFixedRect.x >= 0 &&
-        clampedPositionFixedRect.XMost() <= visualViewportSize.width) {
+    // If the position:fixed element is totally outside of the layout viewport,
+    // it will never be in the viewport.
+    if (!NeedToVisuallyScroll(layoutViewportSize, aPositionFixedRect)) {
       return;
     }
 
-    // If the position:fixed element is totally outside of the the layout
-    // viewport, it will never be in the viewport.
-    if (!NeedToVisuallyScroll(layoutViewportSize, aPositionFixedRect)) {
+    // If the position:fixed element is already in the visual viewport, no
+    // visual scroll is needed. Convert to layout coordinates first since the
+    // visual viewport may have been panned from the origin.
+    nsRect clampedPositionFixedRect =
+        aPositionFixedRect.MoveInsideAndClamp(layoutViewport);
+    nsPoint layoutOffset = rootScrollContainer->GetScrollPosition();
+    clampedPositionFixedRect.MoveBy(layoutOffset);
+    const nsRect visualViewport(GetVisualViewportOffset(), visualViewportSize);
+    // Use Contains(point) twice rather than Contains(rect) because the latter
+    // returns true for empty rects regardless of position.
+    if (visualViewport.Contains(clampedPositionFixedRect.TopLeft()) &&
+        visualViewport.Contains(clampedPositionFixedRect.BottomRight())) {
       return;
     }
     // Offset the position:fixed element position by the layout scroll
     // position because the position:fixed origin (0, 0) is the layout scroll
     // position. Otherwise if we've already scrolled, this scrollIntoView
     // operation will jump back to near (0, 0) position.
-    nsPoint layoutOffset = rootScrollContainer->GetScrollPosition();
     const auto scrollRange = rootScrollContainer->GetVisualScrollRange();
 
     const nsRect visibleRect(layoutOffset, visualViewportSize);
@@ -3864,7 +3867,8 @@ void PresShell::ScrollFrameIntoVisualViewport(
   // scroll-behavior for visual scrolling.
   ScrollMode scrollMode =
       GetScrollModeForScrollIntoView(rootScrollContainer, aScrollFlags);
-  root->ScrollToVisual(*aDestination, FrameMetrics::eMainThread, scrollMode);
+  root->ScrollToVisual(*aDestination, ScrollOffsetUpdateType::MainThread,
+                       scrollMode);
 }
 
 bool PresShell::ScrollFrameIntoView(
@@ -4558,6 +4562,12 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::CharacterDataChanged(
   MOZ_ASSERT(!mIsDocumentGone, "Unexpected CharacterDataChanged");
   MOZ_ASSERT(aContent->OwnerDoc() == mDocument, "Unexpected document");
 
+#ifdef ACCESSIBILITY
+  if (mDocAccessible) {
+    mDocAccessible->MaybeHandleChangeToHiddenNameOrDescription(aContent);
+  }
+#endif
+
   nsAutoCauseReflowNotifier crNotifier(this);
 
   mPresContext->RestyleManager()->CharacterDataChanged(aContent, aInfo);
@@ -4569,6 +4579,12 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ElementStateChanged(
   MOZ_ASSERT(!nsContentUtils::IsSafeToRunScript());
   MOZ_ASSERT(!mIsDocumentGone, "Unexpected ContentStateChanged");
   MOZ_ASSERT(aDocument == mDocument, "Unexpected aDocument");
+
+#ifdef ACCESSIBILITY
+  if (mDocAccessible) {
+    mDocAccessible->ElementStateChanged(aDocument, aElement, aStateMask);
+  }
+#endif
 
   if (mDidInitialize) {
     nsAutoCauseReflowNotifier crNotifier(this);
@@ -4619,6 +4635,13 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::AttributeWillChange(
   MOZ_ASSERT(!mIsDocumentGone, "Unexpected AttributeWillChange");
   MOZ_ASSERT(aElement->OwnerDoc() == mDocument, "Unexpected document");
 
+#ifdef ACCESSIBILITY
+  if (mDocAccessible) {
+    mDocAccessible->AttributeWillChange(aElement, aNameSpaceID, aAttribute,
+                                        aModType);
+  }
+#endif
+
   // XXXwaterson it might be more elegant to wait until after the
   // initial reflow to begin observing the document. That would
   // squelch any other inappropriate notifications as well.
@@ -4635,6 +4658,13 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::AttributeChanged(
   MOZ_ASSERT(!nsContentUtils::IsSafeToRunScript());
   MOZ_ASSERT(!mIsDocumentGone, "Unexpected AttributeChanged");
   MOZ_ASSERT(aElement->OwnerDoc() == mDocument, "Unexpected document");
+
+#ifdef ACCESSIBILITY
+  if (mDocAccessible) {
+    mDocAccessible->AttributeChanged(aElement, aNameSpaceID, aAttribute,
+                                     aModType, aOldValue);
+  }
+#endif
 
   // XXXwaterson it might be more elegant to wait until after the
   // initial reflow to begin observing the document. That would
@@ -4682,6 +4712,13 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ContentAppended(
     return;
   }
 
+#ifdef ACCESSIBILITY
+  if (mDocAccessible) {
+    mDocAccessible->MaybeHandleChangeToHiddenNameOrDescription(
+        aFirstNewContent);
+  }
+#endif
+
   mPresContext->EventStateManager()->ContentAppended(aFirstNewContent, aInfo);
 
   if (aInfo.mOldParent) {
@@ -4711,6 +4748,12 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ContentInserted(
 
   mPresContext->EventStateManager()->ContentInserted(aChild, aInfo);
 
+#ifdef ACCESSIBILITY
+  if (mDocAccessible) {
+    mDocAccessible->MaybeHandleChangeToHiddenNameOrDescription(aChild);
+  }
+#endif
+
   if (aInfo.mOldParent) {
     MaybeDestroyFramesAndStyles(aChild, *mPresContext);
   }
@@ -4735,6 +4778,12 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ContentWillBeRemoved(
   // it can clean up any state related to the content.
 
   mPresContext->EventStateManager()->ContentRemoved(mDocument, aChild, aInfo);
+
+#ifdef ACCESSIBILITY
+  if (mDocAccessible) {
+    mDocAccessible->ContentRemoved(aChild);
+  }
+#endif
 
   nsAutoCauseReflowNotifier crNotifier(this);
 
@@ -5791,7 +5840,19 @@ void PresShell::SynthesizeMouseMove(bool aFromScroll) {
   }
 
   if (mLastMousePointerId.isNothing() && mPointerIds.IsEmpty()) {
-    return;
+    // After a same-tab navigation, the new PresShell hasn't received
+    // any mouse events yet so its per-PresShell pointer state is
+    // empty. The static last-mouse state in PointerEventHandler may
+    // still hold a valid position from before the navigation; if so,
+    // claim it for this PresShell so cursor / :hover restyles can
+    // take effect without requiring the user to move the mouse first
+    // (bug 2038491).
+    if (Maybe<uint32_t> claimedPointerId =
+            PointerEventHandler::TryClaimOrphanedLastMouseInfo(*this)) {
+      mLastMousePointerId = claimedPointerId;
+    } else {
+      return;
+    }
   }
 
   if (!mSynthMouseMoveEvent.IsPending()) {
@@ -11056,9 +11117,6 @@ ReflowCounter::ReflowCounter(ReflowCountMgr* aMgr) : mMgr(aMgr) {
 }
 
 //------------------------------------------------------------------
-ReflowCounter::~ReflowCounter() = default;
-
-//------------------------------------------------------------------
 void ReflowCounter::ClearTotals() { mTotal = 0; }
 
 //------------------------------------------------------------------
@@ -12145,6 +12203,16 @@ void PresShell::SetNeedsWindowPropertiesSync() {
   SchedulePaint();
 }
 
+nsSize PresShell::GetVisualViewportSize() const {
+  NS_ASSERTION(mVisualViewportSizeSet,
+               "asking for visual viewport size when its not set?");
+  DynamicToolbarState state = GetDynamicToolbarState();
+  return (state == DynamicToolbarState::InTransition ||
+          state == DynamicToolbarState::Collapsed)
+             ? GetVisualViewportSizeUpdatedByDynamicToolbar()
+             : mVisualViewportSize;
+}
+
 bool PresShell::SetVisualViewportOffset(const nsPoint& aScrollOffset,
                                         const nsPoint& aPrevLayoutScrollPos) {
   nsPoint newOffset = aScrollOffset;
@@ -12203,7 +12271,7 @@ void PresShell::RefreshViewportSize() {
 }
 
 void PresShell::ScrollToVisual(const nsPoint& aVisualViewportOffset,
-                               FrameMetrics::ScrollOffsetUpdateType aUpdateType,
+                               ScrollOffsetUpdateType aUpdateType,
                                ScrollMode aMode) {
   if (aMode == ScrollMode::Smooth || aMode == ScrollMode::SmoothMsd) {
     if (ScrollContainerFrame* sf = GetRootScrollContainerFrame()) {
@@ -12219,8 +12287,7 @@ void PresShell::ScrollToVisual(const nsPoint& aVisualViewportOffset,
 }
 
 void PresShell::SetPendingVisualScrollUpdate(
-    const nsPoint& aVisualViewportOffset,
-    FrameMetrics::ScrollOffsetUpdateType aUpdateType) {
+    const nsPoint& aVisualViewportOffset, ScrollOffsetUpdateType aUpdateType) {
   mPendingVisualScrollUpdate =
       Some(VisualScrollUpdate{aVisualViewportOffset, aUpdateType});
 

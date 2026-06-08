@@ -178,9 +178,12 @@ class TabManagementFragment : Fragment() {
                 )
             }
 
-            override fun onDragStart(preserveSelectMode: Boolean) {
+            override fun onDragStart(sourceKey: String, preserveSelectMode: Boolean) {
                 tabsTrayStore.dispatch(
-                    TabsTrayAction.TabDragStart(preserveSelectMode),
+                    TabsTrayAction.TabDragStart(
+                        sourceId = sourceKey,
+                        preserveSelectMode = preserveSelectMode,
+                    ),
                 )
             }
         }
@@ -238,7 +241,7 @@ class TabManagementFragment : Fragment() {
         tabManagerInteractor = DefaultTabManagerInteractor(controller = tabManagerController)
 
         val settings = requireContext().settings()
-        val showPrivacyReport = shouldShowPrivacyReport(settings)
+        val showPrivacyReport = settings.showPrivacyReportInTabManager
 
         return content {
             val state by tabsTrayStore.stateFlow.collectAsState()
@@ -418,6 +421,10 @@ class TabManagementFragment : Fragment() {
                                             System.currentTimeMillis()
                                         TabsTray.inactiveTabsCfrDismissed.record(NoExtras())
                                     },
+                                    onTabGroupOnboardingDismiss = {
+                                        // TODO (Bug 2038234): Persistence will be handled later by the middleware.
+                                        tabsTrayStore.dispatch(TabGroupAction.OnboardingDismissed)
+                                    },
                                     onOpenNewNormalTabClicked = tabManagerInteractor::onNormalTabsFabClicked,
                                     onOpenNewPrivateTabClicked = tabManagerInteractor::onPrivateTabsFabClicked,
                                     onSyncedTabsFabClicked = tabManagerInteractor::onSyncedTabsFabClicked,
@@ -425,6 +432,7 @@ class TabManagementFragment : Fragment() {
                                         verifyUser(fallbackVerification = verificationResultLauncher)
                                     },
                                     trackersBlockedCount = trackersBlockedCount,
+                                    onPrivacyReportTapped = tabManagerController::onPrivacyReportTapped,
                                 )
                             }
 
@@ -608,6 +616,7 @@ class TabManagementFragment : Fragment() {
             config = TabsTrayState.TabsTrayConfig(
                 tabGroupsEnabled = settings.tabGroupsEnabled,
                 tabGroupsDragAndDropEnabled = settings.tabGroupsDragAndDropEnabled,
+                tabGroupsOnboardingEnabled = settings.tabGroupsOnboardingEnabled,
                 displayTabsInGrid = settings.gridTabView,
                 isInDebugMode = Config.channel.isDebug || requireComponents.settings.showSecretDebugMenuThisSession,
                 showTabAutoCloseBanner = settings.shouldShowAutoCloseTabsBanner &&
@@ -715,12 +724,13 @@ class TabManagementFragment : Fragment() {
             view = view,
         )
 
-        if (shouldShowPrivacyReport(requireContext().settings())) {
+        if (requireContext().settings().showPrivacyReportInTabManager) {
             trackersBlockedFeature.set(
                 feature = TrackersBlockedFeature(
+                    browserStore = requireComponents.core.store,
                     appStore = requireComponents.appStore,
-                    fetchTotalTrackersBlocked = requireComponents.useCases
-                        .trackingProtectionUseCases.fetchTotalTrackersBlocked,
+                    currentSessionId = requireComponents.core.store.state.selectedTabId,
+                    trackingProtectionUseCases = requireComponents.useCases.trackingProtectionUseCases,
                 ),
                 owner = this,
                 view = view,
@@ -1034,10 +1044,6 @@ class TabManagementFragment : Fragment() {
     ): Boolean {
         return isPrivateMode && hasPrivateTabs && biometricAvailable && !privateLockEnabled && shouldShowBanner
     }
-
-    private fun shouldShowPrivacyReport(settings: Settings): Boolean =
-        settings.showPrivacyReportFeature &&
-            settings.shouldShowTrackingProtectionDashboard
 
     private companion object {
         private const val DOWNLOAD_CANCEL_DIALOG_FRAGMENT_TAG = "DOWNLOAD_CANCEL_DIALOG_FRAGMENT_TAG"

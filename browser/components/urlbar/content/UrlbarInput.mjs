@@ -11,6 +11,9 @@ const { AppConstants } = ChromeUtils.importESModule(
 );
 
 import { SearchModeSwitcher } from "chrome://browser/content/urlbar/SearchModeSwitcher.mjs";
+import { UrlbarEventBufferer } from "chrome://browser/content/urlbar/UrlbarEventBufferer.mjs";
+import { UrlbarView } from "chrome://browser/content/urlbar/UrlbarView.mjs";
+import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs";
 
 /**
  * @import { UrlbarSearchOneOffs } from "moz-src:///browser/components/urlbar/UrlbarSearchOneOffs.sys.mjs"
@@ -48,6 +51,8 @@ const lazy = XPCOMUtils.declareLazy({
     "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   CustomizableUI:
     "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   ExtensionSearchHandler:
@@ -63,8 +68,6 @@ const lazy = XPCOMUtils.declareLazy({
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   UrlbarController:
     "moz-src:///browser/components/urlbar/UrlbarController.sys.mjs",
-  UrlbarEventBufferer:
-    "moz-src:///browser/components/urlbar/UrlbarEventBufferer.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarQueryContext:
     "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
@@ -74,12 +77,9 @@ const lazy = XPCOMUtils.declareLazy({
     "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
-  UrlbarTokenizer:
-    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   UrlbarValueFormatter:
     "moz-src:///browser/components/urlbar/UrlbarValueFormatter.sys.mjs",
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
   UrlbarSearchTermsPersistence:
     "moz-src:///browser/components/urlbar/UrlbarSearchTermsPersistence.sys.mjs",
   UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
@@ -257,7 +257,6 @@ ${
 
   /** @type {AutofillPlaceholder|null} */
   _autofillPlaceholder = null;
-  _autofillBackspaceState = null;
 
   _resultForCurrentValue = null;
   _untrimmedValue = "";
@@ -366,7 +365,7 @@ ${
     }
 
     this.controller = new lazy.UrlbarController({ input: this });
-    this.view = new lazy.UrlbarView(this);
+    this.view = new UrlbarView(this);
     this.searchModeSwitcher = new SearchModeSwitcher(this);
 
     let searchModeSwitcherDescription = this.querySelector(
@@ -385,7 +384,7 @@ ${
     // muscle memory; for example quickly pressing DOWN+ENTER should end up
     // on a predictable result, regardless of the search status. The event
     // bufferer will invoke the handling code at the right time.
-    this.eventBufferer = new lazy.UrlbarEventBufferer(this);
+    this.eventBufferer = new UrlbarEventBufferer(this);
 
     // Forward certain properties.
     // Note if you are extending these, you'll also need to extend the inline
@@ -418,21 +417,12 @@ ${
       return;
     }
 
-    if (!Services.prefs.getBoolPref("browser.nova.enabled", false)) {
-      if (attribute == "open") {
-        if (this.view.isOpen && this.view.visibleRowCount) {
-          this.startLayoutExtend();
-        } else {
-          this.endLayoutExtend();
-        }
-      }
-      return;
-    }
-
-    if (this.focused || (this.view.isOpen && this.view.visibleRowCount)) {
-      this.startLayoutExtend();
-    } else {
-      this.endLayoutExtend();
+    if (
+      Services.prefs.getBoolPref("browser.nova.enabled", false) ||
+      attribute == "open"
+    ) {
+      // Update only if 'open' attribute is changed for not Nova.
+      this.updateLayoutExtend();
     }
   }
 
@@ -1519,6 +1509,15 @@ ${
     }
 
     if (
+      lazy.UrlbarPrefs.get("autoFill.adaptiveHistory.enabled") &&
+      result.autofill &&
+      result.payload?.url &&
+      !this.isPrivate
+    ) {
+      lazy.UrlbarUtils.clearAutofillBackspaceEntryForUrl(result.payload.url);
+    }
+
+    if (
       result.providerName == lazy.UrlbarProviderGlobalActions.name &&
       this.#providesSearchMode(result)
     ) {
@@ -1980,7 +1979,7 @@ ${
       ) {
         input = result.autofill.adaptiveHistoryInput;
       } else if (
-        lazy.UrlbarPrefs.get("autoFillAdaptiveHistoryEnabled") &&
+        lazy.UrlbarPrefs.get("autoFill.adaptiveHistory.enabled") &&
         result.autofill?.type == "origin" &&
         // Bug: 2026227: Investigate if we want to use a higher threshold
         this._lastSearchString?.length > 0
@@ -2004,7 +2003,7 @@ ${
       // Re-integration: If the user picks a non-autofill result for a URL
       // that has a blocked origin, clear the block.
       if (
-        lazy.UrlbarPrefs.get("autoFillAdaptiveHistoryEnabled") &&
+        lazy.UrlbarPrefs.get("autoFill.adaptiveHistory.enabled") &&
         !result.autofill &&
         result.type == lazy.UrlbarUtils.RESULT_TYPE.URL
       ) {
@@ -2214,12 +2213,6 @@ ${
       this._autofillPlaceholder.selectionEnd = this.value.length;
     }
 
-    // Reset backspace dismissal tracking when navigating to a non-autofill
-    // result. The placeholder may already be null if the user backspaced away
-    // the autofill text before arrowing down.
-    if (!result.autofill && this._autofillBackspaceState) {
-      this._autofillBackspaceState = null;
-    }
     return false;
   }
 
@@ -2461,11 +2454,11 @@ ${
         value = value.slice(1);
       }
     } else if (
-      Object.values(lazy.UrlbarTokenizer.RESTRICT).includes(firstToken)
+      Object.values(UrlbarShared.RESTRICT_TOKENS).includes(firstToken)
     ) {
       this.searchMode = null;
       // If the entire value is a restricted token, append a space.
-      if (Object.values(lazy.UrlbarTokenizer.RESTRICT).includes(value)) {
+      if (Object.values(UrlbarShared.RESTRICT_TOKENS).includes(value)) {
         value += " ";
       }
     }
@@ -2495,14 +2488,14 @@ ${
    * Returns a search mode object if a token should enter search mode when
    * typed. This does not handle engine aliases.
    *
-   * @param {Values<typeof lazy.UrlbarTokenizer.RESTRICT>} token
+   * @param {Values<typeof UrlbarShared.RESTRICT_TOKENS>} token
    *   A restriction token to convert to search mode.
    * @returns {?object}
    *   A search mode object. Null if search mode should not be entered. See
    *   setSearchMode documentation for details.
    */
   searchModeForToken(token) {
-    if (token == lazy.UrlbarTokenizer.RESTRICT.SEARCH) {
+    if (token == UrlbarShared.RESTRICT_TOKENS.SEARCH) {
       return {
         engineName: lazy.UrlbarSearchUtils.getDefaultEngine(this.isPrivate)
           ?.name,
@@ -2775,6 +2768,7 @@ ${
         }
       }
     }
+    Services.obs.notifyObservers(null, "urlbar-searchmodechanged");
   }
 
   /**
@@ -2912,8 +2906,6 @@ ${
 
   set searchMode(searchMode) {
     this.setSearchMode(searchMode, this.window.gBrowser.selectedBrowser);
-    this.searchModeSwitcher?.onSearchModeChanged();
-    lazy.UrlbarSearchTermsPersistence.onSearchModeChanged(this.window);
   }
 
   getBrowserState(browser) {
@@ -2958,9 +2950,8 @@ ${
       return;
     }
 
-    this.#updateTextboxPosition();
-
     this.toggleAttribute("breakout-extend", true);
+    this.#updateTextboxPosition();
 
     // Enable the animation only after the first extend call to ensure it
     // doesn't run when opening a new window.
@@ -2983,6 +2974,7 @@ ${
 
     if (
       this.view.isOpen &&
+      this.view.visibleRowCount &&
       !Services.prefs.getBoolPref("browser.nova.enabled", false)
     ) {
       return;
@@ -2990,6 +2982,23 @@ ${
 
     this.toggleAttribute("breakout-extend", false);
     this.#updateTextboxPosition();
+  }
+
+  updateLayoutExtend() {
+    if (!Services.prefs.getBoolPref("browser.nova.enabled", false)) {
+      if (this.view.isOpen) {
+        this.startLayoutExtend();
+      } else {
+        this.endLayoutExtend();
+      }
+      return;
+    }
+
+    if (this.focused || this.view.isOpen) {
+      this.startLayoutExtend();
+    } else {
+      this.endLayoutExtend();
+    }
   }
 
   /**
@@ -3290,10 +3299,7 @@ ${
   }
 
   #updateTextboxPosition() {
-    if (
-      !this.view.isOpen &&
-      !Services.prefs.getBoolPref("browser.nova.enabled", false)
-    ) {
+    if (!this.hasAttribute("breakout-extend")) {
       this.style.top = "";
       return;
     }
@@ -3567,7 +3573,6 @@ ${
   _resetSearchState() {
     this._lastSearchString = this.value;
     this._autofillPlaceholder = null;
-    this._autofillBackspaceState = null;
   }
 
   /**
@@ -4771,7 +4776,7 @@ ${
       if (result.type == lazy.UrlbarUtils.RESULT_TYPE.RESTRICT) {
         searchMode.restrictType = "keyword";
       } else if (
-        lazy.UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(result.payload.keyword)
+        UrlbarShared.SEARCH_MODE_RESTRICT.has(result.payload.keyword)
       ) {
         searchMode.restrictType = "symbol";
       }
@@ -5100,7 +5105,7 @@ ${
     }
 
     let engine = lazy.SearchService.getEngineByName(engineName);
-    if (engine.isConfigEngine) {
+    if (engine instanceof lazy.ConfigSearchEngine) {
       this._setPlaceholder(engineName);
     } else {
       // Display the default placeholder string.
@@ -5251,8 +5256,6 @@ ${
     this._isKeyDownWithMeta = false;
     this._isKeyDownWithMetaAndLeft = false;
 
-    this._autofillBackspaceState = null;
-
     Services.obs.notifyObservers(null, "urlbar-blur");
   }
 
@@ -5291,6 +5294,12 @@ ${
 
   _on_auxclick(event) {
     switch (event.target) {
+      case this.inputField:
+      case this._inputContainer:
+        this.#maybeSelectAll();
+        this.#maybeUntrimUrl();
+        break;
+
       case this.goButton:
         this.handleCommand(event);
         break;
@@ -5470,44 +5479,17 @@ ${
     }
 
     if (
-      lazy.UrlbarPrefs.get("autoFillAdaptiveHistoryEnabled") &&
-      event.inputType === "deleteContentBackward"
+      lazy.UrlbarPrefs.get("autoFill.adaptiveHistory.enabled") &&
+      event.inputType?.startsWith("deleteContent") &&
+      !this.isPrivate &&
+      this._autofillPlaceholder &&
+      this.value === this.userTypedValue &&
+      this._resultForCurrentValue?.payload?.url
     ) {
-      if (
-        !this._autofillBackspaceState &&
-        this._autofillPlaceholder &&
-        this._autofillPlaceholder.selectionStart <
-          this._autofillPlaceholder.selectionEnd
-      ) {
-        this._autofillBackspaceState = {
-          url: this._resultForCurrentValue?.payload?.url,
-          count: 0,
-        };
-      }
-      if (this._autofillBackspaceState) {
-        this._autofillBackspaceState.count++;
-        if (
-          this._autofillBackspaceState.count >=
-          lazy.UrlbarPrefs.get("autoFill.backspaceThreshold")
-        ) {
-          if (!this.isPrivate) {
-            let { url } = this._autofillBackspaceState;
-            if (url) {
-              let blockUntil =
-                Date.now() +
-                lazy.UrlbarPrefs.get("autoFill.backspaceBlockDurationMs");
-              lazy.UrlbarUtils.blockAutofill(url, blockUntil).catch(
-                console.error
-              );
-              lazy.UrlbarUtils.trackBackspaceBlock(url);
-            }
-          }
-          this._autofillBackspaceState = null;
-        }
-      }
-    } else if (this._autofillBackspaceState) {
-      // Any non-backspace input resets the state.
-      this._autofillBackspaceState = null;
+      lazy.UrlbarUtils._lastRecordAutofillBackspacePromise =
+        lazy.UrlbarUtils.recordAutofillBackspace(
+          this._resultForCurrentValue.payload.url
+        );
     }
 
     let value = this.value;

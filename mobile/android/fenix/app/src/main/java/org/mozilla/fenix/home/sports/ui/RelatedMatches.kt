@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.collectionInfo
 import androidx.compose.ui.semantics.collectionItemInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
@@ -35,12 +36,14 @@ import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
 import org.mozilla.fenix.R
 import org.mozilla.fenix.home.sports.Match
 import org.mozilla.fenix.home.sports.MatchStatus
+import org.mozilla.fenix.home.sports.TournamentRound
 import org.mozilla.fenix.home.sports.fake.FakeSportsPreview
 import org.mozilla.fenix.theme.FirefoxTheme
 
 @Composable
 internal fun RelatedMatchesSection(
     matches: List<Match>,
+    round: TournamentRound,
     isTeamSelected: Boolean,
     onMatchClicked: (String?, String?, String?) -> Unit,
     modifier: Modifier = Modifier,
@@ -57,6 +60,7 @@ internal fun RelatedMatchesSection(
         matches.forEachIndexed { index, match ->
             RelatedMatchRow(
                 match = match,
+                round = round,
                 isTeamSelected = isTeamSelected,
                 onMatchClicked = onMatchClicked,
                 positionInList = index,
@@ -68,6 +72,7 @@ internal fun RelatedMatchesSection(
 @Composable
 internal fun RelatedMatchRow(
     match: Match,
+    round: TournamentRound,
     isTeamSelected: Boolean,
     onMatchClicked: (String?, String?, String?) -> Unit,
     positionInList: Int,
@@ -81,20 +86,28 @@ internal fun RelatedMatchRow(
     } else {
         null
     }
-    val group = groupDisplayName(group = match.home?.group)
+    // Group label only makes sense on group-stage cards. In knockout rounds the teams
+    // come from different groups so home.group would be misleading — fall back to the
+    // match date instead.
+    val group = if (round == TournamentRound.GROUP_STAGE) {
+        groupDisplayName(group = match.home?.group ?: match.away?.group)
+    } else {
+        null
+    }
     val upcomingPrefix = if (isTeamSelected) match.date else group ?: match.date
-    val rowContentDescription = buildRowContentDescription(
-        homeName = homeName,
-        awayName = awayName,
-        scoreText = scoreText,
-        upcomingPrefix = upcomingPrefix,
-        time = match.time,
-    )
+    val rowContentDescription = penaltyRowContentDescription(match, homeName, awayName)
+        ?: buildRowContentDescription(
+            homeName = homeName,
+            awayName = awayName,
+            scoreText = scoreText,
+            upcomingPrefix = upcomingPrefix,
+            time = match.time,
+        )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(24.dp)
+            .heightIn(min = 24.dp)
             .clickable(
                 onClick = {
                     if (match.home != null || match.away != null) {
@@ -120,24 +133,17 @@ internal fun RelatedMatchRow(
 
         Spacer(Modifier.width(FirefoxTheme.layout.space.static100))
 
-        Text(
-            text = match.home?.key ?: "--",
-            style = FirefoxTheme.typography.subtitle2,
+        Text(text = match.home?.key ?: "--", style = FirefoxTheme.typography.subtitle2)
+
+        RelatedMatchMiddleText(
+            scoreText = scoreText,
+            hasPrefix = isTeamSelected || group != null,
+            upcomingPrefix = upcomingPrefix,
+            time = match.time,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = FirefoxTheme.layout.space.static100),
         )
-
-        Spacer(Modifier.weight(1f))
-
-        if (scoreText != null) {
-            Text(text = scoreText, style = FirefoxTheme.typography.subtitle2)
-        } else if (isTeamSelected || group != null) {
-            Text(
-                text = "$upcomingPrefix · ${match.time}",
-                style = FirefoxTheme.typography.body2,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        Spacer(Modifier.weight(1f))
 
         Text(
             text = match.away?.key ?: "--",
@@ -151,6 +157,37 @@ internal fun RelatedMatchRow(
             modifier = Modifier.size(width = 30.dp, height = 20.dp),
         )
     }
+}
+
+// Middle text of a related-match row: score when the match has one, otherwise the
+// kickoff time — optionally with a date/group prefix when there's useful framing.
+// No-team knockouts have neither a useful prefix (group is irrelevant) nor a
+// selected-team date framing, so the row falls through to just the kickoff time.
+@Composable
+private fun RelatedMatchMiddleText(
+    scoreText: String?,
+    hasPrefix: Boolean,
+    upcomingPrefix: String,
+    time: String,
+    modifier: Modifier = Modifier,
+) {
+    if (scoreText != null) {
+        Text(
+            text = scoreText,
+            modifier = modifier,
+            style = FirefoxTheme.typography.subtitle2,
+            textAlign = TextAlign.Center,
+        )
+        return
+    }
+    val displayText = if (hasPrefix) "$upcomingPrefix · $time" else time
+    Text(
+        text = displayText,
+        modifier = modifier,
+        style = FirefoxTheme.typography.body2,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+    )
 }
 
 @Composable
@@ -178,16 +215,42 @@ private fun buildRowContentDescription(
 }
 
 /**
- * Formats a match's score, appending " (Full time)" once the match is final.
+ * Formats a match's score. A penalty shootout is shown as `2 - 2 · Penalties (3-5)`, the
+ * regulation score followed by the shootout score. A plain final appends " (Full time)".
  */
 @Composable
 private fun formatScoreWithSuffix(match: Match): String {
+    val (homePenalty, awayPenalty) = match.matchStatus.penaltyScores() ?: (null to null)
+    if (homePenalty != null && awayPenalty != null) {
+        val penalties = stringResource(R.string.sports_widget_penalties)
+        return "${match.homeScore} - ${match.awayScore} · $penalties ($homePenalty-$awayPenalty)"
+    }
     val suffix = if (match.matchStatus == MatchStatus.Final) {
         stringResource(R.string.sports_widget_match_full_time_suffix)
     } else {
         ""
     }
     return "${match.homeScore} - ${match.awayScore} $suffix".trim()
+}
+
+// Shootout scores for a match decided (or being decided) on penalties, or null otherwise.
+private fun MatchStatus.penaltyScores(): Pair<Int?, Int?>? = when (this) {
+    is MatchStatus.Penalties -> homePenalty to awayPenalty
+    is MatchStatus.FinalAfterPenalties -> homePenalty to awayPenalty
+    else -> null
+}
+
+// Content description for a penalty match, or null when this isn't a fully-scored penalty match.
+// Mirrors the featured match card: announces each score next to its team ("France 2 South
+// Africa 2") rather than the visual "2 - 2" dash form, then the shootout result.
+@Composable
+private fun penaltyRowContentDescription(match: Match, homeName: String, awayName: String): String? {
+    val (homePenalty, awayPenalty) = match.matchStatus.penaltyScores() ?: return null
+    if (homePenalty == null || awayPenalty == null) return null
+    val homeScore = match.homeScore ?: return null
+    val awayScore = match.awayScore ?: return null
+    val penalties = stringResource(R.string.sports_widget_penalties)
+    return "$homeName $homeScore $awayName $awayScore $penalties ($homePenalty-$awayPenalty)"
 }
 
 private data class RelatedMatchesPreviewState(
@@ -215,9 +278,9 @@ private class RelatedMatchesPreviewProvider : PreviewParameterProvider<RelatedMa
                     matchStatus = MatchStatus.Final,
                 ),
                 FakeSportsPreview.match(
-                    homeScore = 1,
+                    homeScore = 2,
                     awayScore = 2,
-                    matchStatus = MatchStatus.Final,
+                    matchStatus = MatchStatus.FinalAfterPenalties(homePenalty = 3, awayPenalty = 5),
                 ),
             ),
         ),
@@ -231,7 +294,12 @@ private fun RelatedMatchesSectionPreview(
 ) {
     FirefoxTheme {
         Surface {
-            RelatedMatchesSection(matches = state.matches, isTeamSelected = true, onMatchClicked = { _, _, _ -> })
+            RelatedMatchesSection(
+                matches = state.matches,
+                round = TournamentRound.GROUP_STAGE,
+                isTeamSelected = true,
+                onMatchClicked = { _, _, _ -> },
+            )
         }
     }
 }

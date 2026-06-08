@@ -739,19 +739,29 @@ void nsAccessibilityService::NotifyAnchorPositionedScrollUpdate(
 
 void nsAccessibilityService::NotifyAttrElementWillChange(
     mozilla::dom::Element* aElement, nsAtom* aAttr) {
-  mozilla::dom::Document* doc = aElement->OwnerDoc();
-  MOZ_ASSERT(doc);
-  if (DocAccessible* docAcc = GetDocAccessible(doc)) {
+  if (DocAccessible* docAcc = GetDocAccessible(aElement->GetComposedDoc())) {
     docAcc->AttrElementWillChange(aElement, aAttr);
   }
 }
 
 void nsAccessibilityService::NotifyAttrElementChanged(
     mozilla::dom::Element* aElement, nsAtom* aAttr) {
-  mozilla::dom::Document* doc = aElement->OwnerDoc();
-  MOZ_ASSERT(doc);
-  if (DocAccessible* docAcc = GetDocAccessible(doc)) {
+  if (DocAccessible* docAcc = GetDocAccessible(aElement->GetComposedDoc())) {
     docAcc->AttrElementChanged(aElement, aAttr);
+  }
+}
+
+void nsAccessibilityService::NotifyARIAAttributeDefaultWillChange(
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, AttrModType aModType) {
+  if (DocAccessible* docAcc = GetDocAccessible(aElement->GetComposedDoc())) {
+    docAcc->ARIAAttributeDefaultWillChange(aElement, aAttribute, aModType);
+  }
+}
+
+void nsAccessibilityService::NotifyARIAAttributeDefaultChanged(
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, AttrModType aModType) {
+  if (DocAccessible* docAcc = GetDocAccessible(aElement->GetComposedDoc())) {
+    docAcc->ARIAAttributeDefaultChanged(aElement, aAttribute, aModType);
   }
 }
 
@@ -2050,6 +2060,13 @@ void nsAccessibilityService::SetCacheDomains(uint64_t aCacheDomains) {
   if (newDomains != CacheDomain::None) {
     for (const RefPtr<DocAccessible>& doc : mDocAccessibleCache.Values()) {
       MOZ_ASSERT(doc, "DocAccessible in cache is null!");
+      if (doc->EffectiveCacheDomains() != gCacheDomains) {
+        // This document uses a specific set of cache domains rather than the
+        // global set. Thus, a change to the global set shouldn't impact this
+        // document.
+        MOZ_ASSERT(doc->IsPrintDoc());
+        continue;
+      }
       doc->QueueCacheUpdate(doc.get(), newDomains, true);
       Pivot pivot(doc.get());
       LocalAccInSameDocRule rule;

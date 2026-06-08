@@ -54,6 +54,7 @@ add_task(function test_parseConversationRow() {
     status: "a status",
     security_properties: '{"privateData": false, "untrustedInput": true}',
     seen_urls: '["https://example.com/page1"]',
+    serp_urls_for_anonymous_fetch: '["https://search-result.example.com/a"]',
     memories_toggled: true,
   });
 
@@ -82,6 +83,12 @@ add_task(function test_parseConversationRow() {
     soft.ok(
       conversation.seenUrls.has("https://example.com/page1"),
       "seenUrls should contain the persisted URL"
+    );
+    soft.ok(
+      conversation.serpUrlsForAnonymousFetch.has(
+        "https://search-result.example.com/a"
+      ),
+      "serpUrlsForAnonymousFetch ledger should contain the persisted URL"
     );
     soft.equal(
       conversation.memoriesToggled,
@@ -130,6 +137,7 @@ add_task(function test_parseConversationRow() {
     memories_applied: '{ "some": "memories" }',
     web_search_queries: '{ "some": "web search queries" }',
     page_history_deleted: false,
+    tool_ui_data: '{ "toolCallId": "t1", "uiType": "ai-action-result" }',
   });
 
   const rows = parseMessageRows([testRow]);
@@ -157,6 +165,10 @@ add_task(function test_parseConversationRow() {
     soft.equal(message.memoriesFlagSource, 1);
     soft.deepEqual(message.memoriesApplied, { some: "memories" });
     soft.deepEqual(message.webSearchQueries, { some: "web search queries" });
+    soft.deepEqual(message.toolUIData, {
+      toolCallId: "t1",
+      uiType: "ai-action-result",
+    });
   });
 });
 
@@ -181,6 +193,8 @@ add_task(function test_missingField_parseConversationRow() {
     memories_flag_source: 1,
     memories_applied: '{ "some": "memories" }',
     web_search_queries: '{ "some": "web search queries" }',
+    page_history_deleted: false,
+    tool_ui_data: null,
   });
 
   Assert.throws(function () {

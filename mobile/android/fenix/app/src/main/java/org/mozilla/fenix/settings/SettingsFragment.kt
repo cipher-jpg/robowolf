@@ -243,8 +243,7 @@ class SettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment 
         val suffix = nimbusValidation.settingsPunctuation
         val toolbarTitle = "$title$suffix"
 
-        val showSearch = requireContext().settings().isSettingsSearchEnabled &&
-                (!args.searchInProgress)
+        val showSearch = !args.searchInProgress
 
         if (showSearch) {
             showToolbarWithIconButton(
@@ -429,7 +428,9 @@ class SettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragment 
             }
 
             resources.getString(R.string.pref_key_ip_protection_settings) -> {
-                SettingsFragmentDirections.actionSettingsFragmentToIpProtectionFragment()
+                SettingsFragmentDirections.actionSettingsFragmentToIpProtectionFragment(
+                    entrypoint = FenixFxAEntryPoint.IPProtectionSettings,
+                )
             }
 
             resources.getString(R.string.pref_key_tracking_protection_settings) -> {

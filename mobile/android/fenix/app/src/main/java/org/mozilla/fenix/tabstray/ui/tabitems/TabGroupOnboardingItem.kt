@@ -48,12 +48,15 @@ fun TabGroupOnboardingGridItem(
         modifier = modifier
             .fillMaxWidth()
             .height(OnboardingGridItemHeight)
-            .testTag(TabsTrayTestTag.TAB_GROUP_ONBOARDING_ITEM),
+            .testTag(TabsTrayTestTag.TAB_GROUP_ONBOARDING_GRID_ITEM),
         title = stringResource(R.string.tab_group_onboarding_item_title),
         illustration = {
-            TabGroupOnboardingImage(
+            Image(
+                painter = painterResource(R.drawable.mozac_ic_kit_tab_groups),
+                contentDescription = null,
                 modifier = Modifier
-                    .padding(vertical = FirefoxTheme.layout.space.static150),
+                    .padding(vertical = FirefoxTheme.layout.space.static150)
+                    .testTag(TabsTrayTestTag.TAB_GROUP_ONBOARDING_ILLUSTRATION),
             )
         },
         contentSpacing = 0.dp,
@@ -76,20 +79,25 @@ fun TabGroupOnboardingListItem(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .height(TabListItemHeight)
             .background(MaterialTheme.colorScheme.primaryContainer)
             .padding(
                 start = FirefoxTheme.layout.space.dynamic200,
-                top = FirefoxTheme.layout.space.dynamic200,
-                bottom = FirefoxTheme.layout.space.dynamic200,
+                top = FirefoxTheme.layout.space.static100,
+                bottom = FirefoxTheme.layout.space.static100,
             )
-            .testTag(TabsTrayTestTag.TAB_GROUP_ONBOARDING_ITEM),
+            .testTag(TabsTrayTestTag.TAB_GROUP_ONBOARDING_LIST_ITEM),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TabGroupOnboardingImage()
+            Image(
+                painter = painterResource(R.drawable.mozac_ic_kit_tab_groups_list_view),
+                contentDescription = null,
+                modifier = Modifier.testTag(TabsTrayTestTag.TAB_GROUP_ONBOARDING_ILLUSTRATION),
+            )
 
             Spacer(modifier = Modifier.width(FirefoxTheme.layout.space.static200))
 
@@ -119,17 +127,6 @@ fun TabGroupOnboardingListItem(
             modifier = Modifier.testTag(TabsTrayTestTag.TAB_GROUP_ONBOARDING_ITEM_DISMISS),
         )
     }
-}
-
-@Composable
-private fun TabGroupOnboardingImage(
-    modifier: Modifier = Modifier,
-) {
-    Image(
-        painter = painterResource(R.drawable.mozac_ic_kit_tab_groups),
-        contentDescription = null,
-        modifier = modifier.testTag(TabsTrayTestTag.TAB_GROUP_ONBOARDING_ILLUSTRATION),
-    )
 }
 
 @PreviewLightDark

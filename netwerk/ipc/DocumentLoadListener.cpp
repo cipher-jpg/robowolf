@@ -68,7 +68,7 @@
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/RemoteWebProgressRequest.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/intl/Localization.h"
 #include "nsDocLoader.h"  // for FormatStatusMessage
@@ -330,9 +330,9 @@ class ParentProcessDocumentOpenInfo final : public nsDocumentOpenInfo,
     return rv;
   }
 
-  nsDocumentOpenInfo* Clone() override {
+  already_AddRefed<nsDocumentOpenInfo> Clone() override {
     mCloned = true;
-    return new ParentProcessDocumentOpenInfo(
+    return MakeAndAddRef<ParentProcessDocumentOpenInfo>(
         mListener, mFlags, mBrowsingContext, mTypeHint, mIsDocumentLoad);
   }
 
@@ -397,7 +397,8 @@ class ParentProcessDocumentOpenInfo final : public nsDocumentOpenInfo,
         request->CancelWithReason(
             rv, "nsDocumentOpenInfo::OnStartRequest failed"_ns);
       }
-      return m_targetStreamListener->OnStartRequest(request);
+      nsCOMPtr<nsIStreamListener> listener = m_targetStreamListener;
+      return listener->OnStartRequest(request);
     }
     if (m_targetStreamListener != mListener) {
       LOG(
@@ -1292,81 +1293,18 @@ bool DocumentLoadListener::SpeculativeLoadInParent(
 
   auto promise = listener->OpenInParent(aLoadState, true);
   if (promise) {
-    // Create an entry in the redirect channel registrar to
-    // allocate an identifier for this load.
-    nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
-        RedirectChannelRegistrar::GetOrCreate();
-    if (!registrar) {
-      // Shutdown is in progress.
-      return false;
-    }
-    uint64_t loadIdentifier = aLoadState->GetLoadIdentifier();
-    DebugOnly<nsresult> rv =
-        registrar->RegisterChannel(nullptr, loadIdentifier);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-    // Register listener (as an nsIParentChannel) under our new identifier.
-    rv = registrar->LinkChannels(loadIdentifier, listener, nullptr);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    aLoadState->SetSpeculativeListener(listener);
   }
   return !!promise;
 }
 
-void DocumentLoadListener::CleanupParentLoadAttempt(uint64_t aLoadIdent) {
-  nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
-      RedirectChannelRegistrar::GetOrCreate();
-  if (!registrar) {
-    // Shutdown is in progress.
-    return;
-  }
+void DocumentLoadListener::CleanupParentLoadAttempt() {
+  LOG(("DocumentLoadListener CleanupParentLoadAttempt [this=%p]", this));
+  MOZ_ASSERT(mDocumentChannelId.isNothing());
 
-  nsCOMPtr<nsIParentChannel> parentChannel;
-  registrar->GetParentChannel(aLoadIdent, getter_AddRefs(parentChannel));
-  RefPtr<DocumentLoadListener> loadListener = do_QueryObject(parentChannel);
-
-  if (loadListener) {
-    // If the load listener is still registered, then we must have failed
-    // to connect DocumentChannel into it. Better cancel it!
-    loadListener->NotifyDocumentChannelFailed();
-  }
-
-  registrar->DeregisterChannels(aLoadIdent);
-}
-
-auto DocumentLoadListener::ClaimParentLoad(DocumentLoadListener** aListener,
-                                           uint64_t aLoadIdent,
-                                           Maybe<uint64_t> aChannelId)
-    -> RefPtr<OpenPromise> {
-  nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
-      RedirectChannelRegistrar::GetOrCreate();
-  if (!registrar) {
-    // Shutdown is in progress.
-    *aListener = nullptr;
-    return nullptr;
-  }
-
-  nsCOMPtr<nsIParentChannel> parentChannel;
-  registrar->GetParentChannel(aLoadIdent, getter_AddRefs(parentChannel));
-  RefPtr<DocumentLoadListener> loadListener = do_QueryObject(parentChannel);
-  registrar->DeregisterChannels(aLoadIdent);
-
-  if (!loadListener) {
-    // The parent went away unexpectedly.
-    *aListener = nullptr;
-    return nullptr;
-  }
-
-  loadListener->mDocumentChannelId = aChannelId;
-
-  MOZ_DIAGNOSTIC_ASSERT(loadListener->mOpenPromise);
-  loadListener.forget(aListener);
-
-  return (*aListener)->mOpenPromise;
-}
-
-void DocumentLoadListener::NotifyDocumentChannelFailed() {
-  LOG(("DocumentLoadListener NotifyDocumentChannelFailed [this=%p]", this));
-  // There's been no calls to ClaimParentLoad, and so no listeners have been
-  // attached to mOpenPromise yet. As such we can run Then() on it.
+  // The DocumentLoadListener was not reclaimed from the nsDocShellLoadState, so
+  // ClaimParentLoad hasn't been called, and no listeners have been attached to
+  // mOpenPromise yet. As such we can run Then() on it.
   mOpenPromise->Then(
       GetMainThreadSerialEventTarget(), __func__,
       [](DocumentLoadListener::OpenPromiseSucceededType&& aResolveValue) {
@@ -1375,7 +1313,16 @@ void DocumentLoadListener::NotifyDocumentChannelFailed() {
       []() {});
 
   Cancel(NS_BINDING_ABORTED,
-         "DocumentLoadListener::NotifyDocumentChannelFailed"_ns);
+         "DocumentLoadListener::CleanupParentLoadAttempt"_ns);
+}
+
+auto DocumentLoadListener::ClaimParentLoad(Maybe<uint64_t> aChannelId)
+    -> RefPtr<OpenPromise> {
+  MOZ_ASSERT(mDocumentChannelId.isNothing() && aChannelId.isSome());
+  mDocumentChannelId = aChannelId;
+
+  MOZ_DIAGNOSTIC_ASSERT(mOpenPromise);
+  return mOpenPromise;
 }
 
 void DocumentLoadListener::Disconnect(bool aContinueNavigating) {
@@ -2608,7 +2555,7 @@ void DocumentLoadListener::MaybeReportBlockedByURLClassifier(nsresult aStatus) {
     return;
   }
 
-  if (!UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aStatus)) {
+  if (!ChannelClassifierUtils::IsClassifierBlockingErrorCode(aStatus)) {
     return;
   }
 

@@ -48,12 +48,15 @@
 #include "mozilla/dom/HTMLDialogElement.h"
 #include "mozilla/dom/HTMLElementBinding.h"
 #include "mozilla/dom/HTMLFormElement.h"
+#include "mozilla/dom/HTMLHeadingElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLLabelElement.h"
+#include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/InputEvent.h"
 #include "mozilla/dom/Link.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/ScriptLoader.h"
+#include "mozilla/dom/ShadowIncludingTreeIterator.h"
 #include "mozilla/dom/ToggleEvent.h"
 #include "mozilla/dom/TouchEvent.h"
 #include "mozilla/dom/UnbindContext.h"
@@ -494,7 +497,9 @@ nsresult nsGenericHTMLElement::BindToTree(BindContext& aContext,
   }
 
   if (HasFlag(NODE_IS_EDITABLE) &&
-      HasContentEditableAttrTrueOrPlainTextOnly() && IsInComposedDoc()) {
+      (HasContentEditableAttrTrueOrPlainTextOnly() ||
+       HasFlag(ELEMENT_HAS_EDIT_CONTEXT)) &&
+      IsInComposedDoc()) {
     aContext.OwnerDoc().ChangeContentEditableCount(this, +1);
   }
 
@@ -554,7 +559,8 @@ void nsGenericHTMLElement::UnbindFromTree(UnbindContext& aContext) {
     }
   }
 
-  if (HasContentEditableAttrTrueOrPlainTextOnly()) {
+  if (HasContentEditableAttrTrueOrPlainTextOnly() ||
+      HasFlag(ELEMENT_HAS_EDIT_CONTEXT)) {
     if (Document* doc = GetComposedDoc()) {
       doc->ChangeContentEditableCount(this, -1);
     }
@@ -989,6 +995,11 @@ void nsGenericHTMLElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
           }
         }
       }
+    } else if (aName == nsGkAtoms::headingreset ||
+               aName == nsGkAtoms::headingoffset) {
+      if (StaticPrefs::dom_headingoffset_enabled()) {
+        UpdateHeadingElementsOffsetChange();
+      }
     }
 
     // The nonce will be copied over to an internal slot and cleared from the
@@ -1016,7 +1027,7 @@ EventListenerManager* nsGenericHTMLElement::GetEventListenerManagerForAttr(
   if ((mNodeInfo->Equals(nsGkAtoms::body) ||
        mNodeInfo->Equals(nsGkAtoms::frameset)) &&
       // We only forward some event attributes from body/frameset to window
-      (0
+      (false
 #define EVENT(name_, id_, type_, struct_) /* nothing */
 #define FORWARDED_EVENT(name_, id_, type_, struct_) \
   || nsGkAtoms::on##name_ == aAttrName
@@ -1177,6 +1188,13 @@ bool nsGenericHTMLElement::ParseAttribute(int32_t aNamespaceID,
 
     if (aAttribute == nsGkAtoms::autocapitalize) {
       return aResult.ParseEnumValue(aValue, kAutocapitalizeTable, false);
+    }
+
+    if (StaticPrefs::dom_headingoffset_enabled()) {
+      if (aAttribute == nsGkAtoms::headingoffset) {
+        aResult.ParseNonNegativeIntValue(aValue);
+        return true;
+      }
     }
   }
 
@@ -2000,7 +2018,7 @@ bool nsGenericHTMLElement::IsFormControlDefaultFocusable(
 //----------------------------------------------------------------------
 
 nsGenericHTMLFormElement::nsGenericHTMLFormElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {
   // We should add the ElementState::ENABLED bit here as needed, but that
   // depends on our type, which is not initialized yet.  So we have to do this
@@ -2139,35 +2157,6 @@ void nsGenericHTMLFormElement::AfterSetAttr(
     const nsAttrValue* aOldValue, nsIPrincipal* aMaybeScriptedPrincipal,
     bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None && IsFormAssociatedElement()) {
-    HTMLFormElement* form = GetFormInternal();
-
-    // add the control to the hashtable as needed
-    if (form && (aName == nsGkAtoms::name || aName == nsGkAtoms::id) &&
-        aValue && !aValue->IsEmptyString()) {
-      MOZ_ASSERT(aValue->Type() == nsAttrValue::eAtom,
-                 "Expected atom value for name/id");
-      form->AddElementToTable(this,
-                              nsDependentAtomString(aValue->GetAtomValue()));
-    }
-
-    if (form && aName == nsGkAtoms::type) {
-      nsAutoString tmp;
-
-      GetAttr(nsGkAtoms::name, tmp);
-
-      if (!tmp.IsEmpty()) {
-        form->AddElementToTable(this, tmp);
-      }
-
-      GetAttr(nsGkAtoms::id, tmp);
-
-      if (!tmp.IsEmpty()) {
-        form->AddElementToTable(this, tmp);
-      }
-
-      form->AddElement(this, false, aNotify);
-    }
-
     if (aName == nsGkAtoms::form) {
       bool hadOldValue = aOldValue && !aOldValue->GetAtomValue()->IsEmpty();
       bool hasNewValue = aValue && !aValue->GetAtomValue()->IsEmpty();
@@ -2185,6 +2174,32 @@ void nsGenericHTMLFormElement::AfterSetAttr(
       } else if (aValue && aValue->GetAtomValue()->IsEmpty()) {
         // Ensure that empty @form value clears the form owner.
         ClearForm(true, false);
+      }
+    } else if (HTMLFormElement* form = GetFormInternal()) {
+      // add the control to the hashtable as needed
+      if (aName == nsGkAtoms::type) {
+        nsAutoString tmp;
+
+        GetAttr(nsGkAtoms::name, tmp);
+
+        if (!tmp.IsEmpty()) {
+          form->AddElementToTable(this, tmp);
+        }
+
+        GetAttr(nsGkAtoms::id, tmp);
+
+        if (!tmp.IsEmpty()) {
+          form->AddElementToTable(this, tmp);
+        }
+
+        form->AddElement(this, false, aNotify);
+      } else if (aName == nsGkAtoms::name || aName == nsGkAtoms::id) {
+        if (aValue && !aValue->IsEmptyString()) {
+          MOZ_ASSERT(aValue->Type() == nsAttrValue::eAtom,
+                     "Expected atom value for name/id");
+          form->AddElementToTable(
+              this, nsDependentAtomString(aValue->GetAtomValue()));
+        }
       }
     }
   }
@@ -2753,7 +2768,7 @@ void nsGenericHTMLElement::ChangeEditableState(int32_t aChange) {
 //----------------------------------------------------------------------
 
 nsGenericHTMLFormControlElement::nsGenericHTMLFormControlElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo, FormControlType aType)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo, FormControlType aType)
     : nsGenericHTMLFormElement(std::move(aNodeInfo)),
       nsIFormControl(aType),
       mForm(nullptr),
@@ -3034,7 +3049,7 @@ static constexpr const nsAttrValue::EnumTableEntry*
 
 nsGenericHTMLFormControlElementWithState::
     nsGenericHTMLFormControlElementWithState(
-        already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+        already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
         FromParser aFromParser, FormControlType aType)
     : nsGenericHTMLFormControlElement(std::move(aNodeInfo), aType),
       mControlNumber(!!(aFromParser & FROM_PARSER_NETWORK)

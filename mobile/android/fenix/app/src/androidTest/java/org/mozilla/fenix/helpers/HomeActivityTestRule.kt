@@ -56,6 +56,7 @@ class HomeActivityTestRule(
         isDeleteSitePermissionsEnabled: Boolean = settings.deleteSitePermissions,
         isOpenInAppBannerEnabled: Boolean = settings.shouldShowOpenInAppBanner,
         isUnifiedTrustPanelEnabled: Boolean = false,
+        isHomepageSportsWidgetVisible: Boolean = false,
         etpPolicy: ETPPolicy = getETPPolicy(settings),
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
         isMenuRedesignCFREnabled: Boolean = false,
@@ -67,9 +68,11 @@ class HomeActivityTestRule(
         isTermsOfServiceAccepted: Boolean = true,
         openLinksInExternalApp: OpenLinksInApp = getOpenLinksInApp(settings),
         hasSeenShakeToSummarizeToolbarCfr: Boolean = true,
+        shakeToSummarizeFeatureFlagEnabled: Boolean = settings.shakeToSummarizeFeatureFlagEnabled,
         isPrivateModeAndStoriesEntryPointEnabled: Boolean = false,
         shouldUseExpandedToolbar: Boolean = false,
         nativeShareSheetEnabled: Boolean = false,
+        showVoiceSearchInDisplayToolbar: Boolean = false,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isPocketEnabled = isPocketEnabled
         this.isRecentTabsFeatureEnabled = isRecentTabsFeatureEnabled
@@ -79,6 +82,7 @@ class HomeActivityTestRule(
         this.isDeleteSitePermissionsEnabled = isDeleteSitePermissionsEnabled
         this.isOpenInAppBannerEnabled = isOpenInAppBannerEnabled
         this.isUnifiedTrustPanelEnabled = isUnifiedTrustPanelEnabled
+        this.isHomepageSportsWidgetVisible = isHomepageSportsWidgetVisible
         this.etpPolicy = etpPolicy
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
         this.isMenuRedesignCFREnabled = isMenuRedesignCFREnabled
@@ -90,9 +94,11 @@ class HomeActivityTestRule(
         this.isTermsOfServiceAccepted = isTermsOfServiceAccepted
         this.openLinksInExternalApp = openLinksInExternalApp
         this.hasSeenShakeToSummarizeToolbarCfr = hasSeenShakeToSummarizeToolbarCfr
+        this.shakeToSummarizeFeatureFlagEnabled = shakeToSummarizeFeatureFlagEnabled
         this.isPrivateModeAndStoriesEntryPointEnabled = isPrivateModeAndStoriesEntryPointEnabled
         this.shouldUseExpandedToolbar = shouldUseExpandedToolbar
         this.nativeShareSheetEnabled = nativeShareSheetEnabled
+        this.showVoiceSearchInDisplayToolbar = showVoiceSearchInDisplayToolbar
     }
 
     /**
@@ -190,6 +196,7 @@ class HomeActivityIntentTestRule internal constructor(
         isDeleteSitePermissionsEnabled: Boolean = settings.deleteSitePermissions,
         isOpenInAppBannerEnabled: Boolean = settings.shouldShowOpenInAppBanner,
         isUnifiedTrustPanelEnabled: Boolean = false,
+        isHomepageSportsWidgetVisible: Boolean = false,
         etpPolicy: ETPPolicy = getETPPolicy(settings),
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
         isMenuRedesignCFREnabled: Boolean = false,
@@ -202,9 +209,11 @@ class HomeActivityIntentTestRule internal constructor(
         openLinksInExternalApp: OpenLinksInApp = getOpenLinksInApp(settings),
         tabManagerOpeningAnimationEnabled: Boolean = false,
         hasSeenShakeToSummarizeToolbarCfr: Boolean = true,
+        shakeToSummarizeFeatureFlagEnabled: Boolean = settings.shakeToSummarizeFeatureFlagEnabled,
         isPrivateModeAndStoriesEntryPointEnabled: Boolean = false,
         shouldUseExpandedToolbar: Boolean = false,
         nativeShareSheetEnabled: Boolean = false,
+        showVoiceSearchInDisplayToolbar: Boolean = false,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isPocketEnabled = isPocketEnabled
         this.isRecentTabsFeatureEnabled = isRecentTabsFeatureEnabled
@@ -214,6 +223,7 @@ class HomeActivityIntentTestRule internal constructor(
         this.isDeleteSitePermissionsEnabled = isDeleteSitePermissionsEnabled
         this.isOpenInAppBannerEnabled = isOpenInAppBannerEnabled
         this.isUnifiedTrustPanelEnabled = isUnifiedTrustPanelEnabled
+        this.isHomepageSportsWidgetVisible = isHomepageSportsWidgetVisible
         this.etpPolicy = etpPolicy
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
         this.isMenuRedesignCFREnabled = isMenuRedesignCFREnabled
@@ -226,9 +236,11 @@ class HomeActivityIntentTestRule internal constructor(
         this.openLinksInExternalApp = openLinksInExternalApp
         this.tabManagerOpeningAnimationEnabled = tabManagerOpeningAnimationEnabled
         this.hasSeenShakeToSummarizeToolbarCfr = hasSeenShakeToSummarizeToolbarCfr
+        this.shakeToSummarizeFeatureFlagEnabled = shakeToSummarizeFeatureFlagEnabled
         this.isPrivateModeAndStoriesEntryPointEnabled = isPrivateModeAndStoriesEntryPointEnabled
         this.shouldUseExpandedToolbar = shouldUseExpandedToolbar
         this.nativeShareSheetEnabled = nativeShareSheetEnabled
+        this.showVoiceSearchInDisplayToolbar = showVoiceSearchInDisplayToolbar
     }
 
     private val longTapUserPreference = getLongPressTimeout()
@@ -292,6 +304,7 @@ class HomeActivityIntentTestRule internal constructor(
         isDeleteSitePermissionsEnabled = settings.deleteSitePermissions
         isOpenInAppBannerEnabled = settings.shouldShowOpenInAppBanner
         isUnifiedTrustPanelEnabled = settings.enableUnifiedTrustPanel
+        isHomepageSportsWidgetVisible = settings.showHomepageSportsWidget
         etpPolicy = getETPPolicy(settings)
         isLocationPermissionEnabled = getFeaturePermission(PhoneFeature.LOCATION, settings)
         isMenuRedesignCFREnabled = settings.shouldShowMenuCFR

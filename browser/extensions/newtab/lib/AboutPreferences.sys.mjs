@@ -347,6 +347,11 @@ export class AboutPreferences {
     Preferences.addAll([
       { id: "browser.newtabpage.activity-stream.showSearch", type: "bool" },
       {
+        id: "browser.newtabpage.activity-stream.hideLogo",
+        type: "bool",
+        inverted: true,
+      },
+      {
         id: "browser.newtabpage.activity-stream.system.showWeather",
         type: "bool",
       },
@@ -806,6 +811,7 @@ export class AboutPreferences {
       items: [
         {
           id: "homepageNewWindows",
+          subcategory: "homeOverride",
           control: "moz-select",
           l10nId: "home-homepage-new-windows",
           options: [
@@ -821,9 +827,11 @@ export class AboutPreferences {
           id: "homepageGoToCustomHomepageUrlPanel",
           control: "moz-box-button",
           l10nId: "home-homepage-custom-homepage-button",
+          loadPane: "customHomepage",
         },
         {
           id: "homepageNewTabs",
+          subcategory: "newtabOverride",
           control: "moz-select",
           l10nId: "home-homepage-new-tabs",
           options: [
@@ -1117,11 +1125,7 @@ export class AboutPreferences {
         let urls = lazy.HomePage.parseCustomHomepageURLs(
           homepageDisplayPref.value
         );
-
-        let { draggedIndex, targetIndex } = e.detail;
-        let [moved] = urls.splice(draggedIndex, 1);
-        urls.splice(targetIndex, 0, moved);
-
+        urls = e.target.reorderArrayFromEvent(urls, e);
         homepageDisplayPref.value = urls.join("|");
       },
       onUserClick(e, { homepageDisplayPref }) {
@@ -1169,11 +1173,35 @@ export class AboutPreferences {
     const firefoxHomeActive = ({ homepageNewWindows, homepageNewTabs }) =>
       homepageNewWindows.value === "home" || homepageNewTabs.value === "home";
 
+    const HOME_CUSTOMIZE_URL = "about:home#customize";
+    const HOME_CUSTOMIZE_TOPICS_URL = "about:home#customize-topics";
+
+    // Open in a new tab if "New tabs" is Firefox Home, else a new window.
+    const dispatchForHomeLink = ({ homepageNewTabs }) =>
+      homepageNewTabs.value === "home" ? "tab" : "window";
+
     Preferences.addSetting({
       id: "firefoxHomeDisabledNotice",
       deps: firefoxHomeDeps,
       visible: deps => !firefoxHomeActive(deps),
     });
+
+    // @nova-cleanup(remove-conditional): Remove this lookup and inline `true` at every novaEnabled check below.
+    const novaEnabled = Services.prefs.getBoolPref(
+      "browser.newtabpage.activity-stream.nova.enabled",
+      false
+    );
+
+    // hideLogo only affects rendering when Nova is enabled (see Base.jsx),
+    // so the toggle is registered only in that branch.
+    if (novaEnabled) {
+      Preferences.addSetting({
+        id: "firefoxLogo",
+        pref: "browser.newtabpage.activity-stream.hideLogo",
+        deps: firefoxHomeDeps,
+        disabled: deps => !firefoxHomeActive(deps),
+      });
+    }
 
     // Search
     Preferences.addSetting({
@@ -1185,11 +1213,6 @@ export class AboutPreferences {
 
     // Weather
     // @nova-cleanup(remove-conditional): Remove novaEnabled check and else branch; keep only the Nova registration block (weatherEnabled + weather addSetting calls)
-    const novaEnabled = Services.prefs.getBoolPref(
-      "browser.newtabpage.activity-stream.nova.enabled",
-      false
-    );
-
     if (novaEnabled) {
       Preferences.addSetting({
         id: "weatherEnabled",
@@ -1352,6 +1375,13 @@ export class AboutPreferences {
           stories.value
         );
       },
+      onUserClick: (e, deps) => {
+        e.preventDefault();
+        window.openTrustedLinkIn(
+          HOME_CUSTOMIZE_TOPICS_URL,
+          dispatchForHomeLink(deps)
+        );
+      },
     });
 
     // Support Firefox: sponsored content
@@ -1420,6 +1450,10 @@ export class AboutPreferences {
       id: "chooseWallpaper",
       deps: firefoxHomeDeps,
       visible: deps => firefoxHomeActive(deps),
+      onUserClick: (e, deps) => {
+        e.preventDefault();
+        window.openTrustedLinkIn(HOME_CUSTOMIZE_URL, dispatchForHomeLink(deps));
+      },
     });
 
     return {
@@ -1427,6 +1461,7 @@ export class AboutPreferences {
       headingLevel: 2,
       l10nId: "home-prefs-content-header",
       iconSrc: "chrome://browser/skin/home.svg",
+      subcategory: "contents",
       items: [
         {
           id: "firefoxHomeDisabledNotice",
@@ -1438,11 +1473,13 @@ export class AboutPreferences {
         },
         {
           id: "webSearch",
+          subcategory: "web-search",
           l10nId: "home-prefs-search-header2",
           control: "moz-toggle",
         },
         {
           id: "weather",
+          subcategory: "weather",
           l10nId: "home-prefs-weather-header",
           control: "moz-toggle",
         },
@@ -1471,11 +1508,13 @@ export class AboutPreferences {
         },
         {
           id: "shortcuts",
+          subcategory: "topsites",
           l10nId: "home-prefs-shortcuts-header",
           control: "moz-toggle",
           items: [
             {
               id: "shortcutsRows",
+              l10nId: "home-prefs-shortcuts-select",
               control: "moz-select",
               options: [
                 {
@@ -1504,6 +1543,7 @@ export class AboutPreferences {
         },
         {
           id: "stories",
+          subcategory: "topstories",
           l10nId: "home-prefs-stories-header2",
           control: "moz-toggle",
           items: [
@@ -1512,13 +1552,14 @@ export class AboutPreferences {
               l10nId: "home-prefs-manage-topics-link2",
               control: "moz-box-link",
               controlAttrs: {
-                href: "about:newtab#customize-topics",
+                href: HOME_CUSTOMIZE_TOPICS_URL,
               },
             },
           ],
         },
         {
           id: "supportFirefox",
+          subcategory: "support-firefox",
           l10nId: "home-prefs-support-firefox-header",
           control: "moz-toggle",
           items: [
@@ -1551,11 +1592,13 @@ export class AboutPreferences {
         },
         {
           id: "recentActivity",
+          subcategory: "highlights",
           l10nId: "home-prefs-recent-activity-header",
           control: "moz-toggle",
           items: [
             {
               id: "recentActivityRows",
+              l10nId: "home-prefs-recent-activity-select",
               control: "moz-select",
               options: [
                 {
@@ -1599,10 +1642,19 @@ export class AboutPreferences {
           l10nId: "home-prefs-choose-wallpaper-link2",
           control: "moz-box-link",
           controlAttrs: {
-            href: "about:newtab#customize",
+            href: HOME_CUSTOMIZE_URL,
           },
           iconSrc: "chrome://browser/skin/customize.svg",
         },
+        ...(novaEnabled
+          ? [
+              {
+                id: "firefoxLogo",
+                l10nId: "home-prefs-firefox-logo-header",
+                control: "moz-toggle",
+              },
+            ]
+          : []),
       ],
     };
   }

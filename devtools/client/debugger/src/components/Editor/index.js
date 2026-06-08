@@ -66,12 +66,12 @@ import {
 
 import { searchKeys } from "../../constants";
 import { scrollList } from "../../utils/result-list";
-import SearchInput from "../shared/SearchInput";
 
 import { updateEditorSizeCssVariables } from "../../utils/ui";
 
 const { debounce } = require("resource://devtools/shared/debounce.js");
 const classnames = require("resource://devtools/client/shared/classnames.js");
+const SourceEditor = require("resource://devtools/client/shared/sourceeditor/editor.js");
 
 const { appinfo } = Services;
 const isMacOS = appinfo.OS === "Darwin";
@@ -694,6 +694,11 @@ class Editor extends PureComponent {
       this.showErrorMessage(value);
       return;
     }
+
+    if (selectedSource.isStyleSheet) {
+      await editor.setMode(SourceEditor.modes.css);
+    }
+
     await editor.setText(selectedSourceTextContent.value.value, {
       documentId: selectedSource.id,
     });
@@ -815,6 +820,8 @@ class Editor extends PureComponent {
       closeFileSearch,
       querySearchWorker,
       selectLocation,
+      searchOptions,
+      setSearchOptions,
     } = this.props;
 
     if (!selectedSource) {
@@ -832,8 +839,8 @@ class Editor extends PureComponent {
       closeFileSearch,
       querySearchWorker,
       selectLocation,
-      searchKey: searchKeys.FILE_SEARCH,
-      SearchInput,
+      searchOptions,
+      setSearchOptions,
       scrollList,
       createLocation,
       clearSearchEditor,
@@ -905,6 +912,7 @@ const mapStateToProps = state => {
     shouldHighlightSelectedLocation: getShouldHighlightSelectedLocation(state),
     selectedTraceLocation: getSelectedTraceLocation(state),
     modifiers: getSearchOptions(state, "file-search"),
+    searchOptions: getSearchOptions(state, searchKeys.FILE_SEARCH),
   };
 };
 
@@ -926,6 +934,7 @@ const mapDispatchToProps = dispatch => ({
       setActiveSearch: actions.setActiveSearch,
       closeFileSearch: actions.closeFileSearch,
       querySearchWorker: actions.querySearchWorker,
+      setSearchOptions: actions.setSearchOptions,
     },
     dispatch
   ),

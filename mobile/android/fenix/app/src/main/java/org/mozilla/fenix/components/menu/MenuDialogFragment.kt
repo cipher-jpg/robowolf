@@ -81,12 +81,14 @@ import org.mozilla.fenix.components.menu.compose.CustomTabMenu
 import org.mozilla.fenix.components.menu.compose.MainMenu
 import org.mozilla.fenix.components.menu.compose.MenuCFRState
 import org.mozilla.fenix.components.menu.compose.MenuDialogBottomSheet
+import org.mozilla.fenix.components.menu.compose.MenuHandleState
 import org.mozilla.fenix.components.menu.compose.MoreSettingsSubmenu
 import org.mozilla.fenix.components.menu.middleware.MenuDialogMiddleware
 import org.mozilla.fenix.components.menu.middleware.MenuNavigationMiddleware
 import org.mozilla.fenix.components.menu.middleware.MenuTelemetryMiddleware
 import org.mozilla.fenix.components.menu.store.BrowserMenuState
 import org.mozilla.fenix.components.menu.store.ExtensionMenuState
+import org.mozilla.fenix.components.menu.store.IPProtectionMenuStatus
 import org.mozilla.fenix.components.menu.store.MenuAction
 import org.mozilla.fenix.components.menu.store.MenuState
 import org.mozilla.fenix.components.menu.store.MenuStore
@@ -164,7 +166,6 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
             ),
             engine = requireComponents.core.engine,
             settings = requireComponents.settings,
-            coroutineContext = lifecycleScope.coroutineContext,
         )
     }
 
@@ -390,11 +391,13 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                         .padding(top = 16.dp, bottom = 16.dp)
                         .width(32.dp),
                     onRequestDismiss = ::dismiss,
-                    handlebarContentDescription = handlebarContentDescription,
-                    isMenuDragBarDark = !settings.shouldUseBottomToolbar &&
+                    menuHandleState = MenuHandleState(
+                        contentDescription = handlebarContentDescription,
+                        useDarkBackground = !settings.shouldUseBottomToolbar &&
                             !settings.shouldUseExpandedToolbar &&
                             (isExtensionsExpanded || isMoreMenuExpanded) &&
                             args.accesspoint == MenuAccessPoint.Browser,
+                    ),
                     cornerShape = MaterialTheme.shapes.extraLarge.copy(
                         bottomStart = CornerSize(0.dp),
                         bottomEnd = CornerSize(0.dp),
@@ -434,8 +437,6 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                     val translateLanguageCode = selectedTab?.translationsState?.translationEngineState
                         ?.requestedTranslationPair?.toLanguage
                     val isExtensionsProcessDisabled = browserStore.state.extensionsProcessDisabled
-                    val isWebCompatReporterSupported =
-                        FxNimbus.features.menuRedesign.value().reportSiteIssue
                     val isDesktopMode by remember {
                         store.stateFlow.map { state -> state.isDesktopMode }
                     }.collectAsState(initial = false)
@@ -767,7 +768,11 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                         }
                                     },
                                     onIPProtectionClick = {
-                                        components.ipProtection.store.dispatch(IPProtectionAction.Toggle)
+                                        if (ipProtectionMenuState.status == IPProtectionMenuStatus.AuthRequired) {
+                                            store.dispatch(MenuAction.Navigate.IPProtectionSettings)
+                                        } else {
+                                            components.ipProtection.store.dispatch(IPProtectionAction.Toggle)
+                                        }
                                     },
                                     onIPProtectionNavigate = {
                                         store.dispatch(MenuAction.Navigate.IPProtectionSettings)
@@ -783,7 +788,6 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                                     webAppUseCases.isPinningSupported(),
                                             hasExternalApp = appLinksRedirect?.hasExternalApp() ?: false,
                                             externalAppName = appLinksRedirect?.appName ?: "",
-                                            isWebCompatReporterSupported = isWebCompatReporterSupported,
                                             isOpenInAppMenuHighlighted = isOpenInAppMenuHighlighted,
                                             translationInfo = translationInfo,
                                             showShortcuts = settings.showTopSitesFeature,
