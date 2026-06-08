@@ -6,6 +6,7 @@ headers = [
     "nsCSSValue.h",
     "mozilla/CSSPropertyId.h",
     "mozilla/css/SheetLoadData.h",
+    "mozilla/StyleSheet.h",
     "mozilla/DeclarationBlock.h",
     "mozilla/dom/HTMLSlotElement.h",
     "mozilla/dom/KeyframeEffectBinding.h",
@@ -69,7 +70,6 @@ rusty-enums = [
     "mozilla::dom::CompositeOperationOrAuto",
     "mozilla::InheritTarget",
     "mozilla::css::DocumentMatchingFunction",
-    "mozilla::css::SheetParsingMode",
     "nsStyleSVGOpacitySource",
     "mozilla::dom::Document_DocumentTheme",
     "mozilla::dom::Document_Type",
@@ -205,7 +205,6 @@ allowlist-types = [
     "mozilla::css::LoaderReusableStyleSheets",
     "mozilla::css::SheetLoadData",
     "mozilla::css::SheetLoadDataHolder",
-    "mozilla::css::SheetParsingMode",
     "mozilla::css::DocumentMatchingFunction",
     "mozilla::dom::IterationCompositeOperation",
     "mozilla::dom::StyleChildrenIterator",
@@ -663,6 +662,7 @@ cbindgen-types = [
     { gecko = "StyleAnchorNameIdent", servo = "crate::values::specified::position::AnchorNameIdent" },
     { gecko = "StyleCascadeLevel", servo = "crate::rule_tree::level::CascadeLevel" },
     { gecko = "StyleShadowCascadeOrder", servo = "crate::rule_tree::level::ShadowCascadeOrder" },
+    { gecko = "StyleLinkParameters", servo = "crate::values::computed::param::LinkParameters" },
 ]
 
 mapped-generic-types = [

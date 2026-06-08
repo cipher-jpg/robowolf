@@ -85,6 +85,10 @@ aiwindow-input-cta-search-submenu-header = Search
 
 smartbar-placeholder =
     .placeholder = Ask, search, or type a URL
+smartbar-placeholder-hint-1 = Use @ to mention recent tabs…
+smartbar-placeholder-hint-2 = Ask anything…
+smartbar-placeholder-hint-3 = Enter a web address…
+smartbar-placeholder-hint-4 = Search the web…
 
 ## Mentions
 
@@ -216,7 +220,7 @@ smartwindow-footer-history =
 ## Disclaimer
 ## Text displayed to user to warn user about potential mistakes.
 
-smartwindow-disclaimer = AI can make mistakes. <a data-l10n-name="report-link">Report any issues</a>.
+smartwindow-disclaimer = AI can make mistakes.
 
 ## FirefoxView Chats
 ## Chats in this context refers to chats saved from the Smart Window Assistant

@@ -365,6 +365,8 @@ newtab-custom-widget-sports-toggle =
     .label = 世界杯
 newtab-custom-widget-clock-toggle =
     .label = 时钟
+newtab-custom-widget-sports-toggle2 =
+    .label = 体育
 newtab-custom-widget-section-title = 小组件
 newtab-custom-widget-section-toggle =
     .label = 小组件
@@ -817,6 +819,10 @@ newtab-widget-section-menu-manage = 管理小组件
 newtab-widget-section-menu-hide-all = 隐藏小组件
 newtab-widget-section-menu-learn-more = 详细了解
 newtab-widget-section-feedback = 告诉我们您的想法
+# Button shown when additional widgets are hidden beyond the
+# first row, allowing users to show them.
+newtab-widget-section-show-more =
+    .label = 显示更多小组件
 newtab-widget-lists-name-default = 核对清单
 
 ## Strings introduced by the Nova redesign of the Timer widget
@@ -847,6 +853,7 @@ newtab-daily-briefing-card-timestamp = { $minutes } 分钟前更新
 newtab-widget-message-title = 借助清单和内置计时器，聚焦重点、保持专注。
 # to-dos stands for "things to do".
 newtab-widget-message-copy = 从快捷提醒到日常待办，从专注时段到放松片刻，既能帮您管理任务，又可助您把握时间。
+newtab-widget-message-focus-forecasts-body = 借助 { -brand-product-name } 小组件，顺畅完成每日工作。查看天气预报、记录任务、掌握世界各地时间，尽在一处。
 # "Make Firefox yours" refers to about:newtab. The call to action here ("Try it now")
 # is to customize the new tab page with a background image or color from
 # the built-in wallpaper collection or uploading your own image.
@@ -1016,6 +1023,8 @@ newtab-sports-widget-world-cup-champions = 2026 年世界杯冠军
 #   $date (Date) - The match start time
 newtab-sports-widget-match-time = { DATETIME($date, hour: "2-digit", minute: "2-digit") }
 newtab-sports-widget-match-full-time = 全场
+newtab-sports-widget-match-halftime = 中场
+newtab-sports-widget-match-extra-time = 加时赛
 newtab-sports-widget-match-penalties = 点球决胜
 
 ## Accessible labels for match rows in the sports widget. These are read by
@@ -1085,6 +1094,8 @@ newtab-sports-widget-message-wallpapers-title = 换上新壁纸，迎接世界�
 newtab-sports-widget-message-wallpapers-cta = 选择壁纸
 newtab-sports-widget-message-add-widgets-cta =
     .label = 添加小组件
+newtab-sports-widget-message-day-in-play-title = 使用 { -brand-product-name } 小组件，全天候关注精彩赛事
+newtab-sports-widget-message-day-in-play-body = 关注世界杯、记录任务、掌握世界各地时间，另有更多实用功能。
 newtab-sports-widget-message-explore-widgets-cta =
     .label = 探索小组件
 

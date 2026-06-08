@@ -226,6 +226,9 @@ loader.lazyGetter(this, "ProfilerBackground", () => {
   );
 });
 
+const DEVTOOLS_STYLESHEETS_IN_DEBUGGER =
+  "devtools.debugger.features.stylesheets-in-debugger";
+
 const BOOLEAN_CONFIGURATION_PREFS = {
   "devtools.cache.disabled": {
     name: "cacheDisabled",
@@ -1136,23 +1139,27 @@ class Toolbox extends EventEmitter {
 
       this.emit("ready");
       this._resolveIsOpen();
-    } catch (error) {
+    } catch (exception) {
       console.error(
         "Exception while opening the toolbox",
-        String(error),
-        error
+        String(exception),
+        exception
       );
       // While the exception stack is correctly printed in the Browser console when
       // passing `e` to console.error, it is not on the stdout, so print it via dump.
-      dump(error.stack + "\n");
-      if (error.clientPacket) {
+      dump(exception.stack + "\n");
+      if (exception.clientPacket) {
         dump(
-          "Client packet:" + JSON.stringify(error.clientPacket, null, 2) + "\n"
+          "Client packet:" +
+            JSON.stringify(exception.clientPacket, null, 2) +
+            "\n"
         );
       }
-      if (error.serverPacket) {
+      if (exception.serverPacket) {
         dump(
-          "Server packet:" + JSON.stringify(error.serverPacket, null, 2) + "\n"
+          "Server packet:" +
+            JSON.stringify(exception.serverPacket, null, 2) +
+            "\n"
         );
       }
 
@@ -1164,7 +1171,7 @@ class Toolbox extends EventEmitter {
         // If React managed to load, try to display the exception to the user via AppErrorBoundary component.
         // But ignore the exception if the React component itself thrown while rendering (errorInfo is defined)
         if (this._appBoundary && !this._appBoundary.state.errorInfo) {
-          this._appBoundary.toolboxDidCatch(error, this);
+          this._appBoundary.handleException(exception, this, true);
         }
       } catch (e) {
         // Ignore any further error related to AppErrorBoundary as it would prevent closing the toolbox.
@@ -2458,22 +2465,41 @@ class Toolbox extends EventEmitter {
 
   /**
    * Update the visibility of the buttons.
+   *
+   * @param {object} options
+   * @param {boolean} options.fromWillNavigate: true if this is called because the
+   *        page is going to navigate
    */
-  updateToolboxButtonsVisibility() {
+  updateToolboxButtonsVisibility({ fromWillNavigate = false } = {}) {
     const inspectorFront = this.target.getCachedFront("inspector");
 
-    this.toolbarButtons.forEach(button => {
+    let hasHighlighters = false;
+    for (const button of this.toolbarButtons) {
       button.isVisible = this._commandIsVisible(button);
 
-      if (!button.isVisible && inspectorFront) {
-        // Any highlighters associated with the toolbox button need to be cleared
-        // when a button is hidden.
-        button.highlighterTypes?.forEach(type => {
-          inspectorFront.destroyHighlighterByType(type);
-        });
+      if (
+        inspectorFront &&
+        // We want to destroy highlighters associated with the toolbox button when:
+        // - the button gets hidden (from the Settings panel)
+        // - or when we're going to navigate
+        (!button.isVisible || fromWillNavigate)
+      ) {
+        if (!button.highlighterTypes) {
+          continue;
+        }
+
+        for (const type of button.highlighterTypes) {
+          if (inspectorFront.getKnownHighlighter(type)?.isShown()) {
+            inspectorFront.destroyHighlighterByType(type);
+            hasHighlighters = true;
+          }
+        }
       }
-    });
-    this._renderToolboxButtons();
+    }
+
+    if (hasHighlighters || !fromWillNavigate) {
+      this._renderToolboxButtons();
+    }
   }
 
   /**
@@ -3446,7 +3472,7 @@ class Toolbox extends EventEmitter {
       this._updateFrames({ destroyAll: true });
     }
 
-    this.updateToolboxButtonsVisibility();
+    this.updateToolboxButtonsVisibility({ fromWillNavigate: true });
 
     const toolId = this.currentToolId;
     // For now, only inspector, webconsole, netmonitor and accessibility fire "reloaded" event
@@ -4635,7 +4661,7 @@ class Toolbox extends EventEmitter {
    *
    * @param {string} url The URL of the CSS file to open.
    */
-  async viewGeneratedSourceInStyleEditor(url) {
+  async viewStyleGeneratedSource(url) {
     if (typeof url !== "string") {
       console.warn("Failed to open generated source, no url given");
       return false;
@@ -4644,16 +4670,19 @@ class Toolbox extends EventEmitter {
     // The style editor hides the generated file if the file has original
     // sources, so we have no choice but to open whichever original file
     // corresponds to the first line of the generated file.
-    return viewSource.viewSourceInStyleEditor(this, url, 1);
+    // TODO: Update this when sourcemaps support for stylesheets is supported
+    // in the debugger.
+    return this.viewStyleSourceByURL(url, 1);
   }
 
   /**
-   * Given a URL for a stylesheet (generated or original), open in the style
-   * editor if possible. Falls back to plain "view-source:".
+   * Given a URL for a stylesheet (generated or original), open in the debugger
+   * if the `devtools.debugger.features.stylesheets-in-debugger` pref is enabled
+   *  or open in the style editor if possible. Falls back to plain "view-source:".
    * If the stylesheet has a sourcemap, we will attempt to open the original
    * version of the file instead of the generated version.
    */
-  async viewSourceInStyleEditorByURL(url, line, column) {
+  async viewStyleSourceByURL(url, line, column) {
     if (typeof url !== "string") {
       console.warn("Failed to open source, no url given");
       return false;
@@ -4664,9 +4693,14 @@ class Toolbox extends EventEmitter {
       );
 
       // This is a fallback in case of programming errors, but in a perfect
-      // world, viewSourceInStyleEditorByURL would always get a line/colum.
+      // world, viewStyleSourceByURL would always get a line/column.
       line = 1;
       column = null;
+    }
+
+    // Instead view the stylesheet in the debugger since the pref is enabled
+    if (Services.prefs.getBoolPref(DEVTOOLS_STYLESHEETS_IN_DEBUGGER)) {
+      return viewSource.viewSourceInDebugger(this, url, line, column, null);
     }
 
     return viewSource.viewSourceInStyleEditor(this, url, line, column);
@@ -4677,7 +4711,7 @@ class Toolbox extends EventEmitter {
    * If the stylesheet has a sourcemap, we will attempt to open the original
    * version of the file instead of the generated version.
    */
-  async viewSourceInStyleEditorByResource(stylesheetResource, line, column) {
+  async viewStyleSourceByResource(stylesheetResource, line, column) {
     if (!stylesheetResource || typeof stylesheetResource !== "object") {
       console.warn("Failed to open source, no stylesheet given");
       return false;
@@ -4688,9 +4722,20 @@ class Toolbox extends EventEmitter {
       );
 
       // This is a fallback in case of programming errors, but in a perfect
-      // world, viewSourceInStyleEditorByResource would always get a line/colum.
+      // world, viewStyleSourceByResource would always get a line/colum.
       line = 1;
       column = null;
+    }
+
+    // Instead view the stylesheet in the debugger since the pref is enabled
+    if (Services.prefs.getBoolPref(DEVTOOLS_STYLESHEETS_IN_DEBUGGER)) {
+      return viewSource.viewSourceInDebugger(
+        this,
+        stylesheetResource.href,
+        line,
+        column,
+        stylesheetResource.resourceId
+      );
     }
 
     return viewSource.viewSourceInStyleEditor(

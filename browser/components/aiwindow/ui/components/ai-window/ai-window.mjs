@@ -22,6 +22,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs",
   MODEL_FEATURES: "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs",
   openAIEngine: "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs",
+  loadCallContext:
+    "moz-src:///browser/components/aiwindow/models/PromptLoader.sys.mjs",
   generateChatTitle:
     "moz-src:///browser/components/aiwindow/models/TitleGeneration.sys.mjs",
   AIWindow:
@@ -57,6 +59,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   getCurrentModelName:
     "moz-src:///browser/components/aiwindow/ui/modules/AIWindowConstants.sys.mjs",
   ToolUI: "moz-src:///browser/components/aiwindow/ui/modules/ToolUI.sys.mjs",
+  ACTION_LOG_UI_TYPE:
+    "moz-src:///browser/components/aiwindow/ui/modules/ToolActionLog.sys.mjs",
+  getActionLogConfigForTool:
+    "moz-src:///browser/components/aiwindow/ui/modules/ToolActionLog.sys.mjs",
+  buildActionLogRow:
+    "moz-src:///browser/components/aiwindow/ui/modules/ToolActionLog.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", function () {
@@ -193,8 +201,6 @@ export class AIWindow extends MozLitElement {
   #conversation = null;
   #memoriesButton = null;
   #memoriesToggled = null;
-  #reportLink =
-    "https://connect.mozilla.org/t5/discussions/smart-window-beta-feedback/td-p/122365";
   #visibilityChangeHandler;
   #abortController = null;
 
@@ -456,6 +462,14 @@ export class AIWindow extends MozLitElement {
         convId: message.convId,
       });
       message = { ...message, kit: undefined };
+    }
+
+    if (message.toolUIData) {
+      lazy.ToolUI.handleUIDisplayTelemetry(message.toolUIData, {
+        location: this.mode,
+        chat_id: this.conversationId,
+        message_seq: this.#conversation?.messageCount ?? 0,
+      });
     }
     this.#dispatchMessageToChatContent(message);
   };
@@ -842,18 +856,7 @@ export class AIWindow extends MozLitElement {
 
     // Update the system prompt for the new model
     if (this.#conversation?.messages.length) {
-      const engineInstance = await lazy.openAIEngine.build(
-        lazy.MODEL_FEATURES.CHAT,
-        this.conversationId,
-        modelChoiceId
-      );
-
-      // Model changed while building engine
-      if (this.#selectedModelChoiceId !== modelChoiceId) {
-        return;
-      }
-
-      await this.#conversation.updateSystemPromptForModel(engineInstance);
+      await this.#conversation.updateSystemPromptForModel(modelChoiceId);
     }
   }
 
@@ -1672,12 +1675,18 @@ export class AIWindow extends MozLitElement {
       this.#updateBrowserTabbable();
       this.#smartbar?.suppressStartQuery({ permanent: true });
       this.#smartbar?.view.close();
+      if (this.#smartbar?.inputField) {
+        this.#smartbar.inputField.showPlaceholderAnimation = false;
+      }
       return;
     }
 
     this.classList.remove("chat-active");
     this.#updateBrowserTabbable();
     this.#smartbar?.unsuppressStartQuery();
+    if (this.#smartbar?.inputField) {
+      this.#smartbar.inputField.showPlaceholderAnimation = true;
+    }
   }
 
   /**
@@ -1739,17 +1748,21 @@ export class AIWindow extends MozLitElement {
     conversation.on("chat-conversation:message-update", onUpdate);
 
     try {
-      const engineInstance = await lazy.openAIEngine.build(
-        lazy.MODEL_FEATURES.CHAT,
-        this.conversationId,
-        this.#selectedModelChoiceId
-      );
+      const callContext = await lazy.loadCallContext(lazy.MODEL_FEATURES.CHAT, {
+        modelChoiceIdOverride: this.#selectedModelChoiceId,
+      });
+      const engineInstance = await lazy.openAIEngine.build({
+        model: callContext.model,
+        serviceType: callContext.serviceType,
+        purpose: callContext.purpose,
+        flowId: this.conversationId,
+        feature: lazy.MODEL_FEATURES.CHAT,
+      });
 
       if (inputText) {
         await conversation.generatePrompt(
           inputText,
           pageUrl,
-          engineInstance,
           userOpts,
           skipUserDispatch
         );
@@ -1767,6 +1780,7 @@ export class AIWindow extends MozLitElement {
         engineInstance,
         browsingContext,
         mode: this.mode,
+        callContext,
         signal,
       });
 
@@ -1991,6 +2005,29 @@ export class AIWindow extends MozLitElement {
     if (typeof message.role !== "string") {
       const roleLabel = lazy.getRoleLabel(newMessage.role).toLowerCase();
       newMessage.role = roleLabel;
+    }
+
+    // Role is just the transport gate here. uiType gets set below and is
+    // what the renderer keys off
+    if (newMessage.role === "tool") {
+      const cfg = lazy.getActionLogConfigForTool(
+        newMessage.content?.name,
+        newMessage.content?.body
+      );
+      if (!cfg.show) {
+        return null;
+      }
+
+      newMessage.actionLog = {
+        uiType: lazy.ACTION_LOG_UI_TYPE,
+        pendingLabel: cfg.pendingLabel,
+        row: lazy.buildActionLogRow(
+          newMessage.content?.name,
+          cfg.label,
+          newMessage.content?.body,
+          newMessage.content?.args
+        ),
+      };
     }
 
     return actor.dispatchMessageToChatContent(newMessage);
@@ -2344,7 +2381,12 @@ export class AIWindow extends MozLitElement {
   }
 
   handleToolUIUpdate(data) {
-    lazy.ToolUI.handleUpdate(data, this.#conversation, this.#topChromeWindow);
+    lazy.ToolUI.handleUpdate(
+      data,
+      this.#conversation,
+      this.#topChromeWindow,
+      this.mode
+    );
   }
 
   #openFeedbackModal(type) {
@@ -2564,13 +2606,10 @@ export class AIWindow extends MozLitElement {
               : ""}
           `}
       ${this.showDisclaimer
-        ? html`<div data-l10n-id="smartwindow-disclaimer" class="disclaimer">
-            <a
-              data-l10n-name="report-link"
-              href=${this.#reportLink}
-              target="_blank"
-            ></a>
-          </div>`
+        ? html`<div
+            data-l10n-id="smartwindow-disclaimer"
+            class="disclaimer"
+          ></div>`
         : ""}
       ${this.#footerTemplate()}
       <kit-mention variant="fullpage"></kit-mention>

@@ -261,6 +261,11 @@ class TabbedBrowsingTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/903587
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.TabbedBrowsingTest#verifyPrivateTabsTrayWithOpenTabTest"],
+        bug = 2043491,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifyPrivateTabsTrayWithOpenTabTest() {
@@ -523,6 +528,7 @@ class TabbedBrowsingTest {
     @Test
     fun verifyTabsTrayListViewTest() {
         appContext.settings().gridTabView = false
+        appContext.settings().tabGroupsOnboardingEnabled = false
 
         val webPages = mockWebServer.genericAssets
 

@@ -6,6 +6,8 @@
  * @import {ProvidersManager} from "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs"
  */
 
+import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -24,8 +26,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarSearchOneOffs:
     "moz-src:///browser/components/urlbar/UrlbarSearchOneOffs.sys.mjs",
-  UrlbarTokenizer:
-    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
@@ -79,9 +79,7 @@ export class UrlbarView {
     this.resultMenu.addEventListener("command", this);
     this.resultMenu.addEventListener("popupshowing", this);
 
-    // `noresults` is used to style the one-offs without their usual top border
-    // when no results are present.
-    this.panel.setAttribute("noresults", "true");
+    this.input.toggleAttribute("noresults", true);
 
     this.controller.setView(this);
     this.controller.addListener(this);
@@ -511,7 +509,7 @@ export class UrlbarView {
 
   clear() {
     this.#rows.textContent = "";
-    this.panel.setAttribute("noresults", "true");
+    this.input.toggleAttribute("noresults", true);
     this.clearSelection();
     this.visibleResults = [];
   }
@@ -873,7 +871,7 @@ export class UrlbarView {
           queryContext.trimmedSearchString) &&
           queryContext.trimmedSearchString[0] != "@" &&
           (queryContext.trimmedSearchString[0] !=
-            lazy.UrlbarTokenizer.RESTRICT.SEARCH ||
+            UrlbarShared.RESTRICT_TOKENS.SEARCH ||
             queryContext.trimmedSearchString.length != 1)
       );
     }
@@ -2765,11 +2763,7 @@ export class UrlbarView {
       selectableElement = this.#getNextSelectableElement(selectableElement);
     }
 
-    if (this.visibleResults.length) {
-      this.panel.removeAttribute("noresults");
-    } else {
-      this.panel.setAttribute("noresults", "true");
-    }
+    this.input.toggleAttribute("noresults", !this.visibleResults.length);
   }
 
   /**
@@ -3465,12 +3459,14 @@ export class UrlbarView {
         let iconModeLabel = this.#createElement("div");
         iconModeLabel.classList.add("urlbarView-userContext-iconMode");
         actionNode.appendChild(iconModeLabel);
-        if (identity.icon) {
+        let iconURL = lazy.ContextualIdentityService.getContainerIconURL(
+          identity.icon
+        );
+        if (iconURL) {
           let userContextIcon = this.#createElement("img");
           userContextIcon.classList.add("urlbarView-userContext-icon");
           userContextIcon.setAttribute("alt", label);
-          userContextIcon.src =
-            "resource://usercontext-content/" + identity.icon + ".svg";
+          userContextIcon.src = iconURL;
           iconModeLabel.appendChild(userContextIcon);
         }
         actionNode.setAttribute("tooltiptext", label);

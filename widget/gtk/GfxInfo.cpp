@@ -27,11 +27,17 @@
 #include "nsString.h"
 #include "nsStringFwd.h"
 #include "nsUnicharUtils.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsWhitespaceTokenizer.h"
 #include "prenv.h"
 #include "WidgetUtilsGtk.h"
 #include "MediaCodecsSupport.h"
 #include "nsAppRunner.h"
+#include <gbm.h>
+
+#ifndef GBM_FORMAT_P010
+#  define GBM_FORMAT_P010 __gbm_fourcc_code('P', '0', '1', '0')
+#endif
 
 // How long we wait for data from glxtest/vaapi test process in milliseconds.
 #define GFX_TEST_TIMEOUT 4000
@@ -76,6 +82,27 @@ nsresult GfxInfo::Init() {
   mHasMultipleGPUs = false;
   mGlxTestError = false;
   return GfxInfoBase::Init();
+}
+
+const nsTArray<uint64_t>& GfxInfo::GetDMABufEGLModifiers(
+    uint32_t aDrmFourcc) const {
+  switch (aDrmFourcc) {
+    case GBM_FORMAT_XRGB8888:
+      return mDMABufEGLModifiersXRGB;
+    case GBM_FORMAT_ARGB8888:
+      return mDMABufEGLModifiersARGB;
+    case GBM_FORMAT_NV12:
+      return mDMABufEGLModifiersNV12;
+    case GBM_FORMAT_P010:
+      return mDMABufEGLModifiersP010;
+    case GBM_FORMAT_YUV420:
+      return mDMABufEGLModifiersYUV420;
+    default: {
+      NS_WARNING("GfxInfo::GetDMABufEGLModifiers(): unsupported format!");
+      static const nsTArray<uint64_t> empty;
+      return empty;
+    }
+  }
 }
 
 void GfxInfo::AddCrashReportAnnotations() {
@@ -255,6 +282,12 @@ void GfxInfo::GetData() {
   AutoTArray<nsCString, 2> pciVendors;
   AutoTArray<nsCString, 2> pciDevices;
 
+  nsCString dmabufModifiersXRGB;
+  nsCString dmabufModifiersARGB;
+  nsCString dmabufModifiersNV12;
+  nsCString dmabufModifiersP010;
+  nsCString dmabufModifiersYUV420;
+
   nsCString* stringToFill = nullptr;
   bool logString = false;
   bool errorLog = false;
@@ -298,6 +331,16 @@ void GfxInfo::GetData() {
       stringToFill = &drmRenderDevice;
     } else if (!strcmp(line, "TEST_TYPE")) {
       stringToFill = &testType;
+    } else if (!strcmp(line, "DMABUF_MODIFIERS_XRGB")) {
+      stringToFill = &dmabufModifiersXRGB;
+    } else if (!strcmp(line, "DMABUF_MODIFIERS_ARGB")) {
+      stringToFill = &dmabufModifiersARGB;
+    } else if (!strcmp(line, "DMABUF_MODIFIERS_NV12")) {
+      stringToFill = &dmabufModifiersNV12;
+    } else if (!strcmp(line, "DMABUF_MODIFIERS_P010")) {
+      stringToFill = &dmabufModifiersP010;
+    } else if (!strcmp(line, "DMABUF_MODIFIERS_YUV420")) {
+      stringToFill = &dmabufModifiersYUV420;
     } else if (!strcmp(line, "WARNING")) {
       logString = true;
     } else if (!strcmp(line, "ERROR")) {
@@ -305,6 +348,26 @@ void GfxInfo::GetData() {
       errorLog = true;
     }
   }
+
+  auto parseModifiers = [](const nsCString& aStr, nsTArray<uint64_t>& aOut) {
+    if (aStr.IsEmpty()) {
+      return;
+    }
+    nsCCharSeparatedTokenizer tokenizer(aStr, ',');
+    while (tokenizer.hasMoreTokens()) {
+      const auto& token = tokenizer.nextToken();
+      nsresult rv;
+      uint64_t val = token.ToUnsignedInteger64(&rv, 16);
+      if (NS_SUCCEEDED(rv)) {
+        aOut.AppendElement(val);
+      }
+    }
+  };
+  parseModifiers(dmabufModifiersXRGB, mDMABufEGLModifiersXRGB);
+  parseModifiers(dmabufModifiersARGB, mDMABufEGLModifiersARGB);
+  parseModifiers(dmabufModifiersNV12, mDMABufEGLModifiersNV12);
+  parseModifiers(dmabufModifiersP010, mDMABufEGLModifiersP010);
+  parseModifiers(dmabufModifiersYUV420, mDMABufEGLModifiersYUV420);
 
   MOZ_ASSERT(pciDevices.Length() == pciVendors.Length(),
              "Missing PCI vendors/devices");
@@ -1275,16 +1338,7 @@ const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
         "FEATURE_HARDWARE_VIDEO_ZERO_COPY_LINUX_AMD_DISABLE", "Mesa 24.2.0.0");
 
     ////////////////////////////////////
-    // FEATURE_VIDEO_HDR - ALLOWLIST
-
-    // Allow HDR video on Wayland - this is also controlled by the pref
-    // gfx.color_management.hdr which is currently false as of this writing (see
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=1642854)
-    APPEND_TO_DRIVER_BLOCKLIST_EXT(
-        OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
-        WindowProtocol::Wayland, DriverVendor::All, DeviceFamily::All,
-        nsIGfxInfo::FEATURE_VIDEO_HDR, nsIGfxInfo::FEATURE_ALLOW_ALWAYS,
-        DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0), "FEATURE_ROLLOUT_ALL", "");
+    // FEATURE_VIDEO_HDR
 
     ////////////////////////////////////
     // FEATURE_WEBRENDER_PARTIAL_PRESENT

@@ -790,12 +790,12 @@ static bool GC(JSContext* cx, unsigned argc, Value* vp) {
     if (arg.isString()) {
       bool shrinking = false;
       bool last_ditch = false;
-      bool debug_gc = false;
       if (!JS_StringEqualsLiteral(cx, arg.toString(), "shrinking",
-                                  &shrinking) ||
-          !JS_StringEqualsLiteral(cx, arg.toString(), "last-ditch",
-                                  &last_ditch) ||
-          !JS_StringEqualsLiteral(cx, arg.toString(), "debug-gc", &debug_gc)) {
+                                  &shrinking)) {
+        return false;
+      }
+      if (!JS_StringEqualsLiteral(cx, arg.toString(), "last-ditch",
+                                  &last_ditch)) {
         return false;
       }
       if (shrinking) {
@@ -803,10 +803,6 @@ static bool GC(JSContext* cx, unsigned argc, Value* vp) {
       } else if (last_ditch) {
         options = JS::GCOptions::Shrink;
         reason = JS::GCReason::LAST_DITCH;
-      } else if (debug_gc) {
-        // This reason is allowed to trigger high frequency GC mode by
-        // StartReasonCanTriggerHFMode.
-        reason = JS::GCReason::DEBUG_GC;
       }
     }
   }
@@ -6564,6 +6560,37 @@ static bool DetachArrayBuffer(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+static bool StealArrayBufferContents(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  Rooted<JSObject*> callee(cx, &args.callee());
+
+  if (!args.get(0).isObject() ||
+      !JS::IsArrayBufferObject(&args[0].toObject())) {
+    js::ReportUsageErrorASCII(cx, callee, "Argument must be an ArrayBuffer");
+    return false;
+  }
+
+  Rooted<JSObject*> obj(cx, &args[0].toObject());
+  size_t length = JS::GetArrayBufferByteLength(obj);
+
+  // Note: JS::StealArrayBufferContents will either return the stolen data or
+  // throw an exception.
+  void* contents = JS::StealArrayBufferContents(cx, obj);
+  if (!contents) {
+    return false;
+  }
+
+  UniquePtr<void, JS::FreePolicy> ptr(contents);
+  JSObject* newBuffer =
+      JS::NewArrayBufferWithContents(cx, length, std::move(ptr));
+  if (!newBuffer) {
+    return false;
+  }
+
+  args.rval().setObject(*newBuffer);
+  return true;
+}
+
 static bool EnsureNonInline(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   Rooted<JSObject*> callee(cx, &args.callee());
@@ -9342,9 +9369,9 @@ static bool GetAllPrefNames(JSContext* cx, unsigned argc, Value* vp) {
     return values.append(StringValue(s));
   };
 
-#define ADD_NAME(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF) \
-  if (!addPref(NAME)) {                                         \
-    return false;                                               \
+#define ADD_NAME(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF, FUZZING_SAFE) \
+  if (!addPref(NAME)) {                                                       \
+    return false;                                                             \
   }
   FOR_EACH_JS_PREF(ADD_NAME)
 #undef ADD_NAME
@@ -9385,7 +9412,8 @@ static bool GetPrefValue(JSContext* cx, unsigned argc, Value* vp) {
   };
 
   // Search for a matching pref and return its value.
-#define CHECK_PREF(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF) \
+#define CHECK_PREF(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF, \
+                   FUZZING_SAFE)                                  \
   if (StringEqualsLiteral(name, NAME)) {                          \
     setReturnValue(JS::Prefs::CPP_NAME());                        \
     return true;                                                  \
@@ -9905,6 +9933,7 @@ static bool ResetFallbackStubStates(JSContext* cx, unsigned argc, Value* vp) {
     stub->discardStubs(zone, &icScript->icEntry(i));
     stub->state().reset();
   }
+  script->jitScript()->notePurgedStubs();
 
   args.rval().setUndefined();
   return true;
@@ -10300,14 +10329,13 @@ static bool GetLastOOMStackTrace(JSContext* cx, unsigned argc, Value* vp) {
 // clang-format off
 static const JSFunctionSpecWithHelp TestingFunctions[] = {
     JS_FN_HELP("gc", ::GC, 0, 0,
-"gc([obj] | 'zone' [, ('shrinking' | 'last-ditch' | 'debug-gc') ])",
+"gc([obj] | 'zone' [, ('shrinking' | 'last-ditch') ])",
 "  Run the garbage collector.\n"
 "  The first parameter describes which zones to collect: if an object is\n"
 "  given, GC only its zone. If 'zone' is given, GC any zones that were\n"
 "  scheduled via schedulegc.\n"
 "  The second parameter is optional and may be 'shrinking' to perform a\n"
-"  shrinking GC, 'last-ditch' for a shrinking last-ditch GC or 'debug-gc' for\n"
-"  a GC with DEBUG_GC reason."),
+"  shrinking GC or 'last-ditch' for a shrinking, last-ditch GC."),
 
     JS_FN_HELP("minorgc", ::MinorGC, 0, 0,
 "minorgc([aboutToOverflow])",
@@ -11078,6 +11106,12 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE)
 "ensureNonInline(view or buffer)",
 "  Ensure that the memory for the given ArrayBuffer or ArrayBufferView\n"
 "  is not inline."),
+
+    JS_FN_HELP("stealArrayBufferContents", StealArrayBufferContents, 1, 0,
+"stealArrayBufferContents(buffer)",
+"  Steal the contents of the given ArrayBuffer using JS::StealArrayBufferContents\n"
+"  and return a new ArrayBuffer wrapping the stolen contents. The original buffer\n"
+"  is detached."),
 
     JS_FN_HELP("pinArrayBufferOrViewLength", PinArrayBufferOrViewLength, 1, 0,
 "pinArrayBufferOrViewLength(view or buffer[, pin])",

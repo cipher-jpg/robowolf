@@ -13,6 +13,7 @@ const { AppConstants } = ChromeUtils.importESModule(
 import { SearchModeSwitcher } from "chrome://browser/content/urlbar/SearchModeSwitcher.mjs";
 import { UrlbarEventBufferer } from "chrome://browser/content/urlbar/UrlbarEventBufferer.mjs";
 import { UrlbarView } from "chrome://browser/content/urlbar/UrlbarView.mjs";
+import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs";
 
 /**
  * @import { UrlbarSearchOneOffs } from "moz-src:///browser/components/urlbar/UrlbarSearchOneOffs.sys.mjs"
@@ -76,8 +77,6 @@ const lazy = XPCOMUtils.declareLazy({
     "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
-  UrlbarTokenizer:
-    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   UrlbarValueFormatter:
     "moz-src:///browser/components/urlbar/UrlbarValueFormatter.sys.mjs",
@@ -2455,11 +2454,11 @@ ${
         value = value.slice(1);
       }
     } else if (
-      Object.values(lazy.UrlbarTokenizer.RESTRICT).includes(firstToken)
+      Object.values(UrlbarShared.RESTRICT_TOKENS).includes(firstToken)
     ) {
       this.searchMode = null;
       // If the entire value is a restricted token, append a space.
-      if (Object.values(lazy.UrlbarTokenizer.RESTRICT).includes(value)) {
+      if (Object.values(UrlbarShared.RESTRICT_TOKENS).includes(value)) {
         value += " ";
       }
     }
@@ -2489,14 +2488,14 @@ ${
    * Returns a search mode object if a token should enter search mode when
    * typed. This does not handle engine aliases.
    *
-   * @param {Values<typeof lazy.UrlbarTokenizer.RESTRICT>} token
+   * @param {Values<typeof UrlbarShared.RESTRICT_TOKENS>} token
    *   A restriction token to convert to search mode.
    * @returns {?object}
    *   A search mode object. Null if search mode should not be entered. See
    *   setSearchMode documentation for details.
    */
   searchModeForToken(token) {
-    if (token == lazy.UrlbarTokenizer.RESTRICT.SEARCH) {
+    if (token == UrlbarShared.RESTRICT_TOKENS.SEARCH) {
       return {
         engineName: lazy.UrlbarSearchUtils.getDefaultEngine(this.isPrivate)
           ?.name,
@@ -2769,6 +2768,7 @@ ${
         }
       }
     }
+    Services.obs.notifyObservers(null, "urlbar-searchmodechanged");
   }
 
   /**
@@ -2906,8 +2906,6 @@ ${
 
   set searchMode(searchMode) {
     this.setSearchMode(searchMode, this.window.gBrowser.selectedBrowser);
-    this.searchModeSwitcher?.onSearchModeChanged();
-    lazy.UrlbarSearchTermsPersistence.onSearchModeChanged(this.window);
   }
 
   getBrowserState(browser) {
@@ -2952,9 +2950,8 @@ ${
       return;
     }
 
-    this.#updateTextboxPosition();
-
     this.toggleAttribute("breakout-extend", true);
+    this.#updateTextboxPosition();
 
     // Enable the animation only after the first extend call to ensure it
     // doesn't run when opening a new window.
@@ -2989,7 +2986,7 @@ ${
 
   updateLayoutExtend() {
     if (!Services.prefs.getBoolPref("browser.nova.enabled", false)) {
-      if (this.view.isOpen && this.view.visibleRowCount) {
+      if (this.view.isOpen) {
         this.startLayoutExtend();
       } else {
         this.endLayoutExtend();
@@ -2997,7 +2994,7 @@ ${
       return;
     }
 
-    if (this.focused || (this.view.isOpen && this.view.visibleRowCount)) {
+    if (this.focused || this.view.isOpen) {
       this.startLayoutExtend();
     } else {
       this.endLayoutExtend();
@@ -3302,10 +3299,7 @@ ${
   }
 
   #updateTextboxPosition() {
-    if (
-      !this.view.isOpen &&
-      !Services.prefs.getBoolPref("browser.nova.enabled", false)
-    ) {
+    if (!this.hasAttribute("breakout-extend")) {
       this.style.top = "";
       return;
     }
@@ -4782,7 +4776,7 @@ ${
       if (result.type == lazy.UrlbarUtils.RESULT_TYPE.RESTRICT) {
         searchMode.restrictType = "keyword";
       } else if (
-        lazy.UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(result.payload.keyword)
+        UrlbarShared.SEARCH_MODE_RESTRICT.has(result.payload.keyword)
       ) {
         searchMode.restrictType = "symbol";
       }
@@ -5300,6 +5294,12 @@ ${
 
   _on_auxclick(event) {
     switch (event.target) {
+      case this.inputField:
+      case this._inputContainer:
+        this.#maybeSelectAll();
+        this.#maybeUntrimUrl();
+        break;
+
       case this.goButton:
         this.handleCommand(event);
         break;

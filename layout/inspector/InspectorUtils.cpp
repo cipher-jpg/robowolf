@@ -215,6 +215,9 @@ void InspectorUtils::GetChildrenForNode(nsINode& aNode,
   if (auto* node = nsLayoutUtils::GetMarkerPseudo(parent)) {
     aResult.AppendElement(node);
   }
+  if (auto* node = nsLayoutUtils::GetCheckmarkPseudo(parent)) {
+    aResult.AppendElement(node);
+  }
   if (auto* node = nsLayoutUtils::GetBeforePseudo(parent)) {
     aResult.AppendElement(node);
   }
@@ -853,6 +856,12 @@ void InspectorUtils::ColorTo(GlobalObject&, const nsACString& aFromColor,
 bool InspectorUtils::IsValidCSSColor(GlobalObject& aGlobalObject,
                                      const nsACString& aColorString) {
   return ServoCSSParser::IsValidCSSColor(aColorString);
+}
+
+/* static */
+bool InspectorUtils::IsValidCSSImage(GlobalObject& aGlobalObject,
+                                     const nsACString& aImageString) {
+  return ServoCSSParser::IsValidCSSImage(aImageString);
 }
 
 /* static */

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -47,11 +48,11 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import mozilla.components.compose.base.modifier.thenConditional
 import org.mozilla.fenix.R
-import org.mozilla.fenix.home.sessioncontrol.TrackingProtectionInteractor
 import org.mozilla.fenix.theme.FirefoxTheme
 import java.text.BreakIterator
 import java.text.StringCharacterIterator
 import kotlin.math.roundToInt
+import mozilla.components.ui.icons.R as iconsR
 
 private const val FOX_ANIMATION_DURATION = 600
 private const val TYPING_DELAY_MS = 50L
@@ -64,14 +65,16 @@ private const val TYPEWRITER_REVERSE_DELAY_MS = 1200L
  *
  * @param trackersBlockedCount The number of trackers blocked to display.
  * @param modifier Modifier to be applied to the card.
- * @param interactor Optional [TrackingProtectionInteractor] for handling interactions.
+ * @param onPrivacyReportTapped Invoked when the pill is tapped. If null, the pill is not clickable.
+ * @param onLongfoxEntryPointClicked Invoked when the longfox typewriter text is tapped.
  * @param showLongfoxEntryPoint Whether to show the fox animation and typewriter text.
  */
 @Composable
 fun TrackersBlockedCard(
     trackersBlockedCount: Int,
     modifier: Modifier = Modifier,
-    interactor: TrackingProtectionInteractor? = null,
+    onPrivacyReportTapped: (() -> Unit)? = null,
+    onLongfoxEntryPointClicked: () -> Unit = {},
     showLongfoxEntryPoint: Boolean = false,
 ) {
     val foxOffsetY = remember { Animatable(1f) }
@@ -124,7 +127,7 @@ fun TrackersBlockedCard(
 
             ProtectionStatusPill(
                 trackersBlockedCount = trackersBlockedCount,
-                interactor = interactor,
+                onPrivacyReportTapped = onPrivacyReportTapped,
             )
         }
 
@@ -133,7 +136,7 @@ fun TrackersBlockedCard(
 
             TypewriterText(
                 modifier = Modifier
-                    .clickable { interactor?.onLongfoxEntryPointClicked() }
+                    .clickable { onLongfoxEntryPointClicked() }
                     .padding(bottom = FirefoxTheme.layout.space.static300),
                 text = stringResource(R.string.help_catch_trackers),
                 isReversing = isReversing,
@@ -145,28 +148,29 @@ fun TrackersBlockedCard(
 @Composable
 private fun ProtectionStatusPill(
     trackersBlockedCount: Int,
-    interactor: TrackingProtectionInteractor? = null,
+    onPrivacyReportTapped: (() -> Unit)? = null,
 ) {
     val shape = MaterialTheme.shapes.extraLarge
     Row(
         modifier = Modifier
             .background(
-                color = MaterialTheme.colorScheme.secondaryContainer,
+                color = MaterialTheme.colorScheme.surfaceBright,
                 shape = shape,
             )
             .clip(shape)
             .thenConditional(
-                Modifier.clickable { interactor?.onPrivacyReportTapped() },
-                { interactor != null },
+                Modifier.clickable { onPrivacyReportTapped?.invoke() },
+                { onPrivacyReportTapped != null },
             )
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Image(
-            painter = painterResource(R.drawable.firefox_pictorgram_shield_rgb),
+        Icon(
+            painter = painterResource(iconsR.drawable.mozac_ic_shield_checkmark_20),
             contentDescription = null,
             modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.tertiary,
         )
 
         Text(
@@ -258,10 +262,7 @@ private fun TrackersBlockedCardPreview() {
         Surface {
             TrackersBlockedCard(
                 trackersBlockedCount = 754,
-                interactor = object : TrackingProtectionInteractor {
-                    override fun onPrivacyReportTapped() = Unit
-                    override fun onLongfoxEntryPointClicked() = Unit
-                },
+                onPrivacyReportTapped = {},
                 showLongfoxEntryPoint = true,
             )
         }
@@ -275,10 +276,7 @@ private fun TrackersBlockedCardEmptyPreview() {
         Surface {
             TrackersBlockedCard(
                 trackersBlockedCount = 0,
-                interactor = object : TrackingProtectionInteractor {
-                    override fun onPrivacyReportTapped() = Unit
-                    override fun onLongfoxEntryPointClicked() = Unit
-                },
+                onPrivacyReportTapped = {},
                 showLongfoxEntryPoint = false,
             )
         }
@@ -311,10 +309,7 @@ private fun TrackersBlockedCardInteractivePreview() {
 
                     TrackersBlockedCard(
                         trackersBlockedCount = 754,
-                        interactor = object : TrackingProtectionInteractor {
-                            override fun onPrivacyReportTapped() = Unit
-                            override fun onLongfoxEntryPointClicked() = Unit
-                        },
+                        onPrivacyReportTapped = {},
                         showLongfoxEntryPoint = true,
                     )
                 }

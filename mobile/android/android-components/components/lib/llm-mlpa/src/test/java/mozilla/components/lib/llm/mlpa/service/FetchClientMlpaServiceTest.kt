@@ -14,7 +14,6 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import mozilla.components.concept.fetch.MutableHeaders
 import mozilla.components.concept.fetch.Response
 import mozilla.components.concept.integrity.IntegrityToken
-import mozilla.components.concept.llm.ErrorCode
 import mozilla.components.concept.llm.LlmProvider
 import mozilla.components.lib.llm.mlpa.fakes.FakeClient
 import mozilla.components.lib.llm.mlpa.fakes.asBody
@@ -27,6 +26,39 @@ import org.junit.Test
 import kotlin.test.assertIs
 
 class FetchClientMlpaServiceTest {
+
+    @Test
+    fun `GIVEN a verification request WHEN made THEN headers include json content type`() =
+        runTest {
+            val json = """
+                {
+                    "access_token": "my-authorization-token",
+                    "token_type": "bearer",
+                    "expires_in": 6000
+                }
+            """.trimIndent()
+            val client = FakeClient.success(json.asBody)
+
+            val mlpaService =
+                FetchClientMlpaService(client, MlpaConfig.prodProd)
+
+            val response = mlpaService.verify(
+                request = AuthenticationService.Request(
+                    userId = UserId("my-user-id"),
+                    integrityToken = IntegrityToken("my-integrity-token"),
+                    packageName = PackageName("my.package.name"),
+                ),
+            )
+
+            val expected = AuthenticationService.Response(
+                accessToken = AuthorizationToken.Integrity("my-authorization-token"),
+                tokenType = "bearer",
+                expiresIn = 6000,
+            )
+
+            assertEquals(response.getOrThrow(), expected)
+            assertEquals("application/json", client.lastRequest?.headers?.get("content-type"))
+        }
 
     @Test
     fun `GIVEN a successful response WHEN try to verify an integrity token THEN return a constructed Response`() =
@@ -85,7 +117,7 @@ class FetchClientMlpaServiceTest {
             assertTrue(response.isFailure)
 
             response.onFailure {
-                assertIs<ChatServiceError.VerificationResponseParseError>(it)
+                assertIs<VerificationResponseParseError>(it)
             }
         }
 
@@ -104,7 +136,7 @@ class FetchClientMlpaServiceTest {
 
             assertTrue(response.isFailure)
             response.onFailure {
-                assertIs<ChatServiceError.VerificationNetworkError>(it)
+                assertIs<VerificationNetworkError>(it)
             }
         }
 
@@ -240,7 +272,7 @@ class FetchClientMlpaServiceTest {
             response
                 .onEach { fail("Should immediately throw") }
                 .catch {
-                    assertIs<ChatServiceError.RateLimitResponseParseError>(it)
+                    assertIs<RateLimitResponseParseError>(it)
                 }
                 .firstOrNull()
         }
@@ -269,7 +301,7 @@ class FetchClientMlpaServiceTest {
             response
                 .onEach { fail("Should immediately throw") }
                 .catch {
-                    assertIs<ChatServiceError.RateLimitResponseParseError>(it)
+                    assertIs<RateLimitResponseParseError>(it)
                 }
                 .firstOrNull()
         }
@@ -298,7 +330,7 @@ class FetchClientMlpaServiceTest {
             response
                 .onEach { fail("Should immediately throw") }
                 .catch {
-                    assertIs<ChatServiceError.BudgetExceeded>(it)
+                    assertIs<BudgetExceeded>(it)
                 }
                 .firstOrNull()
         }
@@ -327,7 +359,7 @@ class FetchClientMlpaServiceTest {
             response
                 .onEach { fail("Should immediately throw") }
                 .catch {
-                    assertIs<ChatServiceError.RateLimited>(it)
+                    assertIs<RateLimited>(it)
                 }
                 .firstOrNull()
         }
@@ -356,7 +388,7 @@ class FetchClientMlpaServiceTest {
             response
                 .onEach { fail("Should immediately throw") }
                 .catch {
-                    assertIs<ChatServiceError.ServerError>(it)
+                    assertIs<ServerError>(it)
                 }
                 .firstOrNull()
         }
@@ -391,8 +423,7 @@ class FetchClientMlpaServiceTest {
             response
                 .onEach { fail("Should immediately throw") }
                 .catch {
-                    assertIs<ChatServiceError.ResponseParseError>(it)
-                    assertEquals(ErrorCode(1012), it.errorCode)
+                    assertIs<ResponseParseError>(it)
                 }
                 .firstOrNull()
         }
@@ -413,8 +444,7 @@ class FetchClientMlpaServiceTest {
             response
                 .onEach { fail("Should immediately throw") }
                 .catch {
-                    assertIs<ChatServiceError.ChatNetworkError>(it)
-                    assertEquals(ErrorCode(1011), it.errorCode)
+                    assertIs<ChatNetworkError>(it)
                 }
                 .firstOrNull()
         }
@@ -436,8 +466,7 @@ class FetchClientMlpaServiceTest {
             )
 
             val error = runCatching { response.first() }.exceptionOrNull()
-            assertIs<ChatServiceError.RateLimitResponseParseError>(error)
-            assertEquals(ErrorCode(1013), error.errorCode)
+            assertIs<RateLimitResponseParseError>(error)
         }
 
     @Test
@@ -457,38 +486,37 @@ class FetchClientMlpaServiceTest {
             )
 
             val error = runCatching { response.first() }.exceptionOrNull()
-            assertIs<ChatServiceError.UpstreamResponseParseError>(error)
-            assertEquals(ErrorCode(1014), error.errorCode)
+            assertIs<UpstreamResponseParseError>(error)
         }
 
     @Test
     fun `GIVEN an error status code WHEN try to chat THEN return the appropriate error`() =
         runTest {
-            data class Case(val statusCode: Int, val expectedError: ChatServiceError) {
+            data class Case(val statusCode: Int, val expectedError: MlpaError) {
                 val headers get() = when (expectedError) {
-                    ChatServiceError.RateLimited(8000L),
-                    ChatServiceError.BudgetExceeded(8000L),
+                    RateLimited(8000L),
+                    BudgetExceeded(8000L),
                         -> MutableHeaders("Retry-After" to "8000")
                     else -> MutableHeaders()
                 }
 
                 val body get() = when (expectedError) {
-                    is ChatServiceError.BudgetExceeded -> "{ \"error\": 1 }".asBody
-                    is ChatServiceError.RateLimited -> "{ \"error\": 2 }".asBody
-                    is ChatServiceError.UpstreamError -> "{ \"error\": \"There was an error\" }".asBody
+                    is BudgetExceeded -> "{ \"error\": 1 }".asBody
+                    is RateLimited -> "{ \"error\": 2 }".asBody
+                    is UpstreamError -> "{ \"error\": \"There was an error\" }".asBody
                     else -> Response.Body.empty()
                 }
             }
 
             val cases = listOf(
-                Case(401, ChatServiceError.InvalidToken()),
-                Case(403, ChatServiceError.UserBlocked()),
-                Case(413, ChatServiceError.RequestTooLarge()),
-                Case(429, ChatServiceError.BudgetExceeded(8000L)),
-                Case(429, ChatServiceError.BudgetExceeded(null)),
-                Case(429, ChatServiceError.RateLimited(8000L)),
-                Case(502, ChatServiceError.UpstreamError("There was an error")),
-                Case(500, ChatServiceError.ServerError(500)),
+                Case(401, InvalidToken()),
+                Case(403, UserBlocked()),
+                Case(413, RequestTooLarge()),
+                Case(429, BudgetExceeded(8000L)),
+                Case(429, BudgetExceeded(null)),
+                Case(429, RateLimited(8000L)),
+                Case(502, UpstreamError("There was an error")),
+                Case(500, ServerError(500)),
             )
 
             cases.forEach { case ->
@@ -508,8 +536,8 @@ class FetchClientMlpaServiceTest {
                 response
                     .onEach { _ -> fail("We should have thrown an exception") }
                     .catch {
-                        assertIs<ChatServiceError>(it, "Should be ChatServiceError but got $it")
-                        assertEquals(case.expectedError.errorCode, it.errorCode)
+                        assertIs<MlpaError>(it, "Should be MlpaError but got $it")
+                        assertEquals(case.expectedError::class, it::class)
                     }.firstOrNull()
             }
         }

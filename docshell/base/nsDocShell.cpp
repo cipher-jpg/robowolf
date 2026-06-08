@@ -40,6 +40,7 @@
 #include "mozilla/StaticPrefs_docshell.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_extensions.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPrefs_ui.h"
@@ -1378,7 +1379,7 @@ void nsDocShell::FirePageHideShowNonRecursive(bool aShow) {
   }
 }
 
-nsresult nsDocShell::Dispatch(already_AddRefed<nsIRunnable>&& aRunnable) {
+nsresult nsDocShell::Dispatch(already_AddRefed<nsIRunnable> aRunnable) {
   nsCOMPtr<nsIRunnable> runnable(aRunnable);
   if (NS_WARN_IF(!GetWindow())) {
     // Window should only be unavailable after destroyed.
@@ -4830,8 +4831,8 @@ nsresult nsDocShell::SetCurScrollPosEx(int32_t aCurHorizontalPos,
     return NS_OK;
   }
 
-  presShell->ScrollToVisual(targetPos, layers::FrameMetrics::eMainThread,
-                            scrollMode);
+  presShell->ScrollToVisual(
+      targetPos, layers::ScrollOffsetUpdateType::MainThread, scrollMode);
 
   return NS_OK;
 }
@@ -9028,6 +9029,8 @@ nsIPrincipal* nsDocShell::GetInheritedPrincipal(
     MOZ_TRY(vsh->NewSrcdocChannel(aURI, aBaseURI, aSrcdoc, aLoadInfo,
                                   getter_AddRefs(channel)));
   } else {
+    MOZ_RELEASE_ASSERT(NS_IsAboutSrcdoc(aURI));
+
     MOZ_TRY(NS_NewInputStreamChannelInternal(getter_AddRefs(channel), aURI,
                                              aSrcdoc, "text/html"_ns, aLoadInfo,
                                              true));

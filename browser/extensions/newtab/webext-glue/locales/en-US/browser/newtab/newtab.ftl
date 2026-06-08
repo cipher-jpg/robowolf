@@ -795,6 +795,23 @@ newtab-sports-widget-show-less =
 newtab-sports-widget-followed-only-toggle =
     .label = Only followed teams
 
+## Sports widget live-games pagination. Shown when 2+ matches are live at the same time
+
+# arrow button that goes to the previous page of live matches.
+newtab-sports-widget-pagination-previous =
+    .aria-label = Previous
+    .title = Previous
+# arrow button that goes to the next page of live matches.
+newtab-sports-widget-pagination-next =
+    .aria-label = Next
+    .title = Next
+# Dot indicator that jumps directly to a given live match.
+# $index (number) - 1-based position of this dot in the list.
+# $total (number) - Total number of live matches.
+newtab-sports-widget-pagination-dot =
+    .aria-label = Live match { $index } of { $total }
+    .title = Live match { $index } of { $total }
+
 ## Watch live stream dialog
 ## Shown when the user clicks the “Watch live” button on a live match.
 ## Lists available streaming services where the match can be watched.
@@ -910,6 +927,11 @@ newtab-sports-widget-match-full-time = Full time
 newtab-sports-widget-match-halftime = Halftime
 newtab-sports-widget-match-extra-time = Extra time
 newtab-sports-widget-match-penalties = Penalties
+# Separator shown between two teams in a placeholder match row when no upcoming
+# match details are available yet.
+newtab-sports-widget-match-vs = vs
+# Note shown in the Upcoming tab when no match details are available yet.
+newtab-sports-widget-no-upcoming-matches = Stay tuned for upcoming match details
 
 ## Accessible labels for match rows in the sports widget. These are read by
 ## screen readers to announce the match details and status.
@@ -977,6 +999,9 @@ newtab-sports-widget-team-name-label-eng =
     .label = England
 newtab-sports-widget-team-name-label-sco =
     .label = Scotland
+
+# Placeholder used in a match row's aria-label for an undecided team (shown visually as "--").
+newtab-sports-widget-team-tbd = To be determined
 
 ## Sports widget OMC messages
 ## Shown as on-screen messages promoting the Sports widget and World Cup wallpapers.

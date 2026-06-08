@@ -739,15 +739,6 @@ features:
         type: Boolean
         default: false
 
-  homepage-search-bar:
-    description: Enables the homepage search bar.
-    variables:
-      enabled:
-        description: >
-          Whether or not to enable the homepage search bar.
-        type: Boolean
-        default: false
-
   homepage-hide-frecent-top-sites:
     description: Hides frecent top sites on the homepage.
     variables:
@@ -1075,17 +1066,7 @@ features:
       enabled:
         description: If true, Email Mask feature is enabled.
         type: Boolean
-        default: false
-    defaults:
-      - channel: developer
-        value:
-          enabled: true
-      - channel: nightly
-        value:
-          enabled: true
-      - channel: beta
-        value:
-          enabled: true
+        default: true
 
   ip-protection:
     description: Feature to enable IP Protection (VPN) for users on Firefox on Android.
@@ -1148,29 +1129,15 @@ features:
       enabled:
         description: If true, Merino Manifest is enabled.
         type: Boolean
-        default: false
-    defaults:
-      - channel: developer
-        value:
-          enabled: true
-      - channel: nightly
-        value:
-          enabled: true
+        default: true
 
   mozilla-ads-client:
-    description: Feature to enable the Mozilla Ads Client for users on Firefox on Android.
+    description: Feature to enable the Mozilla Ads Client support for Top Sites for users on Firefox on Android.
     variables:
       enabled:
-        description: If true, Mozilla Ads Client is enabled.
+        description: If true, Mozilla Ads Client support for Top Sites is enabled.
         type: Boolean
-        default: false
-    defaults:
-      - channel: developer
-        value:
-          enabled: true
-      - channel: nightly
-        value:
-          enabled: true
+        default: true
 
   private-mode-and-stories-entry-point:
     description: Feature to enable the Private Mode and Stories Entry Point Experiment.
@@ -1275,6 +1242,25 @@ features:
           still applies when this is false (the default).
         type: Boolean
         default: false
+      fetch-throttle-seconds:
+        description: >
+          Minimum interval, in seconds, that the client will wait between Sports Widget fetches.
+          Guards the upstream Merino endpoint against refresh-button spam and Home/onResume thrash.
+          The default aligns with the upstream cache TTL — a shorter interval just returns the
+          same payload at the cost of battery and bandwidth. Lower this remotely only if the
+          upstream cache TTL is also lowered, otherwise users will see no fresher data.
+        type: Int
+        default: 60
+    defaults:
+      - channel: developer
+        value:
+          enabled: true
+      - channel: nightly
+        value:
+          enabled: true
+      - channel: beta
+        value:
+          enabled: true
 
   webcompat-reporter-enhancements:
     description: Feature to enable WebCompat Reporter enhancements for users on Firefox Android.

@@ -1158,6 +1158,38 @@ add_atomic_task(async function test_seenUrls_roundTrip() {
   );
 });
 
+add_atomic_task(async function test_serpUrlsForAnonymousFetch_roundTrip() {
+  const conversation = new ChatConversation({});
+  conversation.title = "conversation with search result url ledger";
+  conversation.addUserMessage("test content", "https://www.firefox.com");
+  conversation.addSerpUrlsForAnonymousFetch([
+    "https://search-result.example.com/a",
+    "https://search-result.example.com/b",
+  ]);
+  await gChatStore.updateConversation(conversation);
+
+  const restored = await gChatStore.findConversationById(conversation.id);
+
+  Assert.ok(restored, "conversation should restore from DB");
+  Assert.ok(
+    restored.serpUrlsForAnonymousFetch.has(
+      "https://search-result.example.com/a"
+    ),
+    "first ledger URL should be restored"
+  );
+  Assert.ok(
+    restored.serpUrlsForAnonymousFetch.has(
+      "https://search-result.example.com/b"
+    ),
+    "second ledger URL should be restored"
+  );
+  Assert.equal(
+    restored.serpUrlsForAnonymousFetch.size,
+    2,
+    "serpUrlsForAnonymousFetch should have exactly 2 entries"
+  );
+});
+
 add_atomic_task(async function test_securityProperties_upsert_updatesFlags() {
   const conversation = new ChatConversation({});
   conversation.title = "conversation that becomes tainted";
@@ -1607,6 +1639,64 @@ add_atomic_task(
       telemetry.uniformSamplingProbability,
       750,
       "uniform_sampling_probability should not be overwritten on update"
+    );
+  }
+);
+
+add_atomic_task(
+  async function test_findConversationById_hydratesUniformSamplingState() {
+    const conversation = new ChatConversation({});
+    conversation.title = "hydration conversation";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+    await gChatStore.updateLLMTelemetryRecord(conversation.id, {}, {}, 0.25, 0);
+
+    const reloaded = await gChatStore.findConversationById(conversation.id);
+
+    Assert.equal(
+      reloaded._telemetryUniformSample,
+      true,
+      "_telemetryUniformSample is rehydrated from llm_telemetry on reload"
+    );
+    Assert.equal(
+      reloaded._telemetryUniformProbability,
+      0.25,
+      "_telemetryUniformProbability is rehydrated from llm_telemetry on reload"
+    );
+  }
+);
+
+add_atomic_task(
+  async function test_findConversationById_skipsHydrationWhenNotSampled() {
+    const conversation = new ChatConversation({});
+    conversation.title = "no-hydration conversation";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+    await gChatStore.updateLLMTelemetryRecord(conversation.id, {}, {}, 0, 0);
+
+    const reloaded = await gChatStore.findConversationById(conversation.id);
+
+    Assert.notStrictEqual(
+      reloaded._telemetryUniformSample,
+      true,
+      "_telemetryUniformSample stays unset when uniform_sampling_probability is 0"
+    );
+  }
+);
+
+add_atomic_task(
+  async function test_findConversationById_skipsHydrationWhenNoTelemetryRow() {
+    const conversation = new ChatConversation({});
+    conversation.title = "no-telemetry-row conversation";
+    conversation.addUserMessage("test content", "https://www.firefox.com");
+    await gChatStore.updateConversation(conversation);
+
+    const reloaded = await gChatStore.findConversationById(conversation.id);
+
+    Assert.notStrictEqual(
+      reloaded._telemetryUniformSample,
+      true,
+      "_telemetryUniformSample stays unset when no llm_telemetry row exists"
     );
   }
 );

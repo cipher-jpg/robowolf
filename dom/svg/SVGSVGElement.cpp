@@ -83,9 +83,8 @@ SVGView::SVGView() {
 //----------------------------------------------------------------------
 // Implementation
 
-SVGSVGElement::SVGSVGElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-    FromParser aFromParser)
+SVGSVGElement::SVGSVGElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
+                             FromParser aFromParser)
     : SVGSVGElementBase(std::move(aNodeInfo)),
       mStartAnimationOnBindToTree(aFromParser == NOT_FROM_PARSER ||
                                   aFromParser == FROM_PARSER_FRAGMENT ||
@@ -435,6 +434,11 @@ LengthPercentage SVGSVGElement::GetIntrinsicWidthOrHeight(int aAttr) {
 }
 
 AspectRatio SVGSVGElement::GetIntrinsicRatio() {
+  if (SVGOuterSVGFrame* osf = do_QueryFrame(GetPrimaryFrame())) {
+    if (osf->ContainSizeAxesIfApplicable().IsAny()) {
+      return AspectRatio();
+    }
+  }
   // We only have an intrinsic size/ratio if our width and height attributes
   // are both specified and set to non-percentage values, or we have a viewBox
   // rect: https://svgwg.org/svg2-draft/coords.html#SizingSVGInCSS
@@ -470,27 +474,23 @@ AspectRatio SVGSVGElement::GetIntrinsicRatio() {
 gfx::Size SVGSVGElement::GetIntrinsicSizeWithFallback() {
   auto intrinsicWidth = GetIntrinsicWidth();
   auto intrinsicHeight = GetIntrinsicHeight();
-  bool hasWidth = intrinsicWidth.IsLength();
-  bool hasHeight = intrinsicHeight.IsLength();
-  gfx::Size size;
-  if (hasWidth) {
-    size.width = intrinsicWidth.AsLength().ToCSSPixels();
-  }
-  if (hasHeight) {
-    size.height = intrinsicHeight.AsLength().ToCSSPixels();
-  }
-  if (hasWidth && hasHeight) {
+  gfx::Size size(
+      intrinsicWidth.IsLength() ? intrinsicWidth.AsLength().ToCSSPixels()
+                                : kFallbackIntrinsicWidthInPixels,
+      intrinsicHeight.IsLength() ? intrinsicHeight.AsLength().ToCSSPixels()
+                                 : kFallbackIntrinsicHeightInPixels);
+  if (intrinsicWidth.IsLength() && intrinsicHeight.IsLength()) {
     return size;
   }
-  SVGOuterSVGFrame* osf = do_QueryFrame(GetPrimaryFrame());
-  AspectRatio ratio = osf ? osf->GetIntrinsicRatio() : GetIntrinsicRatio();
-  if (!hasWidth) {
-    size.width = ratio && hasHeight ? CSSIntCoord(ratio.ApplyTo(size.height))
-                                    : kFallbackIntrinsicWidthInPixels;
-  }
-  if (!hasHeight) {
-    size.height = ratio ? CSSIntCoord(ratio.Inverted().ApplyTo(size.width))
-                        : kFallbackIntrinsicHeightInPixels;
+  if (AspectRatio ratio = GetIntrinsicRatio()) {
+    if (!intrinsicHeight.IsLength()) {
+      // Compute the height from the width & ratio.  (Note that the width we
+      // use here might be kFallbackIntrinsicWidthInPixels, and that's fine.)
+      size.height = ratio.Inverted().ApplyTo(size.width);
+    } else if (!intrinsicWidth.IsLength()) {
+      // Compute the width from the height & ratio.
+      size.width = ratio.ApplyTo(size.height);
+    }
   }
   return size;
 }

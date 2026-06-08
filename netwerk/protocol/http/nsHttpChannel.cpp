@@ -1042,6 +1042,13 @@ static bool canUseHTTPSRRonNetwork(bool& aTRREnabled) {
     }
   }
 
+  // With Happy Eyeballs enabled we can allow native HTTPS RR queries: HE's
+  // resolution-delay timer lets connection attempts proceed using the A/AAAA
+  // results even when the native HTTPS RR lookup is slow or blocked.
+  if (StaticPrefs::network_http_happy_eyeballs_enabled()) {
+    return true;
+  }
+
   if (RefPtr<NetworkConnectivityService> ncs =
           NetworkConnectivityService::GetSingleton()) {
     nsINetworkConnectivityService::ConnectivityState state;
@@ -1095,8 +1102,8 @@ nsresult nsHttpChannel::MaybeUseHTTPSRRForUpgrade(bool aShouldUpgrade,
       return true;
     }
 
-    auto dnsStrategy = GetProxyDNSStrategy();
-    if (dnsStrategy != ProxyDNSStrategy::ORIGIN) {
+    auto dnsStrategy = ComputeProxyDNSStrategy();
+    if (dnsStrategy != nsIHttpChannelInternal::PROXY_DNS_STRATEGY_ORIGIN) {
       return true;
     }
 
@@ -3987,7 +3994,7 @@ nsresult nsHttpChannel::ProxyFailover() {
 }
 
 void nsHttpChannel::SetHTTPSSVCRecord(
-    already_AddRefed<nsIDNSHTTPSSVCRecord>&& aRecord) {
+    already_AddRefed<nsIDNSHTTPSSVCRecord> aRecord) {
   LOG(("nsHttpChannel::SetHTTPSSVCRecord [this=%p]\n", this));
   nsCOMPtr<nsIDNSHTTPSSVCRecord> record = aRecord;
   MOZ_ASSERT(!mHTTPSSVCRecord);
@@ -6274,6 +6281,8 @@ bool nsHttpChannel::ParseDictionary(nsICacheEntry* aEntry,
           ("Failed to parse dictionary pattern %s", matchVal.get()));
       return false;
     }
+
+    auto freePattern = MakeScopeExit([&] { urlpattern_pattern_free(pattern); });
     if (urlpattern_get_has_regexp_groups(pattern)) {
       LOG_DICTIONARIES(("Pattern %s has regexp groups", matchVal.get()));
       return false;
@@ -7799,16 +7808,25 @@ nsHttpChannel::GetOrCreateChannelClassifier() {
   return classifier.forget();
 }
 
-ProxyDNSStrategy nsHttpChannel::GetProxyDNSStrategy() {
+nsIHttpChannelInternal::ProxyDNSStrategy
+nsHttpChannel::ComputeProxyDNSStrategy() {
   // When network_dns_force_use_https_rr is true, return DNS_PREFETCH_ORIGIN.
   // This ensures that we always perform HTTPS RR query.
   nsCOMPtr<nsProxyInfo> proxyInfo(static_cast<nsProxyInfo*>(mProxyInfo.get()));
   if (!proxyInfo || StaticPrefs::network_dns_force_use_https_rr()) {
-    return ProxyDNSStrategy::ORIGIN;
+    return nsIHttpChannelInternal::PROXY_DNS_STRATEGY_ORIGIN;
   }
 
   // If the proxy is not to perform name resolution itself.
   return GetProxyDNSStrategyHelper(proxyInfo->Type(), proxyInfo->Flags());
+}
+
+NS_IMETHODIMP
+nsHttpChannel::GetProxyDNSStrategy(
+    nsIHttpChannelInternal::ProxyDNSStrategy* aStrategy) {
+  NS_ENSURE_ARG_POINTER(aStrategy);
+  *aStrategy = ComputeProxyDNSStrategy();
+  return NS_OK;
 }
 
 // BeginConnect() SHOULD NOT call AsyncAbort(). AsyncAbort will be called by
@@ -8019,13 +8037,13 @@ nsresult nsHttpChannel::BeginConnect() {
   }
 
   bool trrEnabled = false;
-  auto dnsStrategy = GetProxyDNSStrategy();
+  auto dnsStrategy = ComputeProxyDNSStrategy();
   bool httpsRRAllowed =
       !LoadBeConservative() && !(mCaps & NS_HTTP_BE_CONSERVATIVE) &&
       !(mLoadInfo->TriggeringPrincipal()->IsSystemPrincipal() &&
         mLoadInfo->GetExternalContentPolicyType() !=
             ExtContentPolicy::TYPE_DOCUMENT) &&
-      dnsStrategy == ProxyDNSStrategy::ORIGIN &&
+      dnsStrategy == nsIHttpChannelInternal::PROXY_DNS_STRATEGY_ORIGIN &&
       !mConnectionInfo->UsingConnect() && canUseHTTPSRRonNetwork(trrEnabled) &&
       StaticPrefs::network_dns_use_https_rr_as_altsvc();
   if (!httpsRRAllowed) {
@@ -8225,7 +8243,7 @@ void nsHttpChannel::MaybeStartDNSPrefetch() {
     return;
   }
 
-  auto dnsStrategy = GetProxyDNSStrategy();
+  auto dnsStrategy = ComputeProxyDNSStrategy();
 
   LOG(
       ("nsHttpChannel::MaybeStartDNSPrefetch [this=%p, strategy=%u] "
@@ -8233,7 +8251,7 @@ void nsHttpChannel::MaybeStartDNSPrefetch() {
        this, static_cast<uint32_t>(dnsStrategy),
        mCaps & NS_HTTP_REFRESH_DNS ? ", refresh requested" : ""));
 
-  if (dnsStrategy == ProxyDNSStrategy::ORIGIN) {
+  if (dnsStrategy == nsIHttpChannelInternal::PROXY_DNS_STRATEGY_ORIGIN) {
     OriginAttributes originAttributes;
     StoragePrincipalHelper::GetOriginAttributesForNetworkState(
         this, originAttributes);

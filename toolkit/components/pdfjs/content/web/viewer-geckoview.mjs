@@ -21,8 +21,8 @@
  */
 
 /**
- * pdfjsVersion = 6.0.229
- * pdfjsBuild = 145feeaa3
+ * pdfjsVersion = 6.0.243
+ * pdfjsBuild = b43ef1c74
  */
 
 ;// ./web/ui_utils.js
@@ -916,7 +916,7 @@ class AppOptions {
 }
 
 ;// ./web/internal_evt.js
-const INTERNAL_EVT = "1684dd60-3936-4889-b86a-7f7f4e3a1938";
+const INTERNAL_EVT = "e98dca24-d106-42e8-b751-ec03fd07f6c7";
 const internalOpt = Object.freeze({
   internal: INTERNAL_EVT
 });
@@ -8656,7 +8656,7 @@ class PDFViewer {
   #savedPageViews = null;
   #deletedPageNumbers = null;
   constructor(options) {
-    const viewerVersion = "6.0.229";
+    const viewerVersion = "6.0.243";
     if (version !== viewerVersion) {
       throw new Error(`The API version "${version}" does not match the Viewer version "${viewerVersion}".`);
     }
@@ -10951,7 +10951,7 @@ const PDFViewerApplication = {
     } else {
       eventBus.on("printingallowed", ({
         isAllowed
-      }) => togglePrintingButtons(isAllowed));
+      }) => togglePrintingButtons(isAllowed), internalOpt);
     }
     if (!this.supportsFullscreen) {
       appConfig.secondaryToolbar?.presentationModeButton.classList.add("hidden");
@@ -11292,7 +11292,8 @@ const PDFViewerApplication = {
         }
         resolve(isAllowed);
       }, {
-        once: true
+        once: true,
+        ...internalOpt
       });
     });
     pdfDocument.getDownloadInfo().then(({

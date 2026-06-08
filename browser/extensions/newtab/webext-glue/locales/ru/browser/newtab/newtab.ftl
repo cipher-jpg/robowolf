@@ -825,6 +825,14 @@ newtab-widget-section-menu-manage = Управление виджетами
 newtab-widget-section-menu-hide-all = Скрыть виджеты
 newtab-widget-section-menu-learn-more = Подробнее
 newtab-widget-section-feedback = Скажите нам, что вы думаете
+# Button shown when additional widgets are hidden beyond the
+# first row, allowing users to show them.
+newtab-widget-section-show-more =
+    .label = Показать больше виджетов
+# Button shown when the widgets row is expanded to multiple rows,
+# allowing users to collapse it back to one row.
+newtab-widget-section-show-less =
+    .label = Показывать меньше виджетов
 newtab-widget-lists-name-default = Контрольный список
 
 ## Strings introduced by the Nova redesign of the Timer widget
@@ -1046,7 +1054,26 @@ newtab-sports-widget-world-cup-champions = Чемпионы ЧМ 2026
 #   $date (Date) - The match start time
 newtab-sports-widget-match-time = { DATETIME($date, hour: "2-digit", minute: "2-digit") }
 newtab-sports-widget-match-full-time = Полное время
+newtab-sports-widget-match-halftime = Перерыв
+newtab-sports-widget-match-extra-time = Дополнительное время
 newtab-sports-widget-match-penalties = Пенальти
+
+## Sports widget live-games pagination. Shown when 2+ matches are live at the same time
+
+# arrow button that goes to the previous page of live matches.
+newtab-sports-widget-pagination-previous =
+    .aria-label = Предыдущая
+    .title = Предыдущая
+# arrow button that goes to the next page of live matches.
+newtab-sports-widget-pagination-next =
+    .aria-label = Следующая
+    .title = Следующая
+# Dot indicator that jumps directly to a given live match.
+# $index (number) - 1-based position of this dot in the list.
+# $total (number) - Total number of live matches.
+newtab-sports-widget-pagination-dot =
+    .aria-label = Эфир матча { $index } из { $total }
+    .title = Эфир матча { $index } из { $total }
 
 ## Accessible labels for match rows in the sports widget. These are read by
 ## screen readers to announce the match details and status.

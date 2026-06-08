@@ -1314,7 +1314,7 @@ dependencies = [
  "crash_helper_common",
  "mach2",
  "minidump-writer",
- "nix 0.30.1",
+ "nix",
  "num-derive",
  "num-traits",
  "rust_minidump_writer_linux",
@@ -1332,7 +1332,7 @@ dependencies = [
  "mach2",
  "minidump-writer",
  "mozannotation_server",
- "nix 0.30.1",
+ "nix",
  "num-derive",
  "num-traits",
  "thiserror 2.0.12",
@@ -1356,7 +1356,7 @@ dependencies = [
  "mozannotation_server",
  "mozbuild",
  "mozilla-central-workspace-hack",
- "nix 0.30.1",
+ "nix",
  "num-traits",
  "once_cell",
  "rust_minidump_writer_linux",
@@ -2756,7 +2756,7 @@ dependencies = [
 
 [[package]]
 name = "geckodriver"
-version = "0.36.0"
+version = "0.37.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3155,7 +3155,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51255ea7cfaadb6c5f1528d43e92a82acb2b96c43365989a28b2d44ee38f8795"
 dependencies = [
  "ash",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.999",
  "log",
  "presser",
  "thiserror 2.0.12",
@@ -3292,19 +3292,27 @@ dependencies = [
 name = "hashbrown"
 version = "0.15.999"
 dependencies = [
- "hashbrown 0.16.0",
+ "hashbrown 0.16.999",
 ]
 
 [[package]]
 name = "hashbrown"
-version = "0.16.0"
+version = "0.16.999"
+dependencies = [
+ "hashbrown 0.17.1",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5419bdc4f6a9207fbeba6d11b604d481addf78ecd10c11ad51e76c2f6482748d"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash",
  "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -3320,7 +3328,7 @@ version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea0b22561a9c04a7cb1a302c013e0259cd3b4bb619f145b32f72b8b4bcbed230"
 dependencies = [
- "hashbrown 0.16.0",
+ "hashbrown 0.16.999",
 ]
 
 [[package]]
@@ -3814,7 +3822,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.999",
  "serde",
  "serde_core",
 ]
@@ -4519,7 +4527,7 @@ dependencies = [
 
 [[package]]
 name = "marionette"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4706,7 +4714,7 @@ dependencies = [
  "memmap2",
  "minidump-common",
  "num-traits",
- "procfs-core",
+ "procfs-core 0.17.999",
  "prost",
  "range-map",
  "scroll",
@@ -4768,9 +4776,8 @@ dependencies = [
 
 [[package]]
 name = "minidump-writer"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e1fc14d6ded915b8e850801465e7096f77ed60bf87e4e85878d463720d9dc4d"
+version = "0.12.0"
+source = "git+https://github.com/rust-minidump/minidump-writer.git?rev=107e531a7a06f8e886ffcee13eb07e9ded43473b#107e531a7a06f8e886ffcee13eb07e9ded43473b"
 dependencies = [
  "bitflags 2.10.0",
  "byteorder",
@@ -4783,14 +4790,12 @@ dependencies = [
  "log",
  "mach2",
  "memmap2",
- "memoffset 0.9.0",
  "minidump-common",
- "nix 0.29.0",
- "procfs-core",
+ "nix",
+ "procfs-core 0.18.0",
  "scroll",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror 2.0.12",
 ]
 
@@ -5098,7 +5103,7 @@ version = "0.1.0"
 
 [[package]]
 name = "mozdevice"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "log",
  "once_cell",
@@ -5207,7 +5212,7 @@ dependencies = [
 
 [[package]]
 name = "mozprofile"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "tempfile",
  "thiserror 1.999.999",
@@ -5215,7 +5220,7 @@ dependencies = [
 
 [[package]]
 name = "mozrunner"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "dirs",
  "log",
@@ -5239,7 +5244,7 @@ dependencies = [
 
 [[package]]
 name = "mozversion"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "regex",
  "rust-ini",
@@ -5311,7 +5316,7 @@ checksum = "a2983372caf4480544083767bf2d27defafe32af49ab4df3a0b7fc90793a3664"
 [[package]]
 name = "naga"
 version = "29.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?rev=a16439c1c7c74f522ca70e7991138ba3f8dd8a77#a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+source = "git+https://github.com/gfx-rs/wgpu?rev=e4e2c451d2d4f7585820260a728f7a14eacdf415#e4e2c451d2d4f7585820260a728f7a14eacdf415"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -5320,7 +5325,7 @@ dependencies = [
  "cfg_aliases",
  "codespan-reporting",
  "half 2.5.0",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.999",
  "indexmap",
  "libm",
  "log",
@@ -5533,13 +5538,6 @@ dependencies = [
  "uniffi",
  "url",
  "uuid",
-]
-
-[[package]]
-name = "nix"
-version = "0.29.0"
-dependencies = [
- "nix 0.30.1",
 ]
 
 [[package]]
@@ -6389,9 +6387,16 @@ dependencies = [
 
 [[package]]
 name = "procfs-core"
-version = "0.17.0"
+version = "0.17.999"
+dependencies = [
+ "procfs-core 0.18.0",
+]
+
+[[package]]
+name = "procfs-core"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "239df02d8349b06fc07398a3a1697b06418223b1c7725085e801e7c0fc6a12ec"
+checksum = "e6401bf7b6af22f78b563665d15a22e9aef27775b79b149a66ca022468a4e405"
 dependencies = [
  "bitflags 2.10.0",
  "hex",
@@ -7406,7 +7411,7 @@ version = "0.0.0"
 dependencies = [
  "chrono",
  "futures",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.999",
  "rusqlite 0.37.0",
  "serde",
  "serde_json",
@@ -8839,7 +8844,7 @@ version = "0.3.100"
 
 [[package]]
 name = "webdriver"
-version = "0.53.0"
+version = "0.54.0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -9018,7 +9023,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core"
 version = "29.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?rev=a16439c1c7c74f522ca70e7991138ba3f8dd8a77#a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+source = "git+https://github.com/gfx-rs/wgpu?rev=e4e2c451d2d4f7585820260a728f7a14eacdf415#e4e2c451d2d4f7585820260a728f7a14eacdf415"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -9027,7 +9032,7 @@ dependencies = [
  "bytemuck",
  "cfg_aliases",
  "document-features",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.999",
  "indexmap",
  "log",
  "macro_rules_attribute",
@@ -9051,7 +9056,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-apple"
 version = "29.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?rev=a16439c1c7c74f522ca70e7991138ba3f8dd8a77#a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+source = "git+https://github.com/gfx-rs/wgpu?rev=e4e2c451d2d4f7585820260a728f7a14eacdf415#e4e2c451d2d4f7585820260a728f7a14eacdf415"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9059,7 +9064,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-windows-linux-android"
 version = "29.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?rev=a16439c1c7c74f522ca70e7991138ba3f8dd8a77#a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+source = "git+https://github.com/gfx-rs/wgpu?rev=e4e2c451d2d4f7585820260a728f7a14eacdf415#e4e2c451d2d4f7585820260a728f7a14eacdf415"
 dependencies = [
  "wgpu-hal",
 ]
@@ -9067,7 +9072,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "29.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?rev=a16439c1c7c74f522ca70e7991138ba3f8dd8a77#a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+source = "git+https://github.com/gfx-rs/wgpu?rev=e4e2c451d2d4f7585820260a728f7a14eacdf415#e4e2c451d2d4f7585820260a728f7a14eacdf415"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -9079,7 +9084,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "gpu-allocator",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.999",
  "libc",
  "libloading",
  "log",
@@ -9108,7 +9113,7 @@ dependencies = [
 [[package]]
 name = "wgpu-naga-bridge"
 version = "29.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?rev=a16439c1c7c74f522ca70e7991138ba3f8dd8a77#a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+source = "git+https://github.com/gfx-rs/wgpu?rev=e4e2c451d2d4f7585820260a728f7a14eacdf415#e4e2c451d2d4f7585820260a728f7a14eacdf415"
 dependencies = [
  "naga",
  "wgpu-types",
@@ -9117,7 +9122,7 @@ dependencies = [
 [[package]]
 name = "wgpu-types"
 version = "29.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?rev=a16439c1c7c74f522ca70e7991138ba3f8dd8a77#a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+source = "git+https://github.com/gfx-rs/wgpu?rev=e4e2c451d2d4f7585820260a728f7a14eacdf415#e4e2c451d2d4f7585820260a728f7a14eacdf415"
 dependencies = [
  "bitflags 2.10.0",
  "bytemuck",

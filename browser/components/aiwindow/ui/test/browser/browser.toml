@@ -31,6 +31,8 @@ support-files = [
 
 ["browser_actor_user_prompt.js"]
 
+["browser_aichat_content_action_log_order.js"]
+
 ["browser_aichat_content_actors.js"]
 
 ["browser_aichat_content_background_token.js"]
@@ -140,6 +142,8 @@ skip-if = [
 
 ["browser_open_aiwindow.js"]
 
+["browser_run_search_back_navigation.js"]
+
 ["browser_security_chat.js"]
 
 ["browser_sidebar_aiwindow.js"]
@@ -228,3 +232,5 @@ skip-if = [
   "os == 'win' && os_version == '11.26200' && arch == 'x86'", # Bug 2024015
   "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # Bug 2024015
 ]
+
+["browser_smartwindow_uitool_telemetry.js"]

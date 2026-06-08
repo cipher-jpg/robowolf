@@ -371,6 +371,8 @@ newtab-custom-widget-sports-toggle =
     .label = Wereldkampioenschap
 newtab-custom-widget-clock-toggle =
     .label = Klok
+newtab-custom-widget-sports-toggle2 =
+    .label = Sport
 newtab-custom-widget-section-title = Widgets
 newtab-custom-widget-section-toggle =
     .label = Widgets
@@ -825,6 +827,14 @@ newtab-widget-section-menu-manage = Widgets beheren
 newtab-widget-section-menu-hide-all = Widgets verbergen
 newtab-widget-section-menu-learn-more = Meer info
 newtab-widget-section-feedback = Vertel ons wat u ervan vindt
+# Button shown when additional widgets are hidden beyond the
+# first row, allowing users to show them.
+newtab-widget-section-show-more =
+    .label = Meer widgets tonen
+# Button shown when the widgets row is expanded to multiple rows,
+# allowing users to collapse it back to one row.
+newtab-widget-section-show-less =
+    .label = Minder widgets tonen
 newtab-widget-lists-name-default = Checklist
 
 ## Strings introduced by the Nova redesign of the Timer widget
@@ -949,6 +959,10 @@ newtab-sports-widget-back-button =
     .aria-label = Terug
 newtab-sports-widget-done-button =
     .label = Gereed
+# Shown in the follow-teams list for a team that has been knocked out of the tournament.
+# Variables:
+#   $teamName (string) - the localized team name (e.g. "Canada").
+newtab-sports-widget-team-name-eliminated = { $teamName } (uitgeschakeld)
 newtab-sports-widget-view-all =
     .label = Alles bekijken
 newtab-sports-widget-show-less =
@@ -1039,7 +1053,26 @@ newtab-sports-widget-world-cup-champions = Wereldkampioen 2026
 #   $date (Date) - The match start time
 newtab-sports-widget-match-time = { DATETIME($date, hour: "2-digit", minute: "2-digit") }
 newtab-sports-widget-match-full-time = Wedstrijd afgelopen
+newtab-sports-widget-match-halftime = Rust
+newtab-sports-widget-match-extra-time = Verlenging
 newtab-sports-widget-match-penalties = Strafschoppen
+
+## Sports widget live-games pagination. Shown when 2+ matches are live at the same time
+
+# arrow button that goes to the previous page of live matches.
+newtab-sports-widget-pagination-previous =
+    .aria-label = Vorige
+    .title = Vorige
+# arrow button that goes to the next page of live matches.
+newtab-sports-widget-pagination-next =
+    .aria-label = Volgende
+    .title = Volgende
+# Dot indicator that jumps directly to a given live match.
+# $index (number) - 1-based position of this dot in the list.
+# $total (number) - Total number of live matches.
+newtab-sports-widget-pagination-dot =
+    .aria-label = Livewedstrijd { $index } van { $total }
+    .title = Livewedstrijd { $index } van { $total }
 
 ## Accessible labels for match rows in the sports widget. These are read by
 ## screen readers to announce the match details and status.

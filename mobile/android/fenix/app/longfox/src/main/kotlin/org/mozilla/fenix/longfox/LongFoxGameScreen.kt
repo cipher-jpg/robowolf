@@ -14,9 +14,12 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -43,10 +46,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import mozilla.telemetry.glean.GleanTimerId
 import org.mozilla.fenix.longfox.GameState.Companion.CELL_SIZE_DP
 import org.mozilla.fenix.longfox.GameState.Companion.GAME_INTERVAL_TIME_MS
 import org.mozilla.fenix.longfox.GameState.Companion.MAX_JUST_EATEN_COUNTDOWN
 import org.mozilla.fenix.longfox.GameState.Companion.MAX_SCORE_CELEBRATION_COUNTDOWN
+import org.mozilla.fenix.longfox.GleanMetrics.Longfox
 
 /**
  * The main composable container for the game.
@@ -56,6 +61,7 @@ import org.mozilla.fenix.longfox.GameState.Companion.MAX_SCORE_CELEBRATION_COUNT
 fun LongFoxGameScreen() {
     var celebrationShown by remember { mutableStateOf(false) }
     var celebrationSeed by remember { mutableIntStateOf(0) }
+    var gleanTimerId: GleanTimerId? by remember { mutableStateOf(null) }
     GameBackground(celebrationShown, celebrationSeed) {
         // Make a square game grid that fits on the screen
         val density = LocalDensity.current.density
@@ -64,7 +70,10 @@ fun LongFoxGameScreen() {
         var gameState by remember(numCells) {
             mutableStateOf(GameState(numCells = numCells, size = Size(canvasSizePx, canvasSizePx), isGameOver = true))
         }
-        val restartGame = { gameState = GameState(numCells = numCells, size = Size(canvasSizePx, canvasSizePx)) }
+        val startGame = {
+            gleanTimerId = Longfox.gamePlayedLength.start()
+            gameState = GameState(numCells = numCells, size = Size(canvasSizePx, canvasSizePx))
+        }
         SideEffect {
             // this is to satisfy the IDE.
             // the warning seems to be a false positive with compose state
@@ -99,7 +108,12 @@ fun LongFoxGameScreen() {
             onDispose { soundEffectsPlayer.release() }
         }
         LaunchedEffect(gameState.isGameOver) {
-            if (gameState.isGameOver) soundEffectsPlayer.playSound(R.raw.sadwobble)
+            gleanTimerId?.also {
+                if (gameState.isGameOver) {
+                    soundEffectsPlayer.playSound(R.raw.sadwobble)
+                    Longfox.gamePlayedLength.stopAndAccumulate(it)
+                }
+            }
         }
         // This is the main game loop:
         // While the game is not over, wait a clock tick, move the fox and check for collisions.
@@ -158,7 +172,7 @@ fun LongFoxGameScreen() {
                     hiscore = hiscore,
                     soundOn = soundOn,
                     onToggleSoundOn = { coroutineScope.launch { longFoxDataStore.toggleSoundOn() } },
-                    startGame = restartGame,
+                    startGame = startGame,
                     shareHiscore = { coroutineScope.launch { longFoxDataStore.shareHiscore(it) }}
                 )
             } else {
@@ -174,6 +188,7 @@ fun LongFoxGameScreen() {
             )
         }
         Row(modifier = Modifier
+            .windowInsetsPadding(WindowInsets.statusBars)
             .padding(12.dp)
             .fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

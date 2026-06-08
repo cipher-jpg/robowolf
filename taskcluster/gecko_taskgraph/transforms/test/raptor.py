@@ -34,7 +34,9 @@ class RaptorSchema(Schema, kw_only=True):
         optionally_keyed_by("app", "test-platform", bool, use_msgspec=True)
     ] = None
     subtests: Optional[  # type: ignore
-        optionally_keyed_by("app", "test-platform", list[object], use_msgspec=True)
+        optionally_keyed_by(
+            "app", "test-platform", "variant", list[object], use_msgspec=True
+        )
     ] = None
     test: Optional[str] = None
     test_url_param: Optional[  # type: ignore
@@ -161,7 +163,12 @@ def handle_keyed_by_prereqs(config, tests):
     as well.
     """
     for test in tests:
-        resolve_keyed_by(test, "raptor.subtests", item_name=test["test-name"])
+        resolve_keyed_by(
+            test,
+            "raptor.subtests",
+            item_name=test["test-name"],
+            variant=test["attributes"].get("unittest_variant"),
+        )
         yield test
 
 
@@ -644,7 +651,7 @@ def add_simpleperf(config, tests):
                 "extra-options", []
             )
             extra_options.extend([
-                "--add-option=--simpleperf",
+                "--simpleperf",
                 "--browsertime-arg=androidSimpleperf=$MOZ_FETCHES_DIR/android-simpleperf",
             ])
             app_data_dir = f"/storage/emulated/0/Android/data/{app_packages[app]}/files"
@@ -703,7 +710,7 @@ def add_simpleperf(config, tests):
 def handle_simpleperf_symbol(config, tests):
     for test in tests:
         extra_options = test.get("mozharness", {}).get("extra-options", [])
-        if "--add-option=--simpleperf" in extra_options:
+        if "--simpleperf" in extra_options:
             group, symbol = split_symbol(test["treeherder-symbol"])
             test["treeherder-symbol"] = join_symbol(group, f"{symbol}-p")
         yield test

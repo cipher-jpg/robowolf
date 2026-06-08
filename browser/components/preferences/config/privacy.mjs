@@ -3289,9 +3289,9 @@ Preferences.addSetting({
     } else if (val == "off") {
       value = "dohOffRadio";
     } else if (val == "custom" && deps.dohFallbackIfCustom.value) {
-      value = "dohEnabledRadio";
-    } else if (val == "custom" && !deps.dohFallbackIfCustom.value) {
       value = "dohStrictRadio";
+    } else if (val == "custom" && !deps.dohFallbackIfCustom.value) {
+      value = "dohEnabledRadio";
     }
     if (value) {
       Glean.securityDohSettings.modeChangedButton.record({
@@ -3316,9 +3316,9 @@ Preferences.addSetting({
   set: (val, deps) => {
     if (val == "custom") {
       if (deps.dohFallbackIfCustom.value) {
-        deps.dohMode.value = Ci.nsIDNSService.MODE_TRRFIRST;
-      } else {
         deps.dohMode.value = Ci.nsIDNSService.MODE_TRRONLY;
+      } else {
+        deps.dohMode.value = Ci.nsIDNSService.MODE_TRRFIRST;
       }
     } else if (val == "off") {
       deps.dohMode.value = Ci.nsIDNSService.MODE_TRROFF;
@@ -3367,20 +3367,20 @@ Preferences.addSetting({
   onUserChange: val => {
     if (val) {
       Glean.securityDohSettings.modeChangedButton.record({
-        value: "dohEnabledRadio",
+        value: "dohStrictRadio",
       });
     } else {
       Glean.securityDohSettings.modeChangedButton.record({
-        value: "dohStrictRadio",
+        value: "dohEnabledRadio",
       });
     }
   },
   get: (val, deps) => {
     // If we are in a custom mode, we need to get the value from the Setting
-    if (deps.dohMode.value == Ci.nsIDNSService.MODE_TRRFIRST) {
+    if (deps.dohMode.value == Ci.nsIDNSService.MODE_TRRONLY) {
       return true;
     }
-    if (deps.dohMode.value == Ci.nsIDNSService.MODE_TRRONLY) {
+    if (deps.dohMode.value == Ci.nsIDNSService.MODE_TRRFIRST) {
       return false;
     }
 
@@ -3391,10 +3391,10 @@ Preferences.addSetting({
     // Toggle the preference that controls the setting if are in a custom mode
     // This should be the only case where the checkbox is enabled, but we can be
     // careful and test.
-    if (deps.dohMode.value == Ci.nsIDNSService.MODE_TRRFIRST && !val) {
-      deps.dohMode.value = Ci.nsIDNSService.MODE_TRRONLY;
-    } else if (deps.dohMode.value == Ci.nsIDNSService.MODE_TRRONLY && val) {
+    if (deps.dohMode.value == Ci.nsIDNSService.MODE_TRRONLY && !val) {
       deps.dohMode.value = Ci.nsIDNSService.MODE_TRRFIRST;
+    } else if (deps.dohMode.value == Ci.nsIDNSService.MODE_TRRFIRST && val) {
+      deps.dohMode.value = Ci.nsIDNSService.MODE_TRRONLY;
     }
     // Propagate to the real preference
     return val;
@@ -3411,7 +3411,7 @@ Preferences.addSetting({
     return deps.dohURL.value;
   },
   set(val, deps) {
-    deps.dohURL.value = val;
+    deps.dohURL.value = val.trim();
   },
 });
 
@@ -3469,9 +3469,11 @@ Preferences.addSetting({
     if (this._custom) {
       return "custom";
     }
-    let currentURI = deps.dohURL.value;
-    if (!currentURI) {
-      currentURI = deps.dohDefaultURL.value;
+    let currentURI = deps.dohURL.value || deps.dohDefaultURL.value;
+    let resolvers = lazy.DoHConfigController.currentConfig.providerList;
+    if (!resolvers.some(p => p.uri == currentURI)) {
+      this._custom = true;
+      return "custom";
     }
     return currentURI;
   },

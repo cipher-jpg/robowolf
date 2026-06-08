@@ -69,4 +69,9 @@
             android:title="@string/preferences_group_tab_strip"
             android:summary="@string/preferences_group_tab_strip_summary" />
     </androidx.preference.PreferenceCategory>
+
+    <androidx.preference.SwitchPreferenceCompat
+        android:defaultValue="true"
+        android:key="@string/pref_key_privacy_report_tab_manager"
+        android:title="@string/customize_toggle_privacy_report" />
 </androidx.preference.PreferenceScreen>

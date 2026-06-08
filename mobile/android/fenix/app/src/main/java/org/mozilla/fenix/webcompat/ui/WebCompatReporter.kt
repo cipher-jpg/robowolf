@@ -65,6 +65,7 @@ import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.ThemedValue
 import org.mozilla.fenix.theme.ThemedValueProvider
 import org.mozilla.fenix.webcompat.BrokenSiteReporterTestTags.BROKEN_SITE_REPORTER_CHOOSE_REASON_BUTTON
+import org.mozilla.fenix.webcompat.BrokenSiteReporterTestTags.BROKEN_SITE_REPORTER_DESCRIPTION_INPUT
 import org.mozilla.fenix.webcompat.BrokenSiteReporterTestTags.BROKEN_SITE_REPORTER_SEND_BUTTON
 import org.mozilla.fenix.webcompat.store.WebCompatReporterAction
 import org.mozilla.fenix.webcompat.store.WebCompatReporterState
@@ -114,29 +115,6 @@ fun WebCompatReporter(
                 .width(FirefoxTheme.layout.size.containerMaxWidth),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            LinkText(
-                text = stringResource(
-                    R.string.webcompat_reporter_description_3,
-                    stringResource(R.string.app_name),
-                    stringResource(R.string.webcompat_reporter_learn_more),
-                ),
-                linkTextStates = listOf(
-                    LinkTextState(
-                        text = stringResource(R.string.webcompat_reporter_learn_more),
-                        url = "",
-                        onClick = {
-                            store.dispatch(WebCompatReporterAction.LearnMoreClicked)
-                        },
-                    ),
-                ),
-                style = FirefoxTheme.typography.body2.copy(color = MaterialTheme.colorScheme.onSurface),
-                linkTextColor = MaterialTheme.colorScheme.tertiary,
-                linkTextDecoration = TextDecoration.Underline,
-                textAlign = TextAlign.Start,
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
             TextField(
                 value = state.enteredUrl,
                 onValueChange = {
@@ -184,6 +162,19 @@ fun WebCompatReporter(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            Text(
+                text = stringResource(id = R.string.webcompat_reporter_label_description_2),
+                style = FirefoxTheme.typography.headline7,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = FirefoxTheme.layout.space.static50,
+                        bottom = FirefoxTheme.layout.space.static100,
+                        end = FirefoxTheme.layout.space.static50,
+                    ),
+            )
+
             TextField(
                 value = state.problemDescription,
                 onValueChange = {
@@ -193,11 +184,17 @@ fun WebCompatReporter(
                         ),
                     )
                 },
-                placeholder = stringResource(id = R.string.webcompat_reporter_problem_description_placeholder_text),
+                placeholder = stringResource(id = R.string.webcompat_reporter_problem_description_placeholder_text_2),
                 errorText = "",
-                label = stringResource(id = R.string.webcompat_reporter_label_description),
                 singleLine = false,
                 maxLines = PROBLEM_DESCRIPTION_MAX_LINES,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(225.dp)
+                    .semantics {
+                        testTagsAsResourceId = true
+                        testTag = BROKEN_SITE_REPORTER_DESCRIPTION_INPUT
+                    },
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -228,15 +225,9 @@ fun WebCompatReporter(
 
                 Column {
                     Text(
-                        text = stringResource(id = R.string.webcompat_reporter_etp_checkbox_text),
+                        text = stringResource(id = R.string.webcompat_reporter_etp_checkbox_text_2),
                         color = MaterialTheme.colorScheme.onSurface,
                         style = FirefoxTheme.typography.body1,
-                    )
-
-                    Text(
-                        text = stringResource(id = R.string.webcompat_reporter_etp_checkbox_description),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = FirefoxTheme.typography.body2,
                     )
                 }
             }
@@ -297,6 +288,30 @@ fun WebCompatReporter(
                     textDecoration = TextDecoration.Underline,
                 )
             }
+
+            Spacer(modifier = Modifier.height(FirefoxTheme.layout.space.static150))
+
+            LinkText(
+                text = stringResource(
+                    R.string.webcompat_reporter_description_3,
+                    stringResource(R.string.app_name),
+                    stringResource(R.string.webcompat_reporter_learn_more),
+                ),
+                linkTextStates = listOf(
+                    LinkTextState(
+                        text = stringResource(R.string.webcompat_reporter_learn_more),
+                        url = "",
+                        onClick = {
+                            store.dispatch(WebCompatReporterAction.LearnMoreClicked)
+                        },
+                    ),
+                ),
+                style = FirefoxTheme.typography.body2.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                linkTextColor = MaterialTheme.colorScheme.primary,
+                linkTextDecoration = TextDecoration.None,
+                textAlign = TextAlign.Start,
+                modifier = Modifier.padding(bottom = FirefoxTheme.layout.space.static150),
+            )
         }
     }
 

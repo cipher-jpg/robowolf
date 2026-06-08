@@ -28,6 +28,7 @@ import {
 } from "common/WidgetsRegistry.mjs";
 import { WIDGET_ROW_COMPONENTS } from "./WidgetsComponentRegistry.jsx";
 import { WidgetWrapper } from "./WidgetWrapper";
+import { ErrorBoundary } from "content-src/components/ErrorBoundary/ErrorBoundary";
 import { useWidgetDnD } from "./useWidgetDnD.jsx";
 
 const CONTAINER_ACTION_TYPES = {
@@ -241,9 +242,16 @@ function Widgets() {
     ? "large"
     : "medium";
 
-  // Widget size is "small" only when maximize feature is enabled and widgets
-  // are currently minimized. Otherwise defaults to "medium".
-  const widgetSize = widgetsMayBeMaximized && !isMaximized ? "small" : "medium";
+  // Widget size is "medium" only when maximize feature is enabled and widgets
+  // are currently minimized. Otherwise defaults to "large".
+  //
+  // This is a row-level approximation, not a per-widget truth. Users can resize
+  // widgets individually, so this single value will not reflect the real size of
+  // every widget in the row. For accurate per-widget sizing, rely on each
+  // widget's own change-size event (WIDGETS_USER_EVENT with user_action
+  // "change_size", which carries the widget's real widget_size) as the source of
+  // truth rather than this value.
+  const widgetSize = widgetsMayBeMaximized && !isMaximized ? "medium" : "large";
 
   // track previous timerEnabled state to detect when it becomes disabled
   const prevTimerEnabledRef = useRef(timerEnabled);
@@ -323,7 +331,7 @@ function Widgets() {
   function toggleMaximize() {
     const newMaximizedState = !isMaximized;
     const newWidgetSize =
-      widgetsMayBeMaximized && !newMaximizedState ? "small" : "medium";
+      widgetsMayBeMaximized && !newMaximizedState ? "medium" : "large";
 
     batch(() => {
       dispatch(ac.SetPref(PREF_WIDGETS_MAXIMIZED, newMaximizedState));
@@ -687,13 +695,17 @@ function Widgets() {
                   {...hiddenAttrs}
                   {...dragProps}
                 >
-                  <Component
-                    dispatch={dispatch}
-                    handleUserInteraction={handleUserInteraction}
-                    isMaximized={isMaximized}
-                    widgetsMayBeMaximized={widgetsMayBeMaximized}
-                    widgetEnabledMap={widgetEnabledMap}
-                  />
+                  {/* Contain a crash to this widget's cell so one failing
+                      widget can't tear down the whole widgets section. */}
+                  <ErrorBoundary className="widget-error-fallback">
+                    <Component
+                      dispatch={dispatch}
+                      handleUserInteraction={handleUserInteraction}
+                      isMaximized={isMaximized}
+                      widgetsMayBeMaximized={widgetsMayBeMaximized}
+                      widgetEnabledMap={widgetEnabledMap}
+                    />
+                  </ErrorBoundary>
                 </WidgetWrapper>
               );
             }
@@ -701,32 +713,39 @@ function Widgets() {
             return (
               <React.Fragment key={id}>
                 {id === "lists" && listsEnabled && (
-                  <Lists
-                    dispatch={dispatch}
-                    handleUserInteraction={handleUserInteraction}
-                    isMaximized={isMaximized}
-                    widgetsMayBeMaximized={widgetsMayBeMaximized}
-                  />
+                  <ErrorBoundary className="widget-error-fallback">
+                    <Lists
+                      dispatch={dispatch}
+                      handleUserInteraction={handleUserInteraction}
+                      isMaximized={isMaximized}
+                      widgetsMayBeMaximized={widgetsMayBeMaximized}
+                    />
+                  </ErrorBoundary>
                 )}
                 {id === "focusTimer" && timerEnabled && (
-                  <FocusTimer
-                    dispatch={dispatch}
-                    handleUserInteraction={handleUserInteraction}
-                    isMaximized={isMaximized}
-                    widgetsMayBeMaximized={widgetsMayBeMaximized}
-                  />
+                  <ErrorBoundary className="widget-error-fallback">
+                    <FocusTimer
+                      dispatch={dispatch}
+                      handleUserInteraction={handleUserInteraction}
+                      isMaximized={isMaximized}
+                      widgetsMayBeMaximized={widgetsMayBeMaximized}
+                    />
+                  </ErrorBoundary>
                 )}
-                {id === "weather" &&
-                  renderWeather({
-                    novaEnabled,
-                    weatherEnabled,
-                    weatherForecastEnabled,
-                    weatherSize,
-                    dispatch,
-                    handleUserInteraction,
-                    isMaximized,
-                    widgetsMayBeMaximized,
-                  })}
+                {id === "weather" && weatherForecastEnabled && (
+                  <ErrorBoundary className="widget-error-fallback">
+                    {renderWeather({
+                      novaEnabled,
+                      weatherEnabled,
+                      weatherForecastEnabled,
+                      weatherSize,
+                      dispatch,
+                      handleUserInteraction,
+                      isMaximized,
+                      widgetsMayBeMaximized,
+                    })}
+                  </ErrorBoundary>
+                )}
               </React.Fragment>
             );
           })}

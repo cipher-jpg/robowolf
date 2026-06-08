@@ -497,7 +497,9 @@ nsresult nsGenericHTMLElement::BindToTree(BindContext& aContext,
   }
 
   if (HasFlag(NODE_IS_EDITABLE) &&
-      HasContentEditableAttrTrueOrPlainTextOnly() && IsInComposedDoc()) {
+      (HasContentEditableAttrTrueOrPlainTextOnly() ||
+       HasFlag(ELEMENT_HAS_EDIT_CONTEXT)) &&
+      IsInComposedDoc()) {
     aContext.OwnerDoc().ChangeContentEditableCount(this, +1);
   }
 
@@ -557,7 +559,8 @@ void nsGenericHTMLElement::UnbindFromTree(UnbindContext& aContext) {
     }
   }
 
-  if (HasContentEditableAttrTrueOrPlainTextOnly()) {
+  if (HasContentEditableAttrTrueOrPlainTextOnly() ||
+      HasFlag(ELEMENT_HAS_EDIT_CONTEXT)) {
     if (Document* doc = GetComposedDoc()) {
       doc->ChangeContentEditableCount(this, -1);
     }
@@ -2015,7 +2018,7 @@ bool nsGenericHTMLElement::IsFormControlDefaultFocusable(
 //----------------------------------------------------------------------
 
 nsGenericHTMLFormElement::nsGenericHTMLFormElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {
   // We should add the ElementState::ENABLED bit here as needed, but that
   // depends on our type, which is not initialized yet.  So we have to do this
@@ -2765,7 +2768,7 @@ void nsGenericHTMLElement::ChangeEditableState(int32_t aChange) {
 //----------------------------------------------------------------------
 
 nsGenericHTMLFormControlElement::nsGenericHTMLFormControlElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo, FormControlType aType)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo, FormControlType aType)
     : nsGenericHTMLFormElement(std::move(aNodeInfo)),
       nsIFormControl(aType),
       mForm(nullptr),
@@ -3046,7 +3049,7 @@ static constexpr const nsAttrValue::EnumTableEntry*
 
 nsGenericHTMLFormControlElementWithState::
     nsGenericHTMLFormControlElementWithState(
-        already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+        already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
         FromParser aFromParser, FormControlType aType)
     : nsGenericHTMLFormControlElement(std::move(aNodeInfo), aType),
       mControlNumber(!!(aFromParser & FROM_PARSER_NETWORK)

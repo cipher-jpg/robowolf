@@ -23,6 +23,7 @@
 
 #include "builtin/DataViewObject.h"
 #include "builtin/MapObject.h"
+#include "builtin/ModuleObject.h"
 #include "builtin/Object.h"
 #include "builtin/RegExp.h"
 #include "builtin/String.h"
@@ -610,7 +611,6 @@ uint64_t ICInterpretOps(uint64_t arg0, uint64_t arg1, ICStub* stub,
     DECLARE_CACHEOP_CASE(GuardIsProxy);
     DECLARE_CACHEOP_CASE(GuardIsNotProxy);
     DECLARE_CACHEOP_CASE(GuardIsNotArrayBufferMaybeShared);
-    DECLARE_CACHEOP_CASE(GuardIsTypedArray);
     DECLARE_CACHEOP_CASE(GuardHasProxyHandler);
     DECLARE_CACHEOP_CASE(GuardIsNotDOMProxy);
     DECLARE_CACHEOP_CASE(GuardSpecificObject);
@@ -1351,15 +1351,6 @@ uint64_t ICInterpretOps(uint64_t arg0, uint64_t arg1, ICStub* stub,
             clasp == &FixedLengthSharedArrayBufferObject::class_ ||
             clasp == &ResizableArrayBufferObject::class_ ||
             clasp == &GrowableSharedArrayBufferObject::class_) {
-          FAIL_IC();
-        }
-        DISPATCH_CACHEOP();
-      }
-
-      CACHEOP_CASE(GuardIsTypedArray) {
-        ObjOperandId objId = cacheIRReader.objOperandId();
-        JSObject* obj = reinterpret_cast<JSObject*>(READ_REG(objId.id()));
-        if (!IsTypedArrayClass(obj->getClass())) {
           FAIL_IC();
         }
         DISPATCH_CACHEOP();
@@ -7065,6 +7056,7 @@ PBIResult PortableBaselineInterpret(
 
       CASE(DynamicImport) {
         {
+          ImportPhase phase = ImportPhase(GET_UINT8(pc));
           ReservedRooted<Value> value0(&state.value0,
                                        VIRTPOP().asValue());  // options
           ReservedRooted<Value> value1(&state.value1,
@@ -7073,7 +7065,8 @@ PBIResult PortableBaselineInterpret(
           {
             PUSH_EXIT_FRAME();
             ReservedRooted<JSScript*> script0(&state.script0, frame->script());
-            promise = StartDynamicModuleImport(cx, script0, value1, value0);
+            promise =
+                StartDynamicModuleImport(cx, script0, value1, value0, phase);
             if (!promise) {
               GOTO_ERROR();
             }
@@ -7082,26 +7075,6 @@ PBIResult PortableBaselineInterpret(
         }
         END_OP(DynamicImport);
       }
-
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-      CASE(DynamicImportSource) {
-        {
-          ReservedRooted<Value> value0(&state.value0,
-                                       VIRTPOP().asValue());  // specifier
-          JSObject* promise;
-          {
-            PUSH_EXIT_FRAME();
-            ReservedRooted<JSScript*> script0(&state.script0, frame->script());
-            promise = StartDynamicModuleImportSource(cx, script0, value0);
-            if (!promise) {
-              GOTO_ERROR();
-            }
-          }
-          VIRTPUSH(StackVal(ObjectValue(*promise)));
-        }
-        END_OP(DynamicImportSource);
-      }
-#endif
 
       CASE(ImportMeta) {
         IC_ZERO_ARG(0);

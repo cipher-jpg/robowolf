@@ -99,8 +99,6 @@
     <string name="preferences_sync_debug_oauth_token_scopes_title">Scopes (space-separated)</string>
     <string name="preferences_sync_debug_oauth_token_fetch_title">Fetch Token</string>
     <string name="preferences_sync_debug_oauth_token_result_title">Result</string>
-    <!-- Label for enabling the Homepage Search Bar -->
-    <string name="preferences_debug_settings_homepage_searchbar" translatable="false">Enable Homepage Search Bar</string>
     <!-- Label for enabling Homepage as a New Tab -->
     <string name="preferences_debug_settings_homepage_as_new_tab" translatable="false">Enable Homepage as a New Tab</string>
     <!-- Label for enabling Robowolf Labs -->
@@ -192,6 +190,10 @@
     <string name="ai_controls_google_lens_title">Google Lens</string>
     <!-- Description for the Google Lens AI feature toggle -->
     <string name="ai_controls_google_lens_description">Sends images and photos to Google for visual search.</string>
+    <!-- Content description for the Lens half of the camera mode toggle -->
+    <string name="lens_camera_mode_lens">Lens</string>
+    <!-- Content description for the QR scanner half of the camera mode toggle -->
+    <string name="lens_camera_mode_qr">QR scanner</string>
 
     <!--  Voice Search in Display Mode toolbar strings  -->
     <!-- Label for toggling voice search visibility in the display-mode toolbar -->
@@ -368,15 +370,6 @@
     <string name="firefox_labs_homepage_as_a_new_tab">Homepage as a New Tab</string>
     <!-- The description of the "Homepage as a New Tab" feature in the Robowolf Labs screen. -->
     <string name="firefox_labs_homepage_as_a_new_tab_description">With this feature enabled, Homepage will behave as a tab.</string>
-    <!-- The link text shown when a feedback URL for a labs feature is available. The feedback URL page will allow users to provide opinions and suggestions. -->
-    <string name="firefox_labs_share_feedback">Share feedback</string>
-    <!-- Content description for the share feedback link on a labs feature. This text will be used by screen readers to provide more context on the feedback link. %s is the name of the labs feature. -->
-    <string name="firefox_labs_share_feedback_content_description">Share feedback for %s</string>
-    <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "on" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
-    <string name="firefox_labs_feature_enable_dialog_message">To turn on this feature, restart %s.</string>
-    <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
-    <string name="firefox_labs_feature_disable_dialog_message">To turn off this feature, restart %s.</string>
-
 
     <!-- Debug drawer tab group tools -->
     <!-- The title of the debug drawer tab to help populate tab groups-->
@@ -426,6 +419,8 @@
     <!-- Label for the secret settings preference to enable Import Bookmarks -->
     <string name="preferences_debug_settings_import_bookmarks">Enable Import Bookmarks</string>
 
-  <!-- Label for the secret settings preference to enable Import Passwords -->
-  <string name="preferences_debug_settings_import_passwords">Enable Import Passwords</string>
+    <!-- Label for the secret settings preference to enable Import Passwords -->
+    <string name="preferences_debug_settings_import_passwords">Enable Import Passwords</string>
+    <!--  Firefox brand name  -->
+    <string name="app_name_firefox" tools:ignore="BrandUsage">Firefox</string>
 </resources>

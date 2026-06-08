@@ -79,24 +79,53 @@ export class SportsFeed {
     this.ticking = false;
   }
 
+  // Resolve the Sports widget's trainhop overrides into a flat object keyed by
+  // bare dimension. The canonical source is `trainhopConfig.widgets`, where
+  // every widget's overrides live as flat keys prefixed with the widget id
+  // (e.g. `sportsWidgetLiveEnabled`) — the same convention used by enabled/size
+  // in WidgetsRegistry. `trainhopConfig.sports.*` is the legacy nested alias
+  // kept for backwards-compat with in-flight Nimbus enrollments. Canonical wins
+  // per-key, legacy fills the gaps.
+  _trainhopSports(prefs) {
+    const widgets = prefs?.trainhopConfig?.widgets ?? {};
+    const legacy = prefs?.trainhopConfig?.sports ?? {};
+    return {
+      enabled: widgets.sportsWidgetEnabled ?? legacy.enabled,
+      liveEnabled: widgets.sportsWidgetLiveEnabled ?? legacy.liveEnabled,
+      teamsEndpoint: widgets.sportsWidgetTeamsEndpoint ?? legacy.teamsEndpoint,
+      matchesEndpoint:
+        widgets.sportsWidgetMatchesEndpoint ?? legacy.matchesEndpoint,
+      liveEndpoint: widgets.sportsWidgetLiveEndpoint ?? legacy.liveEndpoint,
+      watchLiveEndpoint:
+        widgets.sportsWidgetWatchLiveEndpoint ?? legacy.watchLiveEndpoint,
+      pollLiveMs: widgets.sportsWidgetPollLiveMs ?? legacy.pollLiveMs,
+      pollMatchDayMs:
+        widgets.sportsWidgetPollMatchDayMs ?? legacy.pollMatchDayMs,
+      pollIdleMs: widgets.sportsWidgetPollIdleMs ?? legacy.pollIdleMs,
+      pollPregameLeadMs:
+        widgets.sportsWidgetPollPregameLeadMs ?? legacy.pollPregameLeadMs,
+    };
+  }
+
   get enabled() {
     const prefs = this.store.getState()?.Prefs.values;
     const userValue = !!prefs?.[PREF_SPORTS_ENABLED];
     const systemValue = !!prefs?.[PREF_SYSTEM_SPORTS_ENABLED];
-    const experimentValue = !!prefs?.trainhopConfig?.sports?.enabled;
+    const experimentValue = !!this._trainhopSports(prefs).enabled;
     return userValue && (systemValue || experimentValue);
   }
 
   // Live polling is a sub-feature of the Sports widget — the widget itself
   // must be enabled first. Tunable independently via raw pref or
-  // trainhopConfig.sports.liveEnabled (Nimbus rollout).
+  // trainhopConfig.widgets.sportsWidgetLiveEnabled (Nimbus rollout; legacy
+  // trainhopConfig.sports.liveEnabled still honored).
   get liveEnabled() {
     if (!this.enabled) {
       return false;
     }
     const prefs = this.store.getState()?.Prefs.values;
     const userValue = !!prefs?.[PREF_SPORTS_LIVE_ENABLED];
-    const experimentValue = !!prefs?.trainhopConfig?.sports?.liveEnabled;
+    const experimentValue = !!this._trainhopSports(prefs).liveEnabled;
     return userValue || experimentValue;
   }
 
@@ -222,52 +251,83 @@ export class SportsFeed {
     }
   }
 
+  /**
+   * Returns the first error_type for an endpoint that isn't allowlisted, or
+   * null. Always checks teams first, then matches, then live.
+   */
+  getAllowlistError({
+    teamsEndpoint,
+    matchesEndpoint,
+    liveEndpoint,
+    allowedEndpoints,
+  }) {
+    const isAllowed = url =>
+      allowedEndpoints.some(prefix => url.startsWith(prefix));
+    if (teamsEndpoint && !isAllowed(teamsEndpoint)) {
+      console.error(`Sports teams endpoint not in allowlist: ${teamsEndpoint}`);
+      return "teams_endpoint_not_allowlisted";
+    }
+    if (matchesEndpoint && !isAllowed(matchesEndpoint)) {
+      console.error(
+        `Sports matches endpoint not in allowlist: ${matchesEndpoint}`
+      );
+      return "matches_endpoint_not_allowlisted";
+    }
+    if (liveEndpoint && !isAllowed(liveEndpoint)) {
+      console.error(`Sports live endpoint not in allowlist: ${liveEndpoint}`);
+      return "live_endpoint_not_allowlisted";
+    }
+    return null;
+  }
+
+  /**
+   * Sends WIDGETS_SPORTS_WIDGET_SET. Error paths can report a fetchError
+   * without having to repeat the empty teams/matches/live defaults.
+   */
+  broadcastSportsData({
+    teams = [],
+    matches = { previous: [], current: [], next: [] },
+    live = [],
+    fetchError = null,
+  }) {
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.WIDGETS_SPORTS_WIDGET_SET,
+        data: { teams, matches, live, fetchError },
+      })
+    );
+  }
+
   // `live` lets a caller that already has a fresh /live payload (e.g. the
   // post-match resync from fetchAndDispatch) reuse it instead of triggering
   // a redundant /live fetch.
   async fetchSportsData({ live: prefetchedLive } = {}) {
     const prefs = this.store.getState()?.Prefs.values;
+    const trainhop = this._trainhopSports(prefs);
     const teamsEndpoint =
-      prefs?.trainhopConfig?.sports?.teamsEndpoint ||
-      prefs?.["sports.worldCup.teamsEndpoint"];
+      trainhop.teamsEndpoint || prefs?.["sports.worldCup.teamsEndpoint"];
     const matchesEndpoint =
-      prefs?.trainhopConfig?.sports?.matchesEndpoint ||
-      prefs?.["sports.worldCup.matchesEndpoint"];
+      trainhop.matchesEndpoint || prefs?.["sports.worldCup.matchesEndpoint"];
     const liveEndpoint =
-      prefs?.trainhopConfig?.sports?.liveEndpoint ||
-      prefs?.["sports.worldCup.liveEndpoint"];
+      trainhop.liveEndpoint || prefs?.["sports.worldCup.liveEndpoint"];
 
     const allowedEndpoints = (prefs?.["discoverystream.endpoints"] ?? "")
       .split(",")
       .map(item => item.trim())
       .filter(item => item);
 
-    if (
-      teamsEndpoint &&
-      !allowedEndpoints.some(prefix => teamsEndpoint.startsWith(prefix))
-    ) {
-      console.error(`Sports teams endpoint not in allowlist: ${teamsEndpoint}`);
-      return;
-    }
-    if (
-      matchesEndpoint &&
-      !allowedEndpoints.some(prefix => matchesEndpoint.startsWith(prefix))
-    ) {
-      console.error(
-        `Sports matches endpoint not in allowlist: ${matchesEndpoint}`
-      );
-      return;
-    }
-    if (
-      prefetchedLive === undefined &&
-      liveEndpoint &&
-      !allowedEndpoints.some(prefix => liveEndpoint.startsWith(prefix))
-    ) {
-      console.error(`Sports live endpoint not in allowlist: ${liveEndpoint}`);
+    const allowlistError = this.getAllowlistError({
+      teamsEndpoint,
+      matchesEndpoint,
+      liveEndpoint: prefetchedLive === undefined ? liveEndpoint : undefined,
+      allowedEndpoints,
+    });
+    if (allowlistError) {
+      this.broadcastSportsData({ fetchError: { error_type: allowlistError } });
       return;
     }
 
-    const [teams, matches, live] = await Promise.all([
+    const [teamsResult, matchesResult, liveResult] = await Promise.all([
       this.merino.fetchSportsTeams({
         source: "newtab",
         endpointUrl: teamsEndpoint,
@@ -277,40 +337,48 @@ export class SportsFeed {
         endpointUrl: matchesEndpoint,
       }),
       prefetchedLive !== undefined
-        ? Promise.resolve(prefetchedLive)
+        ? Promise.resolve({ data: prefetchedLive, error: null })
         : this.merino.fetchSportsLive({
             source: "newtab",
             endpointUrl: liveEndpoint,
           }),
     ]);
 
-    // The /live endpoint returns `{ matches: [...] }`. The backend is meant
-    // to pre-filter to in-progress games, but we re-filter on `status_type`
-    // here as a defensive guard — the Now tab must only ever surface matches
-    // that are actually live. `matches.previous` / `matches.next` continue to
-    // drive the Results and Upcoming tabs.
-    const liveMatches = Array.isArray(live?.matches)
-      ? live.matches.filter(match => match?.status_type === "live")
+    const liveData = liveResult.data;
+    const liveMatchesValid = Array.isArray(liveData?.matches);
+    // The /live endpoint is meant to be pre-filtered to in-progress games,
+    // but we re-filter on `status_type === "live"` as a defensive guard so
+    // the Now tab only ever surfaces actually-live matches.
+    const liveMatches = liveMatchesValid
+      ? liveData.matches.filter(match => match?.status_type === "live")
       : [];
 
-    if (teams?.teams || matches || live) {
+    // Report the first failure only. Order: teams, then matches, then live,
+    // then a malformed live response.
+    const fetchErrorType =
+      (teamsResult.error && `teams_${teamsResult.error}`) ||
+      (matchesResult.error && `matches_${matchesResult.error}`) ||
+      (liveResult.error && `live_${liveResult.error}`) ||
+      (liveData !== null && !liveMatchesValid && "live_malformed_response") ||
+      null;
+
+    const teams = teamsResult.data?.teams;
+    const matches = matchesResult.data;
+
+    if (teams || matches || liveData) {
       await this.cache.set("sportsData", {
-        teams: teams?.teams,
+        teams,
         matches,
         live: liveMatches,
       });
     }
 
-    this.store.dispatch(
-      ac.BroadcastToContent({
-        type: at.WIDGETS_SPORTS_WIDGET_SET,
-        data: {
-          teams: teams?.teams ?? [],
-          matches: matches ?? { previous: [], current: [], next: [] },
-          live: liveMatches,
-        },
-      })
-    );
+    this.broadcastSportsData({
+      teams: teams ?? [],
+      matches: matches ?? { previous: [], current: [], next: [] },
+      live: liveMatches,
+      fetchError: fetchErrorType ? { error_type: fetchErrorType } : null,
+    });
 
     // Re-clamp the persisted live-pager index against the freshly fetched
     // list. Live games come and go between fetches, so an index that was
@@ -336,7 +404,7 @@ export class SportsFeed {
   async fetchWatchLive() {
     const prefs = this.store.getState()?.Prefs.values;
     const watchLiveEndpoint =
-      prefs?.trainhopConfig?.sports?.watchLiveEndpoint ||
+      this._trainhopSports(prefs).watchLiveEndpoint ||
       prefs?.["sports.worldCup.watchLiveEndpoint"];
 
     const allowedEndpoints = (prefs?.["discoverystream.endpoints"] ?? "")
@@ -382,15 +450,18 @@ export class SportsFeed {
     }
   }
 
-  // Resolve the next poll interval from trainhopConfig, then the raw pref,
-  // then the hard-coded default. Lets Nimbus retune intervals without a ship.
+  // Resolve the next poll interval from trainhopConfig, then the raw pref
+  // (whose PREFS_CONFIG default normally supplies the value), then a hard-coded
+  // per-state default as a safety net if the pref is ever unset. Lets Nimbus
+  // retune intervals without a ship. `raw` is always numeric here, so the
+  // Math.max floor below can never produce NaN.
   resolvePollIntervalMs() {
     const prefs = this.store.getState()?.Prefs.values ?? {};
-    const trainhop = prefs.trainhopConfig?.sports ?? {};
+    const trainhop = this._trainhopSports(prefs);
     let raw;
     switch (this.pollingState) {
       case POLLING_STATE_LIVE:
-        raw = trainhop.pollLiveMs ?? prefs[PREF_POLL_LIVE_MS] ?? 60000;
+        raw = trainhop.pollLiveMs ?? prefs[PREF_POLL_LIVE_MS] ?? 180000;
         break;
       case POLLING_STATE_MATCH_DAY:
         raw =
@@ -405,7 +476,7 @@ export class SportsFeed {
   resolvePregameLeadMs() {
     const prefs = this.store.getState()?.Prefs.values ?? {};
     const raw =
-      prefs.trainhopConfig?.sports?.pollPregameLeadMs ??
+      this._trainhopSports(prefs).pollPregameLeadMs ??
       prefs[PREF_POLL_PREGAME_LEAD_MS] ??
       600000;
     return Math.max(0, raw);
@@ -416,7 +487,7 @@ export class SportsFeed {
   async fetchLive() {
     const prefs = this.store.getState()?.Prefs.values;
     const liveEndpoint =
-      prefs?.trainhopConfig?.sports?.liveEndpoint ||
+      this._trainhopSports(prefs).liveEndpoint ||
       prefs?.[PREF_SPORTS_LIVE_ENDPOINT];
 
     if (!liveEndpoint) {
@@ -433,10 +504,11 @@ export class SportsFeed {
       return null;
     }
 
-    return this.merino.fetchSportsLive({
+    const result = await this.merino.fetchSportsLive({
       source: "newtab",
       endpointUrl: liveEndpoint,
     });
+    return result.error ? null : result.data;
   }
 
   // Drive one polling step. In LIVE state hit /wcs/live and merge updates

@@ -94,6 +94,7 @@ input {
   font: -moz-field;
   text-rendering: optimizeLegibility;
   cursor: text;
+  resize: none !important;
 }
 
 textarea {
@@ -500,9 +501,13 @@ input[type="color"] {
 }
 
 /* https://github.com/whatwg/html/issues/9976 */
-input:not([type="image" i], [type="range" i], [type="checkbox" i], [type="radio" i]) {
+input:not([type="range" i], [type="checkbox" i], [type="radio" i]) {
   overflow: clip !important;
   overflow-clip-margin: 0 !important;
+}
+
+input[type="image" i] {
+  overflow-clip-margin: content-box !important;
 }
 
 button,
@@ -962,6 +967,17 @@ textarea:autofill {
     input:is([type="color"], [type="button"], [type="reset"], [type="submit"]):disabled,
     input[type="file"]:disabled::file-selector-button {
       color: color-mix(currentColor 50%, transparent);
+    }
+
+    /* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+    select option::checkmark {
+      content: "\2713" / "";
+      pointer-events: none;
+    }
+
+    /* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+    select option:not(:checked)::checkmark {
+      visibility: hidden;
     }
   }
 }

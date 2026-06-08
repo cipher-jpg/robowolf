@@ -116,7 +116,7 @@
   white-space: nowrap;
 
   /* Vertically center the one-offs when no results are present. */
-  .urlbarView[noresults] > .urlbarView-body-outer > .urlbarView-body-inner > & {
+  .urlbar[noresults] > .urlbarView > .urlbarView-body-outer > .urlbarView-body-inner > & {
     padding-block: 0;
   }
 }
@@ -1767,11 +1767,17 @@
       }
     }
 
-    > .urlbarView-realtime-description-bottom {
+    > .urlbarView-realtime-description-bottom > .urlbarView-sports-status {
+      font-weight: var(--font-weight-bold);
+    }
+
+    .urlbarView-row:not([selected])
+      > .urlbarView-realtime-root
+      > .urlbarView-realtime-item:not([selected])
+      > &
+      > .urlbarView-realtime-description-bottom
       > .urlbarView-sports-status {
-        color: var(--green-status-color);
-        font-weight: var(--font-weight-bold);
-      }
+      color: var(--green-status-color);
     }
   }
 }
@@ -1785,7 +1791,7 @@
   flex-wrap: wrap;
 }
 
-.urlbarView:not([noresults]) > .search-one-offs:not([hidden]) {
+#urlbar:not([noresults]) > .urlbarView > .search-one-offs:not([hidden]) {
   border-top: 1px solid var(--urlbarview-separator-color);
 }
 

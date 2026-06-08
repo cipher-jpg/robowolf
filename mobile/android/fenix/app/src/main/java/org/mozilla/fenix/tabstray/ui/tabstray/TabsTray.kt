@@ -6,6 +6,10 @@
 
 package org.mozilla.fenix.tabstray.ui.tabstray
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -102,11 +106,13 @@ import org.mozilla.fenix.tabstray.ui.syncedtabs.OnTabCloseClick as OnSyncedTabCl
  * @param onInactiveTabsCFRShown Invoked when the inactive tabs CFR is displayed.
  * @param onInactiveTabsCFRClick Invoked when the inactive tabs CFR is clicked.
  * @param onInactiveTabsCFRDismiss Invoked when the inactive tabs CFR is dismissed.
+ * @param onTabGroupOnboardingDismiss Invoked when the tab group onboarding card is dismissed.
  * @param onOpenNewNormalTabClicked Invoked when the fab is clicked in [Page.NormalTabs].
  * @param onOpenNewPrivateTabClicked Invoked when the fab is clicked in [Page.PrivateTabs].
  * @param onSyncedTabsFabClicked Invoked when the fab is clicked in [Page.SyncedTabs].
  * @param onUnlockPbmClick Invoked when user clicks on the Unlock button.
  * @param trackersBlockedCount The number of trackers blocked to display in the footer card.
+ * @param onPrivacyReportTapped Invoked when the trackers blocked pill is tapped.
  */
 @Suppress("LongMethod", "LongParameterList")
 @Composable
@@ -146,11 +152,13 @@ fun TabsTray(
     onInactiveTabsCFRShown: () -> Unit,
     onInactiveTabsCFRClick: () -> Unit,
     onInactiveTabsCFRDismiss: () -> Unit,
+    onTabGroupOnboardingDismiss: () -> Unit,
     onOpenNewNormalTabClicked: () -> Unit,
     onOpenNewPrivateTabClicked: () -> Unit,
     onSyncedTabsFabClicked: () -> Unit,
     onUnlockPbmClick: () -> Unit,
     trackersBlockedCount: Int? = null,
+    onPrivacyReportTapped: (() -> Unit)? = null,
 ) {
     val tabsTrayState by tabsTrayStore.stateFlow.collectAsState()
     val shouldShowTabGroupsPage = tabsTrayState.config.tabGroupsEnabled
@@ -199,6 +207,7 @@ fun TabsTray(
                 shouldShowTabAutoCloseBanner = tabsTrayState.config.showTabAutoCloseBanner,
                 shouldShowLockPbmBanner = tabsTrayState.privateBrowsing.showLockBanner,
                 shouldShowAddToTabGroupButton = tabsTrayState.config.tabGroupsEnabled,
+                hasTabDataLoaded = tabsTrayState.hasTabDataLoaded,
                 onTabPageIndicatorClicked = onTabPageClick,
                 onSaveToCollectionClick = onSaveToCollectionClick,
                 onShareSelectedTabsClick = onShareSelectedTabsClick,
@@ -222,7 +231,6 @@ fun TabsTray(
             TabManagerFloatingToolbar(
                 tabsTrayStore = tabsTrayStore,
                 isSignedIn = tabsTrayState.sync.isSignedIn,
-                pbmLocked = tabsTrayState.privateBrowsing.isLocked,
                 onOpenNewNormalTabClicked = onOpenNewNormalTabClicked,
                 onOpenNewPrivateTabClicked = onOpenNewPrivateTabClicked,
                 onSyncedTabsFabClicked = onSyncedTabsFabClicked,
@@ -234,96 +242,104 @@ fun TabsTray(
         },
         floatingActionButtonPosition = FabPosition.Center,
     ) { paddingValues ->
-        HorizontalPager(
-            modifier = Modifier
-                .padding(paddingValues)
-                .fillMaxSize(),
-            state = pagerState,
-            userScrollEnabled = false,
-        ) { position ->
-            when (Page.positionToPage(position, shouldShowTabGroupsPage)) {
-                Page.NormalTabs -> {
-                    NormalTabsPage(
-                        items = tabsTrayState.normalTabsState.items,
-                        inactiveTabs = tabsTrayState.inactiveTabs.tabs,
-                        selectedItemIndex = tabsTrayState.normalTabsState.selectedItemIndex,
-                        selectionMode = tabsTrayState.mode,
-                        inactiveTabsExpanded = tabsTrayState.inactiveTabs.isExpanded,
-                        displayTabsInGrid = tabsTrayState.config.displayTabsInGrid,
-                        dragAndDropEnabled = tabsTrayState.config.tabGroupsDragAndDropEnabled,
-                        displayTabGroupOnboarding = tabsTrayState.shouldShowTabGroupOnboarding,
-                        onTabClose = onTabClose,
-                        shouldShowInactiveTabsAutoCloseDialog = tabsTrayState.inactiveTabs.showAutoCloseDialog,
-                        onItemClick = onItemClick,
-                        onItemLongClick = onItemLongClick,
-                        onInactiveTabsHeaderClick = onInactiveTabsHeaderClick,
-                        onDeleteAllInactiveTabsClick = onDeleteAllInactiveTabsClick,
-                        onInactiveTabsAutoCloseDialogShown = onInactiveTabsAutoCloseDialogShown,
-                        onInactiveTabAutoCloseDialogCloseButtonClick = onInactiveTabAutoCloseDialogCloseButtonClick,
-                        onEnableInactiveTabAutoCloseClick = onEnableInactiveTabAutoCloseClick,
-                        onInactiveTabClick = onInactiveTabClick,
-                        onInactiveTabClose = onInactiveTabClose,
-                        tabInteractionHandler = tabInteractionHandler,
-                        shouldShowInactiveTabsCFR = tabsTrayState.inactiveTabs.showCFR,
-                        onInactiveTabsCFRShown = onInactiveTabsCFRShown,
-                        onInactiveTabsCFRClick = onInactiveTabsCFRClick,
-                        onInactiveTabsCFRDismiss = onInactiveTabsCFRDismiss,
-                        onDeleteTabGroupClick = { group ->
-                            tabsTrayStore.dispatch(TabGroupAction.DeleteClicked(group))
-                        },
-                        onEditTabGroupClick = { group ->
-                            tabsTrayStore.dispatch(TabGroupAction.EditTabGroupClicked(group = group))
-                        },
-                        onCloseTabGroupClick = { group ->
-                            tabsTrayStore.dispatch(TabGroupAction.CloseTabGroupClicked(group = group))
-                        },
-                        trackersBlockedCount = trackersBlockedCount,
-                        focusEnabled = tabsTrayState.normalTabsState.itemFocusIndicatorEnabled,
-                    )
-                }
+        AnimatedVisibility(
+            visible = tabsTrayState.hasTabDataLoaded,
+            enter = fadeIn(animationSpec = tween()),
+            exit = fadeOut(animationSpec = tween()),
+        ) {
+            HorizontalPager(
+                modifier = Modifier
+                    .padding(paddingValues)
+                    .fillMaxSize(),
+                state = pagerState,
+                userScrollEnabled = false,
+            ) { position ->
+                when (Page.positionToPage(position, shouldShowTabGroupsPage)) {
+                    Page.NormalTabs -> {
+                        NormalTabsPage(
+                            items = tabsTrayState.normalTabsState.items,
+                            inactiveTabs = tabsTrayState.inactiveTabs.tabs,
+                            selectedItemIndex = tabsTrayState.normalTabsState.selectedItemIndex,
+                            selectionMode = tabsTrayState.mode,
+                            inactiveTabsExpanded = tabsTrayState.inactiveTabs.isExpanded,
+                            displayTabsInGrid = tabsTrayState.config.displayTabsInGrid,
+                            dragAndDropEnabled = tabsTrayState.config.tabGroupsDragAndDropEnabled,
+                            displayTabGroupOnboarding = tabsTrayState.shouldShowTabGroupOnboarding,
+                            onTabClose = onTabClose,
+                            shouldShowInactiveTabsAutoCloseDialog = tabsTrayState.inactiveTabs.showAutoCloseDialog,
+                            onItemClick = onItemClick,
+                            onItemLongClick = onItemLongClick,
+                            onInactiveTabsHeaderClick = onInactiveTabsHeaderClick,
+                            onDeleteAllInactiveTabsClick = onDeleteAllInactiveTabsClick,
+                            onInactiveTabsAutoCloseDialogShown = onInactiveTabsAutoCloseDialogShown,
+                            onInactiveTabAutoCloseDialogCloseButtonClick = onInactiveTabAutoCloseDialogCloseButtonClick,
+                            onEnableInactiveTabAutoCloseClick = onEnableInactiveTabAutoCloseClick,
+                            onInactiveTabClick = onInactiveTabClick,
+                            onInactiveTabClose = onInactiveTabClose,
+                            tabInteractionHandler = tabInteractionHandler,
+                            shouldShowInactiveTabsCFR = tabsTrayState.inactiveTabs.showCFR,
+                            onInactiveTabsCFRShown = onInactiveTabsCFRShown,
+                            onInactiveTabsCFRClick = onInactiveTabsCFRClick,
+                            onInactiveTabsCFRDismiss = onInactiveTabsCFRDismiss,
+                            onDeleteTabGroupClick = { group ->
+                                tabsTrayStore.dispatch(TabGroupAction.DeleteClicked(group))
+                            },
+                            onEditTabGroupClick = { group ->
+                                tabsTrayStore.dispatch(TabGroupAction.EditTabGroupClicked(group = group))
+                            },
+                            onCloseTabGroupClick = { group ->
+                                tabsTrayStore.dispatch(TabGroupAction.CloseTabGroupClicked(group = group))
+                            },
+                            onTabGroupOnboardingDismiss = onTabGroupOnboardingDismiss,
+                            trackersBlockedCount = trackersBlockedCount,
+                            focusEnabled = tabsTrayState.normalTabsState.itemFocusIndicatorEnabled,
+                            onPrivacyReportTapped = onPrivacyReportTapped,
+                        )
+                    }
 
-                Page.PrivateTabs -> {
-                    PrivateTabsPage(
-                        privateTabs = tabsTrayState.privateBrowsing.tabs,
-                        selectedItemIndex = tabsTrayState.privateBrowsing.selectedItemIndex,
-                        selectionMode = tabsTrayState.mode,
-                        displayTabsInGrid = tabsTrayState.config.displayTabsInGrid,
-                        privateTabsLocked = tabsTrayState.privateBrowsing.isLocked,
-                        onTabClose = onTabClose,
-                        onItemClick = onItemClick,
-                        onItemLongClick = onItemLongClick,
-                        tabInteractionHandler = tabInteractionHandler,
-                        onUnlockPbmClick = onUnlockPbmClick,
-                    )
-                }
+                    Page.PrivateTabs -> {
+                        PrivateTabsPage(
+                            privateTabs = tabsTrayState.privateBrowsing.tabs,
+                            selectedItemIndex = tabsTrayState.privateBrowsing.selectedItemIndex,
+                            selectionMode = tabsTrayState.mode,
+                            displayTabsInGrid = tabsTrayState.config.displayTabsInGrid,
+                            privateTabsLocked = tabsTrayState.privateBrowsing.isLocked,
+                            onTabClose = onTabClose,
+                            onItemClick = onItemClick,
+                            onItemLongClick = onItemLongClick,
+                            tabInteractionHandler = tabInteractionHandler,
+                            onUnlockPbmClick = onUnlockPbmClick,
+                        )
+                    }
 
-                Page.SyncedTabs -> {
-                    SyncedTabsPage(
-                        isSignedIn = tabsTrayState.sync.isSignedIn,
-                        syncedTabs = tabsTrayState.sync.syncedTabs,
-                        onTabClick = onSyncedTabClick,
-                        onTabClose = onSyncedTabClose,
-                        onSignInClick = onSignInClick,
-                        expandedState = tabsTrayState.sync.expandedSyncedTabs,
-                        onSectionExpansionToggled = { i ->
-                            tabsTrayStore.dispatch(TabsTrayAction.SyncedTabsHeaderToggled(i))
-                        },
-                    )
-                }
+                    Page.SyncedTabs -> {
+                        SyncedTabsPage(
+                            isSignedIn = tabsTrayState.sync.isSignedIn,
+                            syncedTabs = tabsTrayState.sync.syncedTabs,
+                            onTabClick = onSyncedTabClick,
+                            onTabClose = onSyncedTabClose,
+                            onSignInClick = onSignInClick,
+                            expandedState = tabsTrayState.sync.expandedSyncedTabs,
+                            onSectionExpansionToggled = { i ->
+                                tabsTrayStore.dispatch(TabsTrayAction.SyncedTabsHeaderToggled(i))
+                            },
+                        )
+                    }
 
-                Page.TabGroups -> {
-                    TabGroupsPage(
-                        groups = tabsTrayState.tabGroupState.groups,
-                        onTabGroupClick = { group ->
-                            tabsTrayStore.dispatch(TabGroupAction.OpenTabGroupClicked(group))
-                        },
-                        onDeleteTabGroupClick = { group ->
-                            tabsTrayStore.dispatch(TabGroupAction.DeleteClicked(group))
-                        },
-                        onEditTabGroupClick = { group ->
-                            tabsTrayStore.dispatch(TabGroupAction.EditTabGroupClicked(group = group))
-                        },
-                    )
+                    Page.TabGroups -> {
+                        TabGroupsPage(
+                            groups = tabsTrayState.tabGroupState.groups,
+                            onTabGroupClick = { group ->
+                                tabsTrayStore.dispatch(TabGroupAction.OpenTabGroupClicked(group))
+                            },
+                            onDeleteTabGroupClick = { group ->
+                                tabsTrayStore.dispatch(TabGroupAction.DeleteClicked(group))
+                            },
+                            onEditTabGroupClick = { group ->
+                                tabsTrayStore.dispatch(TabGroupAction.EditTabGroupClicked(group = group))
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -373,6 +389,7 @@ private fun TabsTrayPreview(
                     displayTabsInGrid = tabTrayState.displayTabsInGrid,
                     showTabAutoCloseBanner = tabTrayState.showTabAutoCloseBanner,
                 ),
+                hasTabDataLoaded = true,
             ),
         )
     }
@@ -471,6 +488,7 @@ private fun TabsTrayPreview(
             onInactiveTabsCFRShown = {},
             onInactiveTabsCFRClick = {},
             onInactiveTabsCFRDismiss = {},
+            onTabGroupOnboardingDismiss = {},
             onOpenNewNormalTabClicked = {},
             onOpenNewPrivateTabClicked = {},
             onSyncedTabsFabClicked = {

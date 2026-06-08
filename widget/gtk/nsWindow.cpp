@@ -673,7 +673,7 @@ bool nsWindow::WidgetTypeSupportsAcceleration() {
 }
 
 bool nsWindow::WidgetTypeSupportsNativeCompositing() {
-  if (mIsDragPopup) {
+  if (IsDragPopup()) {
     return false;
   }
 #if defined(NIGHTLY_BUILD)
@@ -1721,6 +1721,12 @@ void nsWindow::RecomputeBounds(bool aScaleChange) {
                      oldClientArea.TopLeft() != mClientArea.TopLeft();
   const bool resized = aScaleChange || clientMarginsChanged ||
                        oldClientArea.Size() != mClientArea.Size();
+
+#ifdef MOZ_X11
+  if ((moved || resized) && AsX11()) {
+    AsX11()->UpdateNativePointerBarriers();
+  }
+#endif
 
   if (moved) {
     NotifyWindowMoved(GetScreenBoundsUnscaled().TopLeft());
@@ -4418,9 +4424,8 @@ nsresult nsWindow::Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
 
 #ifdef MOZ_WAYLAND
   if (GdkIsWaylandDisplay()) {
-    mSurface = new WaylandSurface(
-        parentnsWindow ? MOZ_WL_SURFACE(parentnsWindow->GetMozContainer())
-                       : nullptr);
+    mSurface = new WaylandSurface();
+    mSurface->Init();
   }
   container = moz_container_new(this, mSurface);
 #else
@@ -7053,10 +7058,11 @@ LayoutDeviceIntPoint nsWindow::GdkPointToDevicePixels(const GdkPoint& aPoint) {
 
 nsresult nsWindow::SynthesizeNativeMouseEvent(
     LayoutDeviceIntPoint aPoint, NativeMouseMessage aNativeMessage,
-    MouseButton aButton, nsIWidget::Modifiers aModifierFlags,
+    MouseButton aButton, nsIWidget::NativeModifiers aModifierFlags,
     nsISynthesizedEventCallback* aCallback) {
   LOG("SynthesizeNativeMouseEvent(%d, %d, %d, %d, %d)", aPoint.x.value,
-      aPoint.y.value, int(aNativeMessage), int(aButton), int(aModifierFlags));
+      aPoint.y.value, int(aNativeMessage), int(aButton),
+      static_cast<int>(aModifierFlags));
 
   AutoSynthesizedEventCallbackNotifier notifier(aCallback);
 
@@ -7162,8 +7168,9 @@ void nsWindow::CreateAndPutGdkScrollEvent(mozilla::LayoutDeviceIntPoint aPoint,
 
 nsresult nsWindow::SynthesizeNativeMouseScrollEvent(
     mozilla::LayoutDeviceIntPoint aPoint, uint32_t aNativeMessage,
-    double aDeltaX, double aDeltaY, double aDeltaZ, uint32_t aModifierFlags,
-    uint32_t aAdditionalFlags, nsISynthesizedEventCallback* aCallback) {
+    double aDeltaX, double aDeltaY, double aDeltaZ,
+    nsIWidget::NativeModifiers aModifierFlags, uint32_t aAdditionalFlags,
+    nsISynthesizedEventCallback* aCallback) {
   AutoSynthesizedEventCallbackNotifier notifier(aCallback);
 
   if (!mGdkWindow) {

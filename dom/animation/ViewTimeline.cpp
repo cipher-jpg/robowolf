@@ -9,6 +9,7 @@
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/dom/Animation.h"
+#include "mozilla/dom/CSSUnitValue.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/ElementInlines.h"
@@ -52,10 +53,6 @@ already_AddRefed<ViewTimeline> ViewTimeline::MakeAnonymous(
 
 JSObject* ViewTimeline::WrapObject(JSContext* aCx,
                                    JS::Handle<JSObject*> aGivenProto) {
-  if (!StaticPrefs::
-          layout_css_scroll_driven_animations_viewtimeline_enabled()) {
-    return ScrollTimeline::WrapObject(aCx, aGivenProto);
-  }
   return ViewTimeline_Binding::Wrap(aCx, this, aGivenProto);
 }
 
@@ -159,20 +156,36 @@ already_AddRefed<ViewTimeline> ViewTimeline::Constructor(
                                      PseudoStyleType::NotPseudo, inset);
 }
 
-Nullable<double> ViewTimeline::GetStartOffset() const {
+already_AddRefed<CSSNumericValue> ViewTimeline::GetStartOffset(
+    ErrorResult& aRv) const {
   auto data = ComputeTimelineData();
   if (!data) {
     return nullptr;
   }
-  return nsPresContext::AppUnitsToFloatCSSPixels(data->mStart);
+
+  if (!StaticPrefs::layout_css_typed_om_enabled()) {
+    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    return nullptr;
+  }
+  return MakeAndAddRef<CSSUnitValue>(
+      GetParentObject(), nsPresContext::AppUnitsToDoubleCSSPixels(data->mStart),
+      "px"_ns);
 }
 
-Nullable<double> ViewTimeline::GetEndOffset() const {
+already_AddRefed<CSSNumericValue> ViewTimeline::GetEndOffset(
+    ErrorResult& aRv) const {
   auto data = ComputeTimelineData();
   if (!data) {
     return nullptr;
   }
-  return nsPresContext::AppUnitsToFloatCSSPixels(data->mEnd);
+
+  if (!StaticPrefs::layout_css_typed_om_enabled()) {
+    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    return nullptr;
+  }
+  return MakeAndAddRef<CSSUnitValue>(
+      GetParentObject(), nsPresContext::AppUnitsToDoubleCSSPixels(data->mEnd),
+      "px"_ns);
 }
 
 void ViewTimeline::ReplacePropertiesWith(
@@ -246,11 +259,8 @@ bool ViewTimeline::UpdateCachedCurrentTime() {
     return prevCachedCurrentTime.isSome();
   }
 
-  // If there is no scrollable overflow, then the ScrollTimeline is inactive.
-  // https://drafts.csswg.org/scroll-animations-1/#scrolltimeline-interface
-  const auto orientation = state.Axis();
-  if (!scrollContainerFrame->GetAvailableScrollingDirections().contains(
-          orientation)) {
+  // Don't try to update against a frame that hasn't been laid out yet.
+  if (scrollContainerFrame->HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     return prevCachedCurrentTime.isSome();
   }
 
@@ -294,6 +304,7 @@ bool ViewTimeline::UpdateCachedCurrentTime() {
   // (i.e. the box of the scrollport), where as |startOffset| refers to the
   // start of the timeline, and similarly for end side/offset. [1]
   // https://drafts.csswg.org/css-writing-modes-4/#css-start
+  const auto orientation = state.Axis();
   const auto sideInsets =
       ComputeInsets(scrollContainerFrame, orientation, mAxis, mInset);
 

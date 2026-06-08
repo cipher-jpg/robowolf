@@ -8,6 +8,7 @@
 
 use api::{BoxShadowClipMode, ColorF, DebugFlags, ExtendMode, GradientStop};
 use api::ClipMode;
+use crate::pattern::cutout::Cutout;
 use crate::util::clamp_to_scale_factor;
 use crate::box_shadow::{BoxShadowCacheKey, BLUR_SAMPLE_SCALE};
 use crate::pattern::box_shadow::BoxShadowPatternData;
@@ -268,18 +269,13 @@ fn prepare_prim_for_render(
             | PrimitiveKind::RadialGradient { .. }
             | PrimitiveKind::ConicGradient { .. }
             | PrimitiveKind::LinearGradient { .. }
+            | PrimitiveKind::Image { .. }
             => {
                 use_legacy_path = false;
             }
-            PrimitiveKind::Image { data_handle, .. } => {
-                use_legacy_path = !crate::prim_store::image::can_use_quad_shaders(
-                    &data_stores.image[*data_handle].kind,
-                    frame_state.resource_cache,
-                );
-
-                use_legacy_path = use_legacy_path || scratch.frame
-                    .draws[prim_instance_index]
-                    .compositor_surface_kind == CompositorSurfaceKind::Underlay;
+            PrimitiveKind::YuvImage { .. } => {
+                let prim_info = scratch.frame.draws[prim_instance_index];
+                use_legacy_path = prim_info.compositor_surface_kind != CompositorSurfaceKind::Underlay;
             }
             _ => {}
         };
@@ -291,10 +287,11 @@ fn prepare_prim_for_render(
         // and mask generation.
         let should_update_clip_task = match &mut prim_instance.kind {
             PrimitiveKind::Rectangle { .. }
-            | PrimitiveKind::Image { .. }
             | PrimitiveKind::RadialGradient { .. }
             | PrimitiveKind::ConicGradient { .. }
             | PrimitiveKind::LinearGradient { .. }
+            | PrimitiveKind::Image { .. }
+            | PrimitiveKind::YuvImage { .. }
             => {
                 use_legacy_path |= !can_use_clip_chain_for_quad_path(
                     &scratch.frame.draws[prim_instance_index].clip_chain,
@@ -407,7 +404,6 @@ fn prepare_interned_prim_for_render(
     // segmented-clip path) isn't read again in this function — and the other
     // fields (state, clip_chain) aren't written by it.
     let prim_info = scratch.frame.draws[prim_instance_index.0 as usize];
-    let unsnapped_prim_rect_min = prim_instance.unsnapped_prim_rect.min;
 
     match &mut prim_instance.kind {
         PrimitiveKind::BoxShadow { data_handle, .. } => {
@@ -699,25 +695,25 @@ fn prepare_interned_prim_for_render(
         }
         PrimitiveKind::TextRun { data_handle } => {
             profile_scope!("TextRun");
+
             let prim_data = &data_stores.text_run[*data_handle];
 
-            // The glyph transform has to match `glyph_transform` in "ps_text_run" shader.
-            // It's relative to the rasterizing space of a glyph.
+            // The transform has to match the prim -> raster transform applied
+            // by "ps_text_run" via `transform.m` + `device_pixel_scale`.
+            // `request_resources` uses it to map glyph pen positions into
+            // absolute device space for snapping.
             let transform = frame_context.spatial_tree
                 .get_relative_transform(
                     prim_spatial_node_index,
                     pic_context.raster_spatial_node_index,
                 )
                 .into_fast_transform();
-            // Template glyphs are stored relative to the run's pen origin, not
-            // the prim rect origin. `run_origin_offset` is `first_glyph - DL
-            // prim origin`, computed at scene-build against the *unsnapped*
-            // prim rect, so we re-add the unsnapped DL origin (not the
-            // frame-time snapped rect, which would double-apply the snap
-            // delta). Per-glyph snapping is handled separately by the
-            // `snap_to_device` path below.
-            let prim_offset = unsnapped_prim_rect_min.to_vector()
-                + prim_data.run_origin_offset;
+
+            // The run anchor is the normalized prim rect origin; glyph
+            // positions in the template are stored relative to it. Use the
+            // unsnapped rect so the anchor matches what the shader receives in
+            // `PrimitiveHeader.local_rect`.
+            let local_rect = prim_instance.unsnapped_prim_rect;
 
             let surface = &frame_state.surfaces[pic_context.surface_index.0];
 
@@ -751,7 +747,7 @@ fn prepare_interned_prim_for_render(
             };
 
             let text_run_handle = prim_data.request_resources(
-                prim_offset,
+                local_rect,
                 &transform.to_transform().with_destination::<_>(),
                 surface,
                 prim_spatial_node_index,
@@ -885,6 +881,30 @@ fn prepare_interned_prim_for_render(
             let common_data = &mut prim_data.common;
             let yuv_image_data = &mut prim_data.kind;
 
+            if !use_legacy_path {
+                if prim_info.compositor_surface_kind == CompositorSurfaceKind::Underlay {
+                    quad::prepare_quad(
+                        &Cutout,
+                        &prim_info.snapped_local_rect,
+                        &prim_info.clip_chain.local_clip_rect,
+                        common_data.aligned_aa_edges,
+                        common_data.transformed_aa_edges,
+                        prim_instance_index,
+                        &None,
+                        &prim_info.clip_chain,
+                        quad_transform,
+                        frame_context,
+                        pic_context,
+                        targets,
+                        &data_stores.clip,
+                        frame_state,
+                        scratch,
+                    );
+
+                    return;
+                }
+            }
+
             // Update the template this instane references, which may refresh the GPU
             // cache with any shared template data.
             yuv_image_data.update(
@@ -912,6 +932,28 @@ fn prepare_interned_prim_for_render(
 
             if !use_legacy_path {
                 let prim_rect = prim_info.snapped_local_rect;
+
+                if prim_info.compositor_surface_kind == CompositorSurfaceKind::Underlay {
+                    quad::prepare_quad(
+                        &Cutout,
+                        &prim_rect,
+                        &prim_info.clip_chain.local_clip_rect,
+                        common_data.aligned_aa_edges,
+                        common_data.transformed_aa_edges,
+                        prim_instance_index,
+                        &None,
+                        &prim_info.clip_chain,
+                        quad_transform,
+                        frame_context,
+                        pic_context,
+                        targets,
+                        &data_stores.clip,
+                        frame_state,
+                        scratch,
+                    );
+
+                    return;
+                }
 
                 crate::prim_store::image::prepare_image_quads(
                     &prim_rect,

@@ -220,7 +220,8 @@ internal fun Homepage(
                             if (showPrivacyReport) {
                                 TrackersBlockedCard(
                                     trackersBlockedCount = trackersBlockedCount,
-                                    interactor = interactor,
+                                    onPrivacyReportTapped = interactor::onPrivacyReportTapped,
+                                    onLongfoxEntryPointClicked = interactor::onLongfoxEntryPointClicked,
                                     modifier = Modifier.padding(top = 16.dp),
                                     showLongfoxEntryPoint = showLongfoxEntryPoint,
                                 )
@@ -336,6 +337,7 @@ internal fun Homepage(
                                             setOf(countryCode)
                                         }
                                         interactor.onCountriesSelected(selection)
+                                        showSportsCountrySelector = false
                                     },
                                     onDismiss = { showSportsCountrySelector = false },
                                 )

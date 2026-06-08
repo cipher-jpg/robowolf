@@ -45,6 +45,7 @@ import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.selectedOrDefaultPrivateSearchEngine
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.storage.sync.GlobalPlacesDependencyProvider
+import mozilla.components.concept.ai.controls.isEnabled
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.concept.engine.webextension.WebExtension
 import mozilla.components.concept.engine.webextension.isUnsupported
@@ -91,7 +92,6 @@ import org.mozilla.fenix.GleanMetrics.CreditCards
 import org.mozilla.fenix.GleanMetrics.CustomizeHome
 import org.mozilla.fenix.GleanMetrics.Events.marketingNotificationAllowed
 import org.mozilla.fenix.GleanMetrics.GenaiAiControls
-import org.mozilla.fenix.GleanMetrics.Integrity
 import org.mozilla.fenix.GleanMetrics.Logins
 import org.mozilla.fenix.GleanMetrics.Metrics
 import org.mozilla.fenix.GleanMetrics.PerfStartup
@@ -540,13 +540,12 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     @OptIn(DelicateCoroutinesApi::class)
-    private fun queueEngineWarmup(queue: RunWhenReadyQueue) = {
+    private fun queueEngineWarmup(queue: RunWhenReadyQueue) =
         runOnVisualCompleteness(queue) {
             GlobalScope.launch(Dispatchers.Main) {
                 components.core.engine.warmUp()
             }
         }
-    }
 
     @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     private fun queueIncrementNumberOfAppLaunches(queue: RunWhenReadyQueue) =
@@ -582,14 +581,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         }
         runOnVisualCompleteness(queue) {
             GlobalScope.launch(IO) {
-                val start = System.currentTimeMillis()
-                val result = components.integrityClient.warmUp()
-                Integrity.warmedUp.record(
-                    Integrity.WarmedUpExtra(
-                        durationMs = (System.currentTimeMillis() - start).toInt(),
-                        success = result,
-                        ),
-                    )
+                components.integrityClient.warmUp()
             }
         }
     }
@@ -986,7 +978,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             )
 
             ramMoreThanThreshold.set(isDeviceRamAboveThreshold)
-            deviceTotalRam.set(getDeviceTotalRAM())
+            deviceTotalRam.set(deviceTotalRAM)
 
             isLargeDevice.set(isLargeScreenSize())
         }
@@ -998,7 +990,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         }
 
         val summarizeSettings = SummarizationSettings.dataStore(applicationContext)
-        UserAiSummarize.summarizationEnabled.set(summarizeSettings.getFeatureEnabledUserStatus().first())
+        UserAiSummarize.summarizationEnabled.set(summarizeSettings.getFeatureEnabledUserStatus().first() == true)
         UserAiSummarize.gestureEnabled.set(summarizeSettings.getGestureEnabledUserStatus().first())
         UserAiSummarize.summarizationConsented.set(summarizeSettings.getHasConsentedToShake().first())
 
@@ -1067,28 +1059,14 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     @VisibleForTesting
-    internal fun getDeviceTotalRAM(): Long {
-        val memoryInfo = getMemoryInfo()
-        return if (SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            memoryInfo.advertisedMem
-        } else {
-            memoryInfo.totalMem
+    internal val deviceTotalRAM: Long by lazy {
+        ActivityManager.MemoryInfo().let { info ->
+            (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(info)
+            if (SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) info.advertisedMem else info.totalMem
         }
     }
 
-    @VisibleForTesting
-    internal fun getMemoryInfo(): ActivityManager.MemoryInfo {
-        val memoryInfo = ActivityManager.MemoryInfo()
-        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        activityManager.getMemoryInfo(memoryInfo)
-
-        return memoryInfo
-    }
-
-    private fun deviceRamApproxMegabytes(): Long {
-        val deviceRamBytes = getMemoryInfo().totalMem
-        return deviceRamBytes.toRoundedMegabytes()
-    }
+    private fun deviceRamApproxMegabytes(): Long = deviceTotalRAM.toRoundedMegabytes()
 
     private fun Long.toRoundedMegabytes(): Long = (this / BYTES_TO_MEGABYTES_CONVERSION).roundToLong()
 

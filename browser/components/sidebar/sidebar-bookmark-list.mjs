@@ -31,6 +31,7 @@ export class SidebarBookmarkList extends SidebarTabList {
   static properties = {
     ...SidebarTabList.properties,
     expandedFolderGuids: { type: Object },
+    readOnly: { type: Boolean },
   };
 
   #draggedGuid = null;
@@ -42,6 +43,11 @@ export class SidebarBookmarkList extends SidebarTabList {
     super();
     this.bookmarksContext = true;
     this.expandedFolderGuids = new Set();
+    // True when this list shows the contents of a fixed-sort query folder
+    // (e.g. Recently Bookmarked or a tag under Recent Tags). Items in such a
+    // folder can't be reordered, so dragging from or dropping into the list is
+    // disabled, matching the legacy bookmarks sidebar.
+    this.readOnly = false;
     this.getItemHeight = (item, h) => this.#itemHeightGetter(item, h);
   }
 
@@ -138,9 +144,18 @@ export class SidebarBookmarkList extends SidebarTabList {
       ></div>`;
     }
     if (tabItem.children !== undefined) {
+      let folderKind = null;
+      if (tabItem.isTagsRoot) {
+        folderKind = "tags-root";
+      } else if (tabItem.isTagContainer) {
+        folderKind = "tag-container";
+      } else if (tabItem.isPlaceContainer) {
+        folderKind = "place-container";
+      }
       if (!tabItem.children.length) {
         return html`<div
           class="bookmark-folder-label"
+          data-folder-kind=${ifDefined(folderKind)}
           tabindex="0"
           draggable="true"
           data-guid=${tabItem.guid}
@@ -154,6 +169,7 @@ export class SidebarBookmarkList extends SidebarTabList {
         <details
           ?open=${this.expandedFolderGuids.has(tabItem.guid)}
           @toggle=${e => this.#onFolderToggle(e, tabItem.guid)}
+          data-folder-kind=${ifDefined(folderKind)}
           .guid=${tabItem.guid}
         >
           <summary
@@ -170,6 +186,7 @@ export class SidebarBookmarkList extends SidebarTabList {
               secondaryActionClass="delete-button"
               .tabItems=${tabItem.children}
               .expandedFolderGuids=${this.expandedFolderGuids}
+              .readOnly=${this.readOnly || !!tabItem.isPlaceContainer}
               @fxview-tab-list-primary-action=${this.onPrimaryAction}
               @fxview-tab-list-secondary-action=${this.onSecondaryAction}
             >
@@ -448,6 +465,11 @@ export class SidebarBookmarkList extends SidebarTabList {
   }
 
   #onDragStart(e) {
+    if (this.readOnly) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const item = this.#findBookmarkElement(e.composedPath());
     if (!item) {
       e.preventDefault();
@@ -494,6 +516,11 @@ export class SidebarBookmarkList extends SidebarTabList {
 
   #onDragOver(e) {
     e.stopPropagation();
+    if (this.readOnly) {
+      this.#cleanupIndicator();
+      this.#dropTarget = null;
+      return;
+    }
     const flavor = this.#getSupportedFlavor(e.dataTransfer);
     if (!flavor) {
       return;
@@ -502,8 +529,13 @@ export class SidebarBookmarkList extends SidebarTabList {
     if (!target) {
       target = this.#getFolderDropTarget();
     }
-    if (!target || target.guid === this.#draggedGuid) {
+    if (
+      !target ||
+      target.guid === this.#draggedGuid ||
+      this.#isFixedSortFolderTarget(target)
+    ) {
       this.#cleanupIndicator();
+      this.#dropTarget = null;
       return;
     }
     e.preventDefault();
@@ -537,6 +569,17 @@ export class SidebarBookmarkList extends SidebarTabList {
     return null;
   }
 
+  // A query folder (Recently Bookmarked, Recent Tags, or a tag container) has
+  // a forced sort order, so we can't drop into it. Such folders are the only
+  // ones tagged with `data-folder-kind`.
+  #isFixedSortFolderTarget(target) {
+    return (
+      target.isFolder &&
+      target.orientation === DROP_ON &&
+      !!target.element?.dataset?.folderKind
+    );
+  }
+
   #onDragLeave(e) {
     let node = e.relatedTarget;
     while (node) {
@@ -557,6 +600,11 @@ export class SidebarBookmarkList extends SidebarTabList {
   #onDrop(e) {
     e.preventDefault();
     e.stopPropagation();
+    if (this.readOnly) {
+      this.#cleanupIndicator();
+      this.#dropTarget = null;
+      return;
+    }
     const target = this.#dropTarget;
     this.#cleanupIndicator();
     this.#dropTarget = null;

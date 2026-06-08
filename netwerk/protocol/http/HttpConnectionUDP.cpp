@@ -322,6 +322,7 @@ nsresult HttpConnectionUDP::InitCommon(nsIUDPSocket* aSocket,
   if (caps & NS_HTTP_LOAD_ANONYMOUS) {
     providerFlags |= nsISocketProvider::ANONYMOUS_CONNECT;
   }
+  mSocket->SetOriginAttributes(mConnInfo->GetOriginAttributes());
   if (mConnInfo->GetPrivate()) {
     providerFlags |= nsISocketProvider::NO_PERMANENT_STORAGE;
   }
@@ -1034,6 +1035,12 @@ void HttpConnectionUDP::CloseTransaction(nsAHttpTransaction* trans,
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
   if (NS_SUCCEEDED(reason) || (reason == NS_BASE_STREAM_CLOSED)) {
+    if (aIsShutdown && mHttp3Session) {
+      // The underlying socket has been closed. Cancel the Http3Session timer
+      // to prevent it from firing on the now-closed socket.
+      mHttp3Session->SetCleanShutdown(true);
+      mHttp3Session->Close(reason);
+    }
     return;
   }
 

@@ -95,7 +95,7 @@ const DEFAULT_ACTIONS = {
   },
   clear: {
     l10nCommands: [
-      "quickactions-cmd-clearrecenthistory",
+      "quickactions-cmd-clearrecenthistory2",
       "quickactions-clearrecenthistory",
     ],
     icon: "chrome://browser/skin/forget.svg",
@@ -232,7 +232,7 @@ const DEFAULT_ACTIONS = {
   savepdf: {
     l10nCommands: ["quickactions-cmd-savepdf2"],
     label: "quickactions-savepdf",
-    icon: "chrome://global/skin/icons/print.svg",
+    icon: "chrome://global/skin/icons/pdf.svg",
     isVisible: () => {
       return Services.prefs.getBoolPref("print.enabled");
     },

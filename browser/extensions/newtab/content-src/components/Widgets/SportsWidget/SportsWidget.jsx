@@ -13,12 +13,15 @@ import React, {
 import { useSelector, batch } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { useIntersectionObserver, useSizeSubmenu } from "../../../lib/utils";
-import { SportsMatchRow } from "./SportsMatchRow";
+import { SportsMatchRow, UpcomingMatchPlaceholder } from "./SportsMatchRow";
 import { LivePagination } from "./LivePagination";
 import { MoveSubmenu } from "../MoveSubmenu";
 import { WatchLiveModal } from "./WatchLiveModal";
 import { WIDGET_REGISTRY, resolveWidgetSize } from "common/WidgetsRegistry.mjs";
-import { useLocalizedTeamNames } from "./useLocalizedTeamNames.jsx";
+import {
+  useLocalizedTeamNames,
+  useTbdTeamName,
+} from "./useLocalizedTeamNames.jsx";
 import {
   getMatchSectionL10nId,
   groupMatchesBySection,
@@ -84,8 +87,8 @@ function sortFollowedFirst(matches, selectedTeamsSet) {
     return matches;
   }
   const involvesFollowed = match =>
-    selectedTeamsSet.has(match.home_team.key) ||
-    selectedTeamsSet.has(match.away_team.key);
+    selectedTeamsSet.has(match.home_team?.key) ||
+    selectedTeamsSet.has(match.away_team?.key);
   return [...matches]
     .map((match, index) => ({ match, index }))
     .sort((a, b) => {
@@ -133,12 +136,14 @@ function getFollowedGradient(match, selectedTeamsSet, teamColorsByKey) {
   if (!match) {
     return null;
   }
-  const homeFollowed = selectedTeamsSet.has(match.home_team.key);
-  const awayFollowed = selectedTeamsSet.has(match.away_team.key);
+  const homeFollowed = selectedTeamsSet.has(match.home_team?.key);
+  const awayFollowed = selectedTeamsSet.has(match.away_team?.key);
   if (homeFollowed === awayFollowed) {
     return null;
   }
-  const followedKey = homeFollowed ? match.home_team.key : match.away_team.key;
+  const followedKey = homeFollowed
+    ? match.home_team?.key
+    : match.away_team?.key;
   const colors = teamColorsByKey.get(followedKey);
   if (!colors || colors.length < 2) {
     return null;
@@ -156,15 +161,22 @@ function getCarouselArticleAttrs(active) {
 function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
   const prefs = useSelector(state => state.Prefs.values);
   const sportsWidgetData = useSelector(state => state.SportsWidget);
+  // Resolved once here and passed down to every match row so a list of matches
+  // makes a single Fluent lookup for the undecided-team aria-label name.
+  const tbdTeamName = useTbdTeamName();
 
   const widgetSize = resolveWidgetSize(SPORTS_WIDGET_REGISTRY_ENTRY, prefs);
-  // Mirror SportsFeed.liveEnabled — raw pref OR trainhopConfig.sports.liveEnabled.
+  // Mirror SportsFeed.liveEnabled — raw pref OR the trainhop override. The
+  // canonical key is trainhopConfig.widgets.sportsWidgetLiveEnabled (the flat
+  // sportsWidget-prefixed convention shared by every widget); the legacy
+  // trainhopConfig.sports.liveEnabled is still honored for in-flight rollouts.
   // Reading the raw pref alone would leave a Nimbus-only rollout in a
   // permanently-paused state: the feed would start polling, but tick()
   // bails on empty visibleTabs and we'd never attach the observer to dispatch
   // WIDGETS_SPORTS_LIVE_VISIBLE.
   const liveEnabled =
     prefs[PREF_SPORTS_WIDGET_LIVE_ENABLED] ||
+    prefs.trainhopConfig?.widgets?.sportsWidgetLiveEnabled ||
     prefs.trainhopConfig?.sports?.liveEnabled;
   const widgetsMayBeMaximized = prefs["widgets.system.maximized"];
   // /live currently serves mock data pre-kickoff, so ignore its contents
@@ -239,18 +251,29 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
     return map;
   }, [teams]);
 
-  // Pre-sort each match bucket so followed teams' matches bubble to the front
-  // for the highlight view and the list view.
+  // Bubble followed teams to the front for the highlight view and list view
+  // when the followed-only toggle is on; with it off, matches stay chronological.
+  const resultsFollowedOnly = sportsWidgetData.followedOnly?.results ?? true;
+  const upcomingFollowedOnly = sportsWidgetData.followedOnly?.upcoming ?? true;
   const { sortedPrevious, sortedCurrent, sortedNext } = useMemo(() => {
+    const previous = rawMatches?.previous ?? [];
+    const next = rawMatches?.next ?? [];
     return {
-      sortedPrevious: sortFollowedFirst(
-        rawMatches?.previous ?? [],
-        selectedTeamsSet
-      ),
+      sortedPrevious: resultsFollowedOnly
+        ? sortFollowedFirst(previous, selectedTeamsSet)
+        : previous,
       sortedCurrent: sortFollowedFirst(rawLive ?? [], selectedTeamsSet),
-      sortedNext: sortFollowedFirst(rawMatches?.next ?? [], selectedTeamsSet),
+      sortedNext: upcomingFollowedOnly
+        ? sortFollowedFirst(next, selectedTeamsSet)
+        : next,
     };
-  }, [rawMatches, rawLive, selectedTeamsSet]);
+  }, [
+    rawMatches,
+    rawLive,
+    selectedTeamsSet,
+    resultsFollowedOnly,
+    upcomingFollowedOnly,
+  ]);
 
   // List-view toggle states for the Results and Upcoming tabs are lifted up
   // here so we can tell whether a highlight match is currently visible (for
@@ -287,14 +310,24 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
     selectedTeamsSet,
     teamColorsByKey
   );
+  const fetchError = sportsWidgetData?.data?.fetchError ?? null;
   const impressionFired = useRef(false);
+  const errorFired = useRef(false);
   const introVideoRef = useRef(null);
+  // Caps the intro animation to two plays per widget mount.
+  // Toggling the widget off and back on remounts the component and resets this counter.
+  // You can also refresh the new tab page or open a new tab to reset the counter.
+  const introVideoPlayCount = useRef(0);
   const playIntroVideo = useMemo(() => {
     const prefersReducedMotion =
       globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
       false;
+    const maxIntroVideoPlays = 2;
     return () => {
       if (prefersReducedMotion) {
+        return;
+      }
+      if (introVideoPlayCount.current >= maxIntroVideoPlays) {
         return;
       }
       const video = introVideoRef.current;
@@ -302,7 +335,12 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
         return;
       }
       video.currentTime = 0;
-      video.play().catch(() => {});
+      video
+        .play()
+        .then(() => {
+          introVideoPlayCount.current += 1;
+        })
+        .catch(() => {});
     };
   }, []);
   const [watchLiveOpen, setWatchLiveOpen] = useState(false);
@@ -368,6 +406,27 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [liveEnabled, dispatch, liveEl]);
+
+  const handleErrorIntersection = useCallback(() => {
+    if (!fetchError || errorFired.current) {
+      return;
+    }
+    errorFired.current = true;
+    // Fire from the content side so telemetry can tie the event to a tab
+    // session. Events dispatched from the main process lack that link and get dropped.
+    dispatch(
+      ac.AlsoToMain({
+        type: at.WIDGETS_ERROR,
+        data: {
+          widget_name: "sports",
+          widget_size: widgetSize,
+          error_type: fetchError.error_type,
+        },
+      })
+    );
+  }, [dispatch, fetchError, widgetSize]);
+
+  const errorRef = useIntersectionObserver(handleErrorIntersection);
 
   const handleInteraction = useCallback(
     () => handleUserInteraction("sportsWidget"),
@@ -503,7 +562,6 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
         })
       );
     });
-    handleInteraction();
   }
 
   const handleChangeSize = useCallback(
@@ -580,6 +638,7 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
         })
       );
     });
+    handleInteraction();
   }
 
   // Discard any team changes and go back to the intro state.
@@ -680,6 +739,10 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
       ref={el => {
         widgetRef.current = [el];
         setLiveEl(el);
+        // Only attach the error observer when there's something to report —
+        // otherwise the first intersect with no fetchError adds the target to
+        // the hook's internal WeakSet and a fetchError arriving later never fires.
+        errorRef.current = fetchError ? [el] : [];
       }}
       onMouseEnter={playIntroVideo}
       onFocus={e => {
@@ -762,10 +825,12 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
               className="sports-intro-title"
               data-l10n-id="newtab-sports-widget-keep-tabs"
             />
-            <p
-              className="sports-intro-lede"
-              data-l10n-id="newtab-sports-widget-get-updates"
-            ></p>
+            {displaySize === "large" && (
+              <p
+                className="sports-intro-lede"
+                data-l10n-id="newtab-sports-widget-get-updates"
+              ></p>
+            )}
           </div>
         )}
         {widgetState === WIDGET_STATES.FOLLOW_TEAMS ? (
@@ -861,6 +926,7 @@ function SportsWidget({ dispatch, handleUserInteraction, widgetEnabledMap }) {
             liveIndex={liveIndex}
             handleInteraction={handleInteraction}
             selectedTeamsSet={selectedTeamsSet}
+            tbdTeamName={tbdTeamName}
             followedOnly={sportsWidgetData.followedOnly}
             showResultsList={showResultsList}
             setShowResultsList={setShowResultsList}
@@ -1053,6 +1119,7 @@ function SportsMatchesView({
   liveIndex,
   handleInteraction,
   selectedTeamsSet,
+  tbdTeamName,
   followedOnly,
   showResultsList,
   setShowResultsList,
@@ -1096,8 +1163,8 @@ function SportsMatchesView({
   const filterFollowed = matches =>
     matches.filter(
       match =>
-        selectedTeamsSet.has(match.home_team.key) ||
-        selectedTeamsSet.has(match.away_team.key)
+        selectedTeamsSet.has(match.home_team?.key) ||
+        selectedTeamsSet.has(match.away_team?.key)
     );
   // Filtering is only meaningful when the user has followed at least one
   // team — otherwise we'd hide every match.
@@ -1156,7 +1223,7 @@ function SportsMatchesView({
                   <ul>
                     {section.matches.map(match => (
                       <li
-                        key={`${match.home_team.key}-${match.away_team.key}-${match.date}`}
+                        key={`${match.home_team?.key}-${match.away_team?.key}-${match.date}`}
                       >
                         <SportsMatchRow
                           match={match}
@@ -1164,6 +1231,7 @@ function SportsMatchesView({
                           size="list"
                           handleInteraction={handleInteraction}
                           followedTeams={selectedTeamsSet}
+                          tbdTeamName={tbdTeamName}
                         />
                       </li>
                     ))}
@@ -1183,6 +1251,7 @@ function SportsMatchesView({
                   size={size}
                   handleInteraction={handleInteraction}
                   followedTeams={selectedTeamsSet}
+                  tbdTeamName={tbdTeamName}
                 />
               </div>
             </>
@@ -1227,6 +1296,7 @@ function SportsMatchesView({
                   size={size}
                   handleInteraction={handleInteraction}
                   followedTeams={selectedTeamsSet}
+                  tbdTeamName={tbdTeamName}
                 />
               </div>
               {/* TODO: Replace play icon when finalized */}
@@ -1248,6 +1318,7 @@ function SportsMatchesView({
                   liveIndex={liveIndex}
                   liveCount={current.length}
                   size={size}
+                  widgetSize={widgetSize}
                   handleInteraction={handleInteraction}
                 />
               )}
@@ -1282,7 +1353,11 @@ function SportsMatchesView({
                   <ul>
                     {section.matches.map(match => (
                       <li
-                        key={`${match.home_team.key}-${match.away_team.key}-${match.date}`}
+                        // Fallback is for test fixtures, which omit global_event_id.
+                        key={
+                          match.global_event_id ??
+                          `${match.home_team?.key}-${match.away_team?.key}-${match.date}`
+                        }
                       >
                         <SportsMatchRow
                           match={match}
@@ -1290,6 +1365,7 @@ function SportsMatchesView({
                           size="list"
                           handleInteraction={handleInteraction}
                           followedTeams={selectedTeamsSet}
+                          tbdTeamName={tbdTeamName}
                         />
                       </li>
                     ))}
@@ -1299,20 +1375,29 @@ function SportsMatchesView({
             </div>
           </>
         ) : (
-          next[0] && (
-            <>
-              {size === "large" && <SportsSectionLabel match={next[0]} />}
+          <>
+            {next[0] && (
+              <>
+                {size === "large" && <SportsSectionLabel match={next[0]} />}
+                <div className="match-highlight-view">
+                  <SportsMatchRow
+                    match={next[0]}
+                    variant="upcoming"
+                    size={size}
+                    handleInteraction={handleInteraction}
+                    followedTeams={selectedTeamsSet}
+                    tbdTeamName={tbdTeamName}
+                  />
+                </div>
+              </>
+            )}
+            {/* No upcoming matches from the backend — show the placeholder. */}
+            {!next[0] && (
               <div className="match-highlight-view">
-                <SportsMatchRow
-                  match={next[0]}
-                  variant="upcoming"
-                  size={size}
-                  handleInteraction={handleInteraction}
-                  followedTeams={selectedTeamsSet}
-                />
+                <UpcomingMatchPlaceholder size={size} />
               </div>
-            </>
-          )
+            )}
+          </>
         )}
         {!!next.length && (
           <moz-button

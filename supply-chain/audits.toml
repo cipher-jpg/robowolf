@@ -4502,6 +4502,17 @@ reviewed the others, as well as re-reviewed the broader changes. There was a
 large refactor which makes this changeset artificially large.
 """
 
+[[audits.minidump-writer]]
+who = "Chris Martin <marti4d@live.ca>"
+criteria = "safe-to-deploy"
+delta = "0.11.0 -> 0.12.0"
+
+[[audits.minidump-writer]]
+who = "Chris Martin <marti4d@live.ca>"
+criteria = "safe-to-deploy"
+delta = "0.12.0 -> 0.12.0@git:107e531a7a06f8e886ffcee13eb07e9ded43473b"
+importable = false
+
 [[audits.miniz_oxide]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
@@ -4824,7 +4835,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+delta = "29.0.0 -> 29.0.0@git:e4e2c451d2d4f7585820260a728f7a14eacdf415"
 importable = false
 
 [[audits.net2]]
@@ -5498,6 +5509,12 @@ who = "Chris Martin <cmartin@mozilla.com>"
 criteria = "safe-to-deploy"
 delta = "0.16.0 -> 0.17.0"
 notes = "Lots of code, but nothing unsafe and mostly parsing various text formats output by /proc files"
+
+[[audits.procfs-core]]
+who = "Chris Martin <marti4d@live.ca>"
+criteria = "safe-to-deploy"
+delta = "0.17.0 -> 0.18.0"
+notes = "Mostly bugfixes of macros and minor changes to format parsing. Some tests in there that deal with mounting and mountpoints, but no new concerns above and beyond what was already in existing tests."
 
 [[audits.profiling]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
@@ -7674,7 +7691,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+delta = "29.0.0 -> 29.0.0@git:e4e2c451d2d4f7585820260a728f7a14eacdf415"
 importable = false
 
 [[audits.wgpu-core-deps-apple]]
@@ -7724,7 +7741,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+delta = "29.0.0 -> 29.0.0@git:e4e2c451d2d4f7585820260a728f7a14eacdf415"
 importable = false
 
 [[audits.wgpu-core-deps-windows-linux-android]]
@@ -7774,7 +7791,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+delta = "29.0.0 -> 29.0.0@git:e4e2c451d2d4f7585820260a728f7a14eacdf415"
 importable = false
 
 [[audits.wgpu-hal]]
@@ -7902,7 +7919,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+delta = "29.0.0 -> 29.0.0@git:e4e2c451d2d4f7585820260a728f7a14eacdf415"
 importable = false
 
 [[audits.wgpu-naga-bridge]]
@@ -7922,7 +7939,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+delta = "29.0.0 -> 29.0.0@git:e4e2c451d2d4f7585820260a728f7a14eacdf415"
 importable = false
 
 [[audits.wgpu-types]]
@@ -8045,7 +8062,7 @@ who = [
     "Jim Blandy <jimb@red-bean.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "29.0.0 -> 29.0.0@git:a16439c1c7c74f522ca70e7991138ba3f8dd8a77"
+delta = "29.0.0 -> 29.0.0@git:e4e2c451d2d4f7585820260a728f7a14eacdf415"
 importable = false
 
 [[audits.whatsys]]

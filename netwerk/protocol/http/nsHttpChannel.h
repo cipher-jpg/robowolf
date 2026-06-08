@@ -308,8 +308,13 @@ class nsHttpChannel final : public HttpBaseChannel,
 
   // Based on the proxy configuration determine the strategy for resolving the
   // end server host name.
-  ProxyDNSStrategy GetProxyDNSStrategy();
+  nsIHttpChannelInternal::ProxyDNSStrategy ComputeProxyDNSStrategy();
 
+ public:
+  NS_IMETHOD GetProxyDNSStrategy(
+      nsIHttpChannelInternal::ProxyDNSStrategy* aStrategy) override;
+
+ private:
   // Add Sec-Fetch-Storage-Access headers based on cookie partitioning
   void AddStorageAccessHeadersToRequest();
   bool DispatchRelease();
@@ -829,7 +834,7 @@ class nsHttpChannel final : public HttpBaseChannel,
 
   nsresult LogConsoleError(const char* aTag);
 
-  void SetHTTPSSVCRecord(already_AddRefed<nsIDNSHTTPSSVCRecord>&& aRecord);
+  void SetHTTPSSVCRecord(already_AddRefed<nsIDNSHTTPSSVCRecord> aRecord);
 
   void RecordOnStartTelemetry(nsresult aStatus, bool aIsNavigation);
 

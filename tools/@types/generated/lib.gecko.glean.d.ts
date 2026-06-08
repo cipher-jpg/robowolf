@@ -248,10 +248,13 @@ interface GleanImpl {
   smartWindow: {
     addTabsClick: GleanEventWithExtras<{ chat_id?: string, location?: string, message_seq?: string, tabs_available?: string, tabs_preselected?: string }>;
     addTabsSelection: GleanEventWithExtras<{ chat_id?: string, location?: string, message_seq?: string, tabs_available?: string, tabs_preselected?: string, tabs_selected?: string }>;
+    browserActionPrompt: GleanEventWithExtras<{ action_type?: string, candidates?: string, chat_id?: string, location?: string, message_seq?: string, preselected?: string, prompt_type?: string, reason?: string }>;
+    browserActionPromptResponse: GleanEventWithExtras<{ action_type?: string, chat_id?: string, location?: string, message_seq?: string, prompt_type?: string, reason?: string, response?: string, selected?: string }>;
+    browserActionUndo: GleanEventWithExtras<{ action_type?: string, chat_id?: string, error?: string, location?: string, message_seq?: string, result?: string, tabs_restored?: string, time_delta?: string }>;
     chatPreviousSession: GleanEventWithExtras<{ tabs?: string }>;
     chatRetrieved: GleanEventWithExtras<{ chat_id?: string, location?: string, message_seq?: string, time_delta?: string }>;
     chatStorage: GleanQuantity;
-    chatSubmit: GleanEventWithExtras<{ chat_id?: string, detected_intent?: string, length?: string, location?: string, mentions?: string, message_seq?: string, model?: string, submit_type?: string, tabs?: string }>;
+    chatSubmit: GleanEventWithExtras<{ chat_id?: string, chat_version?: string, detected_intent?: string, length?: string, location?: string, mentions?: string, message_seq?: string, model?: string, submit_type?: string, tabs?: string, turn_number?: string }>;
     classicSwitch: GleanEventWithExtras<{ duration_ms?: string, opened_tabs?: string }>;
     closeWindow: GleanEventWithExtras<{ duration_ms?: string, opened_tabs?: string }>;
     getPageContent: GleanEventWithExtras<{ chat_id?: string, length?: string, location?: string, message_seq?: string, time?: string }>;
@@ -259,6 +262,7 @@ interface GleanImpl {
     historyDisplayed: GleanEventWithExtras<{ chat_id?: string, location?: string, message_seq?: string, reason?: string, total?: string }>;
     intentChangePreview: GleanEventWithExtras<{ chat_id?: string, current_intent?: string, location?: string, message_seq?: string }>;
     linkClick: GleanEventWithExtras<{ chat_id?: string, location?: string, message_seq?: string }>;
+    llmajBasedTelemetry: GleanEventWithExtras<{ attribute_name?: string, attribute_value?: string, chat_id?: string, chat_version?: string, model?: string, record_type?: string, telemetry_name?: string, telemetry_version?: string, trigger_sampled?: string, trigger_sampling_probability?: string, triggers?: string, turn_number?: string, uniform_sampled?: string, uniform_sampling_probability?: string }>;
     memoriesCount: Record<"conversation"|"history", GleanQuantity>;
     memoriesLastUpdated: GleanDatetime;
     memoriesNuke: GleanEventNoExtras;
@@ -449,7 +453,7 @@ interface GleanImpl {
   collectionShare: {
     ctaClicked: GleanEventWithExtras<{ button?: string, signed_in?: string }>;
     dialogOpen: GleanEventWithExtras<{ share_type?: string, signed_in?: string }>;
-    error: GleanEventWithExtras<{ status_code?: string }>;
+    error: GleanEventWithExtras<{ error_type?: string, status_code?: string }>;
   }
 
   containers: {
@@ -2055,6 +2059,23 @@ interface GleanImpl {
     cssContainerType: GleanCounter;
     cssContent: GleanCounter;
     cssContentVisibility: GleanCounter;
+    cssCornerBlockEndShape: GleanCounter;
+    cssCornerBlockStartShape: GleanCounter;
+    cssCornerBottomLeftShape: GleanCounter;
+    cssCornerBottomRightShape: GleanCounter;
+    cssCornerBottomShape: GleanCounter;
+    cssCornerEndEndShape: GleanCounter;
+    cssCornerEndStartShape: GleanCounter;
+    cssCornerInlineEndShape: GleanCounter;
+    cssCornerInlineStartShape: GleanCounter;
+    cssCornerLeftShape: GleanCounter;
+    cssCornerRightShape: GleanCounter;
+    cssCornerShape: GleanCounter;
+    cssCornerStartEndShape: GleanCounter;
+    cssCornerStartStartShape: GleanCounter;
+    cssCornerTopLeftShape: GleanCounter;
+    cssCornerTopRightShape: GleanCounter;
+    cssCornerTopShape: GleanCounter;
     cssCounterIncrement: GleanCounter;
     cssCounterReset: GleanCounter;
     cssCounterSet: GleanCounter;
@@ -2769,6 +2790,23 @@ interface GleanImpl {
     cssContainerType: GleanCounter;
     cssContent: GleanCounter;
     cssContentVisibility: GleanCounter;
+    cssCornerBlockEndShape: GleanCounter;
+    cssCornerBlockStartShape: GleanCounter;
+    cssCornerBottomLeftShape: GleanCounter;
+    cssCornerBottomRightShape: GleanCounter;
+    cssCornerBottomShape: GleanCounter;
+    cssCornerEndEndShape: GleanCounter;
+    cssCornerEndStartShape: GleanCounter;
+    cssCornerInlineEndShape: GleanCounter;
+    cssCornerInlineStartShape: GleanCounter;
+    cssCornerLeftShape: GleanCounter;
+    cssCornerRightShape: GleanCounter;
+    cssCornerShape: GleanCounter;
+    cssCornerStartEndShape: GleanCounter;
+    cssCornerStartStartShape: GleanCounter;
+    cssCornerTopLeftShape: GleanCounter;
+    cssCornerTopRightShape: GleanCounter;
+    cssCornerTopShape: GleanCounter;
     cssCounterIncrement: GleanCounter;
     cssCounterReset: GleanCounter;
     cssCounterSet: GleanCounter;
@@ -5398,7 +5436,8 @@ interface GleanImpl {
     happyEyeballsConnectionAttemptCount: GleanCustomDistribution;
     happyEyeballsConnectionEstablishmentTime: GleanCustomDistribution;
     happyEyeballsDnsResolutionTime: Record<"a"|"aaaa"|"https", GleanCustomDistribution>;
-    happyEyeballsHttpsRecordAvailable: Record<"available"|"unavailable", GleanCounter>;
+    happyEyeballsH3Discovery: Record<"altsvc_only"|"both"|"https_rr_only"|"none", GleanCounter>;
+    happyEyeballsHttpsRrFeatures: Record<"ech"|"h3_alpn"|"ipv4hint"|"ipv6hint"|"total", GleanCounter>;
     happyEyeballsTimeToFirstAttempt: GleanCustomDistribution;
     happyEyeballsWinningAttemptIndex: GleanCustomDistribution;
     http30rttState: Record<"conn_closed_by_necko"|"conn_error"|"not_used"|"rejected"|"succeeded", GleanCounter>;
@@ -5980,7 +6019,6 @@ interface GleanImpl {
     deleteManage: GleanEventWithExtras<{ value?: string }>;
     detectedAddressForm: GleanEventWithExtras<{ address_level1?: string, address_level2?: string, address_line1?: string, address_line2?: string, address_line3?: string, country?: string, postal_code?: string, street_address?: string, value?: string }>;
     detectedAddressFormExt: GleanEventWithExtras<{ additional_name?: string, email?: string, family_name?: string, given_name?: string, name?: string, organization?: string, tel?: string, value?: string }>;
-    detectedMlcompare: GleanEventWithExtras<{ computed?: string, ml?: string, mltime?: string, mlversion?: string, re?: string, reason?: string, retime?: string, value?: string }>;
     disableCaptureDoorhanger: GleanEventWithExtras<{ value?: string }>;
     disableEditDoorhanger: GleanEventWithExtras<{ value?: string }>;
     disableUpdateDoorhanger: GleanEventWithExtras<{ value?: string }>;
@@ -7134,6 +7172,11 @@ interface GleanImpl {
     insecureOpensearchUpdateCount: GleanQuantity;
     secureOpensearchEngineCount: GleanQuantity;
     secureOpensearchUpdateCount: GleanQuantity;
+  }
+
+  searchCounts: {
+    hiddenEngines: Record<"disabled"|"oneOff", GleanQuantity>;
+    totals: Record<"addon"|"appProvidedConfig"|"openSearch"|"policy"|"user"|"userInstalledConfig", GleanQuantity>;
   }
 
   searchEngineDefault: {

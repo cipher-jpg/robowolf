@@ -821,6 +821,14 @@ newtab-widget-section-menu-manage = ניהול ווידג’טים
 newtab-widget-section-menu-hide-all = הסתרת ווידג׳טים
 newtab-widget-section-menu-learn-more = מידע נוסף
 newtab-widget-section-feedback = ספרו לנו מה דעתכם
+# Button shown when additional widgets are hidden beyond the
+# first row, allowing users to show them.
+newtab-widget-section-show-more =
+    .label = להציג יותר ווידג’טים
+# Button shown when the widgets row is expanded to multiple rows,
+# allowing users to collapse it back to one row.
+newtab-widget-section-show-less =
+    .label = להציג פחות ווידג’טים
 newtab-widget-lists-name-default = רשימת תיוג
 
 ## Strings introduced by the Nova redesign of the Timer widget
@@ -1043,7 +1051,26 @@ newtab-sports-widget-world-cup-champions = אלופי המונדיאל 2026
 #   $date (Date) - The match start time
 newtab-sports-widget-match-time = { DATETIME($date, hour: "2-digit", minute: "2-digit") }
 newtab-sports-widget-match-full-time = המשחק הסתיים
+newtab-sports-widget-match-halftime = מחצית
+newtab-sports-widget-match-extra-time = הארכה
 newtab-sports-widget-match-penalties = פנדלים
+
+## Sports widget live-games pagination. Shown when 2+ matches are live at the same time
+
+# arrow button that goes to the previous page of live matches.
+newtab-sports-widget-pagination-previous =
+    .aria-label = הקודם
+    .title = הקודם
+# arrow button that goes to the next page of live matches.
+newtab-sports-widget-pagination-next =
+    .aria-label = הבא
+    .title = הבא
+# Dot indicator that jumps directly to a given live match.
+# $index (number) - 1-based position of this dot in the list.
+# $total (number) - Total number of live matches.
+newtab-sports-widget-pagination-dot =
+    .aria-label = משחק חי { $index } מתוך { $total }
+    .title = משחק חי { $index } מתוך { $total }
 
 ## Accessible labels for match rows in the sports widget. These are read by
 ## screen readers to announce the match details and status.

@@ -324,12 +324,6 @@
   result_type: WordSized
   num_temps: 1
 
-- name: WasmRefCastInfallible
-  mir_op: true
-  operands:
-    ref: WordSized
-  result_type: WordSized
-
 - name: WasmNewStructObject
   mir_op: true
   operands:
@@ -4535,7 +4529,7 @@
   arguments:
     isSigned: bool
 #ifdef JS_CODEGEN_X64
-  num_temps: 1
+  num_temps: 2
 #endif
   mir_op: WasmMulI64WideHI64
 #endif
