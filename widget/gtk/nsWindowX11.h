@@ -16,6 +16,7 @@ class nsWindowX11 final : public nsWindow {
 
   void CreateNative() override;
   void DestroyNative() override;
+  void ConfigureToplevelWindowNative() override;
 
   bool ConfigureX11GLVisual();
 
@@ -23,8 +24,13 @@ class nsWindowX11 final : public nsWindow {
 
   void LockNativePointer(NativePointerLockMode aNativePointerLockMode) override;
   void UnlockNativePointer() override;
-
   void UpdateNativePointerBarriers();
+
+  void OnDragDataReceivedEvent(GtkWidget* aWidget, GdkDragContext* aDragContext,
+                               gint aX, gint aY,
+                               GtkSelectionData* aSelectionData, guint aInfo,
+                               guint aTime, gpointer aData);
+  void WindowDragLeaveHandler(GtkWidget* aWidget);
 
  protected:
   virtual ~nsWindowX11() = default;

@@ -6,6 +6,8 @@
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/ServoStyleConsts.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/CSSMathNegateBinding.h"
 #include "mozilla/dom/CSSNumericValue.h"
@@ -18,6 +20,15 @@ CSSMathNegate::CSSMathNegate(nsCOMPtr<nsISupports> aParent,
                              RefPtr<CSSNumericValue> aValue)
     : CSSMathValue(std::move(aParent), MathValueType::MathNegate),
       mValue(std::move(aValue)) {}
+
+// static
+RefPtr<CSSMathNegate> CSSMathNegate::Create(
+    nsCOMPtr<nsISupports> aParent, const StyleMathNegate& aMathNegate) {
+  RefPtr<CSSNumericValue> value =
+      CSSNumericValue::Create(aParent, *aMathNegate);
+
+  return MakeRefPtr<CSSMathNegate>(std::move(aParent), std::move(value));
+}
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(CSSMathNegate, CSSMathValue)
 NS_IMPL_CYCLE_COLLECTION_INHERITED(CSSMathNegate, CSSMathValue, mValue)
@@ -63,6 +74,12 @@ void CSSMathNegate::ToCssTextWithProperty(const CSSPropertyId& aPropertyId,
   if (!aContext.IsParenLess()) {
     aDest.Append(")"_ns);
   }
+}
+
+StyleMathNegate CSSMathNegate::ToStyleMathNegate() const {
+  auto value = MakeUnique<StyleNumericValue>(mValue->ToStyleNumericValue());
+
+  return StyleMathNegate{std::move(value)};
 }
 
 const CSSMathNegate& CSSMathValue::GetAsCSSMathNegate() const {

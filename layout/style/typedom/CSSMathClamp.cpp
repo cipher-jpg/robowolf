@@ -7,6 +7,7 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/ServoStyleConsts.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/CSSMathClampBinding.h"
 #include "mozilla/dom/CSSNumericValue.h"
@@ -23,6 +24,20 @@ CSSMathClamp::CSSMathClamp(nsCOMPtr<nsISupports> aParent,
       mLower(std::move(aLower)),
       mValue(std::move(aValue)),
       mUpper(std::move(aUpper)) {}
+
+// static
+RefPtr<CSSMathClamp> CSSMathClamp::Create(nsCOMPtr<nsISupports> aParent,
+                                          const StyleMathClamp& aMathClamp) {
+  const auto values = aMathClamp.AsSpan();
+  static_assert(StyleMathClamp::Length() == 3);
+
+  RefPtr<CSSNumericValue> lower = CSSNumericValue::Create(aParent, values[0]);
+  RefPtr<CSSNumericValue> value = CSSNumericValue::Create(aParent, values[1]);
+  RefPtr<CSSNumericValue> upper = CSSNumericValue::Create(aParent, values[2]);
+
+  return MakeAndAddRef<CSSMathClamp>(std::move(aParent), std::move(lower),
+                                     std::move(value), std::move(upper));
+}
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(CSSMathClamp, CSSMathValue)
 NS_IMPL_CYCLE_COLLECTION_INHERITED(CSSMathClamp, CSSMathValue, mLower, mValue,
@@ -83,6 +98,12 @@ void CSSMathClamp::ToCssTextWithProperty(const CSSPropertyId& aPropertyId,
       aPropertyId, SerializationContext(Nested{}, ParenLess{}), aDest);
 
   aDest.Append(")"_ns);
+}
+
+StyleMathClamp CSSMathClamp::ToStyleMathClamp() const {
+  return StyleMathClamp(mLower->ToStyleNumericValue(),
+                        mValue->ToStyleNumericValue(),
+                        mUpper->ToStyleNumericValue());
 }
 
 const CSSMathClamp& CSSMathValue::GetAsCSSMathClamp() const {

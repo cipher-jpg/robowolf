@@ -7,10 +7,11 @@
 use crate::applicable_declarations::{CascadePriority, RevertKind};
 use crate::color::AbsoluteColor;
 use crate::computed_value_flags::ComputedValueFlags;
+use crate::context::TreeCountingCaches;
 use crate::custom_properties::{
     CustomPropertiesBuilder, DeferFontRelativeCustomPropertyResolution,
 };
-use crate::dom::{AttributeTracker, TElement};
+use crate::dom::{AttributeTracker, DummyElementContext, ElementContext, TElement};
 #[cfg(feature = "gecko")]
 use crate::font_metrics::FontMetricsOrientation;
 use crate::logical_geometry::WritingMode;
@@ -32,6 +33,7 @@ use crate::values::specified::length::FontBaseSize;
 use crate::values::specified::position::PositionTryFallbacksTryTactic;
 use crate::values::{computed, specified};
 use rustc_hash::FxHashMap;
+use selectors::matching::ElementSelectorFlags;
 use servo_arc::Arc;
 use smallvec::SmallVec;
 use std::borrow::Cow;
@@ -78,6 +80,7 @@ pub fn cascade<E>(
     rule_cache: Option<&RuleCache>,
     rule_cache_conditions: &mut RuleCacheConditions,
     element: Option<E>,
+    tree_counting_caches: &mut TreeCountingCaches,
 ) -> Arc<ComputedValues>
 where
     E: TElement,
@@ -97,6 +100,7 @@ where
         rule_cache,
         rule_cache_conditions,
         element,
+        tree_counting_caches,
     )
 }
 
@@ -194,6 +198,7 @@ fn cascade_rules<E>(
     rule_cache: Option<&RuleCache>,
     rule_cache_conditions: &mut RuleCacheConditions,
     element: Option<E>,
+    tree_counting_caches: &mut TreeCountingCaches,
 ) -> Arc<ComputedValues>
 where
     E: TElement,
@@ -214,6 +219,7 @@ where
         rule_cache,
         rule_cache_conditions,
         element,
+        tree_counting_caches,
     )
 }
 
@@ -273,6 +279,7 @@ pub fn apply_declarations<'decls, E, I>(
     rule_cache: Option<&RuleCache>,
     rule_cache_conditions: &mut RuleCacheConditions,
     element: Option<E>,
+    tree_counting_caches: &mut TreeCountingCaches,
 ) -> Arc<ComputedValues>
 where
     E: TElement,
@@ -284,6 +291,12 @@ where
     let is_root_element = pseudo.is_none() && element.map_or(false, |e| e.is_root());
     let container_size_query =
         ContainerSizeQuery::for_option_element(element, Some(inherited_style), pseudo.is_some());
+
+    let originating_element = element.map(|e| e.ultimate_originating_element());
+    let element_context = match originating_element {
+        Some(ref e) => e as &dyn ElementContext,
+        None => &DummyElementContext {},
+    };
 
     let mut context = computed::Context::new(
         // We'd really like to own the rules here to avoid refcount traffic, but
@@ -301,6 +314,8 @@ where
         rule_cache_conditions,
         container_size_query,
         included_cascade_flags,
+        element_context,
+        tree_counting_caches,
     );
 
     context.style().add_flags(cascade_input_flags);
@@ -310,11 +325,7 @@ where
     let mut cascade = Cascade::new(first_line_reparenting, try_tactic, ignore_colors);
     let mut declarations = Default::default();
     let mut shorthand_cache = ShorthandsWithPropertyReferencesCache::default();
-    let attribute_provider = element.map(|e| e.ultimate_originating_element());
-    let mut attribute_tracker = match &attribute_provider {
-        Some(provider) => AttributeTracker::new(provider),
-        None => AttributeTracker::new_dummy(),
-    };
+    let mut attribute_tracker = AttributeTracker::new(element_context);
 
     let properties_to_apply = match cascade_mode {
         CascadeMode::Visited { unvisited_context } => {
@@ -423,6 +434,21 @@ where
         // from being wasted effort, it will be wrong, since context.rule_cache_conditions won't be
         // set appropriately if we didn't compute those reset properties.)
         context.rule_cache_conditions.borrow_mut().set_uncacheable();
+    }
+
+    if context
+        .builder
+        .flags()
+        .intersects(ComputedValueFlags::tree_counting_function_flags())
+    {
+        if let Some(el) = element {
+            el.apply_selector_flags(ElementSelectorFlags::MAY_HAVE_TREE_COUNTING_FUNCTION);
+        } else {
+            debug_assert!(
+                false,
+                "Tree counting function flag applied without an element?"
+            );
+        }
     }
 
     context.builder.build()
@@ -1109,6 +1135,7 @@ impl<'b> Cascade<'b> {
             None, // rule_cache
             &mut *context.rule_cache_conditions.borrow_mut(),
             element,
+            &mut *context.tree_counting_caches.borrow_mut(),
         );
         context.builder.visited_style = Some(style);
     }
@@ -1189,7 +1216,9 @@ impl<'b> Cascade<'b> {
             | ComputedValueFlags::USES_CONTAINER_UNITS
             | ComputedValueFlags::USES_VIEWPORT_UNITS
             | ComputedValueFlags::USES_FONT_RELATIVE_UNITS
-            | ComputedValueFlags::DEPENDS_ON_CONTAINER_STYLE_QUERY;
+            | ComputedValueFlags::DEPENDS_ON_CONTAINER_STYLE_QUERY
+            | ComputedValueFlags::USES_SIBLING_COUNT
+            | ComputedValueFlags::USES_SIBLING_INDEX;
         context.builder.add_flags(style.flags & bits_to_copy);
 
         true

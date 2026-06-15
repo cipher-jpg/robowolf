@@ -31,6 +31,127 @@ newtab-card-dismiss-button =
     .title = ਖ਼ਾਰਜ ਕਰੋ
     .aria-label = ਖ਼ਾਰਜ ਕਰੋ
 
+## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
+## Homepage panel
+
+home-homepage-title =
+    .label = ਮੁੱਖ ਸਫ਼ਾ
+home-homepage-new-windows =
+    .label = ਨਵੀਆਂ ਵਿੰਡੋਆਂ
+home-homepage-new-tabs =
+    .label = ਨਵੀਆਂ ਟੈਬਾਂ
+# This option leads to the "Custom Homepage" subpage
+home-homepage-custom-homepage-button =
+    .label = ਕਿਸੇ ਖਾਸ ਸਾਈਟ ਨੂੰ ਚੁਣੋ
+
+## Custom URLs subpage
+
+# Subheader on the Custom Homepage subpage. Followed by a form to enter URLs and a list of URLs already saved, if any.
+home-custom-homepage-card-header =
+    .label = ਵੈੱਬਸਾਈਟ ਸਿਰਨਾਵਾਂ(ਸਿਰਨਾਵੇਂ)
+home-custom-homepage-address =
+    .placeholder = ਸਿਰਨਾਵਾਂ ਦਿਓ
+home-custom-homepage-address-button =
+    .label = ਸਿਰਨਾਵੇਂ ਨੂੰ ਜੋੜੋ
+# Shown when no custom websites/URLs to use as a homepage have been added yet
+home-custom-homepage-no-results =
+    .label = ਹਾਲੇ ਕੋਈ ਵੈੱਬਸਾਈਟ ਨਹੀਂ ਜੋੜੀ ਗਈ।
+home-custom-homepage-delete-address-button =
+    .aria-label = ਸਿਰਨਾਵੇਂ ਨੂੰ ਹਟਾਓ
+    .title = ਸਿਰਨਾਵੇਂ ਨੂੰ ਹਟਾਓ
+# Further options to use when setting the home page. Two action buttons are placed in line with this prompt
+# to replace the current home page with a currently open page or bookmark.
+home-custom-homepage-replace-with-prompt =
+    .label = ਇਸ ਨਾਲ ਬਦਲੋ
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-current-pages-button =
+    .label = ਇਸ ਵੇਲੇ ਖੁੱਲ੍ਹੇ ਸਫ਼ੇ
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-bookmarks-button =
+    .label = …ਬੁੱਕਮਾਰਕ
+
+## Firefox Home content
+
+home-prefs-content-header =
+    .label = { -firefox-home-brand-name }
+home-prefs-search-header2 =
+    .label = ਖੋਜ
+home-prefs-stories-header2 =
+    .label = ਲੇਖ
+    .description = { -brand-product-name } ਸਮੂਹ ਵਲੋਂ ਤਿਆਰ ਕੀਤੀ ਖਾਸ ਸਮੱਗਰੀ
+home-prefs-widgets-header =
+    .label = ਵਿਜੈੱਟ
+# Lists is a widget on New Tab, similar to a to-do widget
+home-prefs-lists-header =
+    .label = ਸੂਚੀਆਂ
+# Timer is a widget on New Tab, similar to the Pomodoro timer.
+home-prefs-timer-header =
+    .label = ਟਾਈਮਰ
+# Sports is a widget on New Tab showing sports scores and schedules.
+home-prefs-sports-widget-header =
+    .label = ਖੇਡਾਂ
+# Clock is a widget on New Tab that displays time zones around the world.
+home-prefs-clocks-header =
+    .label = ਘੜੀ
+home-prefs-mission-message2 =
+    .message = ਸਾਡੇ ਸਪਾਂਸਰ ਵੈੱਬ ਨੂੰ ਹੋਰ ਬੇਹਤਰ ਬਣਾਉਣ ਲਈ ਸਾਡੇ ਮਕਸਦ ਲਈ ਸਹਿਯੋਗ ਦਿੰਦੇ ਹਨ।
+home-prefs-manage-topics-link2 =
+    .label = ਵਿਸ਼ਿਆਂ ਦਾ ਇੰਤਜ਼ਾਮ
+home-prefs-choose-wallpaper-link2 =
+    .label = ਕੋਈ ਵਾਲਪੇਪਰ ਚੁਣੋ
+home-prefs-firefox-logo-header =
+    .label = { -brand-short-name } ਲੋਗੋ
+# Informational message bar that appears in the Firefox Home section when the options are disabled.
+# The user must select Firefox Home as their homepage for either new tabs or new windows to enable
+# the features in settings.
+home-prefs-firefox-home-disabled-notice =
+    .message = ਇਹ ਫ਼ੀਚਰਾਂ ਨੂੰ ਵਰਤਣ ਲਈ { -firefox-home-brand-name } ਵਾਸਤੇ ਨਵੀਆਂ ਟੈਬਾਂ ਜਾਂ ਨਵੀ ਵਿੰਡੋ ਨੂੰ ਸੈੱਟ ਕਰੋ।
+# Variables:
+#   $num (number) - Number of rows displayed
+home-prefs-sections-rows-option-srd =
+    .label =
+        { $num ->
+            [one] { $num } ਕਤਾਰ
+           *[other] { $num } ਕਤਾਰਾਂ
+        }
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = ਇਕਸਟੈਨਸ਼ਨ ({ $extension })
+home-restore-defaults-srd =
+    .label = ਮੂਲ ਬਹਾਲ ਕਰੋ
+    .accesskey = R
+home-mode-choice-default-fx-srd =
+    .label = { -firefox-home-brand-name } (ਮੂਲ)
+home-mode-choice-custom-srd =
+    .label = …ਚੁਣਿੰਦਾ URL
+home-mode-choice-blank-srd =
+    .label = ਖ਼ਾਲੀ ਸਫ਼ਾ
+home-prefs-shortcuts-header-srd =
+    .label = ਸ਼ਾਰਟਕੱਟ
+home-prefs-shortcuts-select =
+    .aria-label = ਸ਼ਾਰਟਕੱਟ
+home-prefs-shortcuts-by-option-sponsored-srd =
+    .label = ਸਪਾਂਸਰ ਕੀਤੇ ਸ਼ਾਰਟਕੱਟ
+home-prefs-recommended-by-option-sponsored-stories-srd =
+    .label = ਸਪਾਂਸਰ ਕੀਤੀਆਂ ਕਹਾਣੀਆਂ
+home-prefs-highlights-option-visited-pages-srd =
+    .label = ਵੇਖੇ ਗਏ ਸਫੇ
+home-prefs-highlights-options-bookmarks-srd =
+    .label = ਬੁੱਕਮਾਰਕ
+home-prefs-highlights-option-most-recent-download-srd =
+    .label = ਸਭ ਤੋਂ ਤਾਜ਼ਾ ਕੀਤੇ ਡਾਊਨਲੋਡ
+home-prefs-recent-activity-header-srd =
+    .label = ਤਾਜ਼ਾ ਸਰਗਰਮੀ
+home-prefs-recent-activity-select =
+    .aria-label = ਤਾਜ਼ਾ ਸਰਗਰਮੀ
+home-prefs-weather-header-srd =
+    .label = ਮੌਸਮ
+home-prefs-support-firefox-header-srd =
+    .label = { -brand-product-name } ਲਈ ਸਹਿਯੋਗ
+home-prefs-mission-message-learn-more-link-srd = ਸਮਝੋ ਕਿ ਕਿਵੇਂ
+
 ## Search box component.
 
 # "Search" is a verb/action
@@ -151,6 +272,8 @@ newtab-menu-section-block = ਪਾਬੰਦੀ
 # "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 # e.g. Following the travel section of stories.
 newtab-menu-section-unfollow-topic = ਅਣ-ਫ਼ਾਲੋ ਕਰੋ
+# Context menu option to open a support page explaining the New Tab personalization features and privacy controls.
+newtab-menu-section-learn-more = ਹੋਰ ਜਾਣੋ
 # "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
 # e.g. Following the travel section of stories.
 newtab-menu-section-unfollow = ਵਿਸ਼ੇ ਨੂੰ ਅਣ-ਫ਼ਾਲੋ ਕਰੋ
@@ -757,8 +880,6 @@ newtab-widget-lists-button-add-item = ਇੱਕ ਚੀਜ਼ ਨੂੰ ਜੋੜੋ
 newtab-widget-lists-input-add-an-item2 =
     .placeholder = ਇੱਕ ਚੀਜ਼ ਨੂੰ ਜੋੜੋ
     .aria-label = ਇੱਕ ਚੀਜ਼ ਨੂੰ ਜੋੜੋ
-newtab-widget-lists-input-add-an-item =
-    .placeholder = ਇੱਕ ਚੀਜ਼ ਨੂੰ ਜੋੜੋ
 newtab-widget-lists-input-error = ਇੱਕ ਚੀਜ਼ ਨੂੰ ਜੋੜਨ ਲਈ ਲਿਖਤ ਨੂੰ ਸ਼ਾਮਲ ਕਰੋ।
 newtab-widget-lists-input-menu-open-link = ਲਿੰਕ ਨੂੰ ਖੋਲ੍ਹੋ
 newtab-widget-lists-input-menu-move-up = ਉੱਤੇ ਭੇਜੋ
@@ -786,11 +907,6 @@ newtab-widget-lists-name-placeholder-checklist2 =
 newtab-widget-lists-name-placeholder-new2 =
     .placeholder = ਨਵੀਂ ਸੂਚੀ
     .aria-label = ਸੂਚੀ ਦੇ ਨਾਂ ਨੂੰ ਸੋਧੋ
-newtab-widget-lists-name-placeholder-checklist =
-    .placeholder = ਚੈਕ-ਲਿਸਟ
-# The placeholder value of the name field for a newly created list
-newtab-widget-lists-name-placeholder-new =
-    .placeholder = ਨਵੀਂ ਸੂਚੀ
 newtab-widget-section-title = ਵਿਜੈੱਟ
 newtab-widget-menu-hide = ਵਿਜੈੱਟ ਨੂੰ ਲੁਕਾਓ
 newtab-widget-menu-change-size = ਆਕਾਰ ਨੂੰ ਬਦਲੋ
@@ -991,6 +1107,10 @@ newtab-sports-widget-watch-stream-select-games-only = ਸਿਰਫ਼ ਗੇਮਾ�
 newtab-sports-widget-watch-available-region = ਤੁਹਾਡੇ ਖੇਤਰ ਵਿੱਚ ਮੌਜੂਦ
 # Heading for the list of streaming services available outside the user’s country/region.
 newtab-sports-widget-watch-available-other-regions = ਹੋਰ ਖੇਤਰ
+# Button that opens the provider’s stream page in a new tab.
+newtab-sports-widget-watch-play =
+    .aria-label = ਸਟਰੀਮ ਨੂੰ ਖੋਲ੍ਹੋ
+    .title = ਸਟਰੀਮ ਨੂੰ ਖੋਲ੍ਹੋ
 newtab-sports-widget-group-stage = ਗਰੁੱਪ ਸਟੇਜ
 newtab-sports-widget-group-a = ਗਰੁੱਪ A
 newtab-sports-widget-group-b = ਗਰੁੱਪ B
@@ -1046,7 +1166,25 @@ newtab-sports-widget-world-cup-champions = 2026 ਵਰਲਡ ਕੱਪ ਚੈਪ
 newtab-sports-widget-match-time = { DATETIME($date, hour: "2-digit", minute: "2-digit") }
 newtab-sports-widget-match-full-time = ਸਾਰਾ ਸਮਾਂ
 newtab-sports-widget-match-halftime = ਅੱਧਾ ਟਾਈਮ
+newtab-sports-widget-match-extra-time = ਵਾਧੂ ਟਾਈਮ
 newtab-sports-widget-match-penalties = ਪਨੈਲਟੀਆਂ
+
+## Sports widget live-games pagination. Shown when 2+ matches are live at the same time
+
+# arrow button that goes to the previous page of live matches.
+newtab-sports-widget-pagination-previous =
+    .aria-label = ਪਿੱਛੇ
+    .title = ਪਿੱਛੇ
+# arrow button that goes to the next page of live matches.
+newtab-sports-widget-pagination-next =
+    .aria-label = ਅੱਗੇ
+    .title = ਅੱਗੇ
+# Dot indicator that jumps directly to a given live match.
+# $index (number) - 1-based position of this dot in the list.
+# $total (number) - Total number of live matches.
+newtab-sports-widget-pagination-dot =
+    .aria-label = { $total } ਵਿੱਚੋਂ { $index } ਲਾਈਵ ਮੈਚ
+    .title = { $total } ਵਿੱਚੋਂ { $index } ਲਾਈਵ ਮੈਚ
 
 ## Accessible labels for match rows in the sports widget. These are read by
 ## screen readers to announce the match details and status.
@@ -1083,6 +1221,40 @@ newtab-sports-widget-match-aria-label-upcoming =
 # An upcoming match row whose status is "delayed".
 newtab-sports-widget-match-aria-label-upcoming-delayed =
     .aria-label = { $homeTeam } ਬਨਾਮ { $awayTeam }, ਦੇਰੀ ਨਾਲ
+# An upcoming match row whose status is "postponed".
+newtab-sports-widget-match-aria-label-upcoming-postponed =
+    .aria-label = { $homeTeam } ਬਨਾਮ { $awayTeam }, ਟਲਿਆ ਹੈ
+# An upcoming match row whose status is "suspended".
+newtab-sports-widget-match-aria-label-upcoming-suspended =
+    .aria-label = { $homeTeam } ਬਨਾਮ { $awayTeam }, ਮੁਅੱਤਲ
+# An upcoming match row whose status is "cancelled".
+newtab-sports-widget-match-aria-label-upcoming-cancelled =
+    .aria-label = { $homeTeam } ਬਨਾਮ { $awayTeam }, ਰੱਦ ਕੀਤਾ
+
+## Sports widget — team names (FIFA country codes)
+## Only includes names not adequately covered by standard country-code
+## internationalization tooling.
+
+newtab-sports-widget-team-name-label-bih =
+    .label = ਬੋਸਨੀਆ ਅਤੇ ਹਰਜ਼ੀਗੋਵੀਨਾ
+newtab-sports-widget-team-name-label-civ =
+    .label = ਆਈਵਰੀ ਕੋਸਟ
+newtab-sports-widget-team-name-label-cod =
+    .label = ਡੀਆਰ ਕਾਂਗੋ
+newtab-sports-widget-team-name-label-eng =
+    .label = ਇੰਗਲੈਂਡ
+newtab-sports-widget-team-name-label-sco =
+    .label = ਸਕਾਟਲੈਂਡ
+
+## Sports widget OMC messages
+## Shown as on-screen messages promoting the Sports widget and World Cup wallpapers.
+
+newtab-sports-widget-message-wallpapers-title = ਵਰਲਡ ਕੱਪ ਨੂੰ ਨਵੇਂ ਵਾਲਪੇਪਰ ਨਾਲ ਸ਼ੁਰੂ ਕਰੋ
+newtab-sports-widget-message-wallpapers-cta = ਕੋਈ ਵਾਲਪੇਪਰ ਚੁਣੋ
+newtab-sports-widget-message-add-widgets-cta =
+    .label = ਵਿਜੈੱਟ ਜੋੜੋ
+newtab-sports-widget-message-explore-widgets-cta =
+    .label = ਵਿਜੈੱਟ ਲੱਭੋ
 
 ## Strings for activation window message variants. In certain experiment configurations,
 ## the strings from these variants may be displayed in a message below the search input
@@ -1144,6 +1316,19 @@ newtab-clock-widget-button-save = ਸੰਭਾਲੋ
 newtab-clock-widget-button-remove-clock =
     .title = ਘੜੀ ਨੂੰ ਹਟਾਓ
     .aria-label = ਘੜੀ ਨੂੰ ਹਟਾਓ
+# Accessible name for a clock row in the "Your clocks" management panel
+# when the row has no user-provided nickname. Read aloud by screen
+# readers when focus lands on the row.
+# Variables:
+#   $city (string) - The city name displayed in the row.
+newtab-clock-widget-edit-item =
+    .aria-label = { $city }
+# Accessible name for a clock row when a user nickname has been set.
+# Variables:
+#   $city (string) - The city name displayed in the row.
+#   $nickname (string) - The user-provided nickname for the row.
+newtab-clock-widget-edit-item-with-nickname =
+    .aria-label = { $city }, ਨਾਂ: { $nickname }
 newtab-clock-widget-add-clock-form =
     .aria-label = ਘੜੀ ਜੋੜੋ
 newtab-clock-widget-edit-clock-form =

@@ -1973,6 +1973,323 @@ describe("<SportsWidget> Watch button (live tab)", () => {
   });
 });
 
+describe("<SportsWidget> live refresh button", () => {
+  // The refresh button rides the LIVE section label, which only renders at
+  // large size — so every test in this block forces the large size pref.
+  function renderLiveLarge({ dispatch = jest.fn() } = {}) {
+    return render(
+      <WrapWithProvider
+        state={makeState(
+          { [PREF_SPORTS_WIDGET_SIZE]: "large" },
+          {
+            widgetState: "sports-matches",
+            matchesTab: "now",
+            data: {
+              teams: [],
+              matches: emptyMatches,
+              live: [mockMatch],
+            },
+          }
+        )}
+      >
+        <SportsWidget dispatch={dispatch} handleUserInteraction={jest.fn()} />
+      </WrapWithProvider>
+    );
+  }
+
+  function findRefreshButton(container) {
+    return container.querySelector(".sports-live-refresh-button");
+  }
+
+  it("renders the refresh button on the LIVE section-label row at large size", () => {
+    const { container } = renderLiveLarge();
+    const header = container.querySelector(".sports-now-header");
+    expect(header).not.toBeNull();
+    expect(header.querySelector(".sports-section-label-live")).not.toBeNull();
+    const button = findRefreshButton(container);
+    expect(button).not.toBeNull();
+    expect(button.getAttribute("data-l10n-id")).toBe(
+      "newtab-custom-widget-live-refresh"
+    );
+    expect(button.getAttribute("iconSrc")).toBe(
+      "chrome://browser/skin/sync.svg"
+    );
+  });
+
+  it("renders the refresh button at medium size as a sibling of the watch button (not inside the now-header)", () => {
+    const { container } = render(
+      <WrapWithProvider
+        state={makeState(
+          { [PREF_SPORTS_WIDGET_SIZE]: "medium" },
+          {
+            widgetState: "sports-matches",
+            matchesTab: "now",
+            data: {
+              teams: [],
+              matches: emptyMatches,
+              live: [mockMatch],
+            },
+          }
+        )}
+      >
+        <SportsWidget dispatch={jest.fn()} handleUserInteraction={jest.fn()} />
+      </WrapWithProvider>
+    );
+    // No section-label header at medium — the refresh button rides next to
+    // the watch button on the same row instead.
+    expect(container.querySelector(".sports-now-header")).toBeNull();
+    const button = findRefreshButton(container);
+    expect(button).not.toBeNull();
+    // Sibling of the watch button, both as direct children of the active panel.
+    const panel = getVisibleTabPanel(container);
+    expect(button.parentElement).toBe(panel);
+    expect(panel.querySelector(".sports-watch-live-button").parentElement).toBe(
+      panel
+    );
+  });
+
+  it("dispatches WIDGETS_SPORTS_LIVE_REFRESH and refresh_live telemetry on click", () => {
+    const dispatch = jest.fn();
+    const { container } = renderLiveLarge({ dispatch });
+    fireEvent.click(findRefreshButton(container));
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: at.WIDGETS_SPORTS_LIVE_REFRESH })
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: at.WIDGETS_USER_EVENT,
+        data: expect.objectContaining({
+          widget_name: "sports",
+          widget_source: "now",
+          user_action: "refresh_live",
+        }),
+      })
+    );
+  });
+
+  it("disables the button and suppresses a second dispatch within the cooldown", () => {
+    const dispatch = jest.fn();
+    const { container } = renderLiveLarge({ dispatch });
+    // Switch to fake timers AFTER mounting so the initial render's microtasks
+    // and effects all run with real timers (moz-button's upgrade path and the
+    // widget's IntersectionObserver wiring both depend on real timers being
+    // available during mount).
+    jest.useFakeTimers();
+    try {
+      const button = findRefreshButton(container);
+
+      fireEvent.click(button);
+      const refreshCallsAfterFirst = dispatch.mock.calls.filter(
+        ([action]) => action.type === at.WIDGETS_SPORTS_LIVE_REFRESH
+      ).length;
+      expect(refreshCallsAfterFirst).toBe(1);
+      expect(button.hasAttribute("disabled")).toBe(true);
+
+      // Click again while still in the cooldown window.
+      fireEvent.click(button);
+      const refreshCallsAfterSecond = dispatch.mock.calls.filter(
+        ([action]) => action.type === at.WIDGETS_SPORTS_LIVE_REFRESH
+      ).length;
+      expect(refreshCallsAfterSecond).toBe(
+        1,
+        "second click within cooldown does not dispatch"
+      );
+
+      // Advance past the cooldown — button re-enables and dispatches again.
+      act(() => {
+        jest.advanceTimersByTime(15000);
+      });
+      expect(button.hasAttribute("disabled")).toBe(false);
+      fireEvent.click(button);
+      const refreshCallsAfterCooldown = dispatch.mock.calls.filter(
+        ([action]) => action.type === at.WIDGETS_SPORTS_LIVE_REFRESH
+      ).length;
+      expect(refreshCallsAfterCooldown).toBe(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("preserves the cooldown disabled state across a size flip (medium <-> large)", () => {
+    // The button renders in different parts of the tree at each size (next to
+    // the Watch button at medium, inside the section-label header at large).
+    // The cooldown state is lifted to SportsMatchesView so the disabled timer
+    // survives the size-driven remount.
+    const { createStore, combineReducers } = require("redux");
+    const { Provider } = require("react-redux");
+    const { reducers } = require("common/Reducers.sys.mjs");
+
+    const dispatchSpy = jest.fn();
+    const initialState = makeState(
+      { [PREF_SPORTS_WIDGET_SIZE]: "medium" },
+      {
+        widgetState: "sports-matches",
+        matchesTab: "now",
+        data: {
+          teams: [],
+          matches: emptyMatches,
+          live: [mockMatch],
+        },
+      }
+    );
+    const store = createStore(combineReducers(reducers), initialState);
+    const { container } = render(
+      <Provider store={store}>
+        <SportsWidget
+          dispatch={dispatchSpy}
+          handleUserInteraction={jest.fn()}
+        />
+      </Provider>
+    );
+
+    // Click at medium — button enters cooldown.
+    const mediumButton = container.querySelector(".sports-live-refresh-button");
+    expect(mediumButton).not.toBeNull();
+    expect(
+      mediumButton.parentElement.classList.contains("sports-now-header")
+    ).toBe(false);
+    fireEvent.click(mediumButton);
+    expect(mediumButton.hasAttribute("disabled")).toBe(true);
+
+    // Flip the size pref to large.
+    act(() => {
+      store.dispatch({
+        type: at.PREF_CHANGED,
+        data: { name: PREF_SPORTS_WIDGET_SIZE, value: "large" },
+      });
+    });
+
+    // The button now lives inside the section-label header — it's a new DOM
+    // node, but the lifted state keeps it disabled.
+    const largeButton = container.querySelector(".sports-live-refresh-button");
+    expect(largeButton).not.toBeNull();
+    expect(
+      largeButton.parentElement.classList.contains("sports-now-header")
+    ).toBe(true);
+    expect(largeButton.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("spins the refresh icon on click", () => {
+    const { container } = renderLiveLarge();
+    const button = findRefreshButton(container);
+    expect(button.classList.contains("is-spinning")).toBe(false);
+    fireEvent.click(button);
+    expect(button.classList.contains("is-spinning")).toBe(true);
+  });
+
+  it("stops the spin when fresh /live data lands, but not before the 2s minimum", () => {
+    // Needs a real store so dispatching WIDGETS_SPORTS_LIVE_UPDATE actually
+    // bumps `lastLiveUpdated` through the reducer — the signal the spin watches.
+    const { createStore, combineReducers } = require("redux");
+    const { Provider } = require("react-redux");
+    const { reducers } = require("common/Reducers.sys.mjs");
+
+    const store = createStore(
+      combineReducers(reducers),
+      makeState(
+        { [PREF_SPORTS_WIDGET_SIZE]: "large" },
+        {
+          widgetState: "sports-matches",
+          matchesTab: "now",
+          data: { teams: [], matches: emptyMatches, live: [mockMatch] },
+        }
+      )
+    );
+    const { container } = render(
+      <Provider store={store}>
+        <SportsWidget dispatch={jest.fn()} handleUserInteraction={jest.fn()} />
+      </Provider>
+    );
+
+    jest.useFakeTimers();
+    try {
+      const button = container.querySelector(".sports-live-refresh-button");
+      fireEvent.click(button);
+      expect(button.classList.contains("is-spinning")).toBe(true);
+
+      // A fresh /live response lands well within the 2s floor.
+      act(() => {
+        jest.advanceTimersByTime(500);
+        store.dispatch({
+          type: at.WIDGETS_SPORTS_LIVE_UPDATE,
+          data: { live: [mockMatch], lastLiveUpdated: Date.now() },
+        });
+      });
+      // Still spinning — the minimum spin window hasn't elapsed yet.
+      expect(button.classList.contains("is-spinning")).toBe(true);
+
+      // Advance past the 2s floor — the spin stops.
+      act(() => {
+        jest.advanceTimersByTime(1500);
+      });
+      expect(button.classList.contains("is-spinning")).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("stops the spin at the cooldown cap when no fresh /live data arrives", () => {
+    // Mocked dispatch never updates `lastLiveUpdated`, mirroring the feed
+    // silently dropping a too-soon click — the 15s cooldown caps the spin.
+    const { container } = renderLiveLarge({ dispatch: jest.fn() });
+    jest.useFakeTimers();
+    try {
+      const button = findRefreshButton(container);
+      fireEvent.click(button);
+      expect(button.classList.contains("is-spinning")).toBe(true);
+
+      act(() => {
+        jest.advanceTimersByTime(15000);
+      });
+      expect(button.classList.contains("is-spinning")).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("preserves the spinning state across a size flip (medium <-> large)", () => {
+    // Spin state is lifted to SportsMatchesView alongside the cooldown, so it
+    // survives the button's size-driven remount the same way `disabled` does.
+    const { createStore, combineReducers } = require("redux");
+    const { Provider } = require("react-redux");
+    const { reducers } = require("common/Reducers.sys.mjs");
+
+    const store = createStore(
+      combineReducers(reducers),
+      makeState(
+        { [PREF_SPORTS_WIDGET_SIZE]: "medium" },
+        {
+          widgetState: "sports-matches",
+          matchesTab: "now",
+          data: { teams: [], matches: emptyMatches, live: [mockMatch] },
+        }
+      )
+    );
+    const { container } = render(
+      <Provider store={store}>
+        <SportsWidget dispatch={jest.fn()} handleUserInteraction={jest.fn()} />
+      </Provider>
+    );
+
+    const mediumButton = container.querySelector(".sports-live-refresh-button");
+    fireEvent.click(mediumButton);
+    expect(mediumButton.classList.contains("is-spinning")).toBe(true);
+
+    act(() => {
+      store.dispatch({
+        type: at.PREF_CHANGED,
+        data: { name: PREF_SPORTS_WIDGET_SIZE, value: "large" },
+      });
+    });
+
+    const largeButton = container.querySelector(".sports-live-refresh-button");
+    expect(
+      largeButton.parentElement.classList.contains("sports-now-header")
+    ).toBe(true);
+    expect(largeButton.classList.contains("is-spinning")).toBe(true);
+  });
+});
+
 describe("<SportsWidget> followed teams matches view", () => {
   // Two distinct matches per bucket so we can verify which one bubbles to the
   // highlight position when a team is followed.
@@ -3896,5 +4213,497 @@ describe("<SportsWidget> matches missing a team (bug 2044931)", () => {
       f.getAttribute("title")
     );
     expect(titles).toEqual(expect.arrayContaining(["England"]));
+  });
+});
+
+describe("<SportsWidget> end-of-match celebration", () => {
+  let originalMatchMedia;
+  // Record IntersectionObserver instances so we can simulate the widget
+  // scrolling into view — the celebration only fires once it's on-screen.
+  let observerInstances;
+  let originalIntersectionObserver;
+
+  function mockMatchMedia(matches) {
+    window.matchMedia = jest.fn().mockImplementation(query => ({
+      matches,
+      media: query,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    }));
+  }
+
+  beforeEach(() => {
+    originalMatchMedia = window.matchMedia;
+    // <WidgetCelebration> bails out under prefers-reduced-motion: reduce.
+    mockMatchMedia(false);
+    observerInstances = [];
+    originalIntersectionObserver = global.IntersectionObserver;
+    global.IntersectionObserver = class {
+      constructor(callback) {
+        this.callback = callback;
+        observerInstances.push(this);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+    // Another describe's afterEach (jest.restoreAllMocks) can tear down the
+    // suite-wide Date.now pin before this block runs; re-establish it so the
+    // celebration window math stays deterministic regardless of describe order.
+    dateNowSpy = jest.spyOn(Date, "now").mockReturnValue(POST_KICKOFF_MS);
+  });
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+    global.IntersectionObserver = originalIntersectionObserver;
+  });
+
+  // Fires every recorded observer's callback so the widget reports as visible
+  // (the trigger gates on intersection). JSDOM never fires these on its own.
+  function markWidgetVisible(intersecting = true) {
+    act(() => {
+      observerInstances.forEach(o =>
+        o.callback?.([
+          {
+            isIntersecting: intersecting,
+            // Other observers (impression/error) add entry.target to a WeakSet,
+            // so a real element is required even though we only care about the
+            // celebration-visibility observer here.
+            target: document.createElement("div"),
+          },
+        ])
+      );
+    });
+  }
+
+  const MATCH_ID = "evt-mex-rsa";
+  const SCORES = {
+    MEX: { home_score: 2, away_score: 1 },
+    RSA: { home_score: 1, away_score: 2 },
+    draw: { home_score: 1, away_score: 1 },
+  };
+
+  // Builds store state with a finished MEX vs RSA result on the Results tab plus
+  // a celebrations endedAt stamp, so the detection effect fires on mount. The
+  // mock `dispatch` can't update the store, so we seed state directly here
+  // rather than clicking the debug seed.
+  function celebrationState({
+    enabled = true,
+    followed = [],
+    winner = "MEX",
+    endedAt = POST_KICKOFF_MS,
+    celebrated = [],
+    eliminated = [],
+    extraPrefs = {},
+  } = {}) {
+    return makeState(
+      {
+        "widgets.sportsWidget.celebrations.enabled": enabled,
+        ...extraPrefs,
+      },
+      {
+        widgetState: "sports-matches",
+        matchesTab: "results",
+        selectedTeams: followed,
+        data: {
+          teams: [
+            {
+              key: "MEX",
+              name: "Mexico",
+              colors: ["#006847", "#ce1126"],
+              eliminated: eliminated.includes("MEX"),
+            },
+            {
+              key: "RSA",
+              name: "South Africa",
+              colors: ["#007749", "#ffb612"],
+              eliminated: eliminated.includes("RSA"),
+            },
+          ],
+          matches: {
+            previous: [
+              {
+                global_event_id: MATCH_ID,
+                home_team: { key: "MEX", name: "Mexico", group: "Group L" },
+                away_team: {
+                  key: "RSA",
+                  name: "South Africa",
+                  group: "Group L",
+                },
+                date: "2026-06-12T17:00:00+00:00",
+                status_type: "ended",
+                home_extra: null,
+                away_extra: null,
+                home_penalty: null,
+                away_penalty: null,
+                query: "Mexico vs South Africa",
+                ...SCORES[winner],
+              },
+            ],
+            current: [],
+            next: [],
+          },
+          live: [],
+        },
+        celebrations: { endedAt: { [MATCH_ID]: endedAt }, celebrated },
+      }
+    );
+  }
+
+  function renderState(
+    state,
+    dispatch = defaultProps.dispatch,
+    visible = true
+  ) {
+    const result = render(
+      <WrapWithProvider state={state}>
+        <SportsWidget {...defaultProps} dispatch={dispatch} />
+      </WrapWithProvider>
+    );
+    if (visible) {
+      markWidgetVisible();
+    }
+    return result;
+  }
+
+  it("celebrates a followed-team win on the Results highlight", () => {
+    const { container } = renderState(celebrationState({ followed: ["MEX"] }));
+    expect(container.querySelector(".sports-celebration")).toBeInTheDocument();
+    expect(
+      container.querySelector(".sports.is-followed-celebration")
+    ).toBeInTheDocument();
+  });
+
+  it("celebrates the just-ended match even when it is not the top result", () => {
+    // The display highlight (sortFollowedFirst's first entry) is an older
+    // result, but the freshly-ended match is what should celebrate and surface.
+    const ENDED_ID = "evt-kor-cze";
+    const dispatch = jest.fn();
+    const state = makeState(
+      { "widgets.sportsWidget.celebrations.enabled": true },
+      {
+        widgetState: "sports-matches",
+        matchesTab: "results",
+        selectedTeams: ["CZE"],
+        data: {
+          teams: [
+            { key: "KOR", name: "Korea", colors: ["#c60c30"] },
+            { key: "CZE", name: "Czechia", colors: ["#11457e"] },
+            { key: "MEX", name: "Mexico", colors: ["#006847"] },
+            { key: "RSA", name: "South Africa", colors: ["#007749"] },
+          ],
+          matches: {
+            previous: [
+              {
+                global_event_id: "evt-mex-rsa-old",
+                home_team: { key: "MEX", name: "Mexico", group: "Group A" },
+                away_team: {
+                  key: "RSA",
+                  name: "South Africa",
+                  group: "Group A",
+                },
+                date: "2026-06-11T17:00:00+00:00",
+                status_type: "ended",
+                home_score: 1,
+                away_score: 1,
+                home_extra: null,
+                away_extra: null,
+                home_penalty: null,
+                away_penalty: null,
+                query: "Mexico vs South Africa",
+              },
+              {
+                global_event_id: ENDED_ID,
+                home_team: { key: "KOR", name: "Korea", group: "Group B" },
+                away_team: { key: "CZE", name: "Czechia", group: "Group B" },
+                date: "2026-06-12T17:00:00+00:00",
+                status_type: "ended",
+                home_score: 0,
+                away_score: 1,
+                home_extra: null,
+                away_extra: null,
+                home_penalty: null,
+                away_penalty: null,
+                query: "Korea vs Czechia",
+              },
+            ],
+            current: [],
+            next: [],
+          },
+          live: [],
+        },
+        celebrations: {
+          endedAt: { [ENDED_ID]: POST_KICKOFF_MS },
+          celebrated: [],
+        },
+      }
+    );
+    const { container } = renderState(state, dispatch);
+    // The followed team (CZE) won the just-ended match, so it celebrates...
+    expect(
+      container.querySelector(".sports.is-followed-celebration")
+    ).toBeInTheDocument();
+    // ...and the consumed match is the just-ended one, not the top result.
+    const marked = dispatch.mock.calls.find(
+      ([action]) => action?.type === "WIDGETS_SPORTS_MARK_CELEBRATED"
+    );
+    expect(marked?.[0].data).toBe(ENDED_ID);
+  });
+
+  it("applies the followed team's colors to the border", () => {
+    const { container } = renderState(celebrationState({ followed: ["MEX"] }));
+    const widget = container.querySelector(".sports.is-followed-celebration");
+    const gradient = widget.style.getPropertyValue(
+      "--sports-celebration-border-gradient"
+    );
+    expect(gradient).toContain("#006847");
+    expect(gradient).toContain("#ce1126");
+  });
+
+  it("shows team-colored soccer-ball confetti for a followed win", () => {
+    const { container } = renderState(celebrationState({ followed: ["MEX"] }));
+    const balls = [
+      ...container.querySelectorAll(".sports-celebration-confetti-piece"),
+    ].filter(piece => piece.tagName === "svg");
+    expect(balls.length).toBeGreaterThan(0);
+    const palette = ["#006847", "#ce1126"];
+    balls.forEach(ball => {
+      expect(palette).toContain(
+        ball.style.getPropertyValue("--confetti-color")
+      );
+    });
+  });
+
+  it("celebrates a tie for a followed team", () => {
+    const { container } = renderState(
+      celebrationState({ followed: ["MEX"], winner: "draw" })
+    );
+    expect(
+      container.querySelector(".sports.is-followed-celebration")
+    ).toBeInTheDocument();
+  });
+
+  it("does NOT celebrate when the followed team lost", () => {
+    const { container } = renderState(
+      celebrationState({ followed: ["MEX"], winner: "RSA" })
+    );
+    expect(
+      container.querySelector(".sports-celebration")
+    ).not.toBeInTheDocument();
+  });
+
+  it("does NOT fall back to the generic celebration when a followed team is eliminated by the loss", () => {
+    // The losing followed team (MEX) is now eliminated, so it's absent from
+    // selectedTeamsSet. Ownership must come from the raw selection, otherwise
+    // the match looks unfollowed and leaks a generic celebration.
+    const { container } = renderState(
+      celebrationState({
+        followed: ["MEX"],
+        winner: "RSA",
+        eliminated: ["MEX"],
+      })
+    );
+    expect(
+      container.querySelector(".sports-celebration")
+    ).not.toBeInTheDocument();
+  });
+
+  it("consumes a suppressed followed loss (marks celebrated without animating)", () => {
+    const dispatch = jest.fn();
+    const { container } = renderState(
+      celebrationState({
+        followed: ["MEX"],
+        winner: "RSA",
+        eliminated: ["MEX"],
+      }),
+      dispatch
+    );
+    expect(
+      container.querySelector(".sports-celebration")
+    ).not.toBeInTheDocument();
+    const marked = dispatch.mock.calls.some(
+      ([action]) =>
+        action?.type === "WIDGETS_SPORTS_MARK_CELEBRATED" &&
+        action?.data === MATCH_ID
+    );
+    expect(marked).toBe(true);
+  });
+
+  it("uses the generic celebration when no followed team is in the match", () => {
+    const { container } = renderState(celebrationState({ followed: [] }));
+    expect(container.querySelector(".sports-celebration")).toBeInTheDocument();
+    expect(
+      container.querySelector(".sports.is-followed-celebration")
+    ).not.toBeInTheDocument();
+    expect(
+      container.querySelector(".sports-celebration-confetti")
+    ).not.toBeInTheDocument();
+  });
+
+  it("does NOT celebrate a match that ended outside the window", () => {
+    const { container } = renderState(
+      celebrationState({
+        followed: ["MEX"],
+        // 25h ago, past the default 24h window.
+        endedAt: POST_KICKOFF_MS - 25 * 60 * 60 * 1000,
+      })
+    );
+    expect(
+      container.querySelector(".sports-celebration")
+    ).not.toBeInTheDocument();
+  });
+
+  it("does NOT celebrate a match already in the celebrated set", () => {
+    const { container } = renderState(
+      celebrationState({ followed: ["MEX"], celebrated: [MATCH_ID] })
+    );
+    expect(
+      container.querySelector(".sports-celebration")
+    ).not.toBeInTheDocument();
+  });
+
+  it("marks the match celebrated after firing", () => {
+    const dispatch = jest.fn();
+    renderState(celebrationState({ followed: ["MEX"] }), dispatch);
+    const marked = dispatch.mock.calls.some(
+      ([action]) =>
+        action?.type === "WIDGETS_SPORTS_MARK_CELEBRATED" &&
+        action?.data === MATCH_ID
+    );
+    expect(marked).toBe(true);
+  });
+
+  it("does NOT celebrate or consume while the widget is off-screen", () => {
+    const dispatch = jest.fn();
+    const { container } = renderState(
+      celebrationState({ followed: ["MEX"] }),
+      dispatch,
+      /* visible */ false
+    );
+    // Off-screen: no animation, and crucially not consumed, so it can still
+    // fire once the user scrolls it into view.
+    expect(
+      container.querySelector(".sports-celebration")
+    ).not.toBeInTheDocument();
+    const marked = dispatch.mock.calls.some(
+      ([action]) => action?.type === "WIDGETS_SPORTS_MARK_CELEBRATED"
+    );
+    expect(marked).toBe(false);
+
+    // Once it scrolls into view, it fires.
+    markWidgetVisible();
+    expect(container.querySelector(".sports-celebration")).toBeInTheDocument();
+  });
+
+  it("does not celebrate when celebrations are disabled (off by default)", () => {
+    const { container } = renderState(
+      celebrationState({ enabled: false, followed: ["MEX"] })
+    );
+    expect(
+      container.querySelector(".sports-celebration")
+    ).not.toBeInTheDocument();
+  });
+
+  it("celebrates when enabled via legacy trainhopConfig.sports", () => {
+    const { container } = renderState(
+      celebrationState({
+        enabled: false,
+        followed: ["MEX"],
+        extraPrefs: {
+          trainhopConfig: { sports: { celebrationsEnabled: true } },
+        },
+      })
+    );
+    expect(container.querySelector(".sports-celebration")).toBeInTheDocument();
+  });
+
+  it("celebrates when enabled via canonical trainhopConfig.widgets.sportsWidgetCelebrationsEnabled", () => {
+    const { container } = renderState(
+      celebrationState({
+        enabled: false,
+        followed: ["MEX"],
+        extraPrefs: {
+          trainhopConfig: {
+            widgets: { sportsWidgetCelebrationsEnabled: true },
+          },
+        },
+      })
+    );
+    expect(container.querySelector(".sports-celebration")).toBeInTheDocument();
+  });
+
+  it("honors the canonical trainhopConfig.widgets window override", () => {
+    // Canonical 1h window; the match ended 2h ago, so it's outside and the
+    // celebration is suppressed even though it's within the 24h default.
+    const { container } = renderState(
+      celebrationState({
+        followed: ["MEX"],
+        endedAt: POST_KICKOFF_MS - 2 * 60 * 60 * 1000,
+        extraPrefs: {
+          trainhopConfig: {
+            widgets: { sportsWidgetCelebrationsWindowMs: 60 * 60 * 1000 },
+          },
+        },
+      })
+    );
+    expect(
+      container.querySelector(".sports-celebration")
+    ).not.toBeInTheDocument();
+  });
+
+  it("celebrates when enabled via the dedicated trainhopConfig.sportsCelebrations namespace", () => {
+    const { container } = renderState(
+      celebrationState({
+        enabled: false,
+        followed: ["MEX"],
+        extraPrefs: {
+          trainhopConfig: { sportsCelebrations: { enabled: true } },
+        },
+      })
+    );
+    expect(container.querySelector(".sports-celebration")).toBeInTheDocument();
+  });
+
+  it("honors the dedicated trainhopConfig.sportsCelebrations window override", () => {
+    // 1h window; match ended 2h ago, so it's suppressed.
+    const { container } = renderState(
+      celebrationState({
+        followed: ["MEX"],
+        endedAt: POST_KICKOFF_MS - 2 * 60 * 60 * 1000,
+        extraPrefs: {
+          trainhopConfig: {
+            sportsCelebrations: { windowMs: 60 * 60 * 1000 },
+          },
+        },
+      })
+    );
+    expect(
+      container.querySelector(".sports-celebration")
+    ).not.toBeInTheDocument();
+  });
+
+  it("dedicated sportsCelebrations window wins over the canonical widgets window", () => {
+    // 24h dedicated admits the 2h-ended match; 1h widgets fallback would not.
+    const { container } = renderState(
+      celebrationState({
+        followed: ["MEX"],
+        endedAt: POST_KICKOFF_MS - 2 * 60 * 60 * 1000,
+        extraPrefs: {
+          trainhopConfig: {
+            sportsCelebrations: { windowMs: 24 * 60 * 60 * 1000 },
+            widgets: { sportsWidgetCelebrationsWindowMs: 60 * 60 * 1000 },
+          },
+        },
+      })
+    );
+    expect(container.querySelector(".sports-celebration")).toBeInTheDocument();
+  });
+
+  it("does not celebrate under prefers-reduced-motion", () => {
+    mockMatchMedia(true);
+    const { container } = renderState(celebrationState({ followed: ["MEX"] }));
+    expect(
+      container.querySelector(".sports-celebration")
+    ).not.toBeInTheDocument();
   });
 });

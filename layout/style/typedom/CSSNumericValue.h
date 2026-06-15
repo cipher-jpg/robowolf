@@ -23,8 +23,6 @@ namespace mozilla {
 
 struct CSSPropertyId;
 class ErrorResult;
-template <class T>
-class Maybe;
 struct StyleNumericValue;
 
 namespace dom {
@@ -84,6 +82,7 @@ class CSSNumericValue : public CSSStyleValue {
   already_AddRefed<CSSUnitValue> To(const nsACString& aUnit,
                                     ErrorResult& aRv) const;
 
+  // https://drafts.css-houdini.org/css-typed-om-1/#dom-cssnumericvalue-tosum
   already_AddRefed<CSSMathSum> ToSum(const Sequence<nsCString>& aUnits,
                                      ErrorResult& aRv) const;
 
@@ -146,9 +145,7 @@ class CSSNumericValue : public CSSStyleValue {
                              const SerializationContext& aContext,
                              nsACString& aDest) const;
 
-  // TODO: This can be changed to return StyleNumericValue directly once the
-  // Unitialized type in CSSMathValue is removed.
-  Maybe<StyleNumericValue> ToStyleNumericValue() const;
+  StyleNumericValue ToStyleNumericValue() const;
 
  protected:
   virtual ~CSSNumericValue() = default;

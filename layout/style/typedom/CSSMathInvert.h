@@ -21,6 +21,10 @@ class nsISupports;
 namespace mozilla {
 
 struct CSSPropertyId;
+template <typename T>
+struct StyleBox;
+struct StyleNumericValue;
+using StyleMathInvert = StyleBox<StyleNumericValue>;
 
 namespace dom {
 
@@ -29,6 +33,9 @@ class GlobalObject;
 class CSSMathInvert final : public CSSMathValue {
  public:
   CSSMathInvert(nsCOMPtr<nsISupports> aParent, RefPtr<CSSNumericValue> aValue);
+
+  static RefPtr<CSSMathInvert> Create(nsCOMPtr<nsISupports> aParent,
+                                      const StyleMathInvert& aMathInvert);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(CSSMathInvert, CSSMathValue)
@@ -49,6 +56,8 @@ class CSSMathInvert final : public CSSMathValue {
   void ToCssTextWithProperty(const CSSPropertyId& aPropertyId,
                              const SerializationContext& aContext,
                              nsACString& aDest) const;
+
+  StyleMathInvert ToStyleMathInvert() const;
 
  private:
   virtual ~CSSMathInvert() = default;

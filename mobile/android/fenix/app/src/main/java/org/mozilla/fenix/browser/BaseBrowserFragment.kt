@@ -87,6 +87,7 @@ import mozilla.components.feature.downloads.temporary.CopyDownloadFeature
 import mozilla.components.feature.downloads.temporary.ShareResourceFeature
 import mozilla.components.feature.findinpage.view.FindInPageBar
 import mozilla.components.feature.intent.ext.EXTRA_SESSION_ID
+import mozilla.components.feature.ipprotection.IPProtectionWarningBinding
 import mozilla.components.feature.media.fullscreen.MediaSessionFullscreenFeature
 import mozilla.components.feature.privatemode.feature.SecureWindowFeature
 import mozilla.components.feature.prompts.PromptFeature
@@ -211,7 +212,6 @@ import org.mozilla.fenix.ext.registerForActivityResult
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.secure
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.tabClosedUndoMessage
 import org.mozilla.fenix.ext.updateMicrosurveyPromptForConfigurationChange
 import org.mozilla.fenix.messaging.FenixMessageSurfaceId
@@ -329,6 +329,7 @@ abstract class BaseBrowserFragment :
     private val findInPageBinding = ViewBoundFeatureWrapper<FindInPageBinding>()
     private val snackbarBinding = ViewBoundFeatureWrapper<SnackbarBinding>()
     private val standardSnackbarErrorBinding = ViewBoundFeatureWrapper<StandardSnackbarErrorBinding>()
+    private val ipProtectionWarningBinding = ViewBoundFeatureWrapper<IPProtectionWarningBinding>()
 
     protected val summarizeToolbarCfrBinding = ViewBoundFeatureWrapper<SummarizeToolbarCFRBinding>()
 
@@ -437,11 +438,11 @@ abstract class BaseBrowserFragment :
                 fragmentManager = parentFragmentManager,
                 sessionId = customTabSessionId,
                 dialog = appLinksPromptDialog(),
-                launchInApp = { requireContext().settings().shouldOpenLinksInApp(customTabSessionId != null) },
+                launchInApp = { requireComponents.settings.shouldOpenLinksInApp(customTabSessionId != null) },
                 loadUrlUseCase = requireComponents.useCases.sessionUseCases.loadUrl,
-                shouldPrompt = { requireContext().settings().shouldPromptOpenLinksInApp() },
+                shouldPrompt = { requireComponents.settings.shouldPromptOpenLinksInApp() },
                 alwaysOpenCheckboxAction = {
-                    requireContext().settings().openLinksInExternalApp =
+                    requireComponents.settings.openLinksInExternalApp =
                         requireContext().getString(R.string.pref_key_open_links_in_apps_always)
                 },
                 failedToLaunchAction = { fallbackUrl ->
@@ -536,7 +537,7 @@ abstract class BaseBrowserFragment :
 
         _browserToolbar = initializeBrowserToolbar(activity, store, readerMenuController)
 
-        if (context.settings().microsurveyFeatureEnabled) {
+        if (context.components.settings.microsurveyFeatureEnabled) {
             listenForMicrosurveyMessage(context)
         }
 
@@ -544,7 +545,7 @@ abstract class BaseBrowserFragment :
             feature = ToolbarsIntegration(
                 fullScreenFeature = { fullScreenFeature.get() },
                 webAppHideToolbarFeature = { hideToolbarFeature.get() },
-                settings = context.settings(),
+                settings = context.components.settings,
                 browserLayout = getSwipeRefreshLayout(),
                 engineView = getEngineView(),
                 toolbar = browserToolbar,
@@ -643,6 +644,7 @@ abstract class BaseBrowserFragment :
                 tabsUseCases = context.components.useCases.tabsUseCases,
                 sendTabUseCases = SendTabUseCases(requireComponents.backgroundServices.accountManager),
                 customTabSessionId = customTabSessionId,
+                viewHasFocus = { view.hasWindowFocus() },
             ),
             owner = this,
             view = view,
@@ -659,12 +661,25 @@ abstract class BaseBrowserFragment :
             view = binding.root,
         )
 
+        ipProtectionWarningBinding.set(
+            feature = IPProtectionWarningBinding(
+                store = requireComponents.ipProtection.store,
+                proxyUnavailable = {
+                    findNavController().navigate(
+                        BrowserFragmentDirections.actionGlobalIpProtectionUnavailableDialog(),
+                    )
+                },
+            ),
+            owner = this,
+            view = view,
+        )
+
         secureWindowFeature.set(
             feature = SecureWindowFeature(
                 window = requireActivity().window,
                 store = store,
                 customTabId = customTabSessionId,
-                isSecure = { !context.settings().shouldSecureModeBeOverridden && it.content.private },
+                isSecure = { !context.components.settings.shouldSecureModeBeOverridden && it.content.private },
                 clearFlagOnStop = false,
             ),
             owner = this,
@@ -701,7 +716,10 @@ abstract class BaseBrowserFragment :
         val downloadFileUtils = DefaultDownloadFileUtils(
             context = context.applicationContext,
             downloadLocation = {
-                DownloadLocationManager(requireContext()).defaultLocation
+                DownloadLocationManager(
+                    context.components.settings,
+                    context.contentResolver,
+                ).defaultLocation
             },
         )
 
@@ -948,7 +966,7 @@ abstract class BaseBrowserFragment :
                 view.findViewById(R.id.loginSelectBar) ?: (binding.loginSelectBarStub.inflate() as LoginSelectBar)
             },
             toolbarPositionProvider = {
-                requireContext().settings().toolbarPosition
+                requireComponents.settings.toolbarPosition
             },
             onShow = ::onAutocompleteBarShow,
         )
@@ -959,7 +977,7 @@ abstract class BaseBrowserFragment :
                     ?: binding.addressSelectBarStub.inflate() as AddressSelectBar
             },
             toolbarPositionProvider = {
-                requireContext().settings().toolbarPosition
+                requireComponents.settings.toolbarPosition
             },
             onShow = ::onAutocompleteBarShow,
         )
@@ -970,7 +988,7 @@ abstract class BaseBrowserFragment :
                     ?: binding.creditCardSelectBarStub.inflate() as CreditCardSelectBar
             },
             toolbarPositionProvider = {
-                requireContext().settings().toolbarPosition
+                requireComponents.settings.toolbarPosition
             },
             onShow = ::onAutocompleteBarShow,
         )
@@ -981,7 +999,7 @@ abstract class BaseBrowserFragment :
                     ?: binding.suggestStrongPasswordBarStub.inflate() as SuggestStrongPasswordBar
             },
             toolbarPositionProvider = {
-                requireContext().settings().toolbarPosition
+                requireComponents.settings.toolbarPosition
             },
             onShow = ::onAutocompleteBarShow,
         )
@@ -992,7 +1010,7 @@ abstract class BaseBrowserFragment :
                     ?: binding.emailMaskBarStub.inflate() as EmailMaskPromptBarView
             },
             toolbarPositionProvider = {
-                requireContext().settings().toolbarPosition
+                requireComponents.settings.toolbarPosition
             },
             onShow = {
                 onAutocompleteBarShow()
@@ -1016,16 +1034,17 @@ abstract class BaseBrowserFragment :
                     context.components.core.lazyPasswordsStorage,
                 ),
                 isLoginAutofillEnabled = {
-                    context.settings().shouldAutofillLogins
+                    context.components.settings.shouldAutofillLogins
                 },
                 isSaveLoginEnabled = {
-                    context.settings().shouldPromptToSaveLogins
+                    context.components.settings.shouldPromptToSaveLogins
                 },
                 isCreditCardAutofillEnabled = {
-                    context.settings().shouldAutofillCreditCardDetails
+                    context.components.settings.shouldAutofillCreditCardDetails
                 },
                 isAddressAutofillEnabled = {
-                    context.settings().addressFeature && context.settings().shouldAutofillAddressDetails
+                    context.components.settings.addressFeature &&
+                        context.components.settings.shouldAutofillAddressDetails
                 },
                 loginExceptionStorage = context.components.core.loginExceptionStorage,
                 shareDelegate = object : ShareDelegate {
@@ -1078,7 +1097,7 @@ abstract class BaseBrowserFragment :
 
                     override fun shouldShowEmailMaskCfr() =
                         requireComponents.emailMasksRepository.shouldShowCfr() &&
-                            context.settings().cfrPopupsEnabled
+                            context.components.settings.cfrPopupsEnabled
 
                     override fun onEmailMaskCfrDismissed() {
                         requireComponents.emailMasksRepository.dismissCfr()
@@ -1107,11 +1126,13 @@ abstract class BaseBrowserFragment :
                         created.fullAddress
                     }
                 },
-                isEmailMaskFeatureEnabled = { context.settings().isEmailMaskFeatureEnabled },
+                isEmailMaskFeatureEnabled = { context.components.settings.isEmailMaskFeatureEnabled },
                 isSuggestEmailMaskEnabled = { requireComponents.emailMasksRepository.isSuggestionEnabled() },
-                shouldAutomaticallyShowSuggestedPassword = { context.settings().isFirstTimeEngagingWithSignup },
+                shouldAutomaticallyShowSuggestedPassword = {
+                    context.components.settings.isFirstTimeEngagingWithSignup
+                },
                 onFirstTimeEngagedWithSignup = {
-                    context.settings().isFirstTimeEngagingWithSignup = false
+                    context.components.settings.isFirstTimeEngagingWithSignup = false
                 },
                 onSaveLoginWithStrongPassword = { url, password ->
                     handleOnSaveLoginWithGeneratedStrongPassword(
@@ -1186,7 +1207,7 @@ abstract class BaseBrowserFragment :
                 appStore = requireComponents.appStore,
                 toolbar = browserToolbar,
                 components = requireComponents,
-                settings = context.settings(),
+                settings = context.components.settings,
                 navController = findNavController(),
                 customTabSessionId = customTabSessionId,
                 getTopToolbarHeightValue = { includeTabStrip ->
@@ -1260,7 +1281,7 @@ abstract class BaseBrowserFragment :
 
         sitePermissionWifiIntegration.set(
             feature = SitePermissionsWifiIntegration(
-                settings = context.settings(),
+                settings = context.components.settings,
                 wifiConnectionMonitor = context.components.wifiConnectionMonitor,
             ),
             owner = this,
@@ -1290,7 +1311,7 @@ abstract class BaseBrowserFragment :
             view = view,
         )
 
-        context.settings().setSitePermissionSettingListener(viewLifecycleOwner) {
+        context.components.settings.setSitePermissionSettingListener(viewLifecycleOwner) {
             // If the user connects to WIFI while on the BrowserFragment, this will update the
             // SitePermissionsRules (specifically autoplay) accordingly
             runIfFragmentIsAttached {
@@ -1498,7 +1519,6 @@ abstract class BaseBrowserFragment :
         browsingModeManager = activity.browsingModeManager,
         thumbnailsFeature = { thumbnailsFeature.get() },
         readerModeController = readerModeController,
-        settings = activity.settings(),
         customTabSession = customTabSessionId?.let { activity.components.core.store.state.findCustomTab(it) },
         isSandboxCustomTab = isSandboxCustomTab,
     )
@@ -1506,7 +1526,8 @@ abstract class BaseBrowserFragment :
     private fun showUndoSnackbar(message: String) {
         viewLifecycleOwner.lifecycleScope.allowUndo(
             binding.dynamicSnackbarContainer,
-            message,
+            requireComponents.settings,
+                message,
             requireContext().getString(R.string.snackbar_deleted_undo),
             {
                 requireComponents.useCases.tabsUseCases.undo.invoke()
@@ -1551,7 +1572,7 @@ abstract class BaseBrowserFragment :
             showPinVerification(manager)
         } else {
             // Warn that the device has not been secured
-            if (context.settings().shouldShowSecurityPinWarning) {
+            if (context.components.settings.shouldShowSecurityPinWarning) {
                 showPinDialogWarning(context)
             } else {
                 promptsFeature.get()?.onBiometricResult(isAuthenticated = true)
@@ -1593,7 +1614,7 @@ abstract class BaseBrowserFragment :
             create()
         }.show().withCenterAlignedButtons().secure(activity)
 
-        context.settings().incrementSecureWarningCount()
+        context.components.settings.incrementSecureWarningCount()
     }
 
     private fun closeFindInPageBarOnNavigation(
@@ -1617,7 +1638,7 @@ abstract class BaseBrowserFragment :
     @VisibleForTesting
     internal fun shouldPullToRefreshBeEnabled(inFullScreen: Boolean): Boolean {
         return FeatureFlags.PULL_TO_REFRESH_ENABLED &&
-            requireContext().settings().isPullToRefreshEnabledInBrowser &&
+            requireComponents.settings.isPullToRefreshEnabledInBrowser &&
             !inFullScreen
     }
 
@@ -1677,7 +1698,9 @@ abstract class BaseBrowserFragment :
 
     @VisibleForTesting
     internal fun initializeMicrosurveyFeature(context: Context) {
-        if (context.settings().isExperimentationEnabled && context.settings().microsurveyFeatureEnabled) {
+        if (context.components.settings.isExperimentationEnabled &&
+            context.components.settings.microsurveyFeatureEnabled
+        ) {
             messagingFeatureMicrosurvey.set(
                 feature = MessagingFeature(
                     appStore = requireComponents.appStore,
@@ -1736,7 +1759,7 @@ abstract class BaseBrowserFragment :
                                             MicrosurveyAction.Dismissed(it.id),
                                         )
 
-                                        context.settings().shouldShowMicrosurveyPrompt = false
+                                        context.components.settings.shouldShowMicrosurveyPrompt = false
                                         activity.isMicrosurveyPromptDismissed.value = true
                                     },
                                 )
@@ -1805,7 +1828,7 @@ abstract class BaseBrowserFragment :
         context.components.settings.shouldShowMicrosurveyPrompt
 
     private fun isToolbarDynamic(context: Context) =
-        !context.settings().shouldUseFixedTopToolbar && context.settings().isDynamicToolbarEnabled
+        !context.components.settings.shouldUseFixedTopToolbar && context.components.settings.isDynamicToolbarEnabled
 
     /**
      * Returns a list of context menu items [ContextMenuCandidate] for the context menu
@@ -2198,7 +2221,7 @@ abstract class BaseBrowserFragment :
                 if (homeActivity !is ExternalAppBrowserActivity || homeActivity.browsingModeManager.mode.isPrivate) {
                     homeActivity.themeManager.applyStatusBarTheme(
                         homeActivity,
-                        requireContext().settings().isTabStripEnabled,
+                        requireComponents.settings.isTabStripEnabled,
                     )
                 }
             }
@@ -2348,7 +2371,7 @@ abstract class BaseBrowserFragment :
 
     override fun onAccessibilityStateChanged(enabled: Boolean) {
         if (_browserToolbar != null) {
-            browserToolbar.setToolbarBehavior(requireContext().settings().toolbarPosition, enabled)
+            browserToolbar.setToolbarBehavior(requireComponents.settings.toolbarPosition, enabled)
         }
     }
 
@@ -2443,6 +2466,7 @@ abstract class BaseBrowserFragment :
                     sessionId = customTabSessionId,
                     view = findInPageBar,
                     engineView = binding.engineView,
+                    findInPageHeight = requireComponents.settings.browserToolbarHeight,
                     toolbarsHideCallback = {
                         expandBrowserView()
                     },
@@ -2464,7 +2488,7 @@ abstract class BaseBrowserFragment :
         // would not leave the engine view with half set values from the previous animation.
         (view.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin = 0
 
-        when (context?.settings()?.toolbarPosition) {
+        when (context?.components?.settings?.toolbarPosition) {
             ToolbarPosition.BOTTOM -> {
                 val toolbar = listOf(
                     _bottomToolbarContainerView?.toolbarContainerView,

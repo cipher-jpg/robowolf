@@ -20,6 +20,7 @@ import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.experiments.createNimbus
 import org.mozilla.fenix.experiments.prefhandling.NimbusGeckoPrefHandler
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.messaging.CustomAttributeProvider
 import org.mozilla.fenix.perf.lazyMonitored
 
@@ -38,6 +39,7 @@ class NimbusComponents(
      * should be mediated through a FML generated class, e.g. [FxNimbus].
      */
     val sdk: NimbusApi by lazyMonitored {
+<<<<<<< HEAD
         // When debloat is on, pass a null endpoint so NimbusBuilder skips remote fetches
         // entirely. The local `initial_experiments.json` is still loaded so feature-flag
         // resolution works offline.
@@ -47,6 +49,15 @@ class NimbusComponents(
             BuildConfig.NIMBUS_ENDPOINT
         }
         createNimbus(context, endpoint, remoteSettingsService, geckoPrefHandler)
+=======
+        createNimbus(
+            context,
+            context.components.settings,
+            BuildConfig.NIMBUS_ENDPOINT,
+            remoteSettingsService,
+            geckoPrefHandler,
+        )
+>>>>>>> upstream/main
     }
 
     /**

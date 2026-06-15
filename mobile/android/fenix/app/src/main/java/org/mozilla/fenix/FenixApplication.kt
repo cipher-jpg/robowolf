@@ -114,7 +114,6 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.containsQueryParameters
 import org.mozilla.fenix.ext.isCustomEngine
 import org.mozilla.fenix.ext.isKnownSearchDomain
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.topsites.TopSitesConfigConstants.TOP_SITES_PROVIDER_LIMIT
 import org.mozilla.fenix.home.topsites.TopSitesConfigConstants.TOP_SITES_PROVIDER_MAX_THRESHOLD
 import org.mozilla.fenix.lifecycle.StoreLifecycleObserver
@@ -261,7 +260,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // We delay the Glean initialization until we have user consent from onboarding.
         // If onboarding is disabled (when in local builds), continue to initialize Glean.
         if (components.fenixOnboarding.userHasBeenOnboarded() || !FeatureFlags.onboardingFeatureEnabled) {
-            initializeGlean(this, logger, settings().isTelemetryEnabled, components.core.client)
+            initializeGlean(this, logger, components.settings.isTelemetryEnabled, components.core.client)
         }
     }
 
@@ -325,7 +324,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         // StartupMetrics accesses shared preferences so do this off thread.
         @OptIn(DelicateCoroutinesApi::class)
         GlobalScope.launch(IO) {
-            setStartupMetrics(store, settings())
+            setStartupMetrics(store, components.settings)
         }
 
         // Start setup for concept-fetch networking in megazord. This runs off-thread, but we wait
@@ -372,10 +371,10 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             startMetricsIfEnabled(
                 logger = logger,
                 analytics = components.analytics,
-                isTelemetryEnabled = settings().isTelemetryEnabled,
-                isMarketingTelemetryEnabled = settings().isMarketingTelemetryEnabled &&
-                    settings().hasMadeMarketingTelemetrySelection,
-                isDailyUsagePingEnabled = settings().isDailyUsagePingEnabled,
+                isTelemetryEnabled = components.settings.isTelemetryEnabled,
+                isMarketingTelemetryEnabled = components.settings.isMarketingTelemetryEnabled &&
+                    components.settings.hasMadeMarketingTelemetrySelection,
+                isDailyUsagePingEnabled = components.settings.isDailyUsagePingEnabled,
             )
         } else {
             CoroutineScope(IO).launch {
@@ -419,7 +418,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         val store = components.core.store
         val sessionStorage = components.core.sessionStorage
 
-        components.useCases.tabsUseCases.restore(sessionStorage, settings().getTabTimeout())
+        components.useCases.tabsUseCases.restore(sessionStorage, components.settings.getTabTimeout())
 
         // Now that we have restored our previous state (if there's one) let's setup auto saving the state while
         // the app is used.
@@ -448,7 +447,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         queueNimbusFetchInForeground(queue)
         queueDownloadWallpapers(queue)
 
-        if (settings().enableFxSuggest) {
+        if (components.settings.enableFxSuggest) {
             queueSuggestIngest(queue)
         }
 
@@ -509,7 +508,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                     // new search suggestions. The worker requires us to have called
                     // `GlobalFxSuggestDependencyProvider.initialize`, which we did before
                     // scheduling these tasks. When disabled we stop the periodic work.
-                    if (settings().enableFxSuggest) {
+                    if (components.settings.enableFxSuggest) {
                         components.fxSuggest.ingestionScheduler.startPeriodicIngestion()
                     } else {
                         components.fxSuggest.ingestionScheduler.stopPeriodicIngestion()
@@ -551,7 +550,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     private fun queueIncrementNumberOfAppLaunches(queue: RunWhenReadyQueue) =
         runOnVisualCompleteness(queue) {
             GlobalScope.launch(IO) {
-                settings().numberOfAppLaunches += 1
+                components.settings.numberOfAppLaunches += 1
             }
         }
 
@@ -592,7 +591,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             components.nimbus.geckoPrefHandler.start()
             GlobalScope.launch(IO) {
                 components.nimbus.sdk.maybeFetchExperiments(
-                    context = this@FenixApplication,
+                    settings = components.settings,
                 )
                 components.nimbus.geckoPrefHandler.getPreferenceStateFromGecko().await()
             }
@@ -612,7 +611,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     private fun queueCollectProcessExitInfo(queue: RunWhenReadyQueue) =
         runOnVisualCompleteness(queue) {
-            if (SDK_INT >= Build.VERSION_CODES.R && settings().isTelemetryEnabled) {
+            if (SDK_INT >= Build.VERSION_CODES.R && components.settings.isTelemetryEnabled) {
                 GlobalScope.launch(IO) {
                     ApplicationExitInfoMetrics.recordProcessExits(applicationContext)
                 }
@@ -724,7 +723,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
 
     @VisibleForTesting
     internal fun restoreMessaging() {
-        if (settings().isExperimentationEnabled) {
+        if (components.settings.isExperimentationEnabled) {
             components.appStore.dispatch(AppAction.MessagingAction.Restore)
         }
     }
@@ -757,7 +756,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
     }
 
     private fun setDayNightTheme() {
-        val settings = this.settings()
+        val settings = components.settings
         when {
             settings.shouldUseLightTheme -> {
                 AppCompatDelegate.setDefaultNightMode(
