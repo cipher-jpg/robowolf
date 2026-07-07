@@ -193,14 +193,6 @@ class RustLoginsStoreAdapter {
     return await this.#store.count();
   }
 
-  async countByOrigin(origin) {
-    return await this.#store.countByOrigin(origin);
-  }
-
-  async countByFormActionOrigin(formActionOrigin) {
-    return await this.#store.countByFormActionOrigin(formActionOrigin);
-  }
-
   async touch(id) {
     return await this.#store.touch(id);
   }
@@ -244,6 +236,10 @@ class RustLoginsStoreAdapter {
       }
     }
     return result;
+  }
+
+  bridgedEngine() {
+    return this.#store.bridgedEngine();
   }
 
   shutdown() {
@@ -394,6 +390,17 @@ export class LoginManagerRustStorage {
   testSaveForReplace() {}
 
   /**
+   * Returns the Sync bridged engine backed by the same Rust store instance the
+   * storage layer uses, so that Sync and data access share one database handle.
+   * Assumes the storage is already initialized; the sync engine only reaches it
+   * via the active store, which is set after initialization completes.
+   *
+   */
+  bridgedEngine() {
+    return this.#storageAdapter.bridgedEngine();
+  }
+
+  /**
    * Returns the "sync id" used by Sync to know whether the store is current with
    * respect to the sync servers. It is stored encrypted, but only so we
    * can detect failure to decrypt (for example, a "reset" of the primary
@@ -419,10 +426,6 @@ export class LoginManagerRustStorage {
 
   async setLastSync(_timestamp) {
     throw Components.Exception("setLastSync", Cr.NS_ERROR_NOT_IMPLEMENTED);
-  }
-
-  async resetSyncCounter(_guid, _value) {
-    throw Components.Exception("resetSyncCounter", Cr.NS_ERROR_NOT_IMPLEMENTED);
   }
 
   loginIsDeleted(_guid) {
@@ -799,18 +802,14 @@ export class LoginManagerRustStorage {
   }
 
   async countLoginsAsync(origin, formActionOrigin, httpRealm) {
-    if (!origin && !formActionOrigin && !httpRealm) {
+    // The optimized adapter path only applies when all fields are the empty
+    // string wildcard. Origin and formActionOrigin must go through the generic
+    // search below so that count and search share the same strict matching
+    // semantics; the native countByOrigin/countByFormActionOrigin paths
+    // normalize the origin (e.g. stripping a trailing slash) and would count
+    // logins that searchLoginsAsync does not return.
+    if (origin === "" && formActionOrigin === "" && httpRealm === "") {
       return await this.#storageAdapter.count();
-    }
-
-    if (origin && !formActionOrigin && !httpRealm) {
-      return await this.#storageAdapter.countByOrigin(origin);
-    }
-
-    if (!origin && formActionOrigin && !httpRealm) {
-      return await this.#storageAdapter.countByFormActionOrigin(
-        formActionOrigin
-      );
     }
 
     const loginData = {
@@ -855,7 +854,13 @@ export class LoginManagerRustStorage {
   }
 
   async arePotentiallyVulnerablePasswords(logins) {
-    const ids = logins.map(l => l.QueryInterface(Ci.nsILoginMetaInfo).guid);
+    const ids = logins.map(
+      l =>
+        (typeof l.QueryInterface === "function"
+          ? l.QueryInterface(Ci.nsILoginMetaInfo)
+          : l
+        ).guid
+    );
     return this.#storageAdapter.arePotentiallyVulnerablePasswords(ids);
   }
 

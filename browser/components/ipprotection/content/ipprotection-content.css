@@ -39,7 +39,7 @@ hr {
   flex-direction: column;
   margin-block-start: var(--space-small);
   moz-button {
-    --button-alignment: start;
+    --button-content-alignment: start;
     --button-font-weight: var(--font-weight);
     --button-padding: var(--space-small);
     --focus-outline-offset: calc(-1 * var(--focus-outline-width));
@@ -168,6 +168,7 @@ hr {
   margin-block-start: var(--space-medium);
   margin-block-end: var(--space-medium);
   color: var(--text-color-deemphasized);
+  text-align: center;
 }
 
 ipprotection-message-bar.vpn-top-content {
@@ -183,10 +184,6 @@ ipprotection-message-bar.vpn-top-content {
   flex-direction: column;
   gap: var(--space-large);
   padding: var(--space-medium);
-
-  @media -moz-pref("browser.nova.enabled") {
-    border-radius: var(--border-radius-xlarge);
-  }
 }
 
 #enrolling-header {
@@ -258,5 +255,6 @@ ipprotection-message-bar.vpn-top-content {
 
   > [slot="description"] {
     padding-inline-start: var(--space-xxlarge);
+    display: inline-block;
   }
 }

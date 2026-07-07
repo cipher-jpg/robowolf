@@ -1534,7 +1534,7 @@ struct CallbackTrieNode {
 
   // Append this node's live callbacks (skipping dead, null-Func nodes) to aOut
   // in LIFO order (newest registration first).
-  void AppendAll(nsTArray<CallbackNode*>& aOut) const {
+  void AppendAll(nsTArray<RefPtr<CallbackNode>>& aOut) const {
     for (const RefPtr<CallbackNode>& node : Reversed(mCallbacks)) {
       if (node->Func()) aOut.AppendElement(node);
     }
@@ -1542,7 +1542,7 @@ struct CallbackTrieNode {
 
   // Like AppendAll but only prefix-registered callbacks.  Used at non-terminal
   // trie nodes during notification.
-  void AppendPrefix(nsTArray<CallbackNode*>& aOut) const {
+  void AppendPrefix(nsTArray<RefPtr<CallbackNode>>& aOut) const {
     for (const RefPtr<CallbackNode>& node : Reversed(mCallbacks)) {
       if (node->Func() && node->IsPrefix()) aOut.AppendElement(node);
     }
@@ -1653,7 +1653,7 @@ class CallbackTrie {
   // callbacks fire.  Within each node callbacks fire in LIFO order (newest
   // registration first).
   void CollectMatchingForNotify(const nsCString& aPrefName,
-                                nsTArray<CallbackNode*>& aOut) {
+                                nsTArray<RefPtr<CallbackNode>>& aOut) {
     mRoot.AppendPrefix(aOut);
     Walk(aPrefName,
          [&aOut](CallbackTrieNode* aNode, const nsACString& aSegment,
@@ -2758,6 +2758,8 @@ class nsPrefBranch final : public nsIPrefBranch,
 
   PrefName GetPrefName(const nsACString& aPrefName) const;
 
+  nsresult ClearBranch(const char* aStartingAt, bool deleteDefaults);
+
   void FreeObserverList(void);
 
   const nsCString mPrefRoot;
@@ -3276,9 +3278,8 @@ nsPrefBranch::UnlockPref(const char* aPrefName) {
   return Preferences::Unlock(pref.get());
 }
 
-NS_IMETHODIMP
-nsPrefBranch::DeleteBranch(const char* aStartingAt) {
-  ENSURE_PARENT_PROCESS("DeleteBranch", aStartingAt);
+nsresult nsPrefBranch::ClearBranch(const char* aStartingAt,
+                                   bool deleteDefaults) {
   NS_ENSURE_ARG(aStartingAt);
 
   MOZ_ASSERT(NS_IsMainThread());
@@ -3322,25 +3323,49 @@ nsPrefBranch::DeleteBranch(const char* aStartingAt) {
 
     if (Pref* pref = result.unwrap()) {
       pref->ClearUserValue();
-      pref->ClearDefaultValue();
-
-      MOZ_ASSERT(
-          !gSharedMap || !pref->IsSanitized() || !gSharedMap->Has(pref->Name()),
-          "A sanitized pref should never be in the shared pref map.");
-      if (!pref->IsSanitized() &&
-          (!gSharedMap || !gSharedMap->Has(pref->Name()))) {
-        HashTable()->remove(prefName);
-      } else {
-        // If there is a matching shared pref, it must be shadowed by an empty
-        // entry in the HashTable().
-        pref->SetType(PrefType::None);
+      if (deleteDefaults) {
+        pref->ClearDefaultValue();
       }
-      sPImpl->NotifyCallbacks(nsDependentCString{prefName});
+
+      // If there's no default value, or the pref has been completely deleted,
+      // handle that appropriately, otherwise send out a regular preference
+      // update.
+      if (deleteDefaults || !pref->HasDefaultValue()) {
+        MOZ_ASSERT(!gSharedMap || !pref->IsSanitized() ||
+                       !gSharedMap->Has(pref->Name()),
+                   "A sanitized pref should never be in the shared pref map.");
+        if (!pref->IsSanitized() &&
+            (!gSharedMap || !gSharedMap->Has(pref->Name()))) {
+          HashTable()->remove(prefName);
+        } else {
+          // If there is a matching shared pref, it must be shadowed by an empty
+          // entry in the HashTable().
+          pref->SetType(PrefType::None);
+        }
+        sPImpl->NotifyCallbacks(nsDependentCString{prefName});
+      } else {
+        sPImpl->NotifyCallbacks(nsDependentCString{prefName},
+                                PrefWrapper(pref));
+      }
     }
   }
 
   Preferences::HandleDirty();
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsPrefBranch::DeleteBranch(const char* aStartingAt) {
+  ENSURE_PARENT_PROCESS("DeleteBranch", aStartingAt);
+
+  return ClearBranch(aStartingAt, true);
+}
+
+NS_IMETHODIMP
+nsPrefBranch::ClearUserBranch(const char* aStartingAt) {
+  ENSURE_PARENT_PROCESS("ClearUserBranch", aStartingAt);
+
+  return ClearBranch(aStartingAt, false);
 }
 
 NS_IMETHODIMP
@@ -3618,8 +3643,6 @@ nsPrefBranch::PrefName nsPrefBranch::GetPrefName(
 
 // static
 void nsPrefBranch::ReapAndCompactCallbacks() {
-  MOZ_ASSERT(!sPImpl->mCallbacksInProgress);
-
   // Mirror callbacks are never pref-branch observers, so only the trie is swept
   // and compacted here.
   if (sPImpl->mShouldSweepWeakObservers) {
@@ -3884,9 +3907,9 @@ void PreferencesImpl::NotifyCallbacks(const nsCString& aPrefName,
   // Observer callbacks are snapshotted by pointer into their (stable,
   // refcounted) trie nodes, so a callback unregistered mid-round (which clears
   // its func) is skipped here at fire time.
-  AutoTArray<CallbackNode*, 16> toNotify;
+  AutoTArray<RefPtr<CallbackNode>, 16> toNotify;
   mCallbacks.CollectMatchingForNotify(aPrefName, toNotify);
-  for (CallbackNode* node : toNotify) {
+  for (const RefPtr<CallbackNode>& node : toNotify) {
     if (PrefChangedFunc func = node->Func()) {
       MOZ_LOG(sPrefLog, LogLevel::Debug,
               ("NotifyCallbacks: pref='%s' -> domain='%s'", aPrefName.get(),
@@ -4739,6 +4762,9 @@ NS_IMETHODIMP Preferences::UnlockPref(const char* aPrefName) {
 }
 NS_IMETHODIMP Preferences::DeleteBranch(const char* aStartingAt) {
   return sPImpl->mRootBranch->DeleteBranch(aStartingAt);
+}
+NS_IMETHODIMP Preferences::ClearUserBranch(const char* aStartingAt) {
+  return sPImpl->mRootBranch->ClearUserBranch(aStartingAt);
 }
 NS_IMETHODIMP Preferences::GetChildList(const char* aStartingAt,
                                         nsTArray<nsCString>& aRetVal) {

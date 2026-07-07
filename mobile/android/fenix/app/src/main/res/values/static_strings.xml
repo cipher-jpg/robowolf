@@ -109,8 +109,8 @@
     <string name="preferences_debug_settings_add_shortcuts_improvement" translatable="false">Enable Add Shortcuts Improvement</string>
     <!-- Label for enabling Merino Client -->
     <string name="preferences_debug_settings_merino_client" translatable="false">Enable Merino Client</string>
-    <!-- Label for enabling Mozilla Ads Client -->
-    <string name="preferences_debug_settings_mozilla_ads_client" translatable="false">Enable Mozilla Ads Client</string>
+    <!-- Label for enabling Mozilla Ads Client for Sponsored Stories -->
+    <string name="preferences_debug_settings_ads_client_for_stories" translatable="false">Enable Ads Client for Stories</string>
     <!-- Label for enabling the custom tab extension -->
     <string name="preferences_debug_settings_custom_tab_extensions" translatable="false">Enable Custom Tab Extension List</string>
     <!-- Label for enabling Robowolf Suggest -->
@@ -210,6 +210,9 @@
     <!-- Label for enabling isolated content processes in secret settings. -->
     <string name="preferences_debug_settings_isolated_process" translatable="false">Enable Isolated Content Process (requires restart)</string>
     <string name="preferences_debug_settings_app_zygote" translatable="false">Enable Isolated Processes with Zygote Preloading (requires restart)</string>
+
+    <!-- Label for enabling uninstall survey in secret settings. -->
+    <string name="preferences_debug_settings_uninstall_survey">Enable Uninstall Survey</string>
 
     <!-- Label for the defaults section and reset action in secret settings. -->
     <string name="preferences_debug_settings_reset_defaults" translatable="false">Reset switches to defaults</string>
@@ -345,10 +348,10 @@
     <string name="crash_debug_startup_crash_warning">This will start the startup crash activity in a new process and terminate the current process.</string>
 
     <!-- Robowolf Labs -->
-    <!-- The name of an experimental feature displayed in the Robowolf Labs screen. This features allows the user to open the homepage as a new tab. -->
-    <string name="firefox_labs_homepage_as_a_new_tab">Homepage as a New Tab</string>
-    <!-- The description of the "Homepage as a New Tab" feature in the Robowolf Labs screen. -->
-    <string name="firefox_labs_homepage_as_a_new_tab_description">With this feature enabled, Homepage will behave as a tab.</string>
+    <!-- The name of an experimental feature displayed in the Robowolf Labs screen. This feature appends a star to the Settings toolbar title. This string is for testing purposes only. -->
+    <string name="firefox_labs_test_lab_title">Add a star to settings</string>
+    <!-- The description of the "Add a star to settings" feature in the Robowolf Labs screen. This string is for testing purposes only. -->
+    <string name="firefox_labs_test_lab_description">Appends a star to the settings toolbar title. (Experiment is for testing purposes only.)</string>
 
     <!-- Debug drawer tab group tools -->
     <!-- The title of the debug drawer tab to help populate tab groups-->

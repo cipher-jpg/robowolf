@@ -1875,8 +1875,7 @@ async function evaluateTargeting(targeting) {
 const ActionChecklistItem = ({
   item,
   index,
-  handleAction,
-  showExternalLinkIcon
+  handleAction
 }) => {
   const [actionTargeting, setActionTargeting] = (0,external_React_namespaceObject.useState)(true);
   (0,external_React_namespaceObject.useEffect)(() => {
@@ -1905,19 +1904,15 @@ const ActionChecklistItem = ({
       onClick: onButtonClick
     }, /*#__PURE__*/external_React_default().createElement("div", {
       className: "action-checklist-label-container"
-    }, /*#__PURE__*/external_React_default().createElement("div", {
+    }, /*#__PURE__*/external_React_default().createElement(Localized, {
+      text: item.label
+    }, /*#__PURE__*/external_React_default().createElement("span", null)), /*#__PURE__*/external_React_default().createElement("div", {
       className: "check-icon-container"
     }, actionTargeting ? /*#__PURE__*/external_React_default().createElement("div", {
       className: "check-filled"
     }) : /*#__PURE__*/external_React_default().createElement("div", {
-      className: "check-empty"
-    })), /*#__PURE__*/external_React_default().createElement(Localized, {
-      text: item.label
-    }, /*#__PURE__*/external_React_default().createElement("span", null))), !actionTargeting && showExternalLinkIcon && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "external-link-icon-container"
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "external-link-icon"
-    })))
+      className: "action-arrow"
+    }))))
   );
 };
 const ActionChecklistProgressBar = ({
@@ -2125,10 +2120,7 @@ const EmbeddedBackupRestore = ({
   const ref = (0,external_React_namespaceObject.useRef)(null);
   (0,external_React_namespaceObject.useEffect)(() => {
     const loadRestore = async () => {
-      await window.AWFindBackupsInWellKnownLocations?.({
-        validateFile: true,
-        multipleFiles: true
-      });
+      await window.AWFindBackupsInWellKnownLocations?.();
     };
     loadRestore();
     // Clear the pref used to target the restore screen so that users will not
@@ -2971,7 +2963,7 @@ class ProtonScreen extends (external_React_default()).PureComponent {
       this.mainContentHeader.focus();
     }
   }
-  getScreenClassName(includeNoodles, isVideoOnboarding, isAddonsPicker) {
+  getScreenClassName(includeNoodles, hasZapBorder, hasZapShadow, isVideoOnboarding, isAddonsPicker) {
     if (isVideoOnboarding) {
       return "with-video";
     }
@@ -2981,7 +2973,9 @@ class ProtonScreen extends (external_React_default()).PureComponent {
     const screenClass = `screen-${this.props.order % 2 !== 0 ? 1 : 2}`;
     const dialogInitial = this.props.isFirstScreen && this.props.previousOrder < 0 ? `dialog-initial` : ``;
     const dialogLast = this.props.isLastScreen ? `dialog-last` : ``;
-    return `${screenClass} ${dialogInitial} ${dialogLast} ${includeNoodles ? `with-noodles` : ``}`;
+    const zapBorder = hasZapBorder ? `zap-border` : ``;
+    const zapShadow = hasZapShadow ? `zap-shadow` : ``;
+    return `${screenClass} ${dialogInitial} ${dialogLast} ${zapBorder} ${zapShadow} ${includeNoodles ? `with-noodles` : ``}`;
   }
   renderTitle({
     title,
@@ -3325,13 +3319,15 @@ class ProtonScreen extends (external_React_default()).PureComponent {
       isWideScreen
     } = this.props;
     const includeNoodles = content.has_noodles;
+    const hasZapBorder = content.zap_border;
+    const hasZapShadow = content.zap_shadow;
     // The default screen position is "center"
     const isCenterPosition = content.position === "center" || !content.position;
     const hideStepsIndicator = autoAdvance || content?.video_container || isSingleScreen || forceHideStepsIndicator;
     const textColorClass = content.text_color ? `${content.text_color}-text` : "";
     // Assign proton screen style 'screen-1' or 'screen-2' to centered screens
     // by checking if screen order is even or odd.
-    const screenClassName = isCenterPosition ? this.getScreenClassName(includeNoodles, content?.video_container, content.tiles?.type === "addons-picker") : "";
+    const screenClassName = isCenterPosition ? this.getScreenClassName(includeNoodles, hasZapBorder, hasZapShadow, content?.video_container, content.tiles?.type === "addons-picker") : `${hasZapBorder ? "zap-border" : ""} ${hasZapShadow ? " zap-shadow" : ""}`;
     const isEmbeddedMigration = content.tiles?.type === "migration-wizard";
     const isSystemPromptStyleSpotlight = content.isSystemPromptStyleSpotlight === true;
     const combinedStyles = this.getCombinedInnerStyles(content, isWideScreen);
@@ -3340,7 +3336,7 @@ class ProtonScreen extends (external_React_default()).PureComponent {
           ${screenClassName} ${textColorClass}`,
       "reverse-split": content.reverse_split ? "" : null,
       fullscreen: content.fullscreen ? "" : null,
-      style: content.screen_style && MultiStageUtils.getValidStyle(content.screen_style, ["overflow", "display"]),
+      style: content.screen_style && MultiStageUtils.getValidStyle(content.screen_style, ["overflow", "display", "height"]),
       role: ariaRole ?? "alertdialog",
       layout: content.layout,
       pos: content.position || "center",
@@ -3355,7 +3351,7 @@ class ProtonScreen extends (external_React_default()).PureComponent {
       className: `section-main ${isEmbeddedMigration ? "embedded-migration" : ""}${isSystemPromptStyleSpotlight ? "system-prompt-spotlight" : ""}`,
       "hide-secondary-section": content.hide_secondary_section ? String(content.hide_secondary_section) : null,
       role: "document",
-      style: content.screen_style && MultiStageUtils.getValidStyle(content.screen_style, ["width", "padding", "height"])
+      style: content.screen_style && MultiStageUtils.getValidStyle(content.screen_style, ["width", "padding"])
     }, content.secondary_button_top ? /*#__PURE__*/external_React_default().createElement(SecondaryCTA, {
       content: content,
       handleAction: this.props.handleAction,

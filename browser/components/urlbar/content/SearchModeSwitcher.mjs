@@ -8,6 +8,9 @@
  * @import { OpenSearchData } from "moz-src:///browser/components/search/OpenSearchManager.sys.mjs"
  * @import { PanelItem, PanelList } from "chrome://global/content/elements/panel-list.mjs"
  */
+
+import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -30,6 +33,17 @@ ChromeUtils.defineESModuleGetters(lazy, {
 ChromeUtils.defineLazyGetter(lazy, "SearchModeSwitcherL10n", () => {
   return new Localization(["browser/browser.ftl"]);
 });
+
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "settingsRedesignEnabled",
+  "browser.settings-redesign.enabled",
+  true
+);
 
 // Default icon used for engines that do not have icons loaded.
 const DEFAULT_ENGINE_ICON =
@@ -188,6 +202,10 @@ export class SearchModeSwitcher {
       }
       return;
     }
+    if (event.type == "searchmodechanged") {
+      this.onSearchModeChanged();
+      return;
+    }
     if (event.type == "focus") {
       this.#input.setUnifiedSearchButtonAvailability(true);
       return;
@@ -334,10 +352,6 @@ export class SearchModeSwitcher {
         }
         break;
       }
-      case "urlbar-searchmodechanged": {
-        this.onSearchModeChanged();
-        break;
-      }
     }
   }
 
@@ -421,7 +435,7 @@ export class SearchModeSwitcher {
       {
         entry: "searchbutton",
         isPreview: false,
-        source: selectedEngine?.source || lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+        source: selectedEngine?.source || UrlbarShared.RESULT_SOURCE.SEARCH,
         engineName: selectedEngine?.name,
       },
       this.#input.window.gBrowser.selectedBrowser
@@ -437,12 +451,20 @@ export class SearchModeSwitcher {
     let searchEngines = (await lazy.SearchService.getVisibleEngines()).filter(
       engine => !engine.hideOneOffButton
     );
-    this.#engines = searchEngines.concat(
-      lazy.UrlbarUtils.LOCAL_SEARCH_MODES.filter(
-        engine =>
-          this.#input.sapName == "urlbar" && lazy.UrlbarPrefs.get(engine.pref)
-      )
-    );
+
+    if (this.#input.sapName != "urlbar") {
+      this.#engines = searchEngines;
+    } else {
+      // After the settings redesign we no longer use the prefs to hide local
+      // search modes. Hence when the settings redesign is enabled we show
+      // all local search modes regardless of the prefs.
+      this.#engines = searchEngines.concat(
+        lazy.UrlbarUtils.LOCAL_SEARCH_MODES.filter(
+          engine =>
+            lazy.settingsRedesignEnabled || lazy.UrlbarPrefs.get(engine.pref)
+        )
+      );
+    }
   }
 
   async updateSearchIcon() {
@@ -478,8 +500,8 @@ export class SearchModeSwitcher {
         let result = this.#input.view?.getResultAtIndex(0);
         if (
           result &&
-          (result.type == lazy.UrlbarUtils.RESULT_TYPE.URL ||
-            result.type == lazy.UrlbarUtils.RESULT_TYPE.TAB_SWITCH)
+          (result.type == UrlbarShared.RESULT_TYPE.URL ||
+            result.type == UrlbarShared.RESULT_TYPE.TAB_SWITCH)
         ) {
           // If the user has typed a url then indicate that ENTER will visit
           // that address.
@@ -799,7 +821,6 @@ export class SearchModeSwitcher {
 
   #enableObservers() {
     Services.obs.addObserver(this, "browser-search-engine-modified", true);
-    Services.obs.addObserver(this, "urlbar-searchmodechanged", true);
 
     this.#button.addEventListener("focus", this);
     this.#button.addEventListener("keydown", this);
@@ -809,11 +830,12 @@ export class SearchModeSwitcher {
 
     this.#closebutton.addEventListener("click", this);
     this.#closebutton.addEventListener("mousedown", this);
+
+    this.#input.addEventListener("searchmodechanged", this);
   }
 
   #disableObservers() {
     Services.obs.removeObserver(this, "browser-search-engine-modified");
-    Services.obs.removeObserver(this, "urlbar-searchmodechanged");
 
     this.#button.removeEventListener("focus", this);
     this.#button.removeEventListener("keydown", this);
@@ -823,6 +845,8 @@ export class SearchModeSwitcher {
 
     this.#closebutton.removeEventListener("click", this);
     this.#closebutton.removeEventListener("mousedown", this);
+
+    this.#input.removeEventListener("searchmodechanged", this);
   }
 
   /**

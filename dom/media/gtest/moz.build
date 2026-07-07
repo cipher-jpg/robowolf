@@ -22,6 +22,7 @@ LOCAL_INCLUDES += [
 
 UNIFIED_SOURCES += [
     "MockMediaResource.cpp",
+    "TestADTSDemuxer.cpp",
     "TestAOMDecoder.cpp",
     "TestAsyncLogger.cpp",
     "TestAudioBuffer.cpp",
@@ -29,6 +30,7 @@ UNIFIED_SOURCES += [
     "TestAudioBuffers.cpp",
     "TestAudioCallbackDriver.cpp",
     "TestAudioCompactor.cpp",
+    "TestAudioConfig.cpp",
     "TestAudioData.cpp",
     "TestAudioDecoderInputTrack.cpp",
     "TestAudioInputSource.cpp",
@@ -104,6 +106,7 @@ if CONFIG["MOZ_WEBRTC"]:
         "TestCamerasParent.cpp",
         "TestH264FmtpParser.cpp",
         "TestRTCStatsTimestampMaker.cpp",
+        "TestWebrtcCodecFactory.cpp",
         "TestWebrtcTaskQueueWrapper.cpp",
     ]
 
@@ -134,6 +137,7 @@ if CONFIG["MOZ_WEBRTC"] and CONFIG["OS_TARGET"] != "Android":
     ]
 
 TEST_HARNESS_FILES.gtest += [
+    "../test/adts.aac",
     "../test/av1.mp4",
     "../test/gizmo-frag.mp4",
     "../test/gizmo.mp4",
@@ -152,6 +156,7 @@ TEST_HARNESS_FILES.gtest += [
     "test_case_1224361.vp8.ivf",
     "test_case_1224363.vp8.ivf",
     "test_case_1224369.vp8.ivf",
+    "test_hevc_open_gop.mp4",
     "test_InvalidElementId.webm",
     "test_InvalidElementSize.webm",
     "test_InvalidLargeEBMLMaxIdLength.webm",

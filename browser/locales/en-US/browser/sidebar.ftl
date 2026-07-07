@@ -17,6 +17,10 @@ menu-view-open-tabs =
 sidebar-options-menu-button =
   .title = Open menu
 
+# Accessible label for the splitter used to resize the sidebar.
+sidebar-resize-splitter =
+  .aria-label = Resize sidebar
+
 ## Labels for sidebar history panel
 
 # Variables:
@@ -219,6 +223,7 @@ sidebar-bookmarks-folder-mobile = Mobile Bookmarks
 
 ## Titles for sidebar menu panels.
 
+sidebar-bookmarks-title = Bookmarks
 sidebar-customize-title = Customize sidebar
 sidebar-history-title = History
 sidebar-syncedtabs-title = Tabs from other devices

@@ -114,11 +114,9 @@ void profiler_remove_sampled_counter(BaseProfilerCount* aCounter);
 enum class SamplingState {
   JustStopped,  // Sampling loop has just stopped without sampling, between the
                 // callback registration and now.
-  SamplingPaused,  // Profiler is active but sampling loop has gone through a
-                   // pause.
-  NoStackSamplingCompleted,  // A full sampling loop has completed in
-                             // no-stack-sampling mode.
-  SamplingCompleted          // A full sampling loop has completed.
+  SamplingPaused,    // Profiler is active but sampling loop has gone through a
+                     // pause.
+  SamplingCompleted  // A full sampling loop has completed.
 };
 
 using PostSamplingCallback = std::function<void(SamplingState)>;
@@ -318,6 +316,23 @@ profiler_stream_json_for_this_process(
 extern "C" {
 void profiler_save_profile_to_file(const char* aFilename);
 }
+
+// Schedule a one-shot profile dump that the sampler thread performs off the
+// main thread once aDelaySeconds have elapsed, writing this process's profile
+// to aFilename (a no-op if the profiler stops first).
+//
+// This exists for the test harnesses: a test that wedges its main thread (a
+// long synchronous run that never returns to the event loop, or a blocking
+// native call) gets force-killed by the harness without leaving a profile,
+// because a main-thread timer can never fire. Dumping from the sampler thread
+// sidesteps that: profiler_save_profile_to_file only needs the profiler state
+// lock, and the sampled main-thread stack it captures shows where the time
+// went. The harness that set the deadline is responsible for reporting the
+// written file. Call profiler_cancel_scheduled_dump() when the test ends
+// normally.
+void profiler_schedule_dump_to_file(double aDelaySeconds,
+                                    const char* aFilename);
+void profiler_cancel_scheduled_dump();
 
 //---------------------------------------------------------------------------
 // RAII classes

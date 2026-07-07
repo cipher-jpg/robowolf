@@ -88,24 +88,34 @@ export var Policies = {
   _cleanup: {
     onBeforeAddons() {
       if (Cu.isInAutomation || isXpcshell) {
-        console.log("_cleanup from onBeforeAddons");
         clearBlockedAboutPages();
       }
+      Services.obs.notifyObservers(
+        null,
+        "EnterprisePolicies:Cleanup",
+        "onBeforeAddons"
+      );
     },
     onProfileAfterChange() {
-      if (Cu.isInAutomation || isXpcshell) {
-        console.log("_cleanup from onProfileAfterChange");
-      }
+      Services.obs.notifyObservers(
+        null,
+        "EnterprisePolicies:Cleanup",
+        "onProfileAfterChange"
+      );
     },
     onBeforeUIStartup() {
-      if (Cu.isInAutomation || isXpcshell) {
-        console.log("_cleanup from onBeforeUIStartup");
-      }
+      Services.obs.notifyObservers(
+        null,
+        "EnterprisePolicies:Cleanup",
+        "onBeforeUIStartup"
+      );
     },
     onAllWindowsRestored() {
-      if (Cu.isInAutomation || isXpcshell) {
-        console.log("_cleanup from onAllWindowsRestored");
-      }
+      Services.obs.notifyObservers(
+        null,
+        "EnterprisePolicies:Cleanup",
+        "onAllWindowsRestored"
+      );
     },
   },
 
@@ -789,6 +799,24 @@ export var Policies = {
   Cookies: {
     onBeforeUIStartup(manager, param) {
       addAllowDenyPermissions("cookie", param.Allow, param.Block);
+
+      // Backwards-compat shim (Bug 2051574): before Bug 1767271, Cookies.Allow
+      // doubled as the clear-on-shutdown exception list. Sites are now exempted
+      // via the dedicated SanitizeOnShutdown.Exceptions key. If an admin hasn't
+      // adopted that key yet, treat Cookies.Allow entries as shutdown exceptions
+      // too. Remove this shim once admins have had a couple of releases to
+      // migrate.
+      if (
+        param.Allow?.length &&
+        !manager.getActivePolicies()?.SanitizeOnShutdown?.Exceptions?.length
+      ) {
+        lazy.log.warn(
+          "Using Cookies.Allow to exempt sites from clear-on-shutdown is " +
+            "deprecated and will stop working in a future release. Use the " +
+            "SanitizeOnShutdown.Exceptions policy instead."
+        );
+        addAllowDenyPermissions("persist-data-on-shutdown", param.Allow);
+      }
 
       if (param.AllowSession) {
         for (let origin of param.AllowSession) {
@@ -1544,7 +1572,9 @@ export var Policies = {
       try {
         manager.setExtensionSettings(param);
       } catch (e) {
-        lazy.log.error("Invalid ExtensionSettings");
+        lazy.log.error(
+          `Some ExtensionSettings could not be applied: ${e.message}`
+        );
       }
       try {
         applyExtensionGuards(param);
@@ -1745,6 +1775,13 @@ export var Policies = {
           param.Weather,
           param.Locked
         );
+        // The Nova layout (enabled by default) binds the weather toggle to a
+        // different pref, so set it too.
+        PoliciesUtils.setDefaultPref(
+          "browser.newtabpage.activity-stream.widgets.weather.enabled",
+          param.Weather,
+          param.Locked
+        );
       }
       if ("TopSites" in param) {
         PoliciesUtils.setDefaultPref(
@@ -1769,22 +1806,12 @@ export var Policies = {
       }
       if ("Pocket" in param) {
         PoliciesUtils.setDefaultPref(
-          "browser.newtabpage.activity-stream.feeds.system.topstories",
-          param.Pocket,
-          param.Locked
-        );
-        PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.section.topstories",
           param.Pocket,
           param.Locked
         );
       }
       if ("Stories" in param) {
-        PoliciesUtils.setDefaultPref(
-          "browser.newtabpage.activity-stream.feeds.system.topstories",
-          param.Stories,
-          param.Locked
-        );
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.section.topstories",
           param.Stories,
@@ -1802,6 +1829,20 @@ export var Policies = {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.showSponsored",
           param.SponsoredStories,
+          param.Locked
+        );
+      }
+      // The "Support Firefox" toggle in the settings UI is a parent control for
+      // the two sponsored child settings. When both are locked by policy, lock
+      // it to their combined value so it can't be toggled to no effect.
+      if (
+        param.Locked &&
+        "SponsoredTopSites" in param &&
+        "SponsoredStories" in param
+      ) {
+        PoliciesUtils.setDefaultPref(
+          "browser.newtabpage.activity-stream.showSponsoredCheckboxes",
+          param.SponsoredTopSites || param.SponsoredStories,
           param.Locked
         );
       }
@@ -2858,6 +2899,9 @@ export var Policies = {
             locked
           );
         }
+        if (param.Exceptions) {
+          addAllowDenyPermissions("persist-data-on-shutdown", param.Exceptions);
+        }
       }
     },
   },
@@ -3721,11 +3765,13 @@ function installAddonFromURL(url, extensionID, addon) {
           );
           install.removeListener(listener);
           install.cancel();
+          return;
         }
         if (install.addon.appDisabled) {
           lazy.log.error(`Incompatible add-on - ${url}`);
           install.removeListener(listener);
           install.cancel();
+          return;
         }
         if (
           addon &&
@@ -3736,6 +3782,7 @@ function installAddonFromURL(url, extensionID, addon) {
           );
           install.removeListener(listener);
           install.cancel();
+          return;
         }
 
         // Cancel install if the addon version downloaded is detected

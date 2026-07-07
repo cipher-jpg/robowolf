@@ -49,8 +49,14 @@ internal fun iPProtectionReducer(
             }
         }
 
-        // We can short-circuit the account-state if the service is ready.
-        val newAccountStatus = if (action.info.serviceState == ServiceState.Ready) {
+        // Apart from the first enrollment where the user goes through the enrollment process,
+        // we rely on the service state to be the source of truth for entitlement.
+        // UNLESS the user is signed out: we could still intermittently get an EngineState
+        // update with the service being READY, before EngineState updates itself with the new
+        // account status.
+        val newAccountStatus = if (action.info.serviceState == ServiceState.Ready &&
+            state.accountState.status != AccountStatus.Uninitialized
+        ) {
             AccountStatus.EnrolledAndEntitled
         } else {
             state.accountState.status
@@ -156,6 +162,16 @@ internal fun iPProtectionReducer(
         state.copy(activate = null)
     }
 
+    is IPProtectionAction.CheckAccount -> {
+        if (state.accountState.status == AccountStatus.NeedsAuthorization) {
+            // When we "try again" we signal to the IPProtectionHandler to attempt retrieving an access token.
+            // If that request fails, we catch the exception and return back into a `NeedsAuthorization` state.
+            state.copy(accountState = state.accountState.copy(status = AccountStatus.TryAgain))
+        } else {
+            state
+        }
+    }
+
     is InternalAction -> internalReducer(state, action)
 }
 
@@ -179,13 +195,13 @@ internal fun internalReducer(
             AccountStatus.AwaitingAuthentication,
             AccountStatus.AwaitingAuthorization,
             AccountStatus.AwaitingEnrollment,
+            AccountStatus.EnrolledAndEntitled,
                 -> state
 
             AccountStatus.WarmingUp,
             AccountStatus.NeedsAuthentication,
             AccountStatus.NeedsAuthorization,
             AccountStatus.Authenticated,
-            AccountStatus.EnrolledAndEntitled,
                 -> {
                 state.copy(
                     accountState = state.accountState.copy(status = action.status),

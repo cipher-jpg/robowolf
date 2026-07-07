@@ -21,8 +21,8 @@
  */
 
 /**
- * pdfjsVersion = 6.0.421
- * pdfjsBuild = d71fe9025
+ * pdfjsVersion = 6.1.239
+ * pdfjsBuild = 0cc1718b0
  */
 
 ;// ./src/shared/util.js
@@ -144,6 +144,13 @@ const AnnotationType = {
 const AnnotationReplyType = (/* unused pure expression or super */ null && ({
   GROUP: "Group",
   REPLY: "R"
+}));
+const AnnotationRenditionOperation = (/* unused pure expression or super */ null && ({
+  PLAY_OR_RESUME: 0,
+  STOP: 1,
+  PAUSE: 2,
+  RESUME: 3,
+  PLAY: 4
 }));
 const AnnotationFlag = (/* unused pure expression or super */ null && ({
   INVISIBLE: 0x01,
@@ -527,6 +534,9 @@ class FeatureTest {
     input.setAttribute("alpha", "");
     input.value = "#ff000080";
     return shadow(this, "isAlphaColorInputSupported", input.value !== "#ff0000");
+  }
+  static get isBackdropFilterSupported() {
+    return shadow(this, "isBackdropFilterSupported", typeof CSS !== "undefined" && CSS.supports("backdrop-filter", "blur(1px)"));
   }
 }
 class Util {
@@ -1991,7 +2001,7 @@ class FloatingToolbar {
 }
 
 ;// ./src/shared/internal_evt.js
-const INTERNAL_EVT = "9188730b-75fd-4045-b024-5a0335665078";
+const INTERNAL_EVT = "a683187c-5155-4022-ae51-654eff91e170";
 const internalOpt = Object.freeze({
   internal: INTERNAL_EVT
 });
@@ -14207,7 +14217,7 @@ function getDocument(src = {}) {
   }
   const docParams = {
     docId,
-    apiVersion: "6.0.421",
+    apiVersion: "6.1.239",
     data,
     password,
     disableAutoFetch,
@@ -14469,6 +14479,12 @@ class PDFDocumentProxy {
   }
   getFieldObjects() {
     return this._transport.getFieldObjects();
+  }
+  getSignatures() {
+    return this._transport.getSignatures();
+  }
+  getSignatureData(id) {
+    return this._transport.getSignatureData(id);
   }
   hasJSActions() {
     return this._transport.hasJSActions();
@@ -15556,6 +15572,12 @@ class WorkerTransport {
   getFieldObjects() {
     return this.#cacheSimpleMethod("GetFieldObjects");
   }
+  getSignatures() {
+    return this.#cacheSimpleMethod("GetSignatures");
+  }
+  getSignatureData(id) {
+    return this.messageHandler.sendWithPromise("GetSignatureData", id);
+  }
   hasJSActions() {
     return this.#cacheSimpleMethod("HasJSActions");
   }
@@ -15856,8 +15878,8 @@ class InternalRenderTask {
     }
   }
 }
-const version = "6.0.421";
-const build = "d71fe9025";
+const version = "6.1.239";
+const build = "0cc1718b0";
 
 ;// ./src/display/editor/color_picker.js
 
@@ -16343,7 +16365,9 @@ class AnnotationElementFactory {
       case AnnotationType.FILEATTACHMENT:
         return new FileAttachmentAnnotationElement(parameters);
       case AnnotationType.RICHMEDIA:
-        return new RichMediaAnnotationElement(parameters);
+      case AnnotationType.SCREEN:
+      case AnnotationType.SOUND:
+        return new MediaAnnotationElement(parameters);
       default:
         return new AnnotationElement(parameters);
     }
@@ -16580,7 +16604,7 @@ class AnnotationElement {
     } = this;
     const container = document.createElement("section");
     container.setAttribute("data-annotation-id", data.id);
-    if (!(this instanceof WidgetAnnotationElement) && !(this instanceof LinkAnnotationElement) && !(this instanceof RichMediaAnnotationElement)) {
+    if (!(this instanceof WidgetAnnotationElement) && !(this instanceof LinkAnnotationElement) && !(this instanceof MediaAnnotationElement)) {
       container.tabIndex = 0;
     }
     const {
@@ -19383,7 +19407,7 @@ class FileAttachmentAnnotationElement extends AnnotationElement {
     }
   }
 }
-class RichMediaAnnotationElement extends AnnotationElement {
+class MediaAnnotationElement extends AnnotationElement {
   #abortController = new AbortController();
   #contentUrl = null;
   #media = null;
@@ -19393,12 +19417,12 @@ class RichMediaAnnotationElement extends AnnotationElement {
     });
   }
   render() {
-    this.container.classList.add("richMediaAnnotation");
+    this.container.classList.add("mediaAnnotation");
     const {
       filename
     } = this.data.richMedia;
     const button = document.createElement("button");
-    button.className = "richMediaPlayButton";
+    button.className = "mediaPlayButton";
     button.type = "button";
     button.title = button.ariaLabel = filename;
     button.addEventListener("click", () => this.#load(button), {
@@ -19435,7 +19459,7 @@ class RichMediaAnnotationElement extends AnnotationElement {
     const isAudio = contentType.startsWith("audio/");
     const media = document.createElement(isAudio ? "audio" : "video");
     this.#media = media;
-    media.className = "richMediaContent";
+    media.className = "mediaContent";
     this._setBackgroundColor(media);
     media.src = url;
     media.title = filename;
@@ -20407,7 +20431,7 @@ class FreeTextEditor extends AnnotationEditor {
           }
         }
       } = data;
-      if (!textContent || textContent.length === 0) {
+      if (!textContent?.length) {
         return null;
       }
       initialData = data = {
@@ -22757,7 +22781,7 @@ class InkDrawOutliner {
     return Outline._normalizePoint(x, y, this.#parentWidth, this.#parentHeight, this.#rotation);
   }
   isEmpty() {
-    return !this.#lines || this.#lines.length === 0;
+    return !this.#lines?.length;
   }
   isCancellable() {
     return this.#points.length <= 10;

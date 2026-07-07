@@ -1248,11 +1248,6 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
         - ❌
-      * - **browsertime-benchmark-custom-car-jetstream3**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-benchmark-firefox-jetstream3**
         - ✅
         - ✅
@@ -1552,11 +1547,6 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - mozilla-release
         - mozilla-beta
       * - **browsertime-benchmark-chrome-jetstream3**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-benchmark-custom-car-jetstream3**
         - ❌
         - ❌
         - ❌
@@ -1909,7 +1899,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
    * **expected**: pass
    * **expose browser profiler**: true
    * **expose chrome trace**: true
-   * **gecko profile features**: stackwalk,js,cpu,java,processcpu,memory
+   * **gecko profile features**: stackwalk,js,java,processcpu,memory
    * **gecko profile interval**: 1
    * **gecko profile threads**: GeckoMain,Compositor,Renderer,SwComposite,RenderBackend,SceneBuilder,WrWorker,CanvasWorkers,TextureUpdate
    * **host from parent**: false
@@ -2105,11 +2095,6 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
         - ❌
-      * - **browsertime-benchmark-custom-car-motionmark-1-3**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-benchmark-firefox-motionmark-1-3**
         - ✅
         - ✅
@@ -2235,7 +2220,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
    * **cold**: true
    * **expected**: pass
    * **expose browser profiler**: true
-   * **gecko profile features**: stackwalk,js,cpu,java,processcpu,memory
+   * **gecko profile features**: stackwalk,js,java,processcpu,memory
    * **gecko profile interval**: 1
    * **gecko profile threads**: GeckoMain,Compositor,Renderer,SwComposite,RenderBackend,SceneBuilder,WrWorker,CanvasWorkers,TextureUpdate
    * **host from parent**: false
@@ -2431,11 +2416,6 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
         - ❌
-      * - **browsertime-benchmark-custom-car-motionmark-1-3**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-benchmark-firefox-motionmark-1-3**
         - ✅
         - ✅
@@ -2572,7 +2552,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
    * **expected**: pass
    * **expose browser profiler**: true
    * **expose chrome trace**: true
-   * **gecko profile features**: stackwalk,js,cpu,java,processcpu,memory
+   * **gecko profile features**: stackwalk,js,java,processcpu,memory
    * **gecko profile interval**: 1
    * **gecko profile threads**: GeckoMain,Compositor,Renderer,SwComposite,RenderBackend,SceneBuilder,WrWorker,CanvasWorkers,TextureUpdate
    * **host from parent**: false
@@ -2768,11 +2748,6 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
         - ❌
-      * - **browsertime-benchmark-custom-car-motionmark-htmlsuite-1-3**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-benchmark-firefox-motionmark-htmlsuite-1-3**
         - ✅
         - ✅
@@ -2898,7 +2873,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
    * **cold**: true
    * **expected**: pass
    * **expose browser profiler**: true
-   * **gecko profile features**: stackwalk,js,cpu,java,processcpu,memory
+   * **gecko profile features**: stackwalk,js,java,processcpu,memory
    * **gecko profile interval**: 1
    * **gecko profile threads**: GeckoMain,Compositor,Renderer,SwComposite,RenderBackend,SceneBuilder,WrWorker,CanvasWorkers,TextureUpdate
    * **host from parent**: false
@@ -3094,11 +3069,6 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
         - ❌
-      * - **browsertime-benchmark-custom-car-motionmark-htmlsuite-1-3**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-benchmark-firefox-motionmark-htmlsuite-1-3**
         - ✅
         - ✅
@@ -3233,7 +3203,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
    * **expected**: pass
    * **expose browser profiler**: true
    * **gather cpuTime**: true
-   * **gecko profile features**: stackwalk,js,cpu,processcpu,nomarkerstacks
+   * **gecko profile features**: stackwalk,js,processcpu,nomarkerstacks
    * **gecko profile interval**: 1
    * **gecko profile threads**: GeckoMain,Compositor,Renderer,TaskController,StyleThread
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/benchmarks/speedometer-desktop.toml#19`
@@ -3505,11 +3475,6 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
         - ❌
-      * - **browsertime-benchmark-custom-car-speedometer2**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-benchmark-firefox-speedometer2**
         - ❌
         - ❌
@@ -3634,7 +3599,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
    * **expected**: pass
    * **expose browser profiler**: true
    * **gather cpuTime**: true
-   * **gecko profile features**: stackwalk,js,cpu,processcpu,nomarkerstacks,java
+   * **gecko profile features**: stackwalk,js,processcpu,nomarkerstacks,java
    * **gecko profile interval**: 1
    * **gecko profile threads**: GeckoMain,Compositor,Renderer,TaskController,StyleThread
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/benchmarks/speedometer-mobile.toml#19`
@@ -3906,11 +3871,6 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
         - ❌
-      * - **browsertime-benchmark-custom-car-speedometer2**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-benchmark-firefox-speedometer2**
         - ❌
         - ❌
@@ -4048,7 +4008,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
    * **expected**: pass
    * **expose browser profiler**: true
    * **gather cpuTime**: true
-   * **gecko profile features**: stackwalk,js,cpu,processcpu,nomarkerstacks
+   * **gecko profile features**: stackwalk,js,processcpu,nomarkerstacks
    * **gecko profile interval**: 1
    * **gecko profile threads**: GeckoMain,Compositor,Renderer,TaskController,StyleThread
    * **host from parent**: false
@@ -4348,11 +4308,6 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
         - ❌
-      * - **browsertime-benchmark-custom-car-speedometer3**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-benchmark-firefox-speedometer3**
         - ✅
         - ✅
@@ -4562,7 +4517,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
    * **expected**: pass
    * **expose browser profiler**: true
    * **gather cpuTime**: true
-   * **gecko profile features**: stackwalk,js,cpu,processcpu,nomarkerstacks,java
+   * **gecko profile features**: stackwalk,js,processcpu,nomarkerstacks,java
    * **gecko profile interval**: 1
    * **gecko profile threads**: GeckoMain,Compositor,Renderer,TaskController,StyleThread
    * **host from parent**: false
@@ -4858,11 +4813,6 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - mozilla-release
         - mozilla-beta
       * - **browsertime-benchmark-chrome-speedometer3**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-benchmark-custom-car-speedometer3**
         - ❌
         - ❌
         - ❌
@@ -10783,7 +10733,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#50`
    * **lower is better**: true
@@ -10977,7 +10927,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#54`
    * **lower is better**: true
@@ -11171,7 +11121,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#58`
    * **lower is better**: true
@@ -11365,7 +11315,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#62`
    * **lower is better**: true
@@ -11559,7 +11509,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#66`
    * **lower is better**: true
@@ -11753,7 +11703,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#70`
    * **lower is better**: true
@@ -11947,7 +11897,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#74`
    * **lower is better**: true
@@ -12141,7 +12091,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#78`
    * **lower is better**: true
@@ -12335,7 +12285,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#82`
    * **lower is better**: true
@@ -12529,7 +12479,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#86`
    * **lower is better**: true
@@ -12723,7 +12673,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#90`
    * **lower is better**: true
@@ -12917,7 +12867,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#94`
    * **lower is better**: true
@@ -13830,7 +13780,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#98`
    * **lower is better**: true
@@ -14299,36 +14249,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - ❌
         - ❌
       * - **browsertime-network-bench-chrome-h2-download-300M_80ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h2-download**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h2-download-100M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h2-download-10M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h2-download-1M_400ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h2-download-300M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h2-download-300M_80ms-0**
         - ❌
         - ❌
         - ❌
@@ -14888,36 +14808,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - ❌
         - ❌
         - ❌
-      * - **browsertime-network-bench-custom-car-h2-upload**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h2-upload-100M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h2-upload-10M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h2-upload-1M_400ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h2-upload-300M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h2-upload-300M_80ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-network-bench-firefox-h2-upload**
         - ❌
         - ❌
@@ -15469,36 +15359,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - ❌
         - ❌
       * - **browsertime-network-bench-chrome-h3-download-300M_80ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h3-download**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h3-download-100M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h3-download-10M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h3-download-1M_400ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h3-download-300M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h3-download-300M_80ms-0**
         - ❌
         - ❌
         - ❌
@@ -16058,36 +15918,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - ❌
         - ❌
         - ❌
-      * - **browsertime-network-bench-custom-car-h3-upload**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h3-upload-100M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h3-upload-10M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h3-upload-1M_400ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h3-upload-300M_40ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-network-bench-custom-car-h3-upload-300M_80ms-0**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-network-bench-firefox-h3-upload**
         - ❌
         - ❌
@@ -16365,7 +16195,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#36`
    * **lower is better**: true
@@ -16559,7 +16389,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#40`
    * **lower is better**: true
@@ -16753,7 +16583,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#28`
    * **lower is better**: true
@@ -16947,7 +16777,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **custom data**: true
    * **expected**: pass
    * **gecko profile entries**: 131072000
-   * **gecko profile features**: js,stackwalk,cpu,memory
+   * **gecko profile features**: js,stackwalk,memory
    * **gecko profile threads**: GeckoMain,DOM Worker,IndexedDB
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-indexeddb.toml#32`
    * **lower is better**: true
@@ -17121,27 +16951,212 @@ Browsertime tests that use a custom pageload test script. These use the pageload
 
 
 
-.. dropdown:: prefetch
-   :class-container: anchor-id-prefetch-c
+.. dropdown:: media-seek
+   :class-container: anchor-id-media-seek-c
 
    * Command to Run Locally
 
    .. code-block::
 
-      ./mach raptor -t prefetch
+      ./mach raptor -t media-seek
+
+   **Owner**: Media Team
+
+   **Description**: Measures buffered video seek latency (time from a currentTime seek to the seeked event) with the decoder warm and cold.
+
+   * **alert on**: `seekedColdLatency <raptor-metrics.html#seek-latency>`__, `seekedWarmLatency <raptor-metrics.html#seek-latency>`__
+   * **alert threshold**: 5.0
+   * **apps**: firefox, chrome, safari
+   * **browser cycles**: 1
+   * **browsertime args**: --browsertime.iterations=5
+   * **custom data**: true
+   * **expected**: pass
+   * **gecko profile features**: stackwalk,js,cpu,screenshots
+   * **gecko profile interval**: 1
+   * **gecko profile threads**: GeckoMain,Compositor,MediaDecoderStateMachine,MediaSupervisor,MediaPDecoder,RemVidChild,RemVidParent
+   * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-media-seek.toml#35`
+   * **lower is better**: true
+   * **measure**: seekedColdLatency, seekedWarmLatency
+   * **page cycles**: 5
+   * **page timeout**: 120000
+   * **preferences**: media.autoplay.default=0 media.autoplay.blocking_policy=0 media.autoplay.ask-permission=false media.dormant-on-pause-timeout-ms=0
+   * **subtest unit**: ms
+   * **support class**: media_seek.py
+   * **test script**: media_seek.js
+   * **test summary**: flatten
+   * **test url**: `<None>`__
+   * **type**: pageload
+   * **unit**: ms
+   * **use live sites**: false
+   * **Test Task**:
+
+   .. list-table:: **test-linux2404-64-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-media-seek-firefox-media-seek**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-media-seek-firefox-media-seek**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-media-seek-firefox-media-seek**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-media-seek-firefox-media-seek**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-media-seek-firefox-media-seek**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-media-seek-firefox-media-seek**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-media-seek-firefox-media-seek**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-media-seek-firefox-media-seek**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-media-seek-firefox-media-seek**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+
+.. dropdown:: prefetch-conservative
+   :class-container: anchor-id-prefetch-conservative-c
+
+   * Command to Run Locally
+
+   .. code-block::
+
+      ./mach raptor -t prefetch-conservative
 
    **Owner**: Network Team, Performance Team
 
-   **Description**: Speculation Rules prefetch test: clicks a link on a landing page whose inline speculationrules script (moderate eagerness) prefetches the target during hover, so a prefetch-capable browser serves the navigation from the prefetch cache.
+   **Description**: Speculation Rules prefetch test (conservative eagerness): the inline speculationrules script prefetches the target on pointerdown, which is held so the prefetch can complete before release navigates, letting a prefetch-capable browser serve the navigation from the prefetch cache.
 
    * **alert threshold**: 10.0
    * **apps**: firefox, chrome
    * **browser cycles**: 1
+   * **browsertime args**: --browsertime.eagerness=conservative
    * **cold**: true
    * **custom data**: true
    * **expected**: pass
    * **gecko profile interval**: 1
-   * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-speculation-rules.toml#13`
+   * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-speculation-rules.toml#29`
    * **lower is better**: true
    * **page cycles**: 1
    * **page timeout**: 60000
@@ -17162,7 +17177,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-speculation-rules-firefox-prefetch**
+      * - **browsertime-speculation-rules-firefox-prefetch-conservative**
         - ❌
         - ❌
         - ❌
@@ -17178,12 +17193,12 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-speculation-rules-chrome-prefetch**
+      * - **browsertime-speculation-rules-chrome-prefetch-conservative**
         - ❌
         - ✅
         - ❌
         - ❌
-      * - **browsertime-speculation-rules-firefox-prefetch**
+      * - **browsertime-speculation-rules-firefox-prefetch-conservative**
         - ❌
         - ✅
         - ❌
@@ -17199,7 +17214,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-speculation-rules-firefox-prefetch**
+      * - **browsertime-speculation-rules-firefox-prefetch-conservative**
         - ❌
         - ❌
         - ❌
@@ -17215,7 +17230,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-speculation-rules-firefox-prefetch**
+      * - **browsertime-speculation-rules-firefox-prefetch-conservative**
         - ❌
         - ❌
         - ❌
@@ -17231,7 +17246,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-speculation-rules-firefox-prefetch**
+      * - **browsertime-speculation-rules-firefox-prefetch-conservative**
         - ❌
         - ✅
         - ❌
@@ -17247,7 +17262,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-speculation-rules-firefox-prefetch**
+      * - **browsertime-speculation-rules-firefox-prefetch-conservative**
         - ❌
         - ❌
         - ❌
@@ -17263,7 +17278,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-speculation-rules-firefox-prefetch**
+      * - **browsertime-speculation-rules-firefox-prefetch-conservative**
         - ❌
         - ❌
         - ❌
@@ -17279,7 +17294,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-speculation-rules-firefox-prefetch**
+      * - **browsertime-speculation-rules-firefox-prefetch-conservative**
         - ❌
         - ✅
         - ❌
@@ -17295,7 +17310,556 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **browsertime-speculation-rules-firefox-prefetch**
+      * - **browsertime-speculation-rules-firefox-prefetch-conservative**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+
+.. dropdown:: prefetch-eager
+   :class-container: anchor-id-prefetch-eager-c
+
+   * Command to Run Locally
+
+   .. code-block::
+
+      ./mach raptor -t prefetch-eager
+
+   **Owner**: Network Team, Performance Team
+
+   **Description**: Speculation Rules prefetch test (eager eagerness): the inline speculationrules script prefetches the target on the slightest hover, then the link is clicked so a prefetch-capable browser serves the navigation from the prefetch cache.
+
+   * **alert threshold**: 10.0
+   * **apps**: firefox, chrome
+   * **browser cycles**: 1
+   * **browsertime args**: --browsertime.eagerness=eager
+   * **cold**: true
+   * **custom data**: true
+   * **expected**: pass
+   * **gecko profile interval**: 1
+   * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-speculation-rules.toml#23`
+   * **lower is better**: true
+   * **page cycles**: 1
+   * **page timeout**: 60000
+   * **support class**: speculation_rules.py
+   * **test script**: speculation-rules-prefetch.js
+   * **test url**: `<None>`__
+   * **type**: pageload
+   * **unit**: ms
+   * **use live sites**: true
+   * **Test Task**:
+
+   .. list-table:: **test-linux2404-64-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-eager**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-chrome-prefetch-eager**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+      * - **browsertime-speculation-rules-firefox-prefetch-eager**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-eager**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-eager**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-eager**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-eager**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-eager**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-eager**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-eager**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+
+.. dropdown:: prefetch-immediate
+   :class-container: anchor-id-prefetch-immediate-c
+
+   * Command to Run Locally
+
+   .. code-block::
+
+      ./mach raptor -t prefetch-immediate
+
+   **Owner**: Network Team, Performance Team
+
+   **Description**: Speculation Rules prefetch test (immediate eagerness): the inline speculationrules script prefetches the target as soon as it is parsed, then the link is clicked so a prefetch-capable browser serves the navigation from the prefetch cache.
+
+   * **alert threshold**: 10.0
+   * **apps**: firefox, chrome
+   * **browser cycles**: 1
+   * **browsertime args**: --browsertime.eagerness=immediate
+   * **cold**: true
+   * **custom data**: true
+   * **expected**: pass
+   * **gecko profile interval**: 1
+   * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-speculation-rules.toml#20`
+   * **lower is better**: true
+   * **page cycles**: 1
+   * **page timeout**: 60000
+   * **support class**: speculation_rules.py
+   * **test script**: speculation-rules-prefetch.js
+   * **test url**: `<None>`__
+   * **type**: pageload
+   * **unit**: ms
+   * **use live sites**: true
+   * **Test Task**:
+
+   .. list-table:: **test-linux2404-64-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-immediate**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-chrome-prefetch-immediate**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+      * - **browsertime-speculation-rules-firefox-prefetch-immediate**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-immediate**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-immediate**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-immediate**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-immediate**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-immediate**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-immediate**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-immediate**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+
+.. dropdown:: prefetch-moderate
+   :class-container: anchor-id-prefetch-moderate-c
+
+   * Command to Run Locally
+
+   .. code-block::
+
+      ./mach raptor -t prefetch-moderate
+
+   **Owner**: Network Team, Performance Team
+
+   **Description**: Speculation Rules prefetch test (moderate eagerness): the inline speculationrules script prefetches the target after ~200 ms of sustained hover, then the link is clicked so a prefetch-capable browser serves the navigation from the prefetch cache.
+
+   * **alert threshold**: 10.0
+   * **apps**: firefox, chrome
+   * **browser cycles**: 1
+   * **browsertime args**: --browsertime.eagerness=moderate
+   * **cold**: true
+   * **custom data**: true
+   * **expected**: pass
+   * **gecko profile interval**: 1
+   * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-speculation-rules.toml#26`
+   * **lower is better**: true
+   * **page cycles**: 1
+   * **page timeout**: 60000
+   * **support class**: speculation_rules.py
+   * **test script**: speculation-rules-prefetch.js
+   * **test url**: `<None>`__
+   * **type**: pageload
+   * **unit**: ms
+   * **use live sites**: true
+   * **Test Task**:
+
+   .. list-table:: **test-linux2404-64-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-moderate**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-chrome-prefetch-moderate**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+      * - **browsertime-speculation-rules-firefox-prefetch-moderate**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux2404-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-moderate**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-moderate**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-moderate**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1470-64/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-moderate**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2-nightlyasrelease/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-moderate**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2-shippable/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-moderate**
+        - ❌
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows11-64-24h2/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **browsertime-speculation-rules-firefox-prefetch-moderate**
         - ❌
         - ❌
         - ❌
@@ -20195,11 +20759,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - ❌
         - ❌
         - ❌
-      * - **browsertime-webcodecs-custom-car-ve-av1-q**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-av1-q**
         - ✅
         - ✅
@@ -20590,11 +21149,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - ❌
         - ❌
         - ❌
-      * - **browsertime-webcodecs-custom-car-ve-av1-q-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-av1-q-i420**
         - ✅
         - ✅
@@ -20788,11 +21342,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - mozilla-release
         - mozilla-beta
       * - **browsertime-webcodecs-chrome-ve-av1-rt**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-av1-rt**
         - ❌
         - ❌
         - ❌
@@ -21183,11 +21732,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - mozilla-release
         - mozilla-beta
       * - **browsertime-webcodecs-chrome-ve-av1-rt-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-av1-rt-i420**
         - ❌
         - ❌
         - ❌
@@ -21730,11 +22274,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - mozilla-release
         - mozilla-beta
       * - **browsertime-webcodecs-chrome-ve-h264-q-sd**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-h264-q-sd**
         - ❌
         - ❌
         - ❌
@@ -22416,11 +22955,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - ❌
         - ❌
         - ❌
-      * - **browsertime-webcodecs-custom-car-ve-h264-rt-sd**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-h264-rt-sd**
         - ✅
         - ✅
@@ -22749,11 +23283,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - mozilla-release
         - mozilla-beta
       * - **browsertime-webcodecs-chrome-ve-vp8-q**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp8-q**
         - ❌
         - ❌
         - ❌
@@ -23148,11 +23677,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - ❌
         - ❌
         - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp8-q-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp8-q-i420**
         - ✅
         - ✅
@@ -23346,11 +23870,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - mozilla-release
         - mozilla-beta
       * - **browsertime-webcodecs-chrome-ve-vp8-rt**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp8-rt**
         - ❌
         - ❌
         - ❌
@@ -23745,11 +24264,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - ❌
         - ❌
         - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp8-rt-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp8-rt-i420**
         - ✅
         - ✅
@@ -23943,11 +24457,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - mozilla-release
         - mozilla-beta
       * - **browsertime-webcodecs-chrome-ve-vp9-q**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp9-q**
         - ❌
         - ❌
         - ❌
@@ -24342,11 +24851,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - ❌
         - ❌
         - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp9-q-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp9-q-i420**
         - ✅
         - ✅
@@ -24540,11 +25044,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - mozilla-release
         - mozilla-beta
       * - **browsertime-webcodecs-chrome-ve-vp9-rt**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp9-rt**
         - ❌
         - ❌
         - ❌
@@ -24939,11 +25438,6 @@ Browsertime tests that use a custom pageload test script. These use the pageload
         - ❌
         - ❌
         - ❌
-      * - **browsertime-webcodecs-custom-car-ve-vp9-rt-i420**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-webcodecs-firefox-ve-vp9-rt-i420**
         - ✅
         - ✅
@@ -25040,7 +25534,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **benchmark webserver**: true
    * **browser cycles**: 20
    * **expected**: pass
-   * **gecko profile features**: stackwalk,js,cpu,java,processcpu,screenshots,memory
+   * **gecko profile features**: stackwalk,js,java,processcpu,screenshots,memory
    * **gecko profile interval**: 1
    * **gecko profile threads**: BackgroundThreadPool,Compositor,decoder,GeckoMain,gmp,graph,grph,InotifyEventThread,IPDL Background,media,ModuleProcessThread,PacerThread,RemVidChild,RenderBackend,Renderer,SwComposite,TextureUpdate,ImageBridgeChld
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-video-playback-latency.toml#37`
@@ -25333,7 +25827,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **benchmark webserver**: true
    * **browser cycles**: 20
    * **expected**: pass
-   * **gecko profile features**: stackwalk,js,cpu,java,processcpu,screenshots,memory
+   * **gecko profile features**: stackwalk,js,java,processcpu,screenshots,memory
    * **gecko profile interval**: 1
    * **gecko profile threads**: BackgroundThreadPool,Compositor,decoder,GeckoMain,gmp,graph,grph,InotifyEventThread,IPDL Background,media,ModuleProcessThread,PacerThread,RemVidChild,RenderBackend,Renderer,SwComposite,TextureUpdate,ImageBridgeChld
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-video-playback-latency.toml#31`
@@ -25631,7 +26125,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **benchmark webserver**: true
    * **browser cycles**: 20
    * **expected**: pass
-   * **gecko profile features**: stackwalk,js,cpu,java,processcpu,screenshots,memory
+   * **gecko profile features**: stackwalk,js,java,processcpu,screenshots,memory
    * **gecko profile interval**: 1
    * **gecko profile threads**: BackgroundThreadPool,Compositor,decoder,GeckoMain,gmp,graph,grph,InotifyEventThread,IPDL Background,media,ModuleProcessThread,PacerThread,RemVidChild,RenderBackend,Renderer,SwComposite,TextureUpdate,ImageBridgeChld
    * **link searchfox**: :searchfox:`testing/raptor/raptor/tests/custom/browsertime-video-playback-latency.toml#34`
@@ -26317,11 +26811,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-essential-custom-car-amazon**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-essential-firefox-amazon**
         - ✅
         - ✅
@@ -26691,11 +27180,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-essential-custom-car-bing-search**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-essential-firefox-bing-search**
         - ✅
         - ✅
@@ -26976,11 +27460,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-buzzfeed**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-buzzfeed**
         - ✅
         - ✅
@@ -27241,11 +27720,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6-essential-chrome-cnn**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-cnn**
         - ❌
         - ❌
         - ❌
@@ -27743,11 +28217,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-ebay**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-ebay**
         - ✅
         - ✅
@@ -27992,11 +28461,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-espn**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-espn**
         - ✅
         - ✅
@@ -28202,11 +28666,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - mozilla-release
         - mozilla-beta
       * - **browsertime-tp6-chrome-expedia**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-expedia**
         - ❌
         - ❌
         - ❌
@@ -28446,11 +28905,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - mozilla-release
         - mozilla-beta
       * - **browsertime-tp6-chrome-facebook**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-facebook**
         - ❌
         - ❌
         - ❌
@@ -28749,11 +29203,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6-essential-chrome-fandom**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-fandom**
         - ❌
         - ❌
         - ❌
@@ -29069,11 +29518,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-google-docs**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-google-docs**
         - ✅
         - ✅
@@ -29347,11 +29791,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-google-mail**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-google-mail**
         - ✅
         - ✅
@@ -29621,11 +30060,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - mozilla-release
         - mozilla-beta
       * - **browsertime-tp6-chrome-google-search**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-google-search**
         - ❌
         - ❌
         - ❌
@@ -29930,11 +30364,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6-essential-chrome-google-slides**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-google-slides**
         - ❌
         - ❌
         - ❌
@@ -30249,11 +30678,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-imdb**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-imdb**
         - ✅
         - ✅
@@ -30520,11 +30944,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - mozilla-release
         - mozilla-beta
       * - **browsertime-tp6-chrome-imgur**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-imgur**
         - ❌
         - ❌
         - ❌
@@ -30824,11 +31243,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6-essential-chrome-instagram**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-instagram**
         - ❌
         - ❌
         - ❌
@@ -31138,11 +31552,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-linkedin**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-linkedin**
         - ✅
         - ✅
@@ -31413,11 +31822,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - mozilla-release
         - mozilla-beta
       * - **browsertime-tp6-chrome-microsoft**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-microsoft**
         - ❌
         - ❌
         - ❌
@@ -31696,11 +32100,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-netflix**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-netflix**
         - ✅
         - ✅
@@ -31940,11 +32339,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-nytimes**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-nytimes**
         - ✅
         - ✅
@@ -32150,11 +32544,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - mozilla-release
         - mozilla-beta
       * - **browsertime-tp6-chrome-office**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-office**
         - ❌
         - ❌
         - ❌
@@ -32590,11 +32979,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-outlook**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-outlook**
         - ✅
         - ✅
@@ -32859,11 +33243,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - mozilla-release
         - mozilla-beta
       * - **browsertime-tp6-chrome-paypal**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-paypal**
         - ❌
         - ❌
         - ❌
@@ -33142,11 +33521,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-pinterest**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-pinterest**
         - ✅
         - ✅
@@ -33417,11 +33791,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - mozilla-release
         - mozilla-beta
       * - **browsertime-tp6-chrome-reddit**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-reddit**
         - ❌
         - ❌
         - ❌
@@ -34086,11 +34455,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-tumblr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-tumblr**
         - ✅
         - ✅
@@ -34363,11 +34727,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - mozilla-release
         - mozilla-beta
       * - **browsertime-tp6-chrome-twitch**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-twitch**
         - ❌
         - ❌
         - ❌
@@ -34671,11 +35030,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6-essential-chrome-twitter**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-twitter**
         - ❌
         - ❌
         - ❌
@@ -35148,11 +35502,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-custom-car-wikia**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-firefox-wikia**
         - ✅
         - ✅
@@ -35418,11 +35767,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6-essential-chrome-wikipedia**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-essential-custom-car-wikipedia**
         - ❌
         - ❌
         - ❌
@@ -35766,11 +36110,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
         - ❌
-      * - **browsertime-tp6-essential-custom-car-yahoo-mail**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **browsertime-tp6-essential-firefox-yahoo-mail**
         - ✅
         - ✅
@@ -36077,11 +36416,6 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - mozilla-release
         - mozilla-beta
       * - **browsertime-tp6-chrome-youtube**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **browsertime-tp6-custom-car-youtube**
         - ❌
         - ❌
         - ❌

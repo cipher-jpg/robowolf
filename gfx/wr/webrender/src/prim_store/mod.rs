@@ -4,7 +4,6 @@
 
 use api::ColorF;
 use api::{ImageRendering, PrimitiveFlags};
-use api::{FillRule, POLYGON_CLIP_VERTEX_MAX};
 use api::units::*;
 use malloc_size_of::MallocSizeOf;
 use crate::clip::ClipLeafId;
@@ -42,7 +41,7 @@ use gradient::{LinearGradientDataHandle, RadialGradientDataHandle, ConicGradient
 use image::{ImageDataHandle, ImageScratch, VisibleImageTile, YuvImageDataHandle};
 use line_dec::LineDecorationDataHandle;
 use picture::PictureDataHandle;
-use rectangle::{RectangleDataHandle, RectangleScratch};
+use rectangle::RectangleDataHandle;
 use text_run::{TextRunDataHandle, TextRunScratch};
 use crate::box_shadow::BoxShadowDataHandle;
 
@@ -188,45 +187,9 @@ impl From<WorldRect> for RectKey {
     }
 }
 
-/// To create a fixed-size representation of a polygon, we use a fixed
-/// number of points. Our initialization method restricts us to values
-/// <= 32. If our constant POLYGON_CLIP_VERTEX_MAX is > 32, the Rust
-/// compiler will complain.
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Copy, Debug, Clone, Hash, MallocSizeOf, PartialEq)]
-pub struct PolygonKey {
-    pub point_count: u8,
-    pub points: [PointKey; POLYGON_CLIP_VERTEX_MAX],
-    pub fill_rule: FillRule,
-}
-
-impl PolygonKey {
-    pub fn new(
-        points_layout: &Vec<LayoutPoint>,
-        fill_rule: FillRule,
-    ) -> Self {
-        // We have to fill fixed-size arrays with data from a Vec.
-        // We'll do this by initializing the arrays to known-good
-        // values then overwriting those values as long as our
-        // iterator provides values.
-        let mut points: [PointKey; POLYGON_CLIP_VERTEX_MAX] = [PointKey { x: 0.0, y: 0.0}; POLYGON_CLIP_VERTEX_MAX];
-
-        let mut point_count: u8 = 0;
-        for (src, dest) in points_layout.iter().zip(points.iter_mut()) {
-            *dest = (*src as LayoutPoint).into();
-            point_count = point_count + 1;
-        }
-
-        PolygonKey {
-            point_count,
-            points,
-            fill_rule,
-        }
-    }
-}
-
-impl Eq for PolygonKey {}
+// `PolygonKey` now lives in `webrender_api` so builder-side interning keys can
+// reference it. Re-exported here to keep existing references working.
+pub use api::key_types::PolygonKey;
 
 // `SideOffsetsKey`, `SizeKey`, `PointKey` and `VectorKey` now live in
 // `webrender_api` so builder-side interning keys can reference them. Re-exported
@@ -538,11 +501,6 @@ pub struct PrimitiveFrameScratch {
     /// visible primitive.
     pub draws: Vec<PrimitiveDrawHeader>,
 
-    /// Per-frame scratch for legacy-path Rectangle primitives. Holds the
-    /// per-instance GPU block address. Indexed by `kind_scratch` on
-    /// `PrimitiveKind::Rectangle`.
-    pub rectangle: storage::Storage<RectangleScratch>,
-
     /// Per-frame scratch for Picture primitives. Holds the picture's
     /// primary/secondary render task ids and any per-composite-mode
     /// extra GPU buffer addresses. Indexed by `scratch_handle` on
@@ -608,7 +566,6 @@ impl Default for PrimitiveFrameScratch {
     fn default() -> Self {
         PrimitiveFrameScratch {
             draws: Vec::new(),
-            rectangle: storage::Storage::new(0),
             pictures: storage::Storage::new(0),
             images: storage::Storage::new(0),
             visible_image_tiles: storage::Storage::new(0),
@@ -629,7 +586,6 @@ impl Default for PrimitiveFrameScratch {
 impl PrimitiveFrameScratch {
     pub fn recycle(&mut self, recycler: &mut Recycler) {
         recycler.recycle_vec(&mut self.draws);
-        self.rectangle.recycle(recycler);
         self.pictures.recycle(recycler);
         self.images.recycle(recycler);
         self.visible_image_tiles.recycle(recycler);
@@ -645,7 +601,6 @@ impl PrimitiveFrameScratch {
     }
 
     pub fn begin_frame(&mut self) {
-        self.rectangle.clear();
         self.pictures.clear();
         self.images.clear();
         self.visible_image_tiles.clear();

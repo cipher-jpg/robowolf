@@ -696,16 +696,16 @@ var TabContextMenu = {
 
   closeContextTabs() {
     if (this.contextTab.multiselected) {
-      gBrowser.removeMultiSelectedTabs(
-        gBrowser.TabMetrics.userTriggeredContext(
-          gBrowser.TabMetrics.METRIC_SOURCE.TAB_STRIP
-        )
-      );
+      gBrowser.removeMultiSelectedTabs({
+        metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+          gBrowser.TabMetrics.METRIC_SOURCE.TAB_MENU
+        ),
+      });
     } else {
       gBrowser.removeTab(this.contextTab, {
         animate: true,
-        ...gBrowser.TabMetrics.userTriggeredContext(
-          gBrowser.TabMetrics.METRIC_SOURCE.TAB_STRIP
+        metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+          gBrowser.TabMetrics.METRIC_SOURCE.TAB_MENU
         ),
       });
     }
@@ -731,8 +731,9 @@ var TabContextMenu = {
     }
     gBrowser.addTabGroup(this.contextTabs, {
       insertBefore,
-      isUserTriggered: true,
-      telemetryUserCreateSource: "tab_menu",
+      metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+        gBrowser.TabMetrics.METRIC_SOURCE.TAB_MENU
+      ),
     });
     gBrowser.selectedTab = this.contextTabs[0];
 
@@ -763,8 +764,9 @@ var TabContextMenu = {
     }
     gBrowser.addTabGroup(tabsAndSplitViews, {
       insertBefore,
-      isUserTriggered: true,
-      telemetryUserCreateSource: "tab_menu",
+      metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+        gBrowser.TabMetrics.METRIC_SOURCE.TAB_MENU
+      ),
     });
     gBrowser.selectedTab = this.contextTabs[0];
 
@@ -816,8 +818,8 @@ var TabContextMenu = {
     );
     gBrowser.removeTabs(tabs, {
       animate: true,
-      ...gBrowser.TabMetrics.userTriggeredContext(
-        gBrowser.TabMetrics.METRIC_SOURCE.TAB_STRIP
+      metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+        gBrowser.TabMetrics.METRIC_SOURCE.TAB_MENU
       ),
     });
   },

@@ -13,6 +13,10 @@ const {
 } = reducers;
 import { actionTypes as at } from "common/Actions.mjs";
 
+// Bug 2050900: Add new reducer tests to the Jest suite at
+// test/jest/common/Reducers.test.jsx, not here. This Karma/Enzyme file is being
+// migrated to Jest incrementally; the PrivacyWidget reducer lives there now.
+
 describe("Reducers", () => {
   describe("App", () => {
     it("should return the initial state", () => {
@@ -23,6 +27,36 @@ describe("Reducers", () => {
       const nextState = App(undefined, { type: "INIT" });
 
       assert.propertyVal(nextState, "initialized", true);
+    });
+    it("should show the customize panel on SHOW_PERSONALIZE", () => {
+      const nextState = App(undefined, { type: at.SHOW_PERSONALIZE });
+
+      assert.propertyVal(nextState, "customizeMenuVisible", true);
+      assert.propertyVal(nextState, "customizePanelWallpaperCategory", null);
+    });
+    it("should store the deep-linked wallpaper category on SHOW_PERSONALIZE", () => {
+      const nextState = App(undefined, {
+        type: at.SHOW_PERSONALIZE,
+        data: { wallpaperCategory: "firefox" },
+      });
+
+      assert.propertyVal(
+        nextState,
+        "customizePanelWallpaperCategory",
+        "firefox"
+      );
+    });
+    it("should clear customize panel state on HIDE_PERSONALIZE", () => {
+      const nextState = App(
+        {
+          customizeMenuVisible: true,
+          customizePanelWallpaperCategory: "firefox",
+        },
+        { type: at.HIDE_PERSONALIZE }
+      );
+
+      assert.propertyVal(nextState, "customizeMenuVisible", false);
+      assert.propertyVal(nextState, "customizePanelWallpaperCategory", null);
     });
   });
   describe("TopSites", () => {
@@ -329,6 +363,26 @@ describe("Reducers", () => {
         const state = Prefs(oldState, {
           type: at.PREF_CHANGED,
           data: { name: "foo", value: 2 },
+        });
+        assert.notEqual(oldState.values, state.values);
+      });
+    });
+    describe("MULTIPLE_PREFS_CHANGED", () => {
+      it("should merge multiple values in one pass and keep untouched keys", () => {
+        const oldState = { ...INITIAL_STATE.Prefs, values: { foo: 1, bar: 2 } };
+        const state = Prefs(oldState, {
+          type: at.MULTIPLE_PREFS_CHANGED,
+          data: { values: { foo: 3, baz: 4 } },
+        });
+        assert.equal(state.values.foo, 3);
+        assert.equal(state.values.bar, 2);
+        assert.equal(state.values.baz, 4);
+      });
+      it("should return a new .values object instead of mutating", () => {
+        const oldState = { ...INITIAL_STATE.Prefs, values: { foo: 1 } };
+        const state = Prefs(oldState, {
+          type: at.MULTIPLE_PREFS_CHANGED,
+          data: { values: { foo: 2 } },
         });
         assert.notEqual(oldState.values, state.values);
       });

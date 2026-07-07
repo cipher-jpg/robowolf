@@ -21,8 +21,8 @@
  */
 
 /**
- * pdfjsVersion = 6.0.421
- * pdfjsBuild = d71fe9025
+ * pdfjsVersion = 6.1.239
+ * pdfjsBuild = 0cc1718b0
  */
 
 ;// ./src/shared/util.js
@@ -144,6 +144,13 @@ const AnnotationType = {
 const AnnotationReplyType = {
   GROUP: "Group",
   REPLY: "R"
+};
+const AnnotationRenditionOperation = {
+  PLAY_OR_RESUME: 0,
+  STOP: 1,
+  PAUSE: 2,
+  RESUME: 3,
+  PLAY: 4
 };
 const AnnotationFlag = {
   INVISIBLE: 0x01,
@@ -518,6 +525,9 @@ class FeatureTest {
   }
   static get isAlphaColorInputSupported() {
     return shadow(this, "isAlphaColorInputSupported", false);
+  }
+  static get isBackdropFilterSupported() {
+    return shadow(this, "isBackdropFilterSupported", typeof CSS !== "undefined" && CSS.supports("backdrop-filter", "blur(1px)"));
   }
 }
 class Util {
@@ -1431,7 +1441,7 @@ function escapePDFName(str) {
       if (start < i) {
         buffer.push(str.substring(start, i));
       }
-      buffer.push(`#${char.toString(16)}`);
+      buffer.push(`#${char.toString(16).padStart(2, "0")}`);
       start = i + 1;
     }
   }
@@ -1439,7 +1449,7 @@ function escapePDFName(str) {
     return str;
   }
   if (start < str.length) {
-    buffer.push(str.substring(start, str.length));
+    buffer.push(str.substring(start));
   }
   return buffer.join("");
 }
@@ -1573,7 +1583,7 @@ function encodeToXmlString(str) {
     return str;
   }
   if (start < str.length) {
-    buffer.push(str.substring(start, str.length));
+    buffer.push(str.substring(start));
   }
   return buffer.join("");
 }
@@ -19604,6 +19614,10 @@ const getNonStdFontMap = getLookupTableFactory(function (t) {
   t["MS-PMincho-Italic"] = "MS PMincho-Italic";
   t.NuptialScript = "Times-Italic";
   t.SegoeUISymbol = "Helvetica";
+  t.TrebuchetMS = "Helvetica";
+  t["TrebuchetMS-Bold"] = "Helvetica-Bold";
+  t["TrebuchetMS-BoldItalic"] = "Helvetica-BoldOblique";
+  t["TrebuchetMS-Italic"] = "Helvetica-Oblique";
 });
 const getSerifFonts = getLookupTableFactory(function (t) {
   t["Adobe Jenson"] = true;
@@ -27506,7 +27520,6 @@ class Font {
           hasShortCmap: false
         };
       }
-      mappings.sort((a, b) => a.charCode - b.charCode);
       const finalMappings = [],
         seenCharCodes = new Set();
       for (const map of mappings) {
@@ -27522,7 +27535,7 @@ class Font {
       return {
         platformId: potentialTable.platformId,
         encodingId: potentialTable.encodingId,
-        mappings: finalMappings,
+        mappings: finalMappings.sort((a, b) => a.charCode - b.charCode),
         hasShortCmap
       };
     }
@@ -28478,6 +28491,9 @@ class Font {
             charCodeToGlyphId[i] = glyphId;
           }
         }
+      }
+      if (!properties.isInternalFont && charCodeToGlyphId[0] === undefined && hasGlyph(0)) {
+        charCodeToGlyphId[0] = 0;
       }
     }
     if (charCodeToGlyphId.length === 0) {
@@ -32260,6 +32276,115 @@ function isPDFFunction(v) {
   return fnDict.has("FunctionType");
 }
 
+;// ./src/core/evaluator_utils.js
+
+
+function textSinkWrapper(sink) {
+  const TEXT_CONTENT_CHUNK_SIZE = 100;
+  const resolved = sink ? null : Promise.resolve();
+  return {
+    enqueueInvoked: false,
+    enqueue(chunk, size) {
+      this.enqueueInvoked = true;
+      sink?.enqueue(chunk, size);
+    },
+    get desiredSize() {
+      return sink?.desiredSize ?? TEXT_CONTENT_CHUNK_SIZE;
+    },
+    get ready() {
+      return sink?.ready ?? resolved;
+    }
+  };
+}
+function _parseVisibilityExpression(xref, array, nestingCounter, currentResult) {
+  const MAX_NESTING = 10;
+  if (++nestingCounter > MAX_NESTING) {
+    warn("Visibility expression is too deeply nested");
+    return;
+  }
+  const length = array.length;
+  const operator = xref.fetchIfRef(array[0]);
+  if (length < 2 || !(operator instanceof Name)) {
+    warn("Invalid visibility expression");
+    return;
+  }
+  switch (operator.name) {
+    case "And":
+    case "Or":
+    case "Not":
+      currentResult.push(operator.name);
+      break;
+    default:
+      warn(`Invalid operator ${operator.name} in visibility expression`);
+      return;
+  }
+  for (let i = 1; i < length; i++) {
+    const raw = array[i];
+    const object = xref.fetchIfRef(raw);
+    if (Array.isArray(object)) {
+      const nestedResult = [];
+      currentResult.push(nestedResult);
+      _parseVisibilityExpression(xref, object, nestingCounter, nestedResult);
+    } else if (raw instanceof Ref) {
+      currentResult.push(raw.toString());
+    }
+  }
+}
+function parseMarkedContentProps(xref, contentProperties, resources) {
+  let optionalContent;
+  if (contentProperties instanceof Name) {
+    const properties = resources.get("Properties");
+    optionalContent = properties.get(contentProperties.name);
+  } else if (contentProperties instanceof Dict) {
+    optionalContent = contentProperties;
+  } else {
+    throw new FormatError("Optional content properties malformed.");
+  }
+  const optionalContentType = optionalContent.get("Type")?.name;
+  if (optionalContentType === "OCG") {
+    return {
+      type: optionalContentType,
+      id: optionalContent.objId
+    };
+  } else if (optionalContentType === "OCMD") {
+    const expression = optionalContent.get("VE");
+    if (Array.isArray(expression)) {
+      const result = [];
+      _parseVisibilityExpression(xref, expression, 0, result);
+      if (result.length > 0) {
+        return {
+          type: "OCMD",
+          expression: result
+        };
+      }
+    }
+    const optionalContentGroups = optionalContent.get("OCGs");
+    if (Array.isArray(optionalContentGroups) || optionalContentGroups instanceof Dict) {
+      const groupIds = [];
+      if (Array.isArray(optionalContentGroups)) {
+        for (const ocg of optionalContentGroups) {
+          groupIds.push(ocg.toString());
+        }
+      } else {
+        groupIds.push(optionalContentGroups.objId);
+      }
+      const p = optionalContent.get("P");
+      return {
+        type: optionalContentType,
+        ids: groupIds,
+        policy: p instanceof Name ? p.name : null,
+        expression: null
+      };
+    } else if (optionalContentGroups instanceof Ref) {
+      return {
+        type: optionalContentType,
+        id: optionalContentGroups.toString()
+      };
+    }
+  }
+  return null;
+}
+
 ;// ./src/core/bidi.js
 
 const baseTypes = ["BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "S", "B", "S", "WS", "B", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "B", "B", "B", "S", "WS", "ON", "ON", "ET", "ET", "ET", "ON", "ON", "ON", "ON", "ON", "ES", "CS", "ES", "CS", "CS", "EN", "EN", "EN", "EN", "EN", "EN", "EN", "EN", "EN", "EN", "CS", "ON", "ON", "ON", "ON", "ON", "ON", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "ON", "ON", "ON", "ON", "ON", "ON", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "ON", "ON", "ON", "ON", "BN", "BN", "BN", "BN", "BN", "BN", "B", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "BN", "CS", "ON", "ET", "ET", "ET", "ET", "ON", "ON", "ON", "ON", "L", "ON", "ON", "BN", "ON", "ON", "ET", "ET", "EN", "EN", "ON", "L", "ON", "ON", "ON", "EN", "L", "ON", "ON", "ON", "ON", "ON", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "ON", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "L", "ON", "L", "L", "L", "L", "L", "L", "L", "L"];
@@ -32959,98 +33084,6 @@ class MurmurHash3_64 {
     h1 ^= h2 >>> 1;
     return (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
   }
-}
-
-;// ./src/core/evaluator_utils.js
-
-
-function _parseVisibilityExpression(xref, array, nestingCounter, currentResult) {
-  const MAX_NESTING = 10;
-  if (++nestingCounter > MAX_NESTING) {
-    warn("Visibility expression is too deeply nested");
-    return;
-  }
-  const length = array.length;
-  const operator = xref.fetchIfRef(array[0]);
-  if (length < 2 || !(operator instanceof Name)) {
-    warn("Invalid visibility expression");
-    return;
-  }
-  switch (operator.name) {
-    case "And":
-    case "Or":
-    case "Not":
-      currentResult.push(operator.name);
-      break;
-    default:
-      warn(`Invalid operator ${operator.name} in visibility expression`);
-      return;
-  }
-  for (let i = 1; i < length; i++) {
-    const raw = array[i];
-    const object = xref.fetchIfRef(raw);
-    if (Array.isArray(object)) {
-      const nestedResult = [];
-      currentResult.push(nestedResult);
-      _parseVisibilityExpression(xref, object, nestingCounter, nestedResult);
-    } else if (raw instanceof Ref) {
-      currentResult.push(raw.toString());
-    }
-  }
-}
-function parseMarkedContentProps(xref, contentProperties, resources) {
-  let optionalContent;
-  if (contentProperties instanceof Name) {
-    const properties = resources.get("Properties");
-    optionalContent = properties.get(contentProperties.name);
-  } else if (contentProperties instanceof Dict) {
-    optionalContent = contentProperties;
-  } else {
-    throw new FormatError("Optional content properties malformed.");
-  }
-  const optionalContentType = optionalContent.get("Type")?.name;
-  if (optionalContentType === "OCG") {
-    return {
-      type: optionalContentType,
-      id: optionalContent.objId
-    };
-  } else if (optionalContentType === "OCMD") {
-    const expression = optionalContent.get("VE");
-    if (Array.isArray(expression)) {
-      const result = [];
-      _parseVisibilityExpression(xref, expression, 0, result);
-      if (result.length > 0) {
-        return {
-          type: "OCMD",
-          expression: result
-        };
-      }
-    }
-    const optionalContentGroups = optionalContent.get("OCGs");
-    if (Array.isArray(optionalContentGroups) || optionalContentGroups instanceof Dict) {
-      const groupIds = [];
-      if (Array.isArray(optionalContentGroups)) {
-        for (const ocg of optionalContentGroups) {
-          groupIds.push(ocg.toString());
-        }
-      } else {
-        groupIds.push(optionalContentGroups.objId);
-      }
-      const p = optionalContent.get("P");
-      return {
-        type: optionalContentType,
-        ids: groupIds,
-        policy: p instanceof Name ? p.name : null,
-        expression: null
-      };
-    } else if (optionalContentGroups instanceof Ref) {
-      return {
-        type: optionalContentType,
-        id: optionalContentGroups.toString()
-      };
-    }
-  }
-  return null;
 }
 
 ;// ./src/core/image.js
@@ -35560,6 +35593,7 @@ class PartialEvaluator {
         stream = new Stream(bytes, 0, bytes.length, stream.dict);
       }
     }
+    sink ??= textSinkWrapper(null);
     const objId = stream.dict?.objId;
     const seenRefs = new RefSet(prevRefs);
     if (objId) {
@@ -36048,7 +36082,7 @@ class PartialEvaluator {
       if (batch && length < TEXT_CHUNK_BATCH_SIZE) {
         return;
       }
-      sink?.enqueue(textContent, length);
+      sink.enqueue(textContent, length);
       textContent.items = [];
       textContent.styles = Object.create(null);
     }
@@ -36056,7 +36090,7 @@ class PartialEvaluator {
     return new Promise(function promiseBody(resolve, reject) {
       const next = function (promise) {
         enqueueChunk(true);
-        Promise.all([promise, sink?.ready]).then(function () {
+        Promise.all([promise, sink.ready]).then(function () {
           try {
             promiseBody(resolve, reject);
           } catch (ex) {
@@ -36239,26 +36273,14 @@ class PartialEvaluator {
               }
               const localResources = dict.get("Resources");
               enqueueChunk();
-              const sinkWrapper = {
-                enqueueInvoked: false,
-                enqueue(chunk, size) {
-                  this.enqueueInvoked = true;
-                  sink.enqueue(chunk, size);
-                },
-                get desiredSize() {
-                  return sink.desiredSize ?? 0;
-                },
-                get ready() {
-                  return sink.ready;
-                }
-              };
+              const sinkWrapper = textSinkWrapper(sink);
               self.getTextContent({
                 stream: xobj,
                 task,
                 resources: localResources instanceof Dict ? localResources : resources,
                 stateManager: xObjStateManager,
                 includeMarkedContent,
-                sink: sink && sinkWrapper,
+                sink: sinkWrapper,
                 seenStyles,
                 viewBox,
                 lang,
@@ -36357,7 +36379,7 @@ class PartialEvaluator {
             }
             break;
         }
-        if (textContent.items.length >= (sink?.desiredSize ?? 1)) {
+        if (textContent.items.length >= sink.desiredSize) {
           stop = true;
           break;
         }
@@ -38137,7 +38159,8 @@ class AppearanceStreamEvaluator extends EvaluatorPreprocessor {
             result = stack.pop() || result;
             break;
           case OPS.setTextMatrix:
-            result.scaleFactor *= Math.hypot(args[0], args[1]);
+            const tm = Util.transform(this.stateManager.state.ctm, args);
+            result.scaleFactor *= Math.hypot(tm[0], tm[1]);
             break;
           case OPS.setFont:
             const [fontName, fontSize] = args;
@@ -38655,6 +38678,9 @@ class FileSpec {
     }
     return null;
   }
+  static hasEmbeddedFile(fileSpecDict) {
+    return this.pickPlatformItem(fileSpecDict.get("EF")) instanceof BaseStream;
+  }
   static readContent(dict) {
     if (!(dict instanceof Dict)) {
       return null;
@@ -38676,6 +38702,7 @@ class FileSpec {
 }
 
 ;// ./src/core/xml_parser.js
+
 
 const XMLParserErrorCode = {
   NoError: 0,
@@ -38703,12 +38730,16 @@ function isWhitespaceString(s) {
   return true;
 }
 class XMLParserBase {
+  static get _entityRegex() {
+    return shadow(this, "_entityRegex", /&(?:#x([^;]+)|#([^;]+)|([^;]+));/g);
+  }
   _resolveEntities(s) {
-    return s.replaceAll(/&([^;]+);/g, (all, entity) => {
-      if (entity.substring(0, 2) === "#x") {
-        return String.fromCodePoint(parseInt(entity.substring(2), 16));
-      } else if (entity.at(0) === "#") {
-        return String.fromCodePoint(parseInt(entity.substring(1), 10));
+    return s.replaceAll(XMLParserBase._entityRegex, (_, hex, dec, entity) => {
+      if (hex) {
+        return String.fromCodePoint(parseInt(hex, 16));
+      }
+      if (dec) {
+        return String.fromCodePoint(parseInt(dec, 10));
       }
       switch (entity) {
         case "lt":
@@ -39189,6 +39220,95 @@ class MetadataParser {
   }
 }
 
+;// ./src/core/sound.js
+
+
+const WAV_HEADER_SIZE = 44;
+function getSoundFormat(dict) {
+  if (!dict || dict.has("CO")) {
+    return null;
+  }
+  const sampleRate = dict.get("R");
+  if (!Number.isInteger(sampleRate) || sampleRate <= 0) {
+    return null;
+  }
+  const channels = dict.get("C") ?? 1;
+  if (!Number.isInteger(channels) || channels < 1 || channels > 2) {
+    return null;
+  }
+  const bitsPerSample = dict.get("B") ?? 8;
+  if (bitsPerSample !== 8 && bitsPerSample !== 16) {
+    return null;
+  }
+  const e = dict.get("E");
+  let encoding = "Raw";
+  if (e !== undefined) {
+    encoding = e instanceof Name ? e.name : null;
+  }
+  if (encoding !== "Raw" && encoding !== "Signed") {
+    return null;
+  }
+  return {
+    channels,
+    sampleRate,
+    bitsPerSample,
+    encoding
+  };
+}
+function soundStreamToWav(stream, samples) {
+  const format = getSoundFormat(stream.dict);
+  if (!format) {
+    return null;
+  }
+  const {
+    channels,
+    sampleRate,
+    bitsPerSample,
+    encoding
+  } = format;
+  const blockAlign = channels * (bitsPerSample >> 3);
+  const dataLength = samples.length - samples.length % blockAlign;
+  if (dataLength === 0) {
+    return null;
+  }
+  const wav = new Uint8Array(WAV_HEADER_SIZE + dataLength);
+  const view = new DataView(wav.buffer);
+  wav.set(stringToBytes("RIFF"), 0);
+  view.setUint32(4, WAV_HEADER_SIZE - 8 + dataLength, true);
+  wav.set(stringToBytes("WAVE"), 8);
+  wav.set(stringToBytes("fmt "), 12);
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  wav.set(stringToBytes("data"), 36);
+  view.setUint32(40, dataLength, true);
+  if (bitsPerSample === 16) {
+    const signed = encoding === "Signed";
+    for (let i = 0; i < dataLength; i += 2) {
+      let value = samples[i] << 8 | samples[i + 1];
+      if (signed) {
+        if (value >= 0x8000) {
+          value -= 0x10000;
+        }
+      } else {
+        value -= 0x8000;
+      }
+      view.setInt16(WAV_HEADER_SIZE + i, value, true);
+    }
+  } else if (encoding === "Signed") {
+    for (let i = 0; i < dataLength; i++) {
+      wav[WAV_HEADER_SIZE + i] = samples[i] + 128 & 0xff;
+    }
+  } else {
+    wav.set(samples.subarray(0, dataLength), WAV_HEADER_SIZE);
+  }
+  return wav;
+}
+
 ;// ./src/core/struct_tree.js
 
 
@@ -39206,14 +39326,26 @@ const StructElementType = {
   ELEMENT: 5
 };
 class StructTreeRoot {
+  kidRefToPosition = undefined;
+  parentTree = null;
+  roleMap = new Map();
+  structParentIds = null;
   constructor(xref, rootDict, rootRef) {
     this.xref = xref;
     this.dict = rootDict;
     this.ref = rootRef instanceof Ref ? rootRef : null;
-    this.roleMap = new Map();
-    this.structParentIds = null;
-    this.kidRefToPosition = undefined;
-    this.parentTree = null;
+    const roleMap = rootDict.get("RoleMap");
+    if (roleMap instanceof Dict) {
+      for (const [key, value] of roleMap) {
+        if (value instanceof Name) {
+          this.roleMap.set(key, value.name);
+        }
+      }
+    }
+    const parentTree = rootDict.getRaw("ParentTree");
+    if (parentTree) {
+      this.parentTree = new NumberTree(parentTree, xref);
+    }
   }
   getKidPosition(kidRef) {
     if (this.kidRefToPosition === undefined) {
@@ -39236,14 +39368,6 @@ class StructTreeRoot {
     }
     return this.kidRefToPosition ? this.kidRefToPosition.get(kidRef) ?? NaN : -1;
   }
-  init() {
-    this.readRoleMap();
-    const parentTree = this.dict.get("ParentTree");
-    if (!parentTree) {
-      return;
-    }
-    this.parentTree = new NumberTree(parentTree, this.xref);
-  }
   #addIdToPage(pageRef, id, type) {
     if (!(pageRef instanceof Ref) || id < 0) {
       return;
@@ -39258,17 +39382,6 @@ class StructTreeRoot {
   }
   addAnnotationIdToPage(pageRef, id) {
     this.#addIdToPage(pageRef, id, StructElementType.ANNOTATION);
-  }
-  readRoleMap() {
-    const roleMapDict = this.dict.get("RoleMap");
-    if (!(roleMapDict instanceof Dict)) {
-      return;
-    }
-    for (const [key, value] of roleMapDict) {
-      if (value instanceof Name) {
-        this.roleMap.set(key, value.name);
-      }
-    }
   }
   static async canCreateStructureTree({
     catalogRef,
@@ -40040,6 +40153,7 @@ class StructTreePage {
 
 
 
+
 const isRef = v => v instanceof Ref;
 const isValidExplicitDest = _isValidExplicitDest.bind(null, isRef, isName);
 function fetchDest(dest) {
@@ -40066,6 +40180,7 @@ class Catalog {
   #actualNumPages = null;
   #annotationAttachmentIdByRef = new RefSetCache();
   #annotationAttachmentRefById = new Map();
+  #soundAttachmentIds = new Set();
   #catDict = null;
   builtInCMapCache = new Map();
   fontCache = new RefSetCache();
@@ -40089,19 +40204,21 @@ class Catalog {
   cloneDict() {
     return this.#catDict.clone();
   }
-  getAttachmentIdForAnnotation(ref) {
+  getAttachmentIdForAnnotation(ref, isSound = false) {
     let id = this.#annotationAttachmentIdByRef.get(ref);
-    if (id) {
-      return id;
+    if (!id) {
+      const baseId = `attachmentRef:${ref.toString()}`;
+      id = baseId;
+      let i = 1;
+      while (this.#annotationAttachmentRefById.has(id) || this.attachments?.has(id)) {
+        id = `${baseId}-${i++}`;
+      }
+      this.#annotationAttachmentIdByRef.put(ref, id);
+      this.#annotationAttachmentRefById.set(id, ref);
     }
-    const baseId = `attachmentRef:${ref.toString()}`;
-    id = baseId;
-    let i = 1;
-    while (this.#annotationAttachmentRefById.has(id) || this.attachments?.has(id)) {
-      id = `${baseId}-${i++}`;
+    if (isSound) {
+      this.#soundAttachmentIds.add(id);
     }
-    this.#annotationAttachmentIdByRef.put(ref, id);
-    this.#annotationAttachmentRefById.set(id, ref);
     return id;
   }
   get version() {
@@ -40224,14 +40341,9 @@ class Catalog {
     return shadow(this, "structTreeRoot", structTree);
   }
   #readStructTreeRoot() {
-    const rawObj = this.#catDict.getRaw("StructTreeRoot");
-    const obj = this.xref.fetchIfRef(rawObj);
-    if (!(obj instanceof Dict)) {
-      return null;
-    }
-    const root = new StructTreeRoot(this.xref, obj, rawObj);
-    root.init();
-    return root;
+    const rawObj = this.#catDict.getRaw("StructTreeRoot"),
+      obj = this.xref.fetchIfRef(rawObj);
+    return obj instanceof Dict ? new StructTreeRoot(this.xref, obj, rawObj) : null;
   }
   get toplevelPagesDict() {
     const pagesObj = this.#catDict.get("Pages");
@@ -40941,7 +41053,11 @@ class Catalog {
     if (ref) {
       const target = this.xref.fetch(ref);
       if (target instanceof BaseStream) {
-        return FileSpec.readStreamContent(target);
+        const content = FileSpec.readStreamContent(target);
+        if (this.#soundAttachmentIds.has(id)) {
+          return soundStreamToWav(target, content) ?? content;
+        }
+        return content;
       }
       return target instanceof Dict ? FileSpec.readContent(target) : null;
     }
@@ -52562,10 +52678,12 @@ class XFAFactory {
 
 
 
+
 class AnnotationFactory {
   static createGlobals(pdfManager) {
     return Promise.all([pdfManager.ensureCatalog("acroForm"), pdfManager.ensureDoc("xfaDatasets"), pdfManager.ensureCatalog("structTreeRoot"), pdfManager.ensureCatalog("baseUrl"), pdfManager.ensureCatalog("attachments"), pdfManager.ensureCatalog("globalColorSpaceCache")]).then(([acroForm, xfaDatasets, structTreeRoot, baseUrl, attachments, globalColorSpaceCache]) => ({
       pdfManager,
+      catalog: pdfManager.pdfDocument.catalog,
       acroForm: acroForm instanceof Dict ? acroForm : Dict.empty,
       xfaDatasets,
       structTreeRoot,
@@ -52665,6 +52783,10 @@ class AnnotationFactory {
         return new FileAttachmentAnnotation(parameters);
       case "RichMedia":
         return new RichMediaAnnotation(parameters);
+      case "Screen":
+        return new ScreenAnnotation(parameters);
+      case "Sound":
+        return new SoundAnnotation(parameters);
       default:
         if (!collectFields) {
           if (!subtype) {
@@ -52928,6 +53050,7 @@ function getTransformMatrix(rect, bbox, matrix) {
   return [xRatio, 0, 0, yRatio, rect[0] - minX * xRatio, rect[1] - minY * yRatio];
 }
 class Annotation {
+  appearance = null;
   _oc = undefined;
   constructor(params) {
     const {
@@ -53191,7 +53314,6 @@ class Annotation {
     }
   }
   setAppearance(dict) {
-    this.appearance = null;
     const appearanceStates = dict.get("AP");
     if (!(appearanceStates instanceof Dict)) {
       return;
@@ -53205,7 +53327,7 @@ class Annotation {
       return;
     }
     const as = dict.get("AS");
-    if (!(as instanceof Name) || !normalAppearanceState.has(as.name)) {
+    if (!(as instanceof Name)) {
       return;
     }
     const appearance = normalAppearanceState.get(as.name);
@@ -53298,6 +53420,8 @@ class Annotation {
     const resources = await this.loadResources(RESOURCES_KEYS_TEXT_CONTENT, this.appearance);
     const text = [];
     const buffer = [];
+    let firstPositionX = Infinity;
+    let firstPositionY = Infinity;
     let firstPosition = null;
     const sink = {
       desiredSize: Math.Infinity,
@@ -53307,7 +53431,8 @@ class Annotation {
           if (item.str === undefined) {
             continue;
           }
-          firstPosition ||= item.transform.slice(-2);
+          firstPositionX = Math.min(firstPositionX, item.transform[4]);
+          firstPositionY = Math.min(firstPositionY, item.transform[5]);
           buffer.push(item.str);
           if (item.hasEOL) {
             text.push(buffer.join("").trimEnd());
@@ -53326,6 +53451,9 @@ class Annotation {
       viewBox
     });
     this.reset();
+    if (firstPositionX !== Infinity) {
+      firstPosition = [firstPositionX, firstPositionY];
+    }
     if (buffer.length) {
       text.push(buffer.join("").trimEnd());
     }
@@ -53402,6 +53530,15 @@ class Annotation {
       }
     }
     return fieldName.join(".");
+  }
+  _getAttachmentId(fsDict, fsRef, annotationGlobals, isSound = false) {
+    if (!(fsDict instanceof Dict)) {
+      return undefined;
+    }
+    if (!(fsRef instanceof Ref)) {
+      fsRef = FileSpec.pickPlatformItem(fsDict.get("EF"), true);
+    }
+    return fsRef instanceof Ref ? annotationGlobals.catalog.getAttachmentIdForAnnotation(fsRef, isSound) : undefined;
   }
   get width() {
     return this.data.rect[2] - this.data.rect[0];
@@ -54406,7 +54543,7 @@ class TextWidgetAnnotation extends WidgetAnnotation {
       }
     }
     if (startChunk < line.length) {
-      chunks.push(line.substring(startChunk, line.length));
+      chunks.push(line.substring(startChunk));
     }
     return chunks;
   }
@@ -56162,34 +56299,73 @@ class FileAttachmentAnnotation extends MarkupAnnotation {
       dict
     } = params;
     const fsDict = dict.get("FS");
-    const file = new FileSpec(fsDict);
-    const {
-      catalog
-    } = annotationGlobals.pdfManager.pdfDocument;
-    let fileId;
-    if (fsDict instanceof Dict) {
-      let contentRef = dict.getRaw("FS");
-      if (!(contentRef instanceof Ref)) {
-        contentRef = FileSpec.pickPlatformItem(fsDict.get("EF"), true);
-      }
-      if (contentRef instanceof Ref) {
-        fileId = catalog?.getAttachmentIdForAnnotation(contentRef);
-      }
-    }
     this.data.hasOwnCanvas = this.data.noRotate;
     this.data.noHTML = false;
-    this.data.fileId = fileId;
-    this.data.file = file.serializable;
+    this.data.fileId = this._getAttachmentId(fsDict, dict.getRaw("FS"), annotationGlobals);
+    this.data.file = new FileSpec(fsDict).serializable;
     const name = dict.get("Name");
     this.data.name = name instanceof Name ? stringToPDFString(name.name) : "PushPin";
     const fillAlpha = dict.get("ca");
     this.data.fillAlpha = typeof fillAlpha === "number" && fillAlpha >= 0 && fillAlpha <= 1 ? fillAlpha : null;
   }
 }
-class RichMediaAnnotation extends Annotation {
+class MediaAnnotation extends Annotation {
+  static #MEDIA_MIME_TYPE_RE = /^(?:video|audio)\//;
   constructor(params) {
     super(params);
     this.data.noHTML = true;
+  }
+  _setMediaData({
+    assetRef,
+    assetDict,
+    filename,
+    contentType,
+    wrapSound = false
+  }, annotationGlobals) {
+    this.data.noHTML = false;
+    this.data.richMedia = {
+      fileId: this._getAttachmentId(assetDict, assetRef, annotationGlobals, wrapSound),
+      filename,
+      contentType
+    };
+  }
+  static _getContentType(assetDict, filename, contentType = null) {
+    if (typeof contentType === "string" && MediaAnnotation.#MEDIA_MIME_TYPE_RE.test(contentType)) {
+      return contentType;
+    }
+    const stream = FileSpec.pickPlatformItem(assetDict.get("EF"));
+    const subtype = stream instanceof BaseStream ? stream.dict?.get("Subtype") : null;
+    if (subtype instanceof Name && MediaAnnotation.#MEDIA_MIME_TYPE_RE.test(subtype.name)) {
+      return subtype.name;
+    }
+    const ext = filename.split(".").at(-1)?.toLowerCase();
+    switch (ext) {
+      case "mp4":
+      case "m4v":
+        return "video/mp4";
+      case "webm":
+        return "video/webm";
+      case "ogv":
+        return "video/ogg";
+      case "mov":
+        return "video/quicktime";
+      case "mp3":
+        return "audio/mpeg";
+      case "m4a":
+        return "audio/mp4";
+      case "wav":
+        return "audio/wav";
+      case "oga":
+      case "ogg":
+        return "audio/ogg";
+      default:
+        return null;
+    }
+  }
+}
+class RichMediaAnnotation extends MediaAnnotation {
+  constructor(params) {
+    super(params);
     const {
       dict,
       xref,
@@ -56204,23 +56380,7 @@ class RichMediaAnnotation extends Annotation {
       warn("RichMedia annotation has no playable asset.");
       return;
     }
-    const {
-      assetRef,
-      assetDict,
-      filename,
-      contentType
-    } = asset;
-    let contentRef = assetRef;
-    if (!(contentRef instanceof Ref)) {
-      contentRef = FileSpec.pickPlatformItem(assetDict.get("EF"), true);
-    }
-    const fileId = contentRef instanceof Ref ? annotationGlobals.pdfManager.pdfDocument.catalog?.getAttachmentIdForAnnotation(contentRef) : undefined;
-    this.data.noHTML = false;
-    this.data.richMedia = {
-      fileId,
-      filename,
-      contentType
-    };
+    this._setMediaData(asset, annotationGlobals);
   }
   static #findAsset(content, xref) {
     const configurations = content.get("Configurations");
@@ -56249,10 +56409,13 @@ class RichMediaAnnotation extends Annotation {
         if (!(asset instanceof Dict)) {
           continue;
         }
+        if (!FileSpec.hasEmbeddedFile(asset)) {
+          continue;
+        }
         const {
           filename
         } = new FileSpec(asset).serializable;
-        const contentType = RichMediaAnnotation.#getContentType(asset, filename);
+        const contentType = MediaAnnotation._getContentType(asset, filename);
         if (!contentType) {
           continue;
         }
@@ -56266,35 +56429,149 @@ class RichMediaAnnotation extends Annotation {
     }
     return null;
   }
-  static #getContentType(assetDict, filename) {
-    const stream = FileSpec.pickPlatformItem(assetDict.get("EF"));
-    const subtype = stream instanceof BaseStream ? stream.dict?.get("Subtype") : null;
-    if (subtype instanceof Name && /^(?:video|audio)\//.test(subtype.name)) {
-      return subtype.name;
+}
+class ScreenAnnotation extends MediaAnnotation {
+  constructor(params) {
+    super(params);
+    const {
+      dict,
+      xref,
+      annotationGlobals
+    } = params;
+    const asset = ScreenAnnotation.#findAsset(dict, xref);
+    if (!asset) {
+      return;
     }
-    const ext = filename.split(".").at(-1)?.toLowerCase();
-    switch (ext) {
-      case "mp4":
-      case "m4v":
-        return "video/mp4";
-      case "webm":
-        return "video/webm";
-      case "ogv":
-        return "video/ogg";
-      case "mov":
-        return "video/quicktime";
-      case "mp3":
-        return "audio/mpeg";
-      case "m4a":
-        return "audio/mp4";
-      case "wav":
-        return "audio/wav";
-      case "oga":
-      case "ogg":
-        return "audio/ogg";
-      default:
+    this._setMediaData(asset, annotationGlobals);
+  }
+  static #findAsset(dict, xref) {
+    for (const action of this.#renditionActions(dict)) {
+      const asset = this.#findRenditionAsset(action.get("R"), xref, new RefSet());
+      if (asset) {
+        return asset;
+      }
+    }
+    return null;
+  }
+  static *#renditionActions(dict) {
+    const action = dict.get("A");
+    if (action instanceof Dict && isName(action.get("S"), "Rendition") && this.#isPlayAction(action)) {
+      yield action;
+    }
+    const additionalActions = dict.get("AA");
+    if (additionalActions instanceof Dict) {
+      for (const [, aa] of additionalActions) {
+        if (aa instanceof Dict && isName(aa.get("S"), "Rendition") && this.#isPlayAction(aa)) {
+          yield aa;
+        }
+      }
+    }
+  }
+  static #isPlayAction(action) {
+    const operation = action.get("OP");
+    return operation === undefined || operation === AnnotationRenditionOperation.PLAY_OR_RESUME || operation === AnnotationRenditionOperation.PLAY;
+  }
+  static #findRenditionAsset(rendition, xref, seen) {
+    if (!(rendition instanceof Dict)) {
+      return null;
+    }
+    const subtype = rendition.get("S");
+    if (isName(subtype, "MR")) {
+      return this.#findClipAsset(rendition.get("C"), xref);
+    }
+    if (isName(subtype, "SR")) {
+      const renditions = rendition.get("R");
+      if (Array.isArray(renditions)) {
+        for (const ref of renditions) {
+          if (ref instanceof Ref) {
+            if (seen.has(ref)) {
+              continue;
+            }
+            seen.put(ref);
+          }
+          const asset = this.#findRenditionAsset(xref.fetchIfRef(ref), xref, seen);
+          if (asset) {
+            return asset;
+          }
+        }
+      }
+    }
+    return null;
+  }
+  static #findClipAsset(clip, xref) {
+    if (!(clip instanceof Dict) || !isName(clip.get("S"), "MCD")) {
+      return null;
+    }
+    const rawData = clip.getRaw("D");
+    const data = xref.fetchIfRef(rawData);
+    const contentTypeHint = clip.get("CT");
+    let explicitType = typeof contentTypeHint === "string" ? contentTypeHint : null;
+    let assetDict, filename;
+    if (data instanceof BaseStream) {
+      assetDict = data.dict;
+      const name = clip.get("N");
+      filename = typeof name === "string" ? stringToPDFString(name) : "";
+      if (!explicitType) {
+        const subtype = data.dict.get("Subtype");
+        if (subtype instanceof Name) {
+          explicitType = subtype.name;
+        }
+      }
+    } else if (data instanceof Dict) {
+      if (!FileSpec.hasEmbeddedFile(data)) {
         return null;
+      }
+      assetDict = data;
+      ({
+        filename
+      } = new FileSpec(data).serializable);
+    } else {
+      return null;
     }
+    const contentType = MediaAnnotation._getContentType(assetDict, filename, explicitType);
+    if (!contentType) {
+      return null;
+    }
+    return {
+      assetRef: rawData instanceof Ref ? rawData : null,
+      assetDict,
+      filename,
+      contentType
+    };
+  }
+}
+class SoundAnnotation extends MediaAnnotation {
+  constructor(params) {
+    super(params);
+    const {
+      dict,
+      xref,
+      annotationGlobals
+    } = params;
+    const soundRef = dict.getRaw("Sound");
+    if (!(soundRef instanceof Ref)) {
+      return;
+    }
+    let sound;
+    try {
+      sound = xref.fetch(soundRef);
+    } catch (ex) {
+      if (ex instanceof MissingDataException) {
+        throw ex;
+      }
+      warn(`SoundAnnotation: "${ex}".`);
+      return;
+    }
+    if (!(sound instanceof BaseStream) || !getSoundFormat(sound.dict)) {
+      return;
+    }
+    this._setMediaData({
+      assetRef: soundRef,
+      assetDict: sound.dict,
+      filename: "sound.wav",
+      contentType: "audio/wav",
+      wrapSound: true
+    }, annotationGlobals);
   }
 }
 
@@ -59045,8 +59322,6 @@ class Page {
         includeMarkedContent: false,
         disableNormalization: false,
         sink: null,
-        viewBox: this.view,
-        lang: null,
         intersector
       }).then(() => {
         intersector.setText();
@@ -59184,6 +59459,7 @@ function find(stream, signature, limit = 1024, backwards = false) {
 }
 class PDFDocument {
   #pagePromises = new Map();
+  #signatureData = null;
   #version = null;
   constructor(pdfManager, stream) {
     if (stream.length <= 0) {
@@ -59938,6 +60214,143 @@ class PDFDocument {
       };
     });
     return shadow(this, "fieldObjects", promise);
+  }
+  #collectSignatureFields(fields, out, visitedRefs) {
+    if (!Array.isArray(fields)) {
+      return;
+    }
+    for (const fieldRef of fields) {
+      if (fieldRef instanceof Ref) {
+        if (visitedRefs.has(fieldRef)) {
+          continue;
+        }
+        visitedRefs.put(fieldRef);
+      }
+      const field = this.xref.fetchIfRef(fieldRef);
+      if (!(field instanceof Dict)) {
+        continue;
+      }
+      if (field.has("Kids")) {
+        this.#collectSignatureFields(field.get("Kids"), out, visitedRefs);
+        continue;
+      }
+      if (!isName(field.get("FT"), "Sig")) {
+        continue;
+      }
+      const sigDict = this.xref.fetchIfRef(field.get("V"));
+      if (!(sigDict instanceof Dict)) {
+        continue;
+      }
+      const parsed = this.#parseSignatureDict(field, sigDict, fieldRef);
+      if (parsed) {
+        out.push(parsed);
+      }
+    }
+  }
+  static #WHOLE_DOCUMENT_TAIL_FUZZ = 100;
+  #parseSignatureDict(field, sigDict, fieldRef) {
+    const byteRange = sigDict.get("ByteRange");
+    if (!Array.isArray(byteRange) || byteRange.length !== 4 || byteRange.some(n => !Number.isInteger(n) || n < 0)) {
+      return null;
+    }
+    const contents = sigDict.get("Contents");
+    if (typeof contents !== "string" || contents.length === 0) {
+      return null;
+    }
+    const filterName = sigDict.get("Filter");
+    const filter = filterName instanceof Name ? filterName.name : null;
+    const subFilterName = sigDict.get("SubFilter");
+    const subFilter = subFilterName instanceof Name ? subFilterName.name : null;
+    let signatureType = null;
+    if (subFilter === "adbe.pkcs7.detached") {
+      signatureType = 0;
+    } else if (subFilter === "adbe.pkcs7.sha1") {
+      signatureType = 1;
+    }
+    const [a, b, c, d] = byteRange;
+    const stream = this.stream;
+    const fileLength = stream.end || 0;
+    if (a !== 0 || b <= 0 || d < 0 || a + b > c || c + d > fileLength || fileLength === 0) {
+      return null;
+    }
+    const data = [stream.getByteRange(a, a + b), stream.getByteRange(c, c + d)];
+    const pkcs7 = stringToBytes(contents);
+    const t = field.get("T");
+    const fieldName = typeof t === "string" ? stringToPDFString(t) : "";
+    const name = sigDict.get("Name");
+    const reason = sigDict.get("Reason");
+    const location = sigDict.get("Location");
+    const contactInfo = sigDict.get("ContactInfo");
+    const m = sigDict.get("M");
+    const refKey = fieldRef instanceof Ref ? fieldRef.toString() : "inline";
+    const id = `${refKey}:${a}-${b}-${c}-${d}`;
+    const tailGap = fileLength - (c + d);
+    return {
+      id,
+      fieldName,
+      signerName: typeof name === "string" ? stringToPDFString(name) : null,
+      reason: typeof reason === "string" ? stringToPDFString(reason) : null,
+      location: typeof location === "string" ? stringToPDFString(location) : null,
+      contactInfo: typeof contactInfo === "string" ? stringToPDFString(contactInfo) : null,
+      signingTime: typeof m === "string" ? m : null,
+      filter,
+      subFilter,
+      signatureType,
+      byteRange,
+      pkcs7,
+      data,
+      revisionIndex: 0,
+      parentId: null,
+      coversWholeDocument: tailGap >= 0 && tailGap <= PDFDocument.#WHOLE_DOCUMENT_TAIL_FUZZ
+    };
+  }
+  get signatures() {
+    const promise = this.pdfManager.ensureDoc("formInfo").then(async formInfo => {
+      if (!formInfo.hasSignatures || !formInfo.hasFields) {
+        this.#signatureData = null;
+        return null;
+      }
+      const annotationGlobals = await this.annotationGlobals;
+      if (!annotationGlobals) {
+        this.#signatureData = null;
+        return null;
+      }
+      const fields = annotationGlobals.acroForm.get("Fields");
+      const collected = [];
+      this.#collectSignatureFields(fields, collected, new RefSet());
+      collected.sort((a, b) => b.byteRange[2] + b.byteRange[3] - (a.byteRange[2] + a.byteRange[3]));
+      for (let i = 0, ii = collected.length; i < ii; i++) {
+        const sig = collected[i];
+        sig.revisionIndex = i;
+        for (let j = i - 1; j >= 0; j--) {
+          const candidate = collected[j];
+          if (candidate.byteRange[2] + candidate.byteRange[3] > sig.byteRange[2] + sig.byteRange[3]) {
+            sig.parentId = candidate.id;
+            break;
+          }
+        }
+      }
+      const signatureData = new Map();
+      const metadata = collected.map(sig => {
+        const {
+          data,
+          pkcs7,
+          ...rest
+        } = sig;
+        signatureData.set(sig.id, {
+          data,
+          pkcs7
+        });
+        return rest;
+      });
+      this.#signatureData = signatureData;
+      return metadata.length ? metadata : null;
+    });
+    return shadow(this, "signatures", promise);
+  }
+  async getSignatureData(id) {
+    await this.signatures;
+    return this.#signatureData?.get(id) ?? null;
   }
   get hasJSActions() {
     const promise = this.pdfManager.ensureDoc("_parseHasJSActions");
@@ -63004,7 +63417,7 @@ class PDFEditor {
     const {
       pageLabels
     } = this;
-    if (!pageLabels || pageLabels.length === 0) {
+    if (!pageLabels?.length) {
       return;
     }
     const {
@@ -63075,7 +63488,7 @@ class PDFEditor {
     const {
       structTreeKids
     } = this;
-    if (!structTreeKids || structTreeKids.length === 0) {
+    if (!structTreeKids?.length) {
       return;
     }
     const {
@@ -63533,7 +63946,7 @@ class WorkerMessageHandler {
       docId,
       apiVersion
     } = docParams;
-    const workerVersion = "6.0.421";
+    const workerVersion = "6.1.239";
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
     }
@@ -63853,6 +64266,12 @@ class WorkerMessageHandler {
     });
     handler.on("GetFieldObjects", function (data) {
       return pdfManager.ensureDoc("fieldObjects").then(fieldObjects => fieldObjects?.allFields || null);
+    });
+    handler.on("GetSignatures", function (data) {
+      return pdfManager.ensureDoc("signatures");
+    });
+    handler.on("GetSignatureData", function (id) {
+      return pdfManager.ensureDoc("getSignatureData", [id]);
     });
     handler.on("HasJSActions", function (data) {
       return pdfManager.ensureDoc("hasJSActions");

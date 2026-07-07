@@ -26,7 +26,6 @@ use crate::prim_store::{ClipTaskIndex, PictureIndex, PrimitiveKind, SegmentInsta
 use crate::prim_store::{PrimitiveStore, PrimitiveInstance, PrimitiveInstanceIndex};
 use crate::prim_store::borders::ImageBorderScratch;
 use crate::prim_store::image::ImageScratch;
-use crate::prim_store::rectangle::RectangleScratch;
 use crate::prim_store::storage;
 use crate::prim_store::text_run::TextRunScratch;
 use crate::render_backend::{DataStores, ScratchBuffer};
@@ -123,7 +122,6 @@ pub enum DrawState {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 pub enum KindScratchHandle {
     None,
-    Rectangle(storage::Index<RectangleScratch>),
     ImageBorder(storage::Index<ImageBorderScratch>),
     Image(storage::Index<ImageScratch>),
     TextRun(storage::Index<TextRunScratch>),
@@ -131,15 +129,6 @@ pub enum KindScratchHandle {
 }
 
 impl KindScratchHandle {
-    /// Extract the specific scratch index. Panics if the variant
-    /// doesn't match — readers in the specific arm of the
-    /// PrimitiveKind match know the variant by construction.
-   pub fn unwrap_rectangle(&self) -> storage::Index<RectangleScratch> {
-        match *self {
-            KindScratchHandle::Rectangle(h) => h,
-            _ => panic!("kind_scratch mismatch: expected Rectangle, got {:?}", self),
-        }
-    }
     /// Extract the specific scratch index. Panics if the variant
     /// doesn't match — readers in the specific arm of the
     /// PrimitiveKind match know the variant by construction.
@@ -474,6 +463,26 @@ pub fn update_prim_visibility(
                     continue;
                 }
             };
+
+            let is_mix_blend_picture = |prim_instance: &PrimitiveInstance| {
+                if let PrimitiveKind::Picture { pic_index, .. } = prim_instance.kind {
+                    let pic = &store.pictures[pic_index.0];
+
+                    matches!(
+                        pic.composite_mode,
+                        Some(PictureCompositeMode::MixBlend(_))
+                    )
+                } else {
+                    false
+                }
+            };
+
+            if is_root_tile_cache && is_mix_blend_picture(prim_instance) {
+                let prim_clip_chain = &frame_state.scratch.primitive.frame.draws[prim_instance_index].clip_chain;
+                if let Some(tile_cache) = tile_cache {
+                    tile_cache.mix_blend_pic_rects.push(prim_clip_chain.pic_coverage_rect);
+                }
+            }
 
             {
                 let prim_surface_index = frame_state.surface_stack.last().unwrap().1;

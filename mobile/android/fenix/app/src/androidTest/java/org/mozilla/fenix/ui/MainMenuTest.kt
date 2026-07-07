@@ -67,7 +67,6 @@ class MainMenuTest {
         AndroidComposeTestRuleV2(
             HomeActivityIntentTestRule(
                 skipOnboarding = true,
-                isMenuRedesignCFREnabled = false,
                 isPageLoadTranslationsPromptEnabled = false,
                 shakeToSummarizeFeatureFlagEnabled = true,
             ),
@@ -467,6 +466,11 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080111
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheTranslatePageSubMenuOptionTest"],
+        bug = 2049332,
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyTheTranslatePageSubMenuOptionTest() {
@@ -619,22 +623,6 @@ class MainMenuTest {
         }
     }
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080121
-    @Ignore("Disabled after enabling the composable toolbar and main menu: https://bugzilla.mozilla.org/show_bug.cgi?id=2006295")
-    @Test
-    fun verifyTheBrowserViewMainMenuCFRTest() {
-        val genericURL = mockWebServer.getGenericAsset(1)
-
-        composeTestRule.activityRule.applySettingsExceptions {
-            it.isMenuRedesignCFREnabled = true
-        }
-        navigationToolbar(composeTestRule) {
-        }.enterURLAndEnterToBrowser(genericURL.url) {
-        }.openThreeDotMenu {
-            verifyMainMenuCFR()
-        }
-    }
-
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080898
     @Test
     fun verifyTheFindInPageOptionInPDFsTest() {
@@ -781,6 +769,7 @@ class MainMenuTest {
         }
     }
 
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4135485
     @Test
     @SkipLeaks(
         reasons = [
@@ -800,11 +789,15 @@ class MainMenuTest {
         }.openMainMenu {
             verifyBookmarkThisPageButton()
             clickBookmarkThisPageButton()
+            verifySnackBarText("Saved in “Bookmarks”")
+            waitUntilSnackbarGone()
         }.openMainMenu {
             verifyEditBookmarkButton()
         }
     }
 
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4135486
+    @Ignore("Disabled for recently failing due to race conditions https://bugzilla.mozilla.org/show_bug.cgi?id=2050387")
     @Test
     @SkipLeaks(
         reasons = [

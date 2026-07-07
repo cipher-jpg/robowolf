@@ -429,20 +429,22 @@ var SidebarController = {
       this._state = new this.SidebarState(this);
     }
 
-    // Watch for fullscreen transitions to sync the sidebar attribute.
+    // Watch for the nav toolbox being hidden in fullscreen (both DOM fullscreen
+    // and F11 autohide set fullscreenNavToolboxHidden) to sync the sidebar.
     this._fullscreenObserver = new MutationObserver(() => {
-      const inFullscreen =
-        document.documentElement.hasAttribute("inDOMFullscreen");
-      this._state.fullscreen = inFullscreen;
+      this._state.navToolboxCollapsed = document.documentElement.hasAttribute(
+        "fullscreenNavToolboxHidden"
+      );
     });
 
     this._fullscreenObserver.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["inDOMFullscreen"],
+      attributeFilter: ["fullscreenNavToolboxHidden"],
     });
-    // Initial check: is the window already in fullscreen when we start?
-    this._state.fullscreen =
-      document.documentElement.hasAttribute("inDOMFullscreen");
+    this._state.navToolboxCollapsed = document.documentElement.hasAttribute(
+      "fullscreenNavToolboxHidden"
+    );
+
     this._pinnedTabsContainer = document.getElementById(
       "pinned-tabs-container"
     );
@@ -458,6 +460,12 @@ var SidebarController = {
     this._pinnedTabsSplitter = document.getElementById(
       "vertical-pinned-tabs-splitter"
     );
+    if (!this._splitterAriaUpdateTask) {
+      this._splitterAriaUpdateTask = new DeferredTask(
+        () => this._updateSplitterAriaAttributes(),
+        0
+      );
+    }
     this._reversePositionButton = document.getElementById(
       "sidebar-reverse-position"
     );
@@ -639,6 +647,8 @@ var SidebarController = {
       this.sidebarMain.remove();
     }
     this._splitter.removeEventListener("command", this._browserResizeObserver);
+    this._splitterAriaUpdateTask.finalize();
+    this._splitterAriaUpdateTask = null;
     this._disableLauncherDragging();
     this._disablePinnedTabsDragging();
   },
@@ -1072,6 +1082,31 @@ var SidebarController = {
   _recordBrowserSize() {
     this._browserWidth = this.browser.getBoundingClientRect().width;
     Glean.sidebar.width.set(this._browserWidth);
+    this._splitterAriaUpdateTask.arm();
+  },
+
+  /**
+   * Update the `aria-valuemin`, `aria-valuemax`, and `aria-valuenow`
+   * attributes of the panel splitter to account for resizes and state changes.
+   */
+  _updateSplitterAriaAttributes() {
+    const splitter = this._splitter;
+    if (!this._state.panelOpen) {
+      splitter.removeAttribute("aria-valuemin");
+      splitter.removeAttribute("aria-valuemax");
+      splitter.removeAttribute("aria-valuenow");
+      return;
+    }
+    const style = window.getComputedStyle(this._box);
+    const minWidth = parseFloat(style.minWidth);
+    const maxWidth = parseFloat(style.maxWidth);
+    const currentWidth =
+      this._state.panelWidth ??
+      window.windowUtils.getBoundsWithoutFlushing(this._box).width;
+
+    splitter.setAttribute("aria-valuemin", Math.round(minWidth));
+    splitter.setAttribute("aria-valuemax", Math.round(maxWidth));
+    splitter.setAttribute("aria-valuenow", Math.round(currentWidth));
   },
 
   /**
@@ -2263,6 +2298,7 @@ var SidebarController = {
     this._box.removeAttribute("checked");
     this._box.removeAttribute("context");
     this._box.hidden = this._splitter.hidden = true;
+    this._splitterAriaUpdateTask.arm();
 
     let selBrowser = gBrowser.selectedBrowser;
     selBrowser.focus();

@@ -957,8 +957,6 @@ RefPtr<PrintPromise> CanonicalBrowsingContext::Print(
 #ifndef NS_PRINTING
   return PrintPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE, __func__);
 #else
-// Content analysis is not supported on non-Windows platforms.
-#  if defined(XP_WIN)
   bool needContentAnalysis = false;
   nsCOMPtr<nsIContentAnalysis> contentAnalysis =
       mozilla::components::nsIContentAnalysis::Service();
@@ -1001,7 +999,6 @@ RefPtr<PrintPromise> CanonicalBrowsingContext::Print(
             });
     return done;
   }
-#  endif
   return PrintWithNoContentAnalysis(aPrintSettings, false, nullptr);
 #endif
 }
@@ -1891,13 +1888,6 @@ void CanonicalBrowsingContext::NotifyStartDelayedAutoplayMedia() {
   Group()->EachParent([&](ContentParent* aParent) {
     (void)aParent->SendStartDelayedAutoplayMediaComponents(this);
   });
-}
-
-void CanonicalBrowsingContext::NotifyMediaMutedChanged(bool aMuted,
-                                                       ErrorResult& aRv) {
-  MOZ_ASSERT(!GetParent(),
-             "Notify media mute change on non top-level context!");
-  SetMuted(aMuted, aRv);
 }
 
 uint32_t CanonicalBrowsingContext::CountSiteOrigins(

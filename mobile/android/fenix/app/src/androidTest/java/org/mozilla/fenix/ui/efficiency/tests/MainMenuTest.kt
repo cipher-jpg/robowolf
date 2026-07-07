@@ -6,15 +6,16 @@ package org.mozilla.fenix.ui.efficiency.tests
 
 import org.junit.Ignore
 import org.junit.Test
-import org.mozilla.fenix.customannotations.Converted
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.MockBrowserDataHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.firstForeignWebPageAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.pdfFormAsset
 import org.mozilla.fenix.ui.efficiency.helpers.BaseTest
 import org.mozilla.fenix.ui.efficiency.selectors.BookmarksSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.BookmarksSelectors.DELETE_BOOKMARK_BUTTON
 import org.mozilla.fenix.ui.efficiency.selectors.BrowserPageSelectors
+import org.mozilla.fenix.ui.efficiency.selectors.CollectionsSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.HistorySelectors.NAVIGATE_BACK_BUTTON
 import org.mozilla.fenix.ui.efficiency.selectors.HomeSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors
@@ -26,7 +27,9 @@ import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors.DESKTOP_SITE_
 import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors.EDIT_BOOKMARK_BUTTON
 import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors.FORWARD_BUTTON
 
-class MainMenuTest : BaseTest() {
+class MainMenuTest : BaseTest(
+    isPageLoadTranslationsPromptEnabled = false,
+) {
 
     private val mockWebServer get() = fenixTestRule.mockWebServer
 
@@ -245,14 +248,38 @@ class MainMenuTest : BaseTest() {
             )
 
         on.browserPage.navigateToPage(secondTestPage.url.toString())
-            .saveTabToExistingCollection(collectionTitle)
-        on.browserPage.navigateToPage()
+            .mozClick(BrowserPageSelectors.MAIN_MENU_BUTTON)
+            .mozClick(MainMenuSelectors.MORE_BUTTON)
+            .mozClick(MainMenuSelectors.SAVE_TO_COLLECTIONS_BUTTON)
+            .mozClick(CollectionsSelectors.EXISTING_COLLECTION_WITH_TITLE(collectionTitle))
         on.home.navigateToPage()
-        on.home
-            .verifyTabsInExpandedCollection(
-                collectionTitle = collectionTitle,
-                firstTestPage.title,
-                secondTestPage.title,
-            )
+            .mozClick(CollectionsSelectors.COLLECTION_WITH_TITLE(collectionTitle))
+            .mozVerify(CollectionsSelectors.COLLECTION_TAB_WITH_TITLE(firstTestPage.title))
+            .mozVerify(CollectionsSelectors.COLLECTION_TAB_WITH_TITLE(secondTestPage.title))
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080111
+    @SmokeTest
+    @Test
+    fun verifyTheTranslatePageSubMenuOptionTest() {
+        val testPage = mockWebServer.firstForeignWebPageAsset
+
+        on.browserPage.navigateToPage(testPage.url.toString())
+            .openMainMenu()
+            .mozClick(MainMenuSelectors.MORE_BUTTON)
+            .mozClick(MainMenuSelectors.TRANSLATE_BUTTON)
+            .mozClickIfPresent(BrowserPageSelectors.TRANSLATION_SHEET_TRANSLATE_BUTTON)
+            .mozWaitUntilAbsent(BrowserPageSelectors.TRANSLATION_SHEET_TRANSLATE_BUTTON)
+        on.browserPage
+            .openMainMenu()
+            .mozClick(MainMenuSelectors.MORE_BUTTON)
+            .mozClick(MainMenuSelectors.TRANSLATED_BUTTON)
+            .mozClickIfPresent(BrowserPageSelectors.TRANSLATION_SHEET_SHOW_ORIGINAL_BUTTON)
+            .mozWaitUntilAbsent(BrowserPageSelectors.TRANSLATION_SHEET_SHOW_ORIGINAL_BUTTON)
+        on.browserPage
+            .verifyPageContent(testPage.content)
+            .openMainMenu()
+            .mozClick(MainMenuSelectors.MORE_BUTTON)
+            .mozVerify(MainMenuSelectors.TRANSLATE_BUTTON)
     }
 }

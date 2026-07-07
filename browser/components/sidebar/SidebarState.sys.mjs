@@ -77,7 +77,7 @@ export class SidebarState {
   };
   #launcherEverVisible = false;
   bookmarksExpandedFolders = [];
-  #fullscreen = false;
+  #navToolboxCollapsed = false;
 
   /** @type {SidebarStateProps} */
   static defaultProperties = Object.freeze({
@@ -441,19 +441,6 @@ export class SidebarState {
       return true;
     }
     return DEFAULT_LAUNCHER_VISIBLE;
-  }
-
-  get fullscreen() {
-    return this.#fullscreen;
-  }
-
-  set fullscreen(val) {
-    if (this.#fullscreen === val) {
-      return;
-    }
-    this.#fullscreen = val;
-    // Re-run the update logic every time the fullscreen state changes.
-    this.#updateTabbrowser(this.launcherVisible);
   }
 
   get launcherVisible() {
@@ -829,8 +816,22 @@ export class SidebarState {
     if (!tabbox || !doc.documentElement) {
       return;
     }
-    const inFullscreen = doc.documentElement.hasAttribute("inDOMFullscreen");
-    tabbox.toggleAttribute("sidebar-shown", isSidebarShown && !inFullscreen);
+    tabbox.toggleAttribute(
+      "sidebar-shown",
+      isSidebarShown && !this.#navToolboxCollapsed
+    );
+  }
+
+  get navToolboxCollapsed() {
+    return this.#navToolboxCollapsed;
+  }
+
+  set navToolboxCollapsed(val) {
+    if (this.#navToolboxCollapsed === val) {
+      return;
+    }
+    this.#navToolboxCollapsed = val;
+    this.#updateTabbrowser(this.launcherVisible);
   }
 
   get command() {

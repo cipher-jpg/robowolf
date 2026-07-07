@@ -2,38 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{PropertyBinding, ColorU, ColorF, Shadow, RasterSpace};
+use api::{PropertyBinding, ColorF, Shadow, RasterSpace};
 use crate::scene_building::{CreateShadow, IsVisible};
 use crate::intern;
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::prim_store::{
     PrimKey, InternablePrimitive, PrimitiveStore, PrimitiveKind,
-    PrimTemplate, PrimTemplateCommonData, PrimitiveOpacity,
+    PrimTemplate, PrimTemplateCommonData,
 };
-use crate::frame_builder::FrameBuildingState;
-use crate::renderer::GpuBufferAddress;
 use crate::scene::SceneProperties;
 use std::ops;
 
-/// Per-frame scratch data for a legacy-path Rectangle primitive. Holds
-/// the per-instance GPU block address produced by `RectangleTemplate::update`.
-/// Lives here (rather than on the now-immutable template's common data)
-/// so many instances can share one template. Pushed during prepare and
-/// read by batch (for the non-segmented case; segmented draws source the
-/// address from their segment instance instead).
-#[derive(Debug)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-pub struct RectangleScratch {
-    pub gpu_address: GpuBufferAddress,
-    pub opacity: PrimitiveOpacity,
-}
-
-#[derive(Debug, Clone, Eq, MallocSizeOf, PartialEq, Hash)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct RectanglePrim {
-    pub color: PropertyBinding<ColorU>,
-}
+// `RectanglePrim` now lives in `webrender_api::interned_prims` so content-process
+// interning can hold it. Re-exported to keep existing references working.
+pub use api::interned_prims::RectanglePrim;
 
 pub type RectangleKey = PrimKey<RectanglePrim>;
 
@@ -129,21 +111,6 @@ impl From<RectangleKey> for RectangleTemplate {
             common: PrimTemplateCommonData::with_key_common(item.common),
             kind: RectangleData { color: item.kind.color.into() },
         }
-    }
-}
-
-impl RectangleTemplate {
-    pub fn update(
-        &self,
-        frame_state: &mut FrameBuildingState,
-        scene_properties: &SceneProperties,
-    ) -> (GpuBufferAddress, PrimitiveOpacity) {
-        let color = scene_properties.resolve_color(&self.kind.color);
-        let mut writer = frame_state.frame_gpu_data.f32.write_blocks(1);
-        writer.push_one(color.premultiplied());
-        let gpu_address = writer.finish();
-        let opacity = PrimitiveOpacity::from_alpha(color.a);
-        (gpu_address, opacity)
     }
 }
 

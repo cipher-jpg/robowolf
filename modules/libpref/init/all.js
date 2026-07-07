@@ -860,6 +860,9 @@ pref("privacy.purge_trackers.max_purge_count", 100);
 // interaction directly).
 pref("privacy.purge_trackers.consider_entity_list", false);
 
+// What custom schemes to treat as accessing digital wallets, comma separated.
+pref("privacy.wallet_schemes", "openid4vp,mdoc,mdoc-openid4vp,haip,eudi-wallet,eudi-openid4vp,openid-credential-offer");
+
 pref("dom.event.contextmenu.enabled",       true);
 
 pref("javascript.enabled",                  true);
@@ -1734,7 +1737,7 @@ pref("font.blacklist.underline_offset", "FangSong,Gulim,GulimChe,MingLiU,MingLiU
 pref("security.dialog_enable_delay", 1000);
 pref("security.notification_enable_delay", 500);
 
-#ifdef EARLY_BETA_OR_EARLIER
+#ifdef NIGHTLY_BUILD
   // Disallow web documents loaded with the SystemPrincipal
   pref("security.disallow_non_local_systemprincipal_in_tests", false);
 #endif
@@ -3012,6 +3015,10 @@ pref("signon.firefoxRelay.terms_of_service_url", "https://www.mozilla.org/%LOCAL
 pref("signon.firefoxRelay.privacy_policy_url", "https://www.mozilla.org/%LOCALE%/privacy/subscription-services/");
 pref("signon.signupDetection.confidenceThreshold",     "0.75");
 
+pref("signon.storage.rust.enabled", false);
+pref("signon.storage.rust.active", false);
+pref("signon.storage.rust.migrationAttempts", 0);
+
 // Satchel (Form Manager) prefs
 pref("browser.formfill.debug",            false);
 pref("browser.formfill.enable",           true);
@@ -3269,11 +3276,12 @@ pref("network.trr.builtin-excluded-domains", "localhost,local");
 // Used for progressive rollout of LNA for ETP strict users
 pref("network.lna.etp.enabled", true);
 
-pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/canonical.html");
-pref("captivedetect.canonicalContent", "<meta http-equiv=\"refresh\" content=\"0;url=https://support.mozilla.org/kb/captive-portal\"/>");
+pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/generate_204");
+pref("captivedetect.canonicalContent", "");
 pref("captivedetect.maxWaitingTime", 5000);
 pref("captivedetect.pollingTime", 3000);
 pref("captivedetect.maxRetryCount", 5);
+pref("captivedetect.expectedStatus", 204);
 
 // The tables used for Safebrowsing phishing and malware checks
 pref("urlclassifier.malwareTable", "goog-malware-proto,goog-unwanted-proto,moztest-harmful-simple,moztest-malware-simple,moztest-unwanted-simple");
@@ -3832,6 +3840,10 @@ pref("services.common.log.logger.tokenserverclient", "Debug");
   // The URL of the Firefox Accounts auth server backend
   pref("identity.fxaccounts.auth.uri", "https://api.accounts.firefox.com/v1");
 
+  // Authenticate FxA token requests with the auth-server's typed Bearer scheme
+  // instead of Hawk. Kill-switch for the Hawk-to-Bearer migration.
+  pref("identity.fxaccounts.auth.useBearer", true);
+
   // Percentage chance we skip an extension storage sync (kinto life support).
   pref("services.sync.extension-storage.skipPercentageChance", 50);
 #endif // MOZ_SERVICES_SYNC
@@ -3938,8 +3950,7 @@ pref("devtools.debugger.force-local", true);
 // Possible values:
 // 0 => the response body has no limit
 // n => represents max number of bytes stored
-pref("devtools.netmonitor.responseBodyLimit", 1048576);
-pref("devtools.netmonitor.requestBodyLimit", 1048576);
+pref("devtools.netmonitor.bodyLimit", 1048576);
 
 // Limit for WebSocket/EventSource messages (100 KB).
 pref("devtools.netmonitor.msg.messageDataLimit", 100000);
@@ -3986,7 +3997,7 @@ pref("security.storage.encryption.sqlite.enabled", false, locked);
 // is not being used in form autofill, but need to exist for migration purposes.
 pref("extensions.formautofill.available", "detect");
 
-#if defined(NIGHTLY_BUILD) && !defined(ANDROID)
+#if !defined(ANDROID)
 pref("extensions.formautofill.addresses.supported", "on");
 // Use ML for address form field detection.
 pref("extensions.formautofill.useml", true);

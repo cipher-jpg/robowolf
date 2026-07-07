@@ -1686,7 +1686,7 @@ class Element : public FragmentOrElement {
   // https://dom.spec.whatwg.org/#concept-attach-a-shadow-root
   already_AddRefed<ShadowRoot> AttachShadowWithoutNameChecks(
       const ShadowRootInit&,
-      const Maybe<CustomElementRegistry*>& aRegistry = Nothing(),
+      const Maybe<RefPtr<CustomElementRegistry>>& aRegistry,
       CustomSlotDispatch = CustomSlotDispatch::No, bool aNotify = true);
 
   // Attach UA Shadow Root if it is not attached.
@@ -1713,9 +1713,28 @@ class Element : public FragmentOrElement {
 
   ShadowRoot* GetShadowRootForBindings() const;
   ShadowRoot* GetOpenOrClosedShadowRoot(nsIPrincipal& aSubject) const;
-  ShadowRoot* GetShadowRoot() const {
+  [[nodiscard]] ShadowRoot* GetShadowRoot() const {
     const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
     return slots ? slots->mShadowRoot.get() : nullptr;
+  }
+
+  template <TreeKind aKind>
+  [[nodiscard]] ShadowRoot* GetShadowRoot() const {
+    if constexpr (aKind == TreeKind::DOM) {
+      return nullptr;
+    } else if constexpr (aKind == TreeKind::ShadowIncludingDOM ||
+                         aKind == TreeKind::FlatForSelection) {
+      MOZ_ASSERT(ShouldIgnoreNonContentShadow<aKind>());
+      // GetShadowRootForSelection() requires ShadowRoot type to check whether
+      // it's an UA one. Therefore, it cannot be inlined here. We could make an
+      // inlined one in ElementInlines.h, but I'm not sure whether it's worth.
+      return nsINode::GetShadowRootForSelection();
+    } else if constexpr (aKind == TreeKind::Flat) {
+      MOZ_ASSERT(!ShouldIgnoreNonContentShadow<aKind>());
+      return GetShadowRoot();
+    } else {
+      MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE("Handle the new TreeKind value");
+    }
   }
 
   Element* ResolveReferenceTarget() const;
@@ -1743,6 +1762,7 @@ class Element : public FragmentOrElement {
   // https://dom.spec.whatwg.org/#element-custom-element-registry
   CustomElementRegistry* GetCustomElementRegistry();
   void SetCustomElementRegistry(CustomElementRegistry* aCustomElementRegistry);
+  void SetKeepCustomElementRegistryNull();
   static void TraverseCustomElementRegistry(
       Element* aElement, nsCycleCollectionTraversalCallback& aCb);
   static void UnlinkCustomElementRegistry(Element* aElement);

@@ -31,8 +31,43 @@ struct ParamTraits<mozilla::wr::ByteBuffer> {
   }
 };
 
-DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::wr::ImageDescriptor, format, width,
-                                  height, stride, opacity);
+template <>
+struct ParamTraits<mozilla::wr::ImageDescriptor> {
+  typedef mozilla::wr::ImageDescriptor paramType;
+
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.format);
+    WriteParam(aWriter, aParam.width);
+    WriteParam(aWriter, aParam.height);
+    WriteParam(aWriter, aParam.stride);
+    WriteParam(aWriter, aParam.opacity);
+  }
+
+  static ReadResult<paramType> Read(MessageReader* aReader) {
+    mozilla::wr::ImageFormat format;
+    int32_t width;
+    int32_t height;
+    int32_t stride;
+    mozilla::wr::OpacityType opacity;
+    if (!ReadParam(aReader, &format) || !ReadParam(aReader, &width) ||
+        !ReadParam(aReader, &height) || !ReadParam(aReader, &stride) ||
+        !ReadParam(aReader, &opacity)) {
+      return {};
+    }
+    if (width < 0 || height < 0 || stride < 0) {
+      return {};
+    }
+    if (stride != 0) {
+      int bpp = mozilla::gfx::BytesPerPixel(
+          mozilla::wr::ImageFormatToSurfaceFormat(format));
+      if (bpp <= 0 || stride / bpp < width) {
+        return {};
+      }
+    }
+    return paramType(mozilla::gfx::IntSize(width, height), stride, format,
+                     opacity);
+  }
+};
 
 template <>
 struct ParamTraits<mozilla::wr::GeckoDisplayListType::Tag>

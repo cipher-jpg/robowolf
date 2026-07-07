@@ -462,8 +462,8 @@ static uint32_t AvailableFeatures() {
 // Default features common to all contexts (even if not available).
 static constexpr uint32_t DefaultFeatures() {
   return ProfilerFeature::Java | ProfilerFeature::JS |
-         ProfilerFeature::StackWalk | ProfilerFeature::CPUUtilization |
-         ProfilerFeature::Screenshots | ProfilerFeature::ProcessCPU;
+         ProfilerFeature::StackWalk | ProfilerFeature::Screenshots |
+         ProfilerFeature::ProcessCPU;
 }
 
 // Extra default features when MOZ_PROFILER_STARTUP is set (even if not
@@ -990,6 +990,28 @@ class CorePS {
   PS_GET_AND_SET(const Maybe<nsCOMPtr<nsIFile>>&, AsyncSignalDumpDirectory)
 #endif
 
+  // The scheduled off-main-thread profile dump deadline
+  // (profiler_schedule_dump_to_file). A null deadline means none is scheduled.
+  // Read by the sampler thread.
+  static const TimeStamp& ScheduledDumpDeadline(PSLockRef) {
+    MOZ_ASSERT(sInstance);
+    return sInstance->mScheduledDumpDeadline;
+  }
+  static const nsACString& ScheduledDumpPath(PSLockRef) {
+    MOZ_ASSERT(sInstance);
+    return sInstance->mScheduledDumpPath;
+  }
+  static void ScheduleDumpToFile(PSLockRef, const TimeStamp& aDeadline,
+                                 const nsACString& aPath) {
+    MOZ_ASSERT(sInstance);
+    sInstance->mScheduledDumpDeadline = aDeadline;
+    sInstance->mScheduledDumpPath = aPath;
+  }
+  static void CancelScheduledDump(PSLockRef) {
+    MOZ_ASSERT(sInstance);
+    sInstance->mScheduledDumpDeadline = TimeStamp{};
+  }
+
   static void SetBandwidthCounter(ProfilerBandwidthCounter* aBandwidthCounter) {
     MOZ_ASSERT(sInstance);
 
@@ -1042,6 +1064,12 @@ class CorePS {
   // Private name, provided by child process initialization code (eTLD+1 in
   // fission)
   nsAutoCString mETLDplus1;
+
+  // A scheduled off-main-thread profile dump (profiler_schedule_dump_to_file):
+  // the deadline at which the sampler thread should write the profile, and the
+  // file to write it to. Null deadline when none is scheduled.
+  TimeStamp mScheduledDumpDeadline;
+  nsAutoCString mScheduledDumpPath;
 
   // This memory buffer is used by the MergeStacks mechanism. Previously it was
   // stack allocated, but this led to a stack overflow, as it was too much
@@ -1105,12 +1133,7 @@ class ActivePS {
       aFeatures |= ProfilerFeature::MainThreadIO;
     }
 
-    if (aFeatures & ProfilerFeature::CPUAllThreads) {
-      aFeatures |= ProfilerFeature::CPUUtilization;
-    }
-
     if (aFeatures & ProfilerFeature::Tracing) {
-      aFeatures &= ~ProfilerFeature::CPUUtilization;
       aFeatures &= ~ProfilerFeature::Memory;
       aFeatures |= ProfilerFeature::NoStackSampling;
       aFeatures |= ProfilerFeature::JS;
@@ -4639,8 +4662,6 @@ void SamplerThread::Run() {
   // Not *no*-stack-sampling means we do want stack sampling.
   const bool stackSampling = !ProfilerFeature::HasNoStackSampling(features);
 
-  const bool cpuUtilization = ProfilerFeature::HasCPUUtilization(features);
-
   // Use local ProfileBuffer and underlying buffer to capture the stack.
   // (This is to avoid touching the core buffer lock while a thread is
   // suspended, because that thread could be working with the core buffer as
@@ -4663,6 +4684,12 @@ void SamplerThread::Run() {
   UniquePtr<PostSamplingCallbackListItem> postSamplingCallbacks;
   // This will be set inside the loop, before invoking callbacks outside.
   SamplingState samplingState{};
+
+  // Set inside the locked scope when a scheduled off-main-thread profile dump
+  // (profiler_schedule_dump_to_file) is due, then acted on outside the lock
+  // (profiler_save_profile_to_file takes the profiler lock itself).
+  bool scheduledDumpDue = false;
+  nsAutoCString scheduledDumpPath;
 
   const TimeDuration sampleInterval =
       TimeDuration::FromMicroseconds(mIntervalMicroseconds);
@@ -4736,6 +4763,13 @@ void SamplerThread::Run() {
       }
 
       ActivePS::ClearExpiredExitProfiles(lock);
+
+      if (const TimeStamp& deadline = CorePS::ScheduledDumpDeadline(lock);
+          !deadline.IsNull() && sampleStart >= deadline) {
+        scheduledDumpDue = true;
+        scheduledDumpPath = CorePS::ScheduledDumpPath(lock);
+        CorePS::CancelScheduledDump(lock);
+      }
 
       TimeStamp expiredMarkersCleaned = TimeStamp::Now();
 
@@ -4823,7 +4857,10 @@ void SamplerThread::Run() {
         }
         TimeStamp countersSampled = TimeStamp::Now();
 
-        if (stackSampling || cpuUtilization) {
+        {
+          // Thread CPU utilization is always gathered, even when periodic
+          // stack sampling is disabled, so we always run a sampling pass
+          // (bug 2033816).
           samplingState = SamplingState::SamplingCompleted;
 
           // Prevent threads from ending (or starting) and allow access to all
@@ -4843,10 +4880,8 @@ void SamplerThread::Run() {
 
             const ThreadProfilingFeatures whatToProfile =
                 unlockedThreadData.ProfilingFeatures();
-            const bool threadCPUUtilization =
-                cpuUtilization &&
-                DoFeaturesIntersect(whatToProfile,
-                                    ThreadProfilingFeatures::CPUUtilization);
+            const bool threadCPUUtilization = DoFeaturesIntersect(
+                whatToProfile, ThreadProfilingFeatures::CPUUtilization);
             const bool threadStackSampling =
                 stackSampling &&
                 DoFeaturesIntersect(whatToProfile,
@@ -5122,7 +5157,7 @@ void SamplerThread::Run() {
                              currentEventRunning.ToMilliseconds());
                   });
 
-              if (cpuUtilization) {
+              if (threadCPUUtilization) {
                 // Suspending the thread for sampling could have added some
                 // running time to it, discard any since the call to
                 // GetThreadRunningTimesDiff above.
@@ -5175,8 +5210,6 @@ void SamplerThread::Run() {
             localBuffer.Clear();
             previousState = localBuffer.GetState();
           }
-        } else {
-          samplingState = SamplingState::NoStackSamplingCompleted;
         }
 
 #if defined(USE_LUL_STACKWALK)
@@ -5211,6 +5244,13 @@ void SamplerThread::Run() {
     // Invoke end-of-sampling callbacks outside of the locked scope.
     InvokePostSamplingCallbacks(std::move(postSamplingCallbacks),
                                 samplingState);
+
+    // We've hit the deadline for a scheduled profile dump; call
+    // profiler_save_profile_to_file outside the lock to avoid a deadlock.
+    if (scheduledDumpDue) {
+      scheduledDumpDue = false;
+      profiler_save_profile_to_file(scheduledDumpPath.get());
+    }
 
     ProfilerChild::ProcessPendingUpdate();
 
@@ -5873,8 +5913,7 @@ void profiler_start_from_signal() {
     // Enabling the JS feature leaks an 8-byte object during testing, but is too
     // useful to disable. See Bug 1904897, Bug 1699681, and browser.toml for
     // more details.
-    uint32_t features = ProfilerFeature::JS | ProfilerFeature::StackWalk |
-                        ProfilerFeature::CPUUtilization;
+    uint32_t features = ProfilerFeature::JS | ProfilerFeature::StackWalk;
     // as we often don't know what threads we'll care about, tell the
     // profiler to profile all threads.
     const char* filters[] = {"*"};
@@ -6603,6 +6642,30 @@ void profiler_save_profile_to_file(const char* aFilename) {
 
   locked_profiler_save_profile_to_file(lock, aFilename,
                                        preRecordedMetaInformation);
+}
+
+void profiler_schedule_dump_to_file(double aDelaySeconds,
+                                    const char* aFilename) {
+  if (!aFilename || !CorePS::Exists()) {
+    return;
+  }
+
+  // Compute the deadline before grabbing the lock, which may already be held
+  // by another thread for a while.
+  TimeStamp deadline =
+      TimeStamp::Now() + TimeDuration::FromSeconds(aDelaySeconds);
+
+  PSAutoLock lock;
+  CorePS::ScheduleDumpToFile(lock, deadline, nsDependentCString(aFilename));
+}
+
+void profiler_cancel_scheduled_dump() {
+  if (!CorePS::Exists()) {
+    return;
+  }
+
+  PSAutoLock lock;
+  CorePS::CancelScheduledDump(lock);
 }
 
 void profiler_request_dump_and_quit_for_test(const nsACString& aReason) {

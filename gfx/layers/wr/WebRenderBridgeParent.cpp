@@ -342,7 +342,8 @@ WebRenderBridgeParent::WebRenderBridgeParent(
       mWidget(aWidget),
       mVsyncRate(aVsyncRate),
       mDestroyed(false),
-      mIsFirstPaint(true) {
+      mIsFirstPaint(true),
+      mIsRootWebRenderBridgeParent(!!aWidget) {
   LOG("WebRenderBridgeParent::WebRenderBridgeParent() PipelineId %" PRIx64
       " root %d",
       wr::AsUint64(mPipelineId), IsRootWebRenderBridgeParent());
@@ -366,7 +367,8 @@ WebRenderBridgeParent::WebRenderBridgeParent(
       })),
       mVsyncRate(aVsyncRate),
       mDestroyed(false),
-      mIsFirstPaint(true) {
+      mIsFirstPaint(true),
+      mIsRootWebRenderBridgeParent(false) {
   MOZ_ASSERT(mLateInit->mAsyncImageManager);
   LOG("WebRenderBridgeParent::WebRenderBridgeParent() PipelineId %" PRIx64
       " Id %" PRIx64 " root %d",
@@ -390,7 +392,8 @@ WebRenderBridgeParent::WebRenderBridgeParent(const wr::PipelineId& aPipelineId,
       })),
       mInitError(std::move(aError)),
       mDestroyed(true),
-      mIsFirstPaint(false) {
+      mIsFirstPaint(false),
+      mIsRootWebRenderBridgeParent(false) {
   LOG("WebRenderBridgeParent::WebRenderBridgeParent() PipelineId %" PRIx64 "",
       wr::AsUint64(mPipelineId));
 }
@@ -904,8 +907,12 @@ bool WebRenderBridgeParent::AddSharedExternalImage(
       policy == TextureHost::NativeTexturePolicy::REQUIRE
           ? wr::ExternalImageType::TextureHandle(wr::ImageBufferKind::Texture2D)
           : wr::ExternalImageType::Buffer();
-  wr::ImageDescriptor descriptor(surfaceSize, dSurf->Stride(),
-                                 dSurf->GetFormat());
+  auto format = wr::SurfaceFormatToImageFormat(dSurf->GetFormat());
+  if (NS_WARN_IF(!format)) {
+    return false;
+  }
+  wr::ImageDescriptor descriptor(surfaceSize, dSurf->Stride(), *format,
+                                 wr::ToOpacityType(dSurf->GetFormat()));
   aResources.AddExternalImage(aKey, descriptor, aExtId, imageType, 0);
   return true;
 }
@@ -966,7 +973,13 @@ bool WebRenderBridgeParent::PushExternalImageForTexture(
   }
 
   IntSize size = dSurf->GetSize();
-  wr::ImageDescriptor descriptor(size, map.mStride, dSurf->GetFormat());
+  auto format = wr::SurfaceFormatToImageFormat(dSurf->GetFormat());
+  if (NS_WARN_IF(!format)) {
+    dSurf->Unmap();
+    return false;
+  }
+  wr::ImageDescriptor descriptor(size, map.mStride, *format,
+                                 wr::ToOpacityType(dSurf->GetFormat()));
   wr::Vec<uint8_t> data;
   data.PushBytes(Range<uint8_t>(map.mData, size.height * map.mStride));
 
@@ -1036,8 +1049,12 @@ bool WebRenderBridgeParent::UpdateSharedExternalImage(
       policy == TextureHost::NativeTexturePolicy::REQUIRE
           ? wr::ExternalImageType::TextureHandle(wr::ImageBufferKind::Texture2D)
           : wr::ExternalImageType::Buffer();
-  wr::ImageDescriptor descriptor(surfaceSize, dSurf->Stride(),
-                                 dSurf->GetFormat());
+  auto format = wr::SurfaceFormatToImageFormat(dSurf->GetFormat());
+  if (NS_WARN_IF(!format)) {
+    return false;
+  }
+  wr::ImageDescriptor descriptor(surfaceSize, dSurf->Stride(), *format,
+                                 wr::ToOpacityType(dSurf->GetFormat()));
   aResources.UpdateExternalImageWithDirtyRect(
       aKey, descriptor, aExtId, imageType, wr::ToDeviceIntRect(aDirtyRect), 0,
       /* aNormalizedUvs */ false);
@@ -1145,7 +1162,7 @@ void WebRenderBridgeParent::RemoveEpochDataPriorTo(
 }
 
 bool WebRenderBridgeParent::IsRootWebRenderBridgeParent() const {
-  return !!mWidget;
+  return mIsRootWebRenderBridgeParent;
 }
 
 void WebRenderBridgeParent::BeginRecording(const TimeStamp& aRecordingStart) {
@@ -1910,8 +1927,8 @@ void WebRenderBridgeParent::UpdateBoolParameters() {
 
 #if defined(MOZ_WIDGET_ANDROID)
 RefPtr<WebRenderBridgeParent::ScreenPixelsPromise>
-WebRenderBridgeParent::RequestScreenPixels(gfx::IntRect aSourceRect,
-                                           gfx::IntSize aDestSize) {
+WebRenderBridgeParent::RequestScreenPixels(
+    gfx::IntRect aSourceRect, RefPtr<AndroidHardwareBuffer> aHardwareBuffer) {
   if (mDestroyed) {
     return ScreenPixelsPromise::CreateAndReject(NS_ERROR_ABORT, __func__);
   }
@@ -1927,7 +1944,7 @@ WebRenderBridgeParent::RequestScreenPixels(gfx::IntRect aSourceRect,
   }
   mScreenPixelsRequest.emplace(ScreenPixelsRequest{
       .mSourceRect = aSourceRect,
-      .mDestSize = aDestSize,
+      .mHardwareBuffer = std::move(aHardwareBuffer),
       .mPromise = new ScreenPixelsPromise::Private(__func__),
   });
   return mScreenPixelsRequest->mPromise;
@@ -1947,7 +1964,9 @@ void WebRenderBridgeParent::MaybeCaptureScreenPixels() {
   MOZ_ASSERT(cbp && !cbp->IsPaused());
 #  endif
 
-  mLateInit->mApi->RequestScreenPixels(request.mSourceRect, request.mDestSize)
+  mLateInit->mApi
+      ->RequestScreenPixels(request.mSourceRect,
+                            std::move(request.mHardwareBuffer))
       ->ChainTo(request.mPromise.forget(), __func__);
 }
 #endif

@@ -23,23 +23,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarProviderSemanticHistorySearch:
     "moz-src:///browser/components/urlbar/UrlbarProviderSemanticHistorySearch.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () =>
-  lazy.UrlbarUtils.getLogger({ prefix: "Controller" })
+  lazy.UrlbarShared.getLogger({ prefix: "Controller" })
 );
-
-const NOTIFICATIONS = {
-  QUERY_STARTED: "onQueryStarted",
-  QUERY_RESULTS: "onQueryResults",
-  QUERY_RESULT_REMOVED: "onQueryResultRemoved",
-  QUERY_CANCELLED: "onQueryCancelled",
-  QUERY_FINISHED: "onQueryFinished",
-  VIEW_OPEN: "onViewOpen",
-  VIEW_CLOSE: "onViewClose",
-};
 
 /**
  * The address bar controller handles queries from the address bar, obtains
@@ -66,64 +57,45 @@ const NOTIFICATIONS = {
  * - onViewClose()
  */
 export class UrlbarParentController {
+  // The paired UrlbarChildController, which registers itself via setChild().
+  // Listener registration and notification dispatch live on it, keeping
+  // dispatch on the side where the listeners (the view, the event bufferer)
+  // live — required once `<moz-urlbar>` runs in a content process. The child
+  // is always set before any query runs.
+  #child = null;
+
   /**
-   * Initialises the class. The manager may be overridden here, this is for
-   * test purposes.
+   * Initialises the class. Takes the standalone data the controller needs
+   * rather than a DOM input, so it can also serve a content-process
+   * `<moz-urlbar>` whose input lives across the actor boundary. The live
+   * input/view are reached at runtime through the paired
+   * `UrlbarChildController`.
    *
    * @param {object} options
    *   The initial options for UrlbarParentController.
-   * @param {UrlbarInput} options.input
-   *   The input this controller is operating with.
+   * @param {string} options.sapName
+   *   The search access point name, e.g. `urlbar`, `searchbar`.
+   * @param {boolean} [options.isPrivate]
+   *   Whether the controller serves a private-browsing input.
    * @param {object} [options.manager]
    *   Optional fake providers manager to override the built-in providers manager.
    *   Intended for use in unit tests only.
    */
-  constructor(options) {
-    if (!options.input) {
-      throw new Error("Missing options: input");
-    }
-    if (!options.input.window) {
-      throw new Error("input is missing 'window' property.");
-    }
-    if (
-      !options.input.window.location ||
-      options.input.window.location.href != AppConstants.BROWSER_CHROME_URL
-    ) {
-      throw new Error("input.window should be an actual browser window.");
-    }
-    if (!("isPrivate" in options.input)) {
-      throw new Error("input.isPrivate must be set.");
-    }
-    if (!options.input.sapName) {
-      throw new Error("input needs a non-empty 'sapName' property.");
+  constructor({ sapName, isPrivate = false, manager }) {
+    if (!sapName) {
+      throw new Error("Missing options: sapName");
     }
 
-    this.input = options.input;
-    this.browserWindow = options.input.window;
+    this.sapName = sapName;
+    this.isPrivate = isPrivate;
 
     /**
      * @type {ProvidersManager}
      */
     this.manager =
-      options.manager ||
-      lazy.ProvidersManager.getInstanceForSap(options.input.sapName);
-
-    this._listeners = new Set();
-    // The object that owns listener registration and notification dispatch.
-    // Defaults to this controller so it works standalone (e.g. in xpcshell
-    // tests via UrlbarTestUtils.newMockController). In production the paired
-    // UrlbarChildController registers itself via setListenerHost(), so
-    // notifications are dispatched on the side where the listeners (the view,
-    // the event bufferer) live — which is where they must end up once
-    // `<moz-urlbar>` runs in a content process.
-    this._listenerHost = this;
-    this._userSelectionBehavior = "none";
+      manager || lazy.ProvidersManager.getInstanceForSap(this.sapName);
 
     this.engagementEvent = new TelemetryEvent(this);
-  }
-
-  get NOTIFICATIONS() {
-    return NOTIFICATIONS;
   }
 
   /**
@@ -136,13 +108,116 @@ export class UrlbarParentController {
   }
 
   /**
-   * Hooks up the controller with a view.
+   * The input, owned by the paired `UrlbarChildController`. The parent no
+   * longer holds the input, browser window, or view directly; it reads them
+   * through the child for the query-lifecycle and telemetry call sites that
+   * still need them. These getters go away together with the `#child`
+   * back-reference once those call sites get their data another way.
    *
-   * @param {UrlbarView} view
-   *   The UrlbarView instance associated with this controller.
+   * @type {UrlbarInput}
    */
-  setView(view) {
-    this.view = view;
+  get input() {
+    return this.#child?.input;
+  }
+
+  /**
+   * The browser window the input lives in.
+   *
+   * @type {ChromeWindow}
+   */
+  get browserWindow() {
+    return this.#child?.browserWindow;
+  }
+
+  /**
+   * The view.
+   *
+   * @type {UrlbarView}
+   */
+  get view() {
+    return this.#child?.view;
+  }
+
+  /**
+   * Returns the view template a dynamic result's provider uses to build its
+   * row. Mediates the view's access to the (parent-process) provider.
+   *
+   * @param {UrlbarResult} result The dynamic result.
+   * @returns {object} The view template.
+   */
+  getViewTemplate(result) {
+    return this.manager
+      .getProvider(result.providerName)
+      .getViewTemplate(result);
+  }
+
+  /**
+   * Returns the view update a dynamic result's provider produces for the
+   * given node ids. Mediates the view's access to the (parent-process)
+   * provider.
+   *
+   * @param {UrlbarResult} result The dynamic result.
+   * @param {object} idsByName A map from node names to element ids.
+   * @returns {Promise<object>} The view update.
+   */
+  getViewUpdate(result, idsByName) {
+    return this.manager
+      .getProvider(result.providerName)
+      .getViewUpdate(result, idsByName);
+  }
+
+  /**
+   * Notifies a result's provider that the result is about to be selected.
+   * Mediates the view's access to the (parent-process) provider.
+   *
+   * @param {UrlbarResult} result The result being selected.
+   * @param {Element} element The selected element.
+   */
+  onBeforeSelection(result, element) {
+    this.manager
+      .getProvider(result?.providerName)
+      ?.tryMethod("onBeforeSelection", result, element);
+  }
+
+  /**
+   * Notifies a result's provider that the result was selected. Mediates the
+   * view's access to the (parent-process) provider.
+   *
+   * @param {UrlbarResult} result The selected result.
+   * @param {Element} element The selected element.
+   */
+  onSelection(result, element) {
+    this.manager
+      .getProvider(result?.providerName)
+      ?.tryMethod("onSelection", result, element);
+  }
+
+  /**
+   * Returns the result menu commands a result's provider offers, if any.
+   * Mediates the view's access to the (parent-process) provider.
+   *
+   * @param {UrlbarResult} result The result.
+   * @param {boolean} isPrivate Whether the query is private.
+   * @returns {?UrlbarResultCommand[]} The commands, or null/undefined.
+   */
+  getResultCommands(result, isPrivate) {
+    return this.manager
+      .getProvider(result.providerName)
+      ?.tryMethod("getResultCommands", result, isPrivate);
+  }
+
+  /**
+   * Runs a one-off query and returns its heuristic result. Mediates the
+   * input's access to the (parent-process) providers manager, e.g. for
+   * paste-and-go and drop-and-go where the input needs the heuristic result
+   * without an open view.
+   *
+   * @param {UrlbarQueryContext} queryContext The query context to run.
+   * @returns {Promise<UrlbarResult>} The heuristic result.
+   */
+  async getHeuristicResult(queryContext) {
+    await this.manager.startQuery(queryContext);
+    return queryContext.heuristicResult;
   }
 
   /**
@@ -173,7 +248,7 @@ export class UrlbarParentController {
     // For proper functionality we must ensure this notification is fired
     // synchronously, as soon as startQuery is invoked, but after any
     // notifications related to the previous query.
-    this.notify(NOTIFICATIONS.QUERY_STARTED, queryContext);
+    this.notify(lazy.UrlbarShared.NOTIFICATIONS.QUERY_STARTED, queryContext);
     await this.manager.startQuery(queryContext, this);
 
     // If the query has been cancelled, onQueryFinished was notified already.
@@ -185,7 +260,7 @@ export class UrlbarParentController {
       contextWrapper.done = true;
       // TODO (Bug 1549936) this is necessary to avoid leaks in PB tests.
       this.manager.cancelQuery(queryContext);
-      this.notify(NOTIFICATIONS.QUERY_FINISHED, queryContext);
+      this.notify(lazy.UrlbarShared.NOTIFICATIONS.QUERY_FINISHED, queryContext);
     }
 
     return queryContext;
@@ -211,8 +286,8 @@ export class UrlbarParentController {
     queryContext.sixthTimerId = 0;
 
     this.manager.cancelQuery(queryContext);
-    this.notify(NOTIFICATIONS.QUERY_CANCELLED, queryContext);
-    this.notify(NOTIFICATIONS.QUERY_FINISHED, queryContext);
+    this.notify(lazy.UrlbarShared.NOTIFICATIONS.QUERY_CANCELLED, queryContext);
+    this.notify(lazy.UrlbarShared.NOTIFICATIONS.QUERY_FINISHED, queryContext);
   }
 
   /**
@@ -234,8 +309,13 @@ export class UrlbarParentController {
       queryContext.sixthTimerId = 0;
     }
 
-    if (queryContext.firstResultChanged) {
-      // Notify the input so it can make adjustments based on the first result.
+    // When the input is in-process (direct path), let it react to the first
+    // result and bail before notifying if it took over (e.g. entered search
+    // mode and restarted the query). On the message path the input lives across
+    // the boundary, so it runs `onFirstResult` content-side when it receives the
+    // results instead, and `speculativeConnect` is skipped (it needs the
+    // window).
+    if (queryContext.firstResultChanged && this.input) {
       if (this.input.onFirstResult(queryContext.results[0])) {
         // The input canceled the query and started a new one.
         return;
@@ -250,379 +330,20 @@ export class UrlbarParentController {
       );
     }
 
-    this.notify(NOTIFICATIONS.QUERY_RESULTS, queryContext);
+    this.notify(lazy.UrlbarShared.NOTIFICATIONS.QUERY_RESULTS, queryContext);
     // Update lastResultCount after notifying, so the view can use it.
     queryContext.lastResultCount = queryContext.results.length;
   }
 
   /**
-   * Sets the object that owns listener registration and notification
-   * dispatch. The paired UrlbarChildController calls this so that
-   * listeners live and are notified on its (content-process) side.
+   * Sets the paired UrlbarChildController, which owns listener registration
+   * and notification dispatch. It must be set before any query runs, since
+   * the query lifecycle notifies through it.
    *
-   * @param {object} host The listener host.
+   * @param {object} child The paired UrlbarChildController.
    */
-  setListenerHost(host) {
-    this._listenerHost = host;
-  }
-
-  /**
-   * Adds a listener for Urlbar result notifications.
-   *
-   * @param {object} listener The listener to add.
-   * @throws {TypeError} Throws if the listener is not an object.
-   */
-  addListener(listener) {
-    if (this._listenerHost !== this) {
-      this._listenerHost.addListener(listener);
-      return;
-    }
-    if (!listener || typeof listener != "object") {
-      throw new TypeError("Expected listener to be an object");
-    }
-    this._listeners.add(listener);
-  }
-
-  /**
-   * Removes a listener for Urlbar result notifications.
-   *
-   * @param {object} listener The listener to remove.
-   */
-  removeListener(listener) {
-    if (this._listenerHost !== this) {
-      this._listenerHost.removeListener(listener);
-      return;
-    }
-    this._listeners.delete(listener);
-  }
-
-  /**
-   * Checks whether a keyboard event that would normally open the view should
-   * instead be handled natively by the input field.
-   * On certain platforms, the up and down keys can be used to move the caret,
-   * in which case we only want to open the view if the caret is at the
-   * start or end of the input.
-   *
-   * @param {KeyboardEvent} event
-   *   The DOM KeyboardEvent.
-   * @returns {boolean}
-   *   Returns true if the event should move the caret instead of opening the
-   *   view.
-   */
-  keyEventMovesCaret(event) {
-    if (this.view.isOpen) {
-      return false;
-    }
-    if (AppConstants.platform != "macosx" && AppConstants.platform != "linux") {
-      return false;
-    }
-    let isArrowUp = event.keyCode == KeyEvent.DOM_VK_UP;
-    let isArrowDown = event.keyCode == KeyEvent.DOM_VK_DOWN;
-    if (!isArrowUp && !isArrowDown) {
-      return false;
-    }
-    let start = this.input.selectionStart;
-    let end = this.input.selectionEnd;
-    if (
-      end != start ||
-      (isArrowUp && start > 0) ||
-      (isArrowDown && end < this.input.value.length)
-    ) {
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Receives keyboard events from the input and handles those that should
-   * navigate within the view or pick the currently selected item.
-   *
-   * @param {KeyboardEvent} event
-   *   The DOM KeyboardEvent.
-   * @param {boolean} executeAction
-   *   Whether the event should actually execute the associated action, or just
-   *   be managed (at a preventDefault() level). This is used when the event
-   *   will be deferred by the event bufferer, but preventDefault() and friends
-   *   should still happen synchronously.
-   */
-  // eslint-disable-next-line complexity
-  handleKeyNavigation(event, executeAction = true) {
-    const isMac = AppConstants.platform == "macosx";
-    // Handle readline/emacs-style navigation bindings on Mac.
-    if (
-      isMac &&
-      this.view.isOpen &&
-      event.ctrlKey &&
-      (event.key == "n" || event.key == "p")
-    ) {
-      if (executeAction) {
-        this.view.selectBy(1, { reverse: event.key == "p" });
-      }
-      event.preventDefault();
-      return;
-    }
-
-    if (executeAction) {
-      // In native inputs on most platforms, Shift+Up/Down moves the caret to the
-      // start/end of the input and changes its selection, so in that case defer
-      // handling to the input instead of changing the view's selection.
-      if (
-        event.shiftKey &&
-        (event.keyCode === KeyEvent.DOM_VK_UP ||
-          event.keyCode === KeyEvent.DOM_VK_DOWN)
-      ) {
-        return;
-      }
-
-      let handled = false;
-      if (lazy.UrlbarPrefs.get("scotchBonnet.enableOverride")) {
-        handled = this.input.searchModeSwitcher.handleKeyDown(event);
-      } else if (this.view.isOpen && this._lastQueryContextWrapper) {
-        let { queryContext } = this._lastQueryContextWrapper;
-        handled = this.view.oneOffSearchButtons?.handleKeyDown(
-          event,
-          this.view.visibleRowCount,
-          this.view.allowEmptySelection,
-          queryContext.searchString
-        );
-      }
-      if (handled) {
-        return;
-      }
-    }
-
-    switch (event.keyCode) {
-      case KeyEvent.DOM_VK_ESCAPE:
-        if (executeAction) {
-          if (this.view.isOpen) {
-            this.view.close();
-          } else if (
-            lazy.UrlbarPrefs.get("focusContentDocumentOnEsc") &&
-            !this.input.searchMode &&
-            (this.input.sapName == "searchbar"
-              ? this.input.value == ""
-              : this.input.getAttribute("pageproxystate") == "valid" ||
-                (this.input.value == "" &&
-                  this.browserWindow.isBlankPageURL(
-                    this.browserWindow.gBrowser.currentURI.spec
-                  )))
-          ) {
-            this.browserWindow.gBrowser.selectedBrowser.focus();
-          } else {
-            this.input.handleRevert();
-          }
-        }
-        event.preventDefault();
-        break;
-      case KeyEvent.DOM_VK_SPACE:
-        if (!this.view.shouldSpaceActivateSelectedElement()) {
-          break;
-        }
-      // Fall through, we want the SPACE key to activate this element.
-      case KeyEvent.DOM_VK_RETURN:
-        lazy.logger.debug(`Enter pressed${executeAction ? "" : " delayed"}`);
-        if (executeAction) {
-          this.input.handleCommand(event);
-        }
-        event.preventDefault();
-        break;
-      case KeyEvent.DOM_VK_TAB: {
-        if (!this.view.visibleRowCount) {
-          // Leave it to the default behaviour if there are not results.
-          break;
-        }
-
-        // In smartbar mode, mirror the urlbar's circular Tab pattern: cycle
-        // through results, then continue into the action buttons (Add Tab,
-        // memories, Submit), then wrap back to the first result. Shift+Tab
-        // mirrors the cycle in reverse. The view stays open the whole time;
-        // Tab from the action buttons back into the result list is handled
-        // by SmartbarInput.#onActionButtonsKeyDown.
-        if (
-          this.input.sapName == "smartbar" &&
-          this.view.isOpen &&
-          !event.ctrlKey &&
-          !event.altKey
-        ) {
-          const atEnd =
-            !event.shiftKey &&
-            this.view.selectedElement == this.view.getLastSelectableElement();
-          const atStart =
-            event.shiftKey &&
-            this.view.selectedElement == this.view.getFirstSelectableElement();
-
-          if (atEnd || atStart) {
-            if (executeAction) {
-              this.view.selectedRowIndex = -1;
-              // SAP is `smartbar`, so we can safely cast to SmartbarInput.
-              const smartbar = /** @type {SmartbarInput} */ (
-                /** @type {unknown} */ (this.input)
-              );
-              if (atEnd) {
-                smartbar.focusFirstActionButton();
-              } else {
-                smartbar.focusLastActionButton();
-              }
-            }
-            event.preventDefault();
-            break;
-          }
-          // Otherwise, fall through to the default cycling behaviour.
-        }
-
-        // Change the tab behavior when urlbar view is open.
-        if (
-          lazy.UrlbarPrefs.get("scotchBonnet.enableOverride") &&
-          this.view.isOpen &&
-          !event.ctrlKey &&
-          !event.altKey
-        ) {
-          if (
-            (event.shiftKey &&
-              this.view.selectedElement ==
-                this.view.getFirstSelectableElement()) ||
-            (!event.shiftKey &&
-              this.view.selectedElement == this.view.getLastSelectableElement())
-          ) {
-            // If pressing tab + shift when the first or pressing tab when last
-            // element has been selected, move the focus to the Unified Search
-            // Button. Then make urlbar results selectable by tab + shift.
-            event.preventDefault();
-            this.view.selectedRowIndex = -1;
-            this.focusOnUnifiedSearchButton();
-            break;
-          } else if (
-            !this.view.selectedElement &&
-            this.input.focusedViaMousedown
-          ) {
-            if (event.shiftKey) {
-              this.focusOnUnifiedSearchButton();
-            } else {
-              this.view.selectBy(1, {
-                userPressedTab: true,
-              });
-            }
-            event.preventDefault();
-            break;
-          }
-        }
-
-        // It's always possible to tab through results when the urlbar was
-        // focused with the mouse or has a search string, or when the view
-        // already has a selection.
-        // We allow tabbing without a search string when in search mode preview,
-        // since that means the user has interacted with the Urlbar since
-        // opening it.
-        // When there's no search string and no view selection, we want to focus
-        // the next toolbar item instead, for accessibility reasons.
-        let allowTabbingThroughResults =
-          this.input.focusedViaMousedown ||
-          this.input.searchMode?.isPreview ||
-          this.input.searchMode?.source ==
-            lazy.UrlbarUtils.RESULT_SOURCE.ACTIONS ||
-          this.view.selectedElement ||
-          (this.input.value &&
-            this.input.getAttribute("pageproxystate") != "valid");
-        if (
-          // Even if the view is closed, we may be waiting results, and in
-          // such a case we don't want to tab out of the urlbar.
-          (this.view.isOpen || !executeAction) &&
-          !event.ctrlKey &&
-          !event.altKey &&
-          allowTabbingThroughResults
-        ) {
-          if (executeAction) {
-            this.userSelectionBehavior = "tab";
-            this.view.selectBy(1, {
-              reverse: event.shiftKey,
-              userPressedTab: true,
-            });
-          }
-          event.preventDefault();
-        }
-        break;
-      }
-      case KeyEvent.DOM_VK_PAGE_DOWN:
-      case KeyEvent.DOM_VK_PAGE_UP:
-        if (event.ctrlKey) {
-          break;
-        }
-      // eslint-disable-next-lined no-fallthrough
-      case KeyEvent.DOM_VK_DOWN:
-      case KeyEvent.DOM_VK_UP:
-        if (event.altKey) {
-          break;
-        }
-        if (this.view.isOpen) {
-          if (executeAction) {
-            this.userSelectionBehavior = "arrow";
-            this.view.selectBy(
-              event.keyCode == KeyEvent.DOM_VK_PAGE_DOWN ||
-                event.keyCode == KeyEvent.DOM_VK_PAGE_UP
-                ? lazy.UrlbarUtils.PAGE_UP_DOWN_DELTA
-                : 1,
-              {
-                reverse:
-                  event.keyCode == KeyEvent.DOM_VK_UP ||
-                  event.keyCode == KeyEvent.DOM_VK_PAGE_UP,
-              }
-            );
-          }
-        } else {
-          if (this.keyEventMovesCaret(event)) {
-            break;
-          }
-          if (executeAction) {
-            this.userSelectionBehavior = "arrow";
-            this.input.startQuery({
-              searchString: this.input.value,
-              event,
-            });
-          }
-        }
-        event.preventDefault();
-        break;
-      case KeyEvent.DOM_VK_RIGHT:
-      case KeyEvent.DOM_VK_END:
-        this.input.maybeConfirmSearchModeFromResult({
-          entry: "typed",
-          startQuery: true,
-        });
-      // Fall through.
-      case KeyEvent.DOM_VK_LEFT:
-      case KeyEvent.DOM_VK_HOME:
-        this.view.removeAccessibleFocus();
-        break;
-      case KeyEvent.DOM_VK_BACK_SPACE:
-        if (
-          this.input.searchMode &&
-          this.input.selectionStart == 0 &&
-          this.input.selectionEnd == 0 &&
-          !event.shiftKey
-        ) {
-          this.input.searchMode = null;
-          if (this.input.view.oneOffSearchButtons) {
-            this.input.view.oneOffSearchButtons.selectedButton = null;
-          }
-          this.input.startQuery({
-            allowAutofill: false,
-            event,
-          });
-        }
-      // Fall through.
-      case KeyEvent.DOM_VK_DELETE:
-        if (!this.view.isOpen) {
-          break;
-        }
-        if (event.shiftKey) {
-          if (!executeAction || this.#dismissSelectedResult(event)) {
-            event.preventDefault();
-          }
-        } else if (executeAction) {
-          this.userSelectionBehavior = "none";
-        }
-        break;
-    }
+  setChild(child) {
+    this.#child = child;
   }
 
   /**
@@ -651,7 +372,7 @@ export class UrlbarParentController {
           (result == context.results[0] && result.heuristic) ||
           result.autofill
         ) {
-          if (result.type == lazy.UrlbarUtils.RESULT_TYPE.SEARCH) {
+          if (result.type == lazy.UrlbarShared.RESULT_TYPE.SEARCH) {
             // Speculative connect only if search suggestions are enabled.
             if (
               (lazy.UrlbarPrefs.get("suggest.searches") ||
@@ -699,65 +420,6 @@ export class UrlbarParentController {
   }
 
   /**
-   * Stores the selection behavior that the user has used to select a result.
-   *
-   * @param {"arrow"|"tab"|"none"} behavior
-   *   The behavior the user used.
-   */
-  set userSelectionBehavior(behavior) {
-    // Don't change the behavior to arrow if tab has already been recorded,
-    // as we want to know that the tab was used first.
-    if (behavior == "arrow" && this._userSelectionBehavior == "tab") {
-      return;
-    }
-    this._userSelectionBehavior = behavior;
-  }
-
-  /**
-   * Triggers a "dismiss" engagement for the selected result if one is selected.
-   * Providers that can respond to dismissals of their results should implement
-   * `onEngagement()`, handle the dismissal, and call `controller.removeResult()`.
-   *
-   * @param {Event} event
-   *   The event that triggered dismissal.
-   * @returns {boolean}
-   *   Whether providers were notified about the engagement. Providers will not
-   *   be notified if there is no selected result or the selected result is the
-   *   heuristic, since the heuristic result cannot be dismissed.
-   */
-  #dismissSelectedResult(event) {
-    if (!this._lastQueryContextWrapper) {
-      console.error("Cannot dismiss selected result, last query not present");
-      return false;
-    }
-    let { queryContext } = this._lastQueryContextWrapper;
-
-    let { selectedElement } = this.input.view;
-    if (selectedElement?.classList.contains("urlbarView-button")) {
-      // For results with buttons, delete them only when the main part of the
-      // row is selected, not a button.
-      return false;
-    }
-
-    let result = this.input.view.selectedResult;
-    if (!result) {
-      return false;
-    }
-    if (result.heuristic && !result.autofill) {
-      return false;
-    }
-
-    this.engagementEvent.record(event, {
-      result,
-      selType: "dismiss",
-      searchString: queryContext.searchString,
-      searchSource: this.input.getSearchSource(event),
-    });
-
-    return true;
-  }
-
-  /**
    * Removes a result from the current query context and notifies listeners.
    * Heuristic results cannot be removed.
    *
@@ -782,7 +444,7 @@ export class UrlbarParentController {
     }
 
     queryContext.results.splice(index, 1);
-    this.notify(NOTIFICATIONS.QUERY_RESULT_REMOVED, index);
+    this.notify(lazy.UrlbarShared.NOTIFICATIONS.QUERY_RESULT_REMOVED, index);
   }
 
   /**
@@ -802,64 +464,14 @@ export class UrlbarParentController {
   }
 
   /**
-   * Notifies listeners of results.
+   * Notifies listeners of results, by dispatching through the paired
+   * UrlbarChildController, which owns the listeners.
    *
    * @param {string} name Name of the notification.
    * @param {object} params Parameters to pass with the notification.
    */
   notify(name, ...params) {
-    if (this._listenerHost !== this) {
-      this._listenerHost.notify(name, ...params);
-      return;
-    }
-    for (let listener of this._listeners) {
-      // Can't use "in" because some tests proxify these.
-      if (typeof listener[name] != "undefined") {
-        try {
-          listener[name](...params);
-        } catch (ex) {
-          console.error(ex);
-        }
-      }
-    }
-  }
-
-  focusOnUnifiedSearchButton() {
-    this.input.setUnifiedSearchButtonAvailability(true);
-
-    /** @type {HTMLElement} */
-    const switcher = this.input.querySelector(".searchmode-switcher");
-    // Set tabindex to be focusable.
-    switcher.setAttribute("tabindex", "-1");
-    // Remove blur listener to avoid closing urlbar view panel.
-    this.input.inputField.removeEventListener("blur", this.input);
-    // Move the focus.
-    switcher.focus();
-    // Restore all.
-    this.input.inputField.addEventListener("blur", this.input);
-    switcher.addEventListener(
-      "blur",
-      /** @type {(e: FocusEvent) => void} */
-      e => {
-        switcher.removeAttribute("tabindex");
-
-        let relatedTarget = /** @type {HTMLElement} */ (e.relatedTarget);
-        if (
-          this.input.hasAttribute("focused") &&
-          !this.input.contains(relatedTarget)
-        ) {
-          // If the focus is not back to urlbar, fire blur event explicitly to
-          // clear the urlbar. Because the input field has been losing an
-          // opportunity to lose the focus since we removed blur listener once.
-          this.input.inputField.dispatchEvent(
-            new FocusEvent("blur", {
-              relatedTarget: e.relatedTarget,
-            })
-          );
-        }
-      },
-      { once: true }
-    );
+    this.#child.notify(name, ...params);
   }
 }
 
@@ -1137,7 +749,7 @@ class TelemetryEvent {
       this.#recordExposures(queryContext);
     }
 
-    const visibleResults = this._controller.view?.visibleResults ?? [];
+    const visibleResults = this.#engagementData.visibleResults;
 
     // Start tracking for a disable event if there was a Suggest result
     // during an engagement or abandonment event.
@@ -1177,7 +789,6 @@ class TelemetryEvent {
    *   already started closing. In that case, no telemetry should be recorded.
    */
   #searchSourceToSap(searchSource) {
-    let browserWindow = this._controller.browserWindow;
     if (searchSource === "urlbar_handoff") {
       return "handoff";
     }
@@ -1188,6 +799,7 @@ class TelemetryEvent {
     if (searchSource === "smartbar") {
       return "smartbar";
     }
+    let browserWindow = this._controller.browserWindow;
     if (browserWindow.closed) {
       // If the browser window has already started closing, then we bail-out.
       // We would rather return no telemetry than have telemetry with an
@@ -1203,6 +815,37 @@ class TelemetryEvent {
       return "urlbar_addonpage";
     }
     return "urlbar";
+  }
+
+  /**
+   * The content-side state the engagement-telemetry recording needs.
+   *
+   * @type {{searchMode: object, visibleResults: UrlbarResult[], viewIsOpen: boolean, searchSource: string}}
+   */
+  get #engagementData() {
+    return {
+      searchMode: this._controller.input.searchMode,
+      visibleResults: this._controller.view?.visibleResults ?? [],
+      viewIsOpen: this._controller.view?.isOpen ?? false,
+      searchSource: this._controller.input.getSearchSource(),
+    };
+  }
+
+  /**
+   * The smartbar-only telemetry fields, read fresh from the input.
+   *
+   * @type {{chatId: string, intent: string, model: string}}
+   */
+  get #smartbarData() {
+    // Only read when the SAP is `smartbar`, so the input is a SmartbarInput.
+    const input = /** @type {SmartbarInput} */ (
+      /** @type {unknown} */ (this._controller.input)
+    );
+    return {
+      chatId: input.conversationTelemetryInfo?.chat_id ?? "",
+      intent: input.smartbarAction ?? "",
+      model: input.modelName ?? "",
+    };
   }
 
   /**
@@ -1278,14 +921,15 @@ class TelemetryEvent {
     if (!sap) {
       return;
     }
+    let engagementData = this.#engagementData;
     // The extra_key `location` is optional, but required for the smartbar.
     // TODO (bug 2024631): Support location for all SAPs.
-    if (this._controller.input.sapName === "smartbar" && !location) {
+    if (this._controller.sapName === "smartbar" && !location) {
       throw new Error(
         "Telemetry extra_key `location` is required for smartbar"
       );
     }
-    searchMode = searchMode ?? this._controller.input.searchMode;
+    searchMode = searchMode ?? engagementData.searchMode;
 
     // Distinguish user typed search strings from persisted search terms.
     const interaction = this.#getInteractionType(
@@ -1296,7 +940,7 @@ class TelemetryEvent {
       searchMode
     );
     const search_mode = this.#getSearchMode(searchMode);
-    const currentResults = this._controller.view?.visibleResults ?? [];
+    const currentResults = engagementData.visibleResults;
     let numResults = currentResults.length;
     let groups = currentResults
       .map(r => lazy.UrlbarUtils.searchEngagementTelemetryGroup(r))
@@ -1327,10 +971,7 @@ class TelemetryEvent {
           selected_result = `action_${actionKey}`;
         }
 
-        if (
-          selected_result === "input_field" &&
-          !this._controller.view?.isOpen
-        ) {
+        if (selected_result === "input_field" && !engagementData.viewIsOpen) {
           numResults = 0;
           groups = "";
           results = "";
@@ -1474,15 +1115,7 @@ class TelemetryEvent {
     if (!isSmartbar) {
       return null;
     }
-    // If SAP is `smartbar` we can safely cast to type `SmartbarInput`.
-    const input = /** @type {SmartbarInput} */ (
-      /** @type {unknown} */ (this._controller.input)
-    );
-    return {
-      chatId: input.conversationTelemetryInfo?.chat_id ?? "",
-      intent: input.smartbarAction ?? "",
-      model: input.modelName ?? "",
-    };
+    return this.#smartbarData;
   }
 
   /**
@@ -1498,7 +1131,7 @@ class TelemetryEvent {
     try {
       const semanticManager =
         lazy.UrlbarProviderSemanticHistorySearch.semanticManager;
-      const isSmartbar = this._controller.input.sapName === "smartbar";
+      const isSmartbar = this._controller.sapName === "smartbar";
       if (
         isSmartbar
           ? semanticManager.isEnabledForSmartWindow
@@ -1525,7 +1158,8 @@ class TelemetryEvent {
     if (!exposures.length) {
       return;
     }
-    let sap = this.#searchSourceToSap(this._controller.input.getSearchSource());
+    let { searchSource, visibleResults } = this.#engagementData;
+    let sap = this.#searchSourceToSap(searchSource);
     if (!sap) {
       // Window started closing.
       return;
@@ -1541,7 +1175,7 @@ class TelemetryEvent {
 
         let endResults = result.isHiddenExposure
           ? queryContext.results
-          : this._controller.view?.visibleResults;
+          : visibleResults;
         terminal = endResults?.includes(result);
       }
 
@@ -1831,34 +1465,6 @@ class TelemetryEvent {
       this._startEventInfo = null;
       this._discarded = true;
     }
-  }
-
-  /**
-   * Extracts a telemetry type from a result and the element being interacted
-   * with for event telemetry.
-   *
-   * @param {object} result The element to analyze.
-   * @param {HTMLElement} element The element to analyze.
-   * @returns {string} a string type for the telemetry event.
-   */
-  typeFromElement(result, element) {
-    if (!element) {
-      return "none";
-    }
-    if (
-      element.dataset.command == "help" ||
-      element.dataset.l10nName == "learn-more-link"
-    ) {
-      return "help";
-    }
-    if (element.dataset.command == "dismiss") {
-      return "block";
-    }
-    if (element.classList?.contains("urlbarView-action-btn")) {
-      return "action";
-    }
-    // Now handle the result.
-    return lazy.UrlbarUtils.telemetryTypeFromResult(result);
   }
 
   /**

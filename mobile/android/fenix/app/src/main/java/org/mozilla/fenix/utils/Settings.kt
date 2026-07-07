@@ -25,7 +25,14 @@ import mozilla.components.feature.sitepermissions.SitePermissionsRules.Action
 import mozilla.components.feature.sitepermissions.SitePermissionsRules.AutoplayAction
 import mozilla.components.lib.crash.store.CrashReportOption
 import mozilla.components.support.base.log.logger.Logger
+import mozilla.components.support.ktx.android.content.PreferencesHolder
+import mozilla.components.support.ktx.android.content.booleanPreference
 import mozilla.components.support.ktx.android.content.doesDeviceHaveHinge
+import mozilla.components.support.ktx.android.content.floatPreference
+import mozilla.components.support.ktx.android.content.intPreference
+import mozilla.components.support.ktx.android.content.longPreference
+import mozilla.components.support.ktx.android.content.stringPreference
+import mozilla.components.support.ktx.android.content.stringSetPreference
 import mozilla.components.support.locale.LocaleManager
 import mozilla.components.support.utils.Browsers
 import mozilla.components.support.utils.ext.PackageManagerCompatHelper
@@ -87,7 +94,7 @@ class Settings(
     private val packageManagerCompatHelper: PackageManagerCompatHelper = appContext.packageManagerCompatHelper,
     @Suppress("unused")
     private val isBenchmarkBuild: Boolean = BuildConfig.IS_BENCHMARK_BUILD,
-) : RegisteringPreferencesHolder {
+) : PreferencesHolder {
     companion object {
         const val FENIX_PREFERENCES = "fenix_preferences"
 
@@ -104,7 +111,6 @@ class Settings(
         const val ONE_MINUTE_MS = 60 * 1000L
         const val ONE_HOUR_MS = 60 * ONE_MINUTE_MS
         const val ONE_DAY_MS = 60 * 60 * 24 * 1000L
-        const val TWO_DAYS_MS = 2 * ONE_DAY_MS
         const val THREE_DAYS_MS = 3 * ONE_DAY_MS
         const val FIVE_DAYS_MS = 5 * ONE_DAY_MS
         const val ONE_WEEK_MS = 60 * 60 * 24 * 7 * 1000L
@@ -168,8 +174,6 @@ class Settings(
         private const val CLOUDFLARE_URI = "https://mozilla.cloudflare-dns.com/dns-query"
     }
 
-    override val preferenceGetters: MutableMap<String, () -> Any?> = mutableMapOf()
-
     private val logger = Logger("Settings")
 
     @VisibleForTesting
@@ -222,6 +226,24 @@ class Settings(
         default = { ShortcutType.BOOKMARK.value },
         persistDefaultIfNotExists = true,
     )
+
+    /**
+     * Indicates what shortcut key is currently selected for the simple toolbar while the tab strip is
+     * enabled. The tab strip provides its own "new tab" button, so this uses a separate option set that
+     * excludes it.
+     */
+    var toolbarTabStripShortcutKey: String by stringPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_toolbar_tab_strip_shortcut),
+        default = { ShortcutType.SHARE.value },
+        persistDefaultIfNotExists = true,
+    )
+
+    /**
+     * The shortcut key that the simple toolbar's primary slot should currently use: the tab-strip
+     * specific key when the tab strip is enabled, otherwise the regular simple toolbar key.
+     */
+    val activeSimpleToolbarShortcutKey: String
+        get() = if (isTabStripEnabled) toolbarTabStripShortcutKey else toolbarSimpleShortcutKey
 
     /**
      * Indicates if the Pocket recommendations homescreen section should also show sponsored stories.
@@ -345,14 +367,6 @@ class Settings(
             )
         }
     }
-
-    /**
-     * Indicates if review prompt feature should use the new trigger criteria.
-     */
-    var newReviewPromptTriggerCriteriaEnabled by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_custom_review_prompt_enabled),
-        default = { FxNimbus.features.customReviewPrompt.value().enabled },
-    )
 
     /**
      * Indicates if the custom review prompt UI should be enabled.
@@ -2318,14 +2332,6 @@ class Settings(
     )
 
     /**
-     * Indicates if the menu CFR should be displayed to the user.
-     */
-    var shouldShowMenuCFR by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_menu_cfr),
-        default = false,
-    )
-
-    /**
      * Get the current mode for how https-only is enabled.
      */
     fun getHttpsOnlyMode(): HttpsOnlyMode {
@@ -2451,11 +2457,11 @@ class Settings(
     )
 
     /**
-     * Indicates if the Mozilla Ads Client is enabled.
+     * Indicates if the Mozilla Ads Client for Sponsored Stories is enabled.
      */
-    var enableMozillaAdsClient by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_enable_mozilla_ads_client),
-        default = { FxNimbus.features.mozillaAdsClient.value().enabled },
+    var enableAdsClientForStories by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_ads_client_for_stories),
+        default = { FxNimbus.features.adsClientForStories.value().enabled },
     )
 
     /**
@@ -2936,14 +2942,6 @@ class Settings(
     )
 
     /**
-     * Indicates whether or not we should use the new crash reporter flow.
-     */
-    var useNewCrashReporterFlow by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_use_new_crash_reporter),
-        default = Config.channel.isNightlyOrDebug || Config.channel.isBeta,
-    )
-
-    /**
      * Do not show crash pull dialog before this date.
      * cf browser.crashReports.dontShowBefore on desktop
      */
@@ -3295,5 +3293,14 @@ class Settings(
     var webCompatReporterEnhancementsEnabled by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_webcompat_reporter_enhancements),
         default = { FxNimbus.features.webcompatReporterEnhancements.value().enabled },
+    )
+
+    /**
+     * Feature flag that indicates if the uninstall survey shortcut feature is enabled.
+     * It checks if the feature is activated via the remote Nimbus experiment OR forced via Secret Settings.
+     */
+    var uninstallSurveyFeatureFlagEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_uninstall_survey),
+        default = { FxNimbus.features.uninstallSurvey.value().enabled },
     )
 }
