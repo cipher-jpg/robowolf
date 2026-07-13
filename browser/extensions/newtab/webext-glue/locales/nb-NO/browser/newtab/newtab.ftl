@@ -99,6 +99,9 @@ home-prefs-privacy-header =
 # Stocks is a widget on New Tab that shows stock ticker prices.
 home-prefs-stocks-header =
     .label = Aksjer
+# Picture of the day is a widget on New Tab that shows a daily Wikimedia Commons image.
+home-prefs-picture-header =
+    .label = Dagens bilde
 home-prefs-mission-message2 =
     .message = Våre sponsorer støtter vårt oppdrag om å bygge et bedre internett.
 home-prefs-manage-topics-link2 =
@@ -163,14 +166,60 @@ home-prefs-mission-message-learn-more-link-srd = Finn ut hvordan
 # Context menu item linking to more information about the Privacy widget.
 newtab-privacy-menu-learn-more = Les mer
 
+## Privacy widget — count readout
+
+# Label shown under the large tracker-count number, appearing like:
+# Line 1: 86
+# Line 2: Trackers blocked today
+# Translations can be adjusted to "Today's blocked trackers" or something
+# similar if this fixed order causes issues.
+# Variables:
+#   $count (number) - Number of trackers blocked today
+newtab-privacy-trackers-blocked-today =
+    { $count ->
+        [one] Sporer blokkert i dag
+       *[other] Sporere blokkert i dag
+    }
+
 ## Strings for the Stocks widget
 
 # Context menu item for searching stock ticker symbols.
 newtab-stocks-menu-search = Søk etter aksjesymboler
-# Context menu item that hides the Stocks widget.
-newtab-stocks-menu-hide = Skjul aksjer
 # Context menu item linking to more information about the Stocks widget.
 newtab-stocks-menu-learn-more = Les mer
+
+## Strings for the Picture of the Day widget
+
+# Title shown at the top of the widget, with the source name appended.
+# "Wikimedia Commons" is a brand name and should not be translated.
+newtab-picture-header = Dagens bilde · Wikimedia Commons
+# Link to the picture's source page (its Wikimedia Commons file page).
+# "Wikimedia Commons" is a brand name and should not be translated.
+newtab-picture-attribution-source-link = Wikimedia Commons
+# Button that sets the current picture as the New Tab background wallpaper. The
+# button collapses to an icon when not hovered/focused, so .title is its tooltip.
+newtab-picture-set-wallpaper =
+    .label = Angi som bakgrunnsbilde
+    .title = Angi som bakgrunnsbilde
+    .aria-label = Angi dagens bilde som bakgrunnsbilde
+# Context menu item that opens the New Tab customization panel.
+newtab-picture-menu-manage-wallpaper = Behandle bakgrunnsbilde
+# Context menu item that hides today’s picture, replacing it with an existing
+# wallpaper.
+newtab-picture-menu-hide-photo = Skjul dagens bilde
+# Context menu item that restores today’s picture after it has been hidden.
+newtab-picture-menu-show-photo = Vis dagens bilde
+# Context menu item linking to more information about the widget.
+newtab-picture-menu-learn-more = Les mer
+# Icon button shown on the widget once the picture is hidden; restores it.
+newtab-picture-show-button =
+    .title = Vis dagens bilde
+    .aria-label = Vis dagens bilde
+# Shown when there is no new picture to display yet.
+newtab-picture-check-back = Sjekk tilbake i morgen for et nytt bilde
+# Screen-reader text alternative for the picture; fallback used when the source
+# provides no localized description.
+newtab-picture-image-alt = Dagens bilde fra Wikimedia Commons
 
 ## Search box component.
 
@@ -496,6 +545,8 @@ newtab-recommended-stories-toggle =
     .label = Anbefalte artikler
 newtab-custom-stories-personalized-toggle =
     .label = Artikler
+newtab-custom-stories-personalized-checkbox =
+    .label = Personlige artikler basert på aktiviteten din
 newtab-custom-stories-personalized-checkbox-label = Personlige artikler basert på aktiviteten din
 newtab-custom-pocket-sponsored = Sponsede historier
 newtab-custom-pocket-show-recent-saves = Se sist lagrede
@@ -520,6 +571,8 @@ newtab-custom-widget-privacy-toggle =
     .label = Personvern
 newtab-custom-widget-stocks-toggle =
     .label = Aksjer
+newtab-custom-widget-picture-toggle =
+    .label = Dagens bilde
 newtab-custom-widget-section-title = Widgeter
 newtab-custom-widget-section-toggle =
     .label = Widgeter
@@ -1296,6 +1349,15 @@ newtab-sports-widget-message-day-in-play-title = Hold dagen i gang med widgeter 
 newtab-sports-widget-message-day-in-play-body = Følg VM, hold fokus på oppgavene dine, følg tiden rundt om i verden og mer.
 newtab-sports-widget-message-explore-widgets-cta =
     .label = Utforsk widgeter
+
+## Survey prompts shown after the World Cup to gather feedback on the widgets experience.
+
+newtab-sports-widget-message-survey-title = Hjelp oss med å gjøre widgeter bedre
+newtab-sports-widget-message-survey-body = Det var det for VM. Del gjerne tilbakemeldingen din om opplevelsen.
+newtab-sports-widget-message-survey-widget-title = Hvordan var VM-widgeten?
+newtab-sports-widget-message-survey-widget-body = Del tilbakemeldingen din for å hjelpe oss med å forbedre fremtidige widgeter. Prøv deretter den nye widgeten i samlingen din.
+newtab-sports-widget-message-survey-cta =
+    .label = Delta i undersøkelsen
 
 ## Strings for activation window message variants. In certain experiment configurations,
 ## the strings from these variants may be displayed in a message below the search input

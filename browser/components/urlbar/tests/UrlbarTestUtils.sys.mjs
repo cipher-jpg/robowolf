@@ -26,12 +26,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusTestUtils: "resource://testing-common/NimbusTestUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  ProvidersManager:
+    "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
   UrlbarChildController:
     "chrome://browser/content/urlbar/UrlbarChildController.mjs",
-  UrlbarParentController:
-    "moz-src:///browser/components/urlbar/UrlbarParentController.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarSearchUtils:
@@ -332,7 +332,7 @@ class UrlbarInputTestUtils {
     );
     let promiseMenuOpen = lazy.BrowserTestUtils.waitForEvent(
       this.#urlbar(win).view.resultMenu,
-      "popupshown"
+      "shown"
     );
     if (byMouse) {
       this.info(
@@ -363,9 +363,8 @@ class UrlbarInputTestUtils {
       this.info(`waiting for ${activationKey} to open the menu popup`);
     }
     await promiseMenuOpen;
-    this.Assert?.equal(
-      this.#urlbar(win).view.resultMenu.state,
-      "open",
+    this.Assert?.ok(
+      this.#urlbar(win).view.resultMenu.hasAttribute("open"),
       "Checking popup state"
     );
   }
@@ -414,19 +413,11 @@ class UrlbarInputTestUtils {
 
       let promisePopup = lazy.BrowserTestUtils.waitForEvent(
         this.#urlbar(window).view.resultMenu,
-        "popupshown"
+        "shown"
       );
 
-      if (AppConstants.platform == "macosx") {
-        // Synthesized clicks don't work in the native Mac menu.
-        this.info(
-          "Calling openMenu() on submenu item with selector: " + selector
-        );
-        menuitem.openMenu(true);
-      } else {
-        this.info("Clicking submenu item with selector: " + selector);
-        this.EventUtils.synthesizeMouseAtCenter(menuitem, {}, window);
-      }
+      this.info("Clicking submenu item with selector: " + selector);
+      this.EventUtils.synthesizeMouseAtCenter(menuitem, {}, window);
 
       this.info("Waiting for submenu popupshown event");
       await promisePopup;
@@ -438,13 +429,13 @@ class UrlbarInputTestUtils {
     if (accesskey) {
       await lazy.TestUtils.waitForCondition(() => {
         menuitem = this.#urlbar(window).view.resultMenu.querySelector(
-          `menuitem[accesskey=${accesskey}]`
+          `panel-item[accesskey=${accesskey}]`
         );
         return menuitem;
       }, "Waiting for strings to load");
     } else if (command) {
       menuitem = this.#urlbar(window).view.resultMenu.querySelector(
-        `menuitem[data-command=${command}]`
+        `panel-item[data-command=${command}]`
       );
     } else {
       throw new Error("accesskey or command must be specified");
@@ -483,24 +474,8 @@ class UrlbarInputTestUtils {
       throw new Error("Menu item not found for accesskey: " + accesskey);
     }
 
-    let promiseCommand = lazy.BrowserTestUtils.waitForEvent(
-      this.#urlbar(win).view.resultMenu,
-      "command"
-    );
-
-    if (AppConstants.platform == "macosx") {
-      // The native Mac menu doesn't support access keys.
-      this.info("calling doCommand() to activate menu item");
-      menuitem.doCommand();
-      this.#urlbar(win).view.resultMenu.hidePopup(true);
-    } else {
-      this.info(`pressing access key (${accesskey}) to activate menu item`);
-      this.EventUtils.synthesizeKey(accesskey, {}, win);
-    }
-
-    this.info("waiting for command event");
-    await promiseCommand;
-    this.info("got the command event");
+    this.info(`pressing access key (${accesskey}) to activate menu item`);
+    this.EventUtils.synthesizeKey(accesskey, {}, win);
   }
 
   /**
@@ -541,28 +516,19 @@ class UrlbarInputTestUtils {
       submenuSelectors,
       window: win,
     });
+
     if (!menuitem) {
       throw new Error("Menu item not found for command: " + command);
     }
 
     let promiseCommand = lazy.BrowserTestUtils.waitForEvent(
       this.#urlbar(win).view.resultMenu,
-      "command"
+      "click"
     );
 
-    if (AppConstants.platform == "macosx") {
-      // Synthesized clicks don't work in the native Mac menu.
-      this.info("calling doCommand() to activate menu item");
-      menuitem.doCommand();
-      this.#urlbar(win).view.resultMenu.hidePopup(true);
-    } else {
-      this.info("Clicking menu item with command: " + command);
-      this.EventUtils.synthesizeMouseAtCenter(menuitem, {}, win);
-    }
-
-    this.info("Waiting for command event");
+    this.info("Clicking menu item with command: " + command);
+    this.EventUtils.synthesizeMouseAtCenter(menuitem, {}, win);
     await promiseCommand;
-    this.info("Got the command event");
   }
 
   /**
@@ -1414,23 +1380,36 @@ class UrlbarInputTestUtils {
       },
       options
     );
-    let parentController = new lazy.UrlbarParentController({
-      sapName,
-      isPrivate: parentOptions.input.isPrivate,
-      manager: parentOptions.manager,
-    });
-    // Stub the actor plumbing so the child controller's constructor reaches
-    // the parent we just built.
+    // The parent controller resolves the browser window from its actor (for the
+    // SAP window facts telemetry reads). Mock a minimal one representing a
+    // non-blank, non-extension page, exposed on the stubbed actor.
+    let browserWindow = {
+      closed: false,
+      isBlankPageURL: () => false,
+      gBrowser: { currentURI: Services.io.newURI("https://example.com/") },
+    };
+    // Stub the actor so the child controller builds a direct-path parent
+    // controller (the child owns construction; the actor only resolves the
+    // chrome window). It is exposed as `controller.parentController`.
     parentOptions.input.window.windowGlobalChild = {
       getActor: () => ({
-        getOrCreateController: () => parentController,
+        usesMessagePath: false,
+        browsingContext: { topChromeWindow: browserWindow },
       }),
     };
-    let controller = new lazy.UrlbarChildController({
-      input: parentOptions.input,
-    });
-    controller.parentController = parentController;
-    return controller;
+    // A provided `manager` stands in for the per-sap `ProvidersManager` the
+    // child-built parent controller resolves at construction. Swap it in for the
+    // duration of construction so the controller adopts it without touching the
+    // real per-sap instance (and its search-service init).
+    let originalGetInstanceForSap = lazy.ProvidersManager.getInstanceForSap;
+    if (parentOptions.manager) {
+      lazy.ProvidersManager.getInstanceForSap = () => parentOptions.manager;
+    }
+    try {
+      return new lazy.UrlbarChildController({ input: parentOptions.input });
+    } finally {
+      lazy.ProvidersManager.getInstanceForSap = originalGetInstanceForSap;
+    }
   }
 
   /**

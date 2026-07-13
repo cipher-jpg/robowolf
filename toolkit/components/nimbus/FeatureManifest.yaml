@@ -2101,8 +2101,7 @@ password-autocomplete:
 address-autofill-feature:
   description: Enabling address autofill feature
   owner: issozi@mozilla.com
-  hasExposure: true
-  exposureDescription: "Exposure is sent when an address is autofilled."
+  hasExposure: false
   variables:
     status:
       type: boolean
@@ -4842,6 +4841,12 @@ mailto:
         This pref controls after how many minutes the mailto prompt can be shown
         again, which has been dismissed by clicking a 'not now' button on it.
       fallbackPref: browser.mailto.dualPrompt.dismissNotNowMinutes
+    dialog:
+      type: boolean
+      description: >-
+        Toggle a mailto handler picker dialog shown when a mailto link is
+        clicked. When false, the picker is skipped and the link falls back to
+        the default protocol handling.
 
 nimbusIsReady:
   description: A feature that provides the number of Nimbus is_ready events to send
@@ -5338,6 +5343,20 @@ smartTabGroups:
         branch: user
         pref: browser.tabs.groups.smart.searchTopicEnabled
       description: For single tab groupings, use the search query as the topic rather than use ML
+
+tabContextMenu:
+  description: Prefs to control the behavior and structure of the tab context menu
+  owner: sfoster@mozilla.com
+  hasExposure: false
+  variables:
+    altStructureEnabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.tabs.contextmenu.altstructure.enabled
+      description: >-
+        Controls whether the updated (alternate) tab context menu layout is
+        shown instead of the classic layout.
 
 externalLinkHandling:
   description: Controls how externally-opened URLs will be handled by Firefox.
@@ -5993,6 +6012,9 @@ smartWindow:
   owner: echa@mozilla.com
   hasExposure: false
   variables:
+    enabled:
+      type: boolean
+      description: Enables the Smart Window feature when true. Turning off this variable will not disable the feature.
     isDefault:
       type: boolean
       setPref:
@@ -6027,15 +6049,17 @@ webNotificationsPermissionUi:
   owner: omc-core@mozilla.com
   hasExposure: true
   exposureDescription: >-
-    Recorded when the permission prompt is rendered with at least one
-    treatment variable applied and the activationTargeting expression
-    (if set) evaluated truthy.
+    Recorded when an enrolled user is shown the permission prompt and the
+    activationTargeting expression (if set) evaluated truthy, regardless of
+    whether any content variable is set. This fires for the empty-content
+    control branch as well so it is comparable to the treatment branches.
   variables:
     headline:
       type: string
       description: >-
         Overrides the prompt headline. Must contain "<>" for site-name
-        substitution. Falls back to the default copy when unset.
+        substitution; a headline without it falls back to the default copy.
+        Also falls back to the default copy when unset.
     body:
       type: string
       description: >-
@@ -6050,9 +6074,10 @@ webNotificationsPermissionUi:
     secondaryCtaLabel:
       type: string
       description: >-
-        Overrides the (Always) Block button label. Applied uniformly across
-        normal and private browsing modes; the underlying BLOCK action and
-        scope are unchanged.
+        Overrides the (Always) Block button label in normal windows only; left
+        at the default in private browsing, where the wording reflects the
+        session-scoped BLOCK semantics. The underlying BLOCK action and scope
+        are unchanged.
     secondaryCtaAccessKey:
       type: string
       description: Optional access key paired with secondaryCtaLabel.
@@ -6070,3 +6095,27 @@ webNotificationsPermissionUi:
         unset or empty the treatment applies to every prompt the enrolled
         user sees; when set and falsy the prompt falls back to the default
         copy and no exposure event is recorded.
+    headlineL10nId:
+      type: string
+      description: >-
+        Fluent message id (in browser/permissions.ftl) for the headline,
+        resolved in-tree. Takes precedence over headline; the message must
+        contain "<>" (e.g. via the $host variable) for site-name substitution,
+        else the prompt falls back to the default copy.
+    bodyL10nId:
+      type: string
+      description: >-
+        Fluent message id for the body/hint text, resolved in-tree. Takes
+        precedence over body.
+    primaryCtaLabelL10nId:
+      type: string
+      description: >-
+        Fluent message id for the Allow button, resolved in-tree. Takes
+        precedence over primaryCtaLabel; its .accesskey attribute, if present,
+        sets the access key.
+    secondaryCtaLabelL10nId:
+      type: string
+      description: >-
+        Fluent message id for the (Always) Block button, resolved in-tree.
+        Takes precedence over secondaryCtaLabel; its .accesskey attribute, if
+        present, sets the access key. Not applied in private browsing.

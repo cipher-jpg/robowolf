@@ -407,6 +407,9 @@ bool DirectMapTextureSource::UpdateInternal(gfx::DataSourceSurface* aSurface,
     return false;
   }
 
+  MOZ_ASSERT(gl()->IsExtensionSupported(gl::GLContext::APPLE_texture_range));
+  MOZ_ASSERT(gl()->IsExtensionSupported(gl::GLContext::APPLE_client_storage));
+
   if (aInit) {
     gl()->fGenTextures(1, &mTextureHandle);
     gl()->fBindTexture(LOCAL_GL_TEXTURE_RECTANGLE_ARB, mTextureHandle);
@@ -575,8 +578,8 @@ void SurfaceTextureHost::PushResourceUpdates(
 
   // Prefer TextureExternal unless the backend requires TextureRect.
   TextureHost::NativeTexturePolicy policy =
-      TextureHost::BackendNativeTexturePolicy(aResources.GetBackendType(),
-                                              GetSize());
+      TextureHost::BackendNativeTexturePolicy(
+          aResources.GetCapabilities().mBackendType, GetSize());
   auto imageType = wr::ExternalImageType::TextureHandle(
       wr::ImageBufferKind::TextureExternal);
   if (policy == TextureHost::NativeTexturePolicy::REQUIRE) {
@@ -594,7 +597,7 @@ void SurfaceTextureHost::PushResourceUpdates(
   // See RenderAndroidSurfaceTextureHost::Lock() and
   // RenderAndroidSurfaceTextureHost::ReadTexImage(), respectively.
   const bool normalizedUvs =
-      aResources.GetBackendType() == WebRenderBackend::HARDWARE;
+      aResources.GetCapabilities().mBackendType == WebRenderBackend::HARDWARE;
 
   switch (GetFormat()) {
     case gfx::SurfaceFormat::R8G8B8X8:
@@ -877,8 +880,8 @@ void AndroidHardwareBufferTextureHost::PushResourceUpdates(
 
   // Prefer TextureExternal unless the backend requires TextureRect.
   TextureHost::NativeTexturePolicy policy =
-      TextureHost::BackendNativeTexturePolicy(aResources.GetBackendType(),
-                                              GetSize());
+      TextureHost::BackendNativeTexturePolicy(
+          aResources.GetCapabilities().mBackendType, GetSize());
   auto imageType = policy == TextureHost::NativeTexturePolicy::REQUIRE
                        ? wr::ExternalImageType::TextureHandle(
                              wr::ImageBufferKind::TextureRect)
@@ -1024,8 +1027,8 @@ void AndroidImageReaderImageTextureHost::PushResourceUpdates(
 
   // Prefer TextureExternal unless the backend requires TextureRect.
   TextureHost::NativeTexturePolicy policy =
-      TextureHost::BackendNativeTexturePolicy(aResources.GetBackendType(),
-                                              GetSize());
+      TextureHost::BackendNativeTexturePolicy(
+          aResources.GetCapabilities().mBackendType, GetSize());
   auto imageType = wr::ExternalImageType::TextureHandle(
       wr::ImageBufferKind::TextureExternal);
   if (policy == TextureHost::NativeTexturePolicy::REQUIRE) {
@@ -1190,8 +1193,8 @@ void EGLImageTextureHost::PushResourceUpdates(
 
   // Prefer TextureExternal unless the backend requires TextureRect.
   TextureHost::NativeTexturePolicy policy =
-      TextureHost::BackendNativeTexturePolicy(aResources.GetBackendType(),
-                                              GetSize());
+      TextureHost::BackendNativeTexturePolicy(
+          aResources.GetCapabilities().mBackendType, GetSize());
   auto imageType = policy == TextureHost::NativeTexturePolicy::REQUIRE
                        ? wr::ExternalImageType::TextureHandle(
                              wr::ImageBufferKind::TextureRect)

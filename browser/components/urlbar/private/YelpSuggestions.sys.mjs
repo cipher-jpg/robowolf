@@ -247,7 +247,7 @@ export class YelpSuggestions extends SuggestProvider {
       {
         name: RESULT_MENU_COMMAND.INACCURATE_LOCATION,
         l10n: {
-          id: "urlbar-result-menu-report-inaccurate-location",
+          id: "urlbar-result-menu-report-inaccurate-location2",
         },
       },
     ];
@@ -256,7 +256,7 @@ export class YelpSuggestions extends SuggestProvider {
       commands.push({
         name: RESULT_MENU_COMMAND.SHOW_LESS_FREQUENTLY,
         l10n: {
-          id: "urlbar-result-menu-show-less-frequently",
+          id: "urlbar-result-menu-show-less-frequently2",
         },
       });
     }
@@ -265,20 +265,20 @@ export class YelpSuggestions extends SuggestProvider {
       {
         name: RESULT_MENU_COMMAND.DISMISS,
         l10n: {
-          id: "urlbar-result-menu-dismiss-suggestion",
+          id: "urlbar-result-menu-dismiss-suggestion2",
         },
       },
       { name: "separator" },
       {
         name: RESULT_MENU_COMMAND.MANAGE,
         l10n: {
-          id: "urlbar-result-menu-manage-firefox-suggest",
+          id: "urlbar-result-menu-manage-firefox-suggest2",
         },
       },
       {
         name: RESULT_MENU_COMMAND.HELP,
         l10n: {
-          id: "urlbar-result-menu-learn-more",
+          id: "urlbar-result-menu-learn-more2",
         },
       }
     );
@@ -317,11 +317,7 @@ export class YelpSuggestions extends SuggestProvider {
         controller.removeResult(result);
         break;
       case RESULT_MENU_COMMAND.SHOW_LESS_FREQUENTLY:
-        controller.view.acknowledgeFeedback(result);
-        this.incrementShowLessFrequentlyCount();
-        if (!this.canShowLessFrequently) {
-          controller.view.invalidateResultMenuCommands();
-        }
+        this.handleShowLessFrequently(controller, result);
         lazy.UrlbarPrefs.set("yelp.minKeywordLength", searchString.length + 1);
         break;
     }

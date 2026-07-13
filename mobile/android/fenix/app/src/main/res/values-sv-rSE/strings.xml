@@ -665,9 +665,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Hjälp Firefox</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Ja</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Tillåt och fortsätt</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">Nej tack</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Nej tack</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Nej</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Aviseringar hjälper dig att vara säkrare med Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -2601,7 +2605,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Skyddsinställningar</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Förbättrat spårningsskydd</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Nu med Totalt skydd mot kakor, vår mest kraftfulla barriär hittills mot spårare på flera webbplatser.</string>
@@ -4080,18 +4088,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Din feedback är viktig. Varför avinstallerar du?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Problem med webbsidor</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Problem med video och nedladdningar</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Prestandaproblem</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Funktions- och designfrågor</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Sekretessrelaterade frågor</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Betalnings- och teckningsfrågor</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Skicka feedback och avinstallera</string>
   <!--

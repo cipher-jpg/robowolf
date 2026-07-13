@@ -497,7 +497,8 @@ BufferTextureHost::BufferTextureHost(const BufferDescriptor& aDesc,
   mUseExternalTextures =
       kMaxSize >= mSize.width && mSize.width >= kMinSize &&
       kMaxSize >= mSize.height && mSize.height >= kMinSize &&
-      StaticPrefs::gfx_webrender_enable_client_storage_AtStartup();
+      StaticPrefs::gfx_webrender_enable_client_storage_AtStartup() &&
+      !gfx::gfxVars::UseWebRenderANGLE();
 #else
   mUseExternalTextures = false;
 #endif
@@ -550,8 +551,8 @@ void BufferTextureHost::PushResourceUpdates(
 
   // Use native textures if our backend requires it, or if our backend doesn't
   // forbid it and we want to use them.
-  NativeTexturePolicy policy =
-      BackendNativeTexturePolicy(aResources.GetBackendType(), GetSize());
+  NativeTexturePolicy policy = BackendNativeTexturePolicy(
+      aResources.GetCapabilities().mBackendType, GetSize());
   bool useNativeTexture =
       (policy == REQUIRE) || (policy != FORBID && UseExternalTextures());
   auto imageType = useNativeTexture ? wr::ExternalImageType::TextureHandle(

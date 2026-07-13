@@ -452,9 +452,6 @@ export class AIWindow extends MozLitElement {
       "chat-conversation:seen-urls-updated",
       this.#onSeenUrlsUpdated
     );
-    this.#conversation.setHistoryResultsDispatcher(
-      this.#dispatchHistoryResults
-    );
   }
 
   #removeConversationListeners() {
@@ -474,7 +471,6 @@ export class AIWindow extends MozLitElement {
       "chat-conversation:seen-urls-updated",
       this.#onSeenUrlsUpdated
     );
-    this.#conversation.setHistoryResultsDispatcher(null);
   }
 
   #onSeenUrlsUpdated = () => {
@@ -483,9 +479,6 @@ export class AIWindow extends MozLitElement {
       this.#dispatchSeenUrls(actor);
     }
   };
-
-  #dispatchHistoryResults = payload =>
-    this.#getAIChatContentActor()?.dispatchHistoryResultsToChatContent(payload);
 
   #onMessageUpdate = (_event, message) => {
     // In fullpage, Kit must anchor to the chrome viewport (bottom of the
@@ -1135,13 +1128,15 @@ export class AIWindow extends MozLitElement {
     try {
       const gBrowser = window.browsingContext?.topChromeWindow.gBrowser;
       const tabCount = gBrowser?.tabs.length || 0;
-      starters = await lazy.NewTabStarterGenerator.getPrompts(tabCount).catch(
-        e => {
-          lazy.log.error("[Prompts] Failed to load initial starters:", e);
-          return [];
-        }
-      );
 
+      const newTabStarterIds =
+        await lazy.NewTabStarterGenerator.getPrompts(tabCount);
+
+      // Kick off the sidebar generation concurrently so its request is issued
+      // before the l10n await can be interrupted by a re-entrant call.
+      let sidebarStartersPromise = null;
+      let startersKey = null;
+      let sidebarStarters = null;
       if (this.mode === MODE.SIDEBAR && gBrowser) {
         const { contextWebsites } = this.#smartbar.getCurrentContextData();
         const contextTabs = contextWebsites.map(contextWebsite => ({
@@ -1152,14 +1147,14 @@ export class AIWindow extends MozLitElement {
         // Get memories setting from user preferences
         const memoriesEnabled =
           this.#memoriesToggled ?? this.#memoriesIconShown;
-        const startersKey = JSON.stringify({
+        startersKey = JSON.stringify({
           contextTabs,
           memoriesEnabled,
         });
-        let sidebarStarters = this.#sidebarStarterCache.get(startersKey);
+        sidebarStarters = this.#sidebarStarterCache.get(startersKey);
 
         if (!sidebarStarters) {
-          sidebarStarters = await lazy
+          sidebarStartersPromise = lazy
             .generateConversationStartersSidebar(
               contextTabs,
               2,
@@ -1174,6 +1169,22 @@ export class AIWindow extends MozLitElement {
               );
               return null;
             });
+        }
+      }
+
+      starters = await this.ownerDocument.l10n
+        .formatValues(newTabStarterIds.map(({ l10nId }) => ({ id: l10nId })))
+        .then(texts =>
+          texts.map((text, i) => ({ text, type: newTabStarterIds[i].type }))
+        )
+        .catch(e => {
+          lazy.log.error("[Prompts] Failed to load initial starters:", e);
+          return [];
+        });
+
+      if (this.mode === MODE.SIDEBAR && gBrowser) {
+        if (sidebarStartersPromise) {
+          sidebarStarters = await sidebarStartersPromise;
 
           if (sidebarStarters) {
             this.#sidebarStarterCache.delete(startersKey);
@@ -2692,6 +2703,22 @@ export class AIWindow extends MozLitElement {
       withPageContent: { log: messages },
       withoutPageContent: hasPageContent ? { log: withoutPageContent } : null,
     };
+  }
+
+  /**
+   * Cache resolved history-result page assets (thumbnail/favicon) onto the
+   * conversation's pool so later message snapshots carry them. Called by the
+   * actor after it resolves assets requested by a rendered grid.
+   *
+   * @param {string} conversationId
+   * @param {Array<{url: string, image: ?string, hasFavicon: boolean}>} assets
+   */
+  applyHistoryAssets(conversationId, assets) {
+    if (this.conversationId !== conversationId) {
+      return;
+    }
+
+    this.#conversation?.applyHistoryAssets(assets);
   }
 
   #openFeedbackModal(type) {
