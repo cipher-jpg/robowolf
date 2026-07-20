@@ -652,6 +652,14 @@ class nsLayoutUtils {
       nsIFrame* aFrame, uint32_t aFlags = 0);
 
   /**
+   * Walk up the scroll-container ancestor chain starting at |aSearchFrame| and
+   * return the ViewID of the nearest scroll container whose scrolled content
+   * already has one, or NULL_SCROLL_ID if none does.
+   */
+  static mozilla::layers::ScrollableLayerGuid::ViewID GetNearestScrollIdFor(
+      nsIFrame* aSearchFrame);
+
+  /**
    * GetScrolledRect returns the range of allowable scroll offsets
    * for aScrolledFrame, assuming the scrollable overflow area is
    * aScrolledFrameOverflowArea and the scrollport size is aScrollPortSize.
@@ -2616,7 +2624,6 @@ class nsLayoutUtils {
   /**
    * Unions the overflow areas of the children of aFrame with aOverflowAreas.
    * aSkipChildLists specifies any child lists that should be skipped.
-   * FrameChildListID::Popup is always skipped.
    */
   static void UnionChildOverflow(
       nsIFrame* aFrame, mozilla::OverflowAreas& aOverflowAreas,

@@ -5,15 +5,16 @@
 #ifndef mozilla_net_HttpBaseChannel_h
 #define mozilla_net_HttpBaseChannel_h
 
+#include <mozilla/Maybe.h>
+
 #include <utility>
 
 #include "OpaqueResponseUtils.h"
 #include "mozilla/AtomicBitfields.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/CompactPair.h"
-#include "mozilla/dom/DOMTypes.h"
 #include "mozilla/DataMutex.h"
-#include <mozilla/Maybe.h>
+#include "mozilla/dom/DOMTypes.h"
 #include "mozilla/net/DNS.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/NeckoCommon.h"
@@ -58,6 +59,7 @@ namespace mozilla {
 namespace dom {
 class PerformanceStorage;
 class ContentParent;
+enum class NoCorsMediaRequestState : uint8_t;
 }  // namespace dom
 
 class LogCollector;
@@ -704,6 +706,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
   OpaqueResponse PerformOpaqueResponseSafelistCheckAfterSniff(
       const nsACString& aContentType, bool aNoSniff);
 
+  dom::NoCorsMediaRequestState NoCorsMediaRequestState();
+  void RecordSubsequentNoCorsRequestState();
+
   bool NeedOpaqueResponseAllowedCheckAfterSniff() const;
   void BlockOpaqueResponseAfterSniff(
       const nsAString& aReason,
@@ -931,6 +936,12 @@ class HttpBaseChannel : public nsHashPropertyBag,
     (uint32_t, ResponseTimeoutEnabled, 1),
     // A flag that should be false only if a cross-domain redirect occurred
     (uint32_t, AllRedirectsSameOrigin, 1),
+
+    // Like AllRedirectsSameOrigin, but internal redirects (e.g. a service
+    // worker substituting a response from a different URL) do not count as
+    // cross-origin. Used for canvas/CSS/media tainting, which must only treat a
+    // real cross-origin *network* redirect as a trust-boundary crossing.
+    (uint32_t, AllRedirectsSameOriginIgnoringInternal, 1),
 
     // Is 1 if no redirects have occured or if all redirects
     // pass the Resource Timing timing-allow-check

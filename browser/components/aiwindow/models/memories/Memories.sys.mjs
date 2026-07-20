@@ -18,7 +18,11 @@
  * 3. `existingMemoriesList`: existing memory summary strings to deduplicate against
  */
 
-import { renderPrompt, MODEL_FEATURES } from "../Utils.sys.mjs";
+import {
+  renderPrompt,
+  MODEL_FEATURES,
+  parseAndExtractJSON,
+} from "../Utils.sys.mjs";
 import { openAIEngine } from "moz-src:///browser/components/aiwindow/models/openAIEngine.sys.mjs";
 
 const lazy = {};
@@ -38,6 +42,15 @@ import {
   CONVERSATION,
   CONVERSATION_USER_REQUEST as USER,
   SESSION,
+  MEMORY_TYPE_SHORT_TERM_MEMORY,
+  MEMORY_SENSITIVITY_CATEGORY_NOT_SENSITIVE,
+  INITIAL_MEMORY_TYPE_STRENGTH,
+  MEMORY_EVIDENCE_WEIGHT,
+  MEMORY_LIFETIME_ACCESSED_WEIGHT,
+  MEMORY_MERGE_COUNT_WEIGHT,
+  MEMORY_USER_REQUEST_MODIFIER,
+  MEMORY_FRECENCY_MAX_DAYS,
+  MEMORY_FRECENCY_DAY_HALFLIFE,
 } from "./MemoriesConstants.sys.mjs";
 
 import {
@@ -185,6 +198,55 @@ export async function runSessionMemoryPipeline(
 }
 
 /**
+ * Computes the strength of a memory based on:
+ *  1. Type
+ *  2. Amount of supporting evidence
+ *  3. Number of times it was used over its lifetime
+ *  4. Number of memories that were merged to create it
+ *
+ * @param {object} memory   Memory object
+ * @returns {number}        Computed memory strength
+ */
+export function computeMemoryStrength(memory) {
+  // If the memory was derived from a user request, add a large constant to boost its strength
+  let user_request_modifier;
+  if (memory.sources.includes(USER)) {
+    user_request_modifier = MEMORY_USER_REQUEST_MODIFIER;
+  } else {
+    user_request_modifier = 0;
+  }
+
+  return (
+    INITIAL_MEMORY_TYPE_STRENGTH[memory.type] +
+    user_request_modifier +
+    Object.values(memory.source_ids).reduce((sum, currentSource) => {
+      return sum + currentSource.length;
+    }, 0) *
+      MEMORY_EVIDENCE_WEIGHT +
+    memory.lifetime_accessed_count * MEMORY_LIFETIME_ACCESSED_WEIGHT +
+    memory.merge_count * MEMORY_MERGE_COUNT_WEIGHT
+  );
+}
+
+/**
+ * Computes a memory's frecency using its 7-day rolling usage count
+ *
+ * @param {object} memory   Memory object
+ * @returns {number}        Computed memory frecency
+ */
+export function computeMemoryFrecency(memory) {
+  let frecency = 0;
+
+  for (let day = 0; day < MEMORY_FRECENCY_MAX_DAYS; day++) {
+    frecency +=
+      memory.recent_accessed_counts[day] *
+      Math.pow(0.5, day / MEMORY_FRECENCY_DAY_HALFLIFE);
+  }
+
+  return frecency;
+}
+
+/**
  * Formats a list of strings into a prompt-friendly bullet list
  *
  * @param {List<string>} list
@@ -207,33 +269,6 @@ export function getFormattedMemoryAttributeList(attributeName) {
     return formatListForPrompt(INTENTS_LIST);
   }
   throw new Error(`Unsupported memory attribute name: ${attributeName}`);
-}
-
-/**
- * Extracts a JSON as a map from an LLM response (handles markdown-formatted code blocks)
- *
- * @param {any} response  LLM response
- * @param {any} fallback  Fallback value if parsing fails to protect downstream code
- * @returns {Map}         Parsed JSON object
- */
-export function parseAndExtractJSON(response, fallback) {
-  const rawContent = response?.finalOutput ?? "";
-  const markdownMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  const payload = markdownMatch ? markdownMatch[1] : rawContent;
-  try {
-    return JSON.parse(payload);
-  } catch (e) {
-    // If we can't parse a JSON from the LLM response, return a tailored fallback value to prevent downstream code failures
-    if (e instanceof SyntaxError) {
-      console.warn(
-        `Could not parse JSON from LLM response; using fallback (${fallback}): ${e.message}`
-      );
-      return fallback;
-    }
-    throw new Error(
-      `Unexpected error parsing JSON from LLM response: ${e.message}`
-    );
-  }
 }
 
 /**
@@ -337,6 +372,7 @@ function sanitizeMemory(memory) {
     reasoning: memory.reasoning,
     score,
     source: deriveSource(evidence),
+    keywords: memory.entities,
     // Retained transiently so `generateInitialMemoriesList` can attribute
     // source IDs; stripped before the memory leaves that function.
     evidence,
@@ -457,12 +493,7 @@ function normalizeMemoryList(parsed) {
  *
  * @param {Conversation} conversation  Conversation reused across the pipeline (cleared between calls)
  * @param {object} sources  User data source type to aggregrated records (i.e., {history: [domainItems, titleItems, searchItems]})
- * @returns {Promise<Array<Map<{
- *  category: string,
- *  intent: string,
- *  memory_summary: string,
- *  score: number,
- * }>>>}                    Promise resolving the list of generated memories
+ * @returns {Promise<Array<object>>}  Promise resolving the list of generated memories
  */
 export async function generateInitialMemoriesList(conversation, sources) {
   const [{ prompt: systemPrompt }, { prompt: userPromptTemplate }] =
@@ -492,17 +523,48 @@ export async function generateInitialMemoriesList(conversation, sources) {
   });
 
   const parsed = parseAndExtractJSON(response, []);
-  const memories = normalizeMemoryList(parsed);
 
   // Join real source IDs back from the sessions client-side, then drop the
   // transient evidence (never persisted).
   const sessions = sources[SESSIONS] ?? [];
-  for (const memory of memories) {
-    memory.source_ids = attributeSourceIds(memory.evidence, sessions);
-    delete memory.evidence;
-  }
 
-  return memories;
+  // Add and fill metadata fields for the new memories list
+  const now = Date.now();
+  return normalizeMemoryList(parsed).map(memory => {
+    const m = {
+      // System fields
+      type: MEMORY_TYPE_SHORT_TERM_MEMORY,
+      sources: [memory.source],
+      source_ids: attributeSourceIds(memory.evidence, sessions),
+      sensitivity_category: MEMORY_SENSITIVITY_CATEGORY_NOT_SENSITIVE,
+      is_deleted: false,
+
+      // Descriptive fields
+      memory_summary: memory.memory_summary,
+      reasoning: memory.reasoning,
+      tags: [`category:${memory.category}`, `intent:${memory.intent}`],
+      keywords: memory.keywords,
+      component_summaries: [],
+
+      // Tracker fields
+      created_at: now,
+      updated_at: now,
+      last_accessed: null,
+      recent_accessed_counts: Object.fromEntries(
+        Array.from({ length: MEMORY_FRECENCY_MAX_DAYS }, (_, i) => [i, 0])
+      ),
+      lifetime_accessed_count: 0,
+      frecency: 0,
+      merge_count: 0,
+    };
+
+    // Delete the evidence attribute after it's been used to derive the source_ids
+    delete memory.evidence;
+    // Compute strength after we've added the necessary calculation components above
+    m.strength = computeMemoryStrength(m);
+
+    return m;
+  });
 }
 
 /**

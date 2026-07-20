@@ -99,7 +99,7 @@ describe("<FocusTimer>", () => {
       ).toBeInTheDocument();
     });
 
-    it("disables the small size entry and leaves medium/large enabled", () => {
+    it("offers only medium/large sizes (no small entry)", () => {
       const { container } = renderTimer({
         state: novaState(),
         props: { widgetsMayBeMaximized: true },
@@ -107,13 +107,8 @@ describe("<FocusTimer>", () => {
       const items = container.querySelectorAll(
         "#focus-timer-size-submenu panel-item[type='checkbox']"
       );
-      const bySize = Array.from(items).reduce((acc, el) => {
-        acc[el.getAttribute("data-size")] = el;
-        return acc;
-      }, {});
-      expect(bySize.small.hasAttribute("disabled")).toBe(true);
-      expect(bySize.medium.hasAttribute("disabled")).toBe(false);
-      expect(bySize.large.hasAttribute("disabled")).toBe(false);
+      const sizes = Array.from(items).map(el => el.getAttribute("data-size"));
+      expect(sizes).toEqual(["medium", "large"]);
     });
   });
 
@@ -154,6 +149,91 @@ describe("<FocusTimer>", () => {
       expect(
         container.querySelector(".focus-timer-spinbutton")
       ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Nova small size", () => {
+    const smallState = (extraPrefs = {}, timerOverrides) =>
+      novaState(
+        { "widgets.focusTimer.size": "small", ...extraPrefs },
+        timerOverrides
+      );
+
+    it("applies the small-widget class under Nova", () => {
+      const { container } = renderTimer({ state: smallState() });
+      expect(
+        container.querySelector(".focus-timer.small-widget.col-4")
+      ).toBeInTheDocument();
+    });
+
+    it("omits the Focus/Break radiogroup when idle in small", () => {
+      const { container } = renderTimer({ state: smallState() });
+      // Idle: the editable spinbutton is still present...
+      expect(
+        container.querySelector(".focus-timer-spinbutton")
+      ).toBeInTheDocument();
+      // ...but the manual Focus/Break radiogroup is not.
+      expect(container.querySelector("[role='radiogroup']")).toBeNull();
+    });
+
+    it("keeps the radiogroup when idle in medium", () => {
+      const { container } = renderTimer({
+        state: novaState({ "widgets.focusTimer.size": "medium" }),
+      });
+      expect(
+        container.querySelector("[role='radiogroup']")
+      ).toBeInTheDocument();
+    });
+
+    it("running small shows the time display (mode label in DOM) and no reset/radiogroup", () => {
+      const { container } = renderTimer({
+        state: smallState(
+          {},
+          {
+            focus: {
+              duration: 25 * 60,
+              initialDuration: 25 * 60,
+              isRunning: true,
+            },
+          }
+        ),
+      });
+      expect(
+        container.querySelector(".focus-timer-time-display")
+      ).toBeInTheDocument();
+      // Mode label stays in the DOM (visually hidden via CSS for screen readers).
+      expect(
+        container.querySelector(
+          ".focus-timer-time-mode[data-l10n-id='newtab-widget-timer-running-focus']"
+        )
+      ).toBeInTheDocument();
+      expect(container.querySelector(".focus-timer-reset-button")).toBeNull();
+      expect(container.querySelector("[role='radiogroup']")).toBeNull();
+    });
+
+    it("paused small (progressed, not running) shows running layout with no reset/radiogroup", () => {
+      const { container } = renderTimer({
+        state: smallState(
+          {},
+          {
+            focus: {
+              duration: 12 * 60,
+              initialDuration: 25 * 60,
+              isRunning: false,
+            },
+          }
+        ),
+      });
+      expect(
+        container.querySelector(".focus-timer-time-display")
+      ).toBeInTheDocument();
+      expect(
+        container.querySelector(
+          ".focus-timer-time-mode[data-l10n-id='newtab-widget-timer-running-focus']"
+        )
+      ).toBeInTheDocument();
+      expect(container.querySelector(".focus-timer-reset-button")).toBeNull();
+      expect(container.querySelector("[role='radiogroup']")).toBeNull();
     });
   });
 
@@ -671,6 +751,32 @@ describe("<FocusTimer>", () => {
       expect(
         container.querySelector(".focus-timer-celebration-headline")
       ).toBeInTheDocument();
+    });
+
+    it("renders the celebration headline without a subhead in small", () => {
+      const smallAboutToFinish = novaState(
+        { "widgets.focusTimer.size": "small" },
+        {
+          focus: {
+            duration: 1,
+            initialDuration: 25 * 60,
+            isRunning: true,
+            startTime: Math.floor(Date.now() / 1000) - 1,
+          },
+        }
+      );
+      const { container } = renderTimer({ state: smallAboutToFinish });
+
+      tickToZero();
+
+      expect(
+        container.querySelector(".focus-timer-celebration-headline")
+      ).toBeInTheDocument();
+      const subhead = container.querySelector(
+        ".focus-timer-celebration-subhead"
+      );
+      expect(subhead).toBeInTheDocument();
+      expect(subhead.getAttribute("data-l10n-id")).toBeNull();
     });
 
     it("fires Focus->Break toggle when the lifecycle animation ends", () => {

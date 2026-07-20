@@ -81,6 +81,7 @@ Current templates include:
 ```{toctree}
 :maxdepth: 1
 
+action-only
 moments-page
 feature-callout
 contextual-feature-recommendation
@@ -94,7 +95,9 @@ menu-message
 
 ## Detailed Docs
 
-- Explore key terms in the [Messaging System Glossary](./messaging-glossary.html).
+- Explore key terms in the [Messaging System Glossary](./messaging-glossary.md).
+
+- Learn which actions, triggers, and context properties work on which surfaces in [Messaging Surface Compatibility](./messaging-surfaces.md).
 
 - Learn more about messaging experimentation through [Nimbus](https://experimenter.info/) in the [Messaging System: Experimenter Onboarding](https://mozilla-hub.atlassian.net/wiki/spaces/FIREFOX/pages/233406786/OMC+Experimenter+Onboarding).
 
@@ -116,11 +119,13 @@ menu-message
 :maxdepth: 2
 
 asrouter-newtab-message
+asrouter-newtab-multistage-message
 building-and-testing
 debugging-docs
 frequency-caps
 first-run
 messaging-glossary
+messaging-surfaces
 remote_cfr
 targeting-attributes
 targeting-guide

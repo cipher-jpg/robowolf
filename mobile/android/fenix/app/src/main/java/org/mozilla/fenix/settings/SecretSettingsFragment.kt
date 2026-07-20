@@ -194,6 +194,11 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
+        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_enable_universal_edge_to_edge_wallpapers).apply {
+            isChecked = settings.enableUniversalEdgeToEdgeWallpapers
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_enable_firefox_labs).apply {
             isChecked = settings.enableFirefoxLabs
             onPreferenceChangeListener = SharedPreferenceUpdater()
@@ -216,11 +221,6 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
 
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_enable_ads_client_for_stories).apply {
             isChecked = settings.enableAdsClientForStories
-            onPreferenceChangeListener = SharedPreferenceUpdater()
-        }
-
-        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_enable_unified_trust_panel).apply {
-            isChecked = settings.enableUnifiedTrustPanel
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
@@ -357,6 +357,16 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_enable_uninstall_survey).apply {
             isVisible = true
             isChecked = context.components.settings.uninstallSurveyFeatureFlagEnabled
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_enable_homepage_customization).apply {
+            isChecked = settings.enableHomepageCustomization
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        requirePreference<SwitchPreferenceCompat>(R.string.pref_key_enable_homepage_trending_recent_search).apply {
+            isChecked = settings.enableHomepageTrendingRecentSearch
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 

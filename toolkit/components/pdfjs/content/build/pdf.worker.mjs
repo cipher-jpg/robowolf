@@ -21,8 +21,8 @@
  */
 
 /**
- * pdfjsVersion = 6.1.239
- * pdfjsBuild = 0cc1718b0
+ * pdfjsVersion = 6.1.335
+ * pdfjsBuild = dd7e3731d
  */
 
 ;// ./src/shared/util.js
@@ -780,6 +780,7 @@ function _isValidExplicitDest(validRef, validName, dest) {
 const makeArr = () => [];
 const makeMap = () => new Map();
 const makeObj = () => Object.create(null);
+const makeSet = () => new Set();
 
 ;// ./src/core/primitives.js
 
@@ -1031,6 +1032,14 @@ class RefSetCache {
   }
   putAlias(ref, aliasRef) {
     this._map.set(ref.toString(), this.get(aliasRef));
+  }
+  getOrPutComputed(ref, callback) {
+    const map = this._map,
+      refStr = ref.toString();
+    if (!map.has(refStr)) {
+      map.set(refStr, callback(ref));
+    }
+    return map.get(refStr);
   }
   [Symbol.iterator]() {
     return this._map.values();
@@ -1573,7 +1582,7 @@ function encodeToXmlString(str) {
         buffer.push(str.substring(start, i));
       }
       buffer.push(`&#x${char.toString(16).toUpperCase()};`);
-      if (char > 0xd7ff && (char < 0xe000 || char > 0xfffd)) {
+      if (char > 0xffff) {
         i++;
       }
       start = i + 1;
@@ -4104,9 +4113,7 @@ class ColorSpaceUtils {
           break;
         case "Pattern":
           baseCS = cs[1] || null;
-          if (baseCS) {
-            baseCS = this.#subParse(baseCS, options);
-          }
+          baseCS &&= this.#subParse(baseCS, options);
           return new PatternCS(baseCS);
         case "I":
         case "Indexed":
@@ -9805,9 +9812,7 @@ class CCITTFaxStream extends DecodeStream {
     if (this.eof) {
       return this.buffer;
     }
-    if (!bytes) {
-      bytes = this.stream.isAsync ? (await this.stream.asyncGetBytes()) || this.bytes : this.bytes;
-    }
+    bytes ??= this.stream.isAsync ? (await this.stream.asyncGetBytes()) || this.bytes : this.bytes;
     this.buffer = await JBig2CCITTFaxImage.instance.decode(bytes, this.dict.get("W", "Width"), this.dict.get("H", "Height"), null, this.params);
     this.bufferLength = this.buffer.length;
     this.eof = true;
@@ -17700,9 +17705,7 @@ function type1FontGlyphMapping(properties, builtInEncoding, glyphNames) {
       const glyphName = differences[charCode];
       glyphId = glyphNames.indexOf(glyphName);
       if (glyphId === -1) {
-        if (!glyphsUnicodeMap) {
-          glyphsUnicodeMap = getGlyphsUnicode();
-        }
+        glyphsUnicodeMap ??= getGlyphsUnicode();
         const standardGlyphName = recoverGlyphName(glyphName, glyphsUnicodeMap);
         if (standardGlyphName !== glyphName) {
           glyphId = glyphNames.indexOf(standardGlyphName);
@@ -18599,9 +18602,7 @@ class CFFParser {
       } else if (localSubrIndex) {
         localSubrToUse = localSubrIndex;
       }
-      if (valid) {
-        valid = this.parseCharString(state, charstring, localSubrToUse, globalSubrIndex);
-      }
+      valid &&= this.parseCharString(state, charstring, localSubrToUse, globalSubrIndex);
       if (state.width !== null) {
         const nominalWidth = privateDictToUse.getByName("nominalWidthX");
         widths[i] = nominalWidth + state.width;
@@ -20396,6 +20397,7 @@ function isKnownFontName(name) {
 }
 
 ;// ./src/core/glyf.js
+
 const ON_CURVE_POINT = 1 << 0;
 const X_SHORT_VECTOR = 1 << 1;
 const Y_SHORT_VECTOR = 1 << 2;
@@ -20995,12 +20997,7 @@ function pruneCompositeGlyphCycles(glyfTable, locaEntries, numGlyphs) {
         });
         continue;
       }
-      let removeSet = backEdges.get(top.node);
-      if (!removeSet) {
-        removeSet = new Set();
-        backEdges.set(top.node, removeSet);
-      }
-      removeSet.add(compIdx);
+      backEdges.getOrInsertComputed(top.node, makeSet).add(compIdx);
     }
   }
   const droppedGlyphs = new Set();
@@ -21112,7 +21109,7 @@ class IdentityToUnicodeMap {
 class CFFFont {
   constructor(file, properties) {
     this.properties = properties;
-    const parser = new CFFParser(file, properties, SEAC_ANALYSIS_ENABLED);
+    const parser = new CFFParser(file, properties, (/* inlined export .SEAC_ANALYSIS_ENABLED */true));
     this.cff = parser.parse();
     this.cff.duplicateFirstGlyph();
     const compiler = new CFFCompiler(this.cff);
@@ -25159,14 +25156,14 @@ class Type1CharString {
         }
         switch (value) {
           case 1:
-            if (!HINTING_ENABLED) {
+            if (true) {
               this.stack = [];
               break;
             }
             error = this.executeCommand(2, COMMAND_MAP.hstem);
             break;
           case 3:
-            if (!HINTING_ENABLED) {
+            if (true) {
               this.stack = [];
               break;
             }
@@ -25251,14 +25248,14 @@ class Type1CharString {
             this.stack = [];
             break;
           case (12 << 8) + 1:
-            if (!HINTING_ENABLED) {
+            if (true) {
               this.stack = [];
               break;
             }
             error = this.executeCommand(2, COMMAND_MAP.vstem);
             break;
           case (12 << 8) + 2:
-            if (!HINTING_ENABLED) {
+            if (true) {
               this.stack = [];
               break;
             }
@@ -25508,7 +25505,7 @@ class Type1Parser {
         privateData
       }
     };
-    let token, length, data, lenIV;
+    let token, length, data;
     let subrsParsed = false;
     let charStringsParsed = false;
     while ((token = this.getToken()) !== null) {
@@ -25538,8 +25535,7 @@ class Type1Parser {
             length = this.readInt();
             this.getToken();
             data = length > 0 ? stream.getBytes(length) : new Uint8Array(0);
-            lenIV = privateData.get("lenIV");
-            const encoded = this.readCharStrings(data, lenIV);
+            const encoded = this.readCharStrings(data, privateData.get("lenIV"));
             this.nextChar();
             token = this.getToken();
             if (token === "noaccess") {
@@ -25565,8 +25561,7 @@ class Type1Parser {
             length = this.readInt();
             this.getToken();
             data = length > 0 ? stream.getBytes(length) : new Uint8Array(0);
-            lenIV = privateData.get("lenIV");
-            const encoded = this.readCharStrings(data, lenIV);
+            const encoded = this.readCharStrings(data, privateData.get("lenIV"));
             this.nextChar();
             token = this.getToken();
             if (token === "noaccess") {
@@ -25580,9 +25575,8 @@ class Type1Parser {
         case "FamilyBlues":
         case "FamilyOtherBlues":
           const blueArray = this.readNumberArray();
-          if (blueArray.length > 0 && blueArray.length % 2 === 0 && HINTING_ENABLED) {
-            privateData.set(token, blueArray);
-          }
+          if (false) // removed by dead control flow
+{}
           break;
         case "StemSnapH":
         case "StemSnapV":
@@ -26021,14 +26015,14 @@ class Type1Font {
       headerBlockLength = pfbHeader[5] << 24 | pfbHeader[4] << 16 | pfbHeader[3] << 8 | pfbHeader[2];
     }
     const headerBlock = getHeaderBlock(file, headerBlockLength);
-    const headerBlockParser = new Type1Parser(headerBlock.stream, false, SEAC_ANALYSIS_ENABLED);
+    const headerBlockParser = new Type1Parser(headerBlock.stream, false, (/* inlined export .SEAC_ANALYSIS_ENABLED */true));
     headerBlockParser.extractFontHeader(properties);
     if (pfbHeaderPresent) {
       pfbHeader = file.getBytes(PFB_HEADER_SIZE);
       eexecBlockLength = pfbHeader[5] << 24 | pfbHeader[4] << 16 | pfbHeader[3] << 8 | pfbHeader[2];
     }
     const eexecBlock = getEexecBlock(file, eexecBlockLength);
-    const eexecBlockParser = new Type1Parser(eexecBlock.stream, true, SEAC_ANALYSIS_ENABLED);
+    const eexecBlockParser = new Type1Parser(eexecBlock.stream, true, (/* inlined export .SEAC_ANALYSIS_ENABLED */true));
     const data = eexecBlockParser.extractFontProgram(properties);
     this.#rawFileLength = headerBlock.length + eexecBlock.length;
     return data;
@@ -26036,7 +26030,7 @@ class Type1Font {
   #parseCidKeyedType1(file, properties) {
     const fileStart = file.pos;
     const length = file.end - fileStart;
-    const parser = new Type1Parser(file, false, SEAC_ANALYSIS_ENABLED);
+    const parser = new Type1Parser(file, false, (/* inlined export .SEAC_ANALYSIS_ENABLED */true));
     const data = parser.extractCidKeyedFontProgram(properties);
     if (!data) {
       file.pos = fileStart;
@@ -27049,7 +27043,7 @@ class Font {
     this.seacMap = properties.seacMap;
   }
   get renderer() {
-    const renderer = FontRendererFactory.create(this, SEAC_ANALYSIS_ENABLED);
+    const renderer = FontRendererFactory.create(this, (/* inlined export .SEAC_ANALYSIS_ENABLED */true));
     return shadow(this, "renderer", renderer);
   }
   #getExportData(props) {
@@ -27266,9 +27260,9 @@ class Font {
           throw new FormatError('TrueType Collection font must contain a "name" table.');
         }
         const [nameTable] = readNameTable(potentialTables.name);
-        for (let j = 0, jj = nameTable.length; j < jj; j++) {
-          for (let k = 0, kk = nameTable[j].length; k < kk; k++) {
-            const nameEntry = nameTable[j][k]?.replaceAll(/\s/g, "");
+        for (const nameArr of nameTable) {
+          for (const entry of nameArr) {
+            const nameEntry = entry?.replaceAll(/\s/g, "");
             if (!nameEntry) {
               continue;
             }
@@ -28192,7 +28186,7 @@ class Font {
     let parsedCff = null;
     if (!isTrueType) {
       try {
-        parsedCff = new CFFParser(new Stream(tables["CFF "].data), properties, SEAC_ANALYSIS_ENABLED).parse();
+        parsedCff = new CFFParser(new Stream(tables["CFF "].data), properties, (/* inlined export .SEAC_ANALYSIS_ENABLED */true)).parse();
       } catch {
         warn("Failed to parse font " + properties.loadedName);
       }
@@ -28569,7 +28563,7 @@ class Font {
       return newMapping.nextAvailableFontCharCode++;
     }
     const seacs = font.seacs;
-    if (newMapping && SEAC_ANALYSIS_ENABLED && seacs?.length) {
+    if (newMapping && (/* inlined export .SEAC_ANALYSIS_ENABLED */true) && seacs?.length) {
       const matrix = properties.fontMatrix || FONT_IDENTITY_MATRIX;
       const charset = font.getCharset();
       const seacMap = Object.create(null);
@@ -28832,7 +28826,7 @@ class Font {
     const getCharCode = this.toUnicode instanceof IdentityToUnicodeMap ? unicode => this.toUnicode.charCodeOf(unicode) : unicode => this.toUnicode.charCodeOf(String.fromCodePoint(unicode));
     for (let i = 0, ii = str.length; i < ii; i++) {
       const unicode = str.codePointAt(i);
-      if (unicode > 0xd7ff && (unicode < 0xe000 || unicode > 0xfffd)) {
+      if (unicode > 0xffff) {
         i++;
       }
       if (this.toUnicode) {
@@ -31931,11 +31925,7 @@ class GlobalImageCache {
     return true;
   }
   shouldCache(ref, pageIndex) {
-    let pageIndexSet = this._refCache.get(ref);
-    if (!pageIndexSet) {
-      pageIndexSet = new Set();
-      this._refCache.put(ref, pageIndexSet);
-    }
+    const pageIndexSet = this._refCache.getOrPutComputed(ref, makeSet);
     pageIndexSet.add(pageIndex);
     if (pageIndexSet.size < GlobalImageCache.NUM_PAGES_THRESHOLD) {
       return false;
@@ -33497,13 +33487,7 @@ class PDFImage {
           bits += 8;
         }
         const remainingBits = bits - bpc;
-        let value = buf >> remainingBits;
-        if (value < 0) {
-          value = 0;
-        } else if (value > max) {
-          value = max;
-        }
-        output[i] = value;
+        output[i] = MathClamp(buf >> remainingBits, 0, max);
         buf &= (1 << remainingBits) - 1;
         bits = remainingBits;
       }
@@ -35285,40 +35269,64 @@ class PartialEvaluator {
               return;
             }
           case OPS.setFillColor:
+            if (!isNumberArray(args, null)) {
+              continue;
+            }
             cs = stateManager.state.fillColorSpace;
             args = [cs.getRgbHex(args, 0)];
             fn = OPS.setFillRGBColor;
             break;
           case OPS.setStrokeColor:
+            if (!isNumberArray(args, null)) {
+              continue;
+            }
             cs = stateManager.state.strokeColorSpace;
             args = [cs.getRgbHex(args, 0)];
             fn = OPS.setStrokeRGBColor;
             break;
           case OPS.setFillGray:
+            if (!isNumberArray(args, null)) {
+              continue;
+            }
             stateManager.state.fillColorSpace = ColorSpaceUtils.gray;
             args = [ColorSpaceUtils.gray.getRgbHex(args, 0)];
             fn = OPS.setFillRGBColor;
             break;
           case OPS.setStrokeGray:
+            if (!isNumberArray(args, null)) {
+              continue;
+            }
             stateManager.state.strokeColorSpace = ColorSpaceUtils.gray;
             args = [ColorSpaceUtils.gray.getRgbHex(args, 0)];
             fn = OPS.setStrokeRGBColor;
             break;
           case OPS.setFillCMYKColor:
+            if (!isNumberArray(args, null)) {
+              continue;
+            }
             stateManager.state.fillColorSpace = ColorSpaceUtils.cmyk;
             args = [ColorSpaceUtils.cmyk.getRgbHex(args, 0)];
             fn = OPS.setFillRGBColor;
             break;
           case OPS.setStrokeCMYKColor:
+            if (!isNumberArray(args, null)) {
+              continue;
+            }
             stateManager.state.strokeColorSpace = ColorSpaceUtils.cmyk;
             args = [ColorSpaceUtils.cmyk.getRgbHex(args, 0)];
             fn = OPS.setStrokeRGBColor;
             break;
           case OPS.setFillRGBColor:
+            if (!isNumberArray(args, null)) {
+              continue;
+            }
             stateManager.state.fillColorSpace = ColorSpaceUtils.rgb;
             args = [ColorSpaceUtils.rgb.getRgbHex(args, 0)];
             break;
           case OPS.setStrokeRGBColor:
+            if (!isNumberArray(args, null)) {
+              continue;
+            }
             stateManager.state.strokeColorSpace = ColorSpaceUtils.rgb;
             args = [ColorSpaceUtils.rgb.getRgbHex(args, 0)];
             break;
@@ -35335,8 +35343,14 @@ class PartialEvaluator {
               break;
             }
             if (cs.name === "Pattern") {
+              if (!Array.isArray(args)) {
+                continue;
+              }
               next(self.handleColorN(operatorList, OPS.setFillColorN, args, cs, patterns, resources, task, localColorSpaceCache, localTilingPatternCache, localShadingPatternCache, seenRefs));
               return;
+            }
+            if (!isNumberArray(args, null)) {
+              continue;
             }
             args = [cs.getRgbHex(args, 0)];
             fn = OPS.setFillRGBColor;
@@ -35354,8 +35368,14 @@ class PartialEvaluator {
               break;
             }
             if (cs.name === "Pattern") {
+              if (!Array.isArray(args)) {
+                continue;
+              }
               next(self.handleColorN(operatorList, OPS.setStrokeColorN, args, cs, patterns, resources, task, localColorSpaceCache, localTilingPatternCache, localShadingPatternCache, seenRefs));
               return;
+            }
+            if (!isNumberArray(args, null)) {
+              continue;
             }
             args = [cs.getRgbHex(args, 0)];
             fn = OPS.setStrokeRGBColor;
@@ -36168,9 +36188,7 @@ class PartialEvaluator {
               continue;
             }
             const spaceFactor = (textState.font.vertical ? 1 : -1) * textState.fontSize / 1000;
-            const elements = args[0];
-            for (let i = 0, ii = elements.length; i < ii; i++) {
-              const item = elements[i];
+            for (const item of args[0]) {
               if (typeof item === "string") {
                 showSpacedTextBuffer.push(item);
               } else if (typeof item === "number" && item !== 0) {
@@ -38168,7 +38186,7 @@ class AppearanceStreamEvaluator extends EvaluatorPreprocessor {
               result.fontName = fontName.name;
             }
             if (typeof fontSize === "number" && fontSize > 0) {
-              result.fontSize = fontSize * result.scaleFactor;
+              result.fontSize = fontSize;
             }
             break;
           case OPS.setFillColorSpace:
@@ -38198,6 +38216,7 @@ class AppearanceStreamEvaluator extends EvaluatorPreprocessor {
           case OPS.showSpacedText:
           case OPS.nextLineShowText:
           case OPS.nextLineSetSpacingShowText:
+            result.fontSize *= result.scaleFactor;
             breakLoop = true;
             break;
         }
@@ -38349,8 +38368,8 @@ class FakeUnicodeFont {
     if (rotation % 180 !== 0) {
       [w, h] = [h, w];
     }
-    const lineHeight = LINE_FACTOR * fontSize;
-    const lineDescent = LINE_DESCENT_FACTOR * fontSize;
+    const lineHeight = (/* inlined export .LINE_FACTOR */1.35) * fontSize;
+    const lineDescent = (/* inlined export .LINE_DESCENT_FACTOR */0.35) * fontSize;
     return {
       coords: [0, h + lineDescent - lineHeight],
       bbox: [0, 0, w, h],
@@ -38386,8 +38405,8 @@ class FakeUnicodeFont {
     }
     const hscale = maxWidth > w ? w / maxWidth : 1;
     let vscale = 1;
-    const lineHeight = LINE_FACTOR * fontSize;
-    const lineDescent = LINE_DESCENT_FACTOR * fontSize;
+    const lineHeight = (/* inlined export .LINE_FACTOR */1.35) * fontSize;
+    const lineDescent = (/* inlined export .LINE_DESCENT_FACTOR */0.35) * fontSize;
     const maxHeight = lineHeight * lines.length;
     if (maxHeight > h) {
       vscale = h / maxHeight;
@@ -39373,12 +39392,7 @@ class StructTreeRoot {
       return;
     }
     this.structParentIds ||= new RefSetCache();
-    let ids = this.structParentIds.get(pageRef);
-    if (!ids) {
-      ids = [];
-      this.structParentIds.put(pageRef, ids);
-    }
-    ids.push([id, type]);
+    this.structParentIds.getOrPutComputed(pageRef, makeArr).push([id, type]);
   }
   addAnnotationIdToPage(pageRef, id) {
     this.#addIdToPage(pageRef, id, StructElementType.ANNOTATION);
@@ -39778,11 +39792,7 @@ class StructTreeRoot {
       fallbackKids.push(newTagRef);
       return;
     }
-    let cachedParentDict = cache.get(parentRef);
-    if (!cachedParentDict) {
-      cachedParentDict = parentDict.clone();
-      cache.put(parentRef, cachedParentDict);
-    }
+    const cachedParentDict = cache.getOrPutComputed(parentRef, () => parentDict.clone());
     const parentKidsRaw = cachedParentDict.getRaw("K");
     let cachedParentKids = parentKidsRaw instanceof Ref ? cache.get(parentKidsRaw) : null;
     if (!cachedParentKids) {
@@ -41850,8 +41860,7 @@ async function createImage(bitmap, xref, {
   const colorCounter = new Set();
   let hasAlpha = false;
   let useFlate = true;
-  for (let i = 0, ii = buf32.length; i < ii; i++) {
-    const v = buf32[i];
+  for (const v of buf32) {
     if ((isLE ? v >>> 24 : v & 0xff) !== 0xff) {
       hasAlpha = true;
       break;
@@ -42374,9 +42383,7 @@ class FontFinder {
       this.addPdfFont(pdfFont);
     }
     for (const pdfFont of this.fonts.values()) {
-      if (!pdfFont.regular) {
-        pdfFont.regular = pdfFont.italic || pdfFont.bold || pdfFont.bolditalic;
-      }
+      pdfFont.regular ||= pdfFont.italic || pdfFont.bold || pdfFont.bolditalic;
     }
     if (!reallyMissingFonts || reallyMissingFonts.size === 0) {
       return;
@@ -42406,9 +42413,7 @@ class FontFinder {
         property += "italic";
       }
     }
-    if (!property) {
-      property = "regular";
-    }
+    property ||= "regular";
     font[property] = pdfFont;
   }
   getDefault() {
@@ -43282,9 +43287,7 @@ class XFAObject {
       proto = ids.get(id);
     } else {
       proto = searchNode(ids.get($root), this, somExpression, true, false);
-      if (proto) {
-        proto = proto[0];
-      }
+      proto &&= proto[0];
     }
     if (!proto) {
       warn(`XFA - Invalid prototype reference: ${ref}.`);
@@ -46623,7 +46626,7 @@ class Field extends XFAObject {
       }
     }
     if (!this.ui.imageEdit && ui.children?.[0] && this.h) {
-      borderDims = borderDims || getBorderDims(this.ui[$getExtra]());
+      borderDims ||= getBorderDims(this.ui[$getExtra]());
       let captionHeight = 0;
       if (this.caption && ["top", "bottom"].includes(this.caption.placement)) {
         captionHeight = this.caption.reserve;
@@ -52643,9 +52646,7 @@ class XFAFactory {
         attributes
       } = html;
       if (attributes) {
-        if (attributes.class) {
-          attributes.class = attributes.class.filter(attr => !attr.startsWith("xfa"));
-        }
+        attributes.class &&= attributes.class.filter(attr => !attr.startsWith("xfa"));
         attributes.dir = "auto";
       }
       return {
@@ -52807,8 +52808,7 @@ class AnnotationFactory {
       const pageRef = annotDict.getRaw("P");
       if (pageRef instanceof Ref) {
         try {
-          const pageIndex = await pdfManager.ensureCatalog("getPageIndex", [pageRef]);
-          return pageIndex;
+          return await pdfManager.ensureCatalog("getPageIndex", [pageRef]);
         } catch (ex) {
           info(`_getPageIndex -- not a valid page reference: "${ex}".`);
         }
@@ -54241,13 +54241,13 @@ class WidgetAnnotation extends Annotation {
     let {
       fontSize
     } = this.data.defaultAppearanceData;
-    let lineHeight = (fontSize || 12) * LINE_FACTOR,
+    let lineHeight = (fontSize || 12) * (/* inlined export .LINE_FACTOR */1.35),
       numberOfLines = Math.round(height / lineHeight);
     if (!fontSize) {
       const roundWithTwoDigits = x => Math.floor(x * 100) / 100;
       if (lineCount === -1) {
         const textWidth = this._getTextWidth(text, font);
-        fontSize = roundWithTwoDigits(Math.min(height / LINE_FACTOR, width / textWidth));
+        fontSize = roundWithTwoDigits(Math.min(height / (/* inlined export .LINE_FACTOR */1.35), width / textWidth));
         numberOfLines = 1;
       } else {
         const lines = text.split(/\r\n?|\n/);
@@ -54276,7 +54276,7 @@ class WidgetAnnotation extends Annotation {
         numberOfLines = Math.max(numberOfLines, lineCount);
         while (true) {
           lineHeight = height / numberOfLines;
-          fontSize = roundWithTwoDigits(lineHeight / LINE_FACTOR);
+          fontSize = roundWithTwoDigits(lineHeight / (/* inlined export .LINE_FACTOR */1.35));
           if (isTooBig(fontSize)) {
             numberOfLines++;
             continue;
@@ -54657,9 +54657,7 @@ class ButtonWidgetAnnotation extends WidgetAnnotation {
     if (value === null && this.appearance) {
       return super.getOperatorList(evaluator, task, intent, annotationStorage);
     }
-    if (value === null || value === undefined) {
-      value = this.data.checkBox ? this.data.fieldValue === this.data.exportValue : this.data.fieldValue === this.data.buttonValue;
-    }
+    value ??= this.data.checkBox ? this.data.fieldValue === this.data.exportValue : this.data.fieldValue === this.data.buttonValue;
     return this.#getOperatorListForAppearance(evaluator, task, intent, annotationStorage, rotation, value ? this.checkedAppearance : this.uncheckedAppearance);
   }
   async save(evaluator, task, annotationStorage, changes) {
@@ -55211,7 +55209,7 @@ class ChoiceWidgetAnnotation extends WidgetAnnotation {
     } else {
       defaultAppearance = this._defaultAppearance;
     }
-    const lineHeight = fontSize * LINE_FACTOR;
+    const lineHeight = fontSize * (/* inlined export .LINE_FACTOR */1.35);
     const vPadding = (lineHeight - fontSize) / 2;
     const numberOfVisibleLines = Math.floor(totalHeight / lineHeight);
     let firstIndex = 0;
@@ -55522,8 +55520,8 @@ class FreeTextAnnotation extends MarkupAnnotation {
     }
     const hscale = totalWidth > w ? w / totalWidth : 1;
     let vscale = 1;
-    const lineHeight = LINE_FACTOR * fontSize;
-    const lineAscent = (LINE_FACTOR - LINE_DESCENT_FACTOR) * fontSize;
+    const lineHeight = (/* inlined export .LINE_FACTOR */1.35) * fontSize;
+    const lineAscent = ((/* inlined export .LINE_FACTOR */1.35) - (/* inlined export .LINE_DESCENT_FACTOR */0.35)) * fontSize;
     const totalHeight = lineHeight * lines.length;
     if (totalHeight > h) {
       vscale = h / totalHeight;
@@ -55716,9 +55714,7 @@ class PolylineAnnotation extends MarkupAnnotation {
       const strokeColor = getPdfColorArray(this.color, [0, 0, 0]);
       const strokeAlpha = dict.get("CA");
       let fillColor = getRgbColor(dict.getArray("IC"), null);
-      if (fillColor) {
-        fillColor = getPdfColorArray(fillColor);
-      }
+      fillColor &&= getPdfColorArray(fillColor);
       let operator;
       if (fillColor) {
         if (this.color) {
@@ -55775,15 +55771,15 @@ class InkAnnotation extends MarkupAnnotation {
     if (!Array.isArray(rawInkLists)) {
       return;
     }
-    for (let i = 0, ii = rawInkLists.length; i < ii; ++i) {
-      if (!Array.isArray(rawInkLists[i])) {
+    for (const rawInkList of rawInkLists) {
+      if (!Array.isArray(rawInkList)) {
         continue;
       }
-      const inkList = new Float32Array(rawInkLists[i].length);
+      const inkList = new Float32Array(rawInkList.length);
       this.data.inkLists.push(inkList);
-      for (let j = 0, jj = rawInkLists[i].length; j < jj; j += 2) {
-        const x = xref.fetchIfRef(rawInkLists[i][j]),
-          y = xref.fetchIfRef(rawInkLists[i][j + 1]);
+      for (let j = 0, jj = rawInkList.length; j < jj; j += 2) {
+        const x = xref.fetchIfRef(rawInkList[j]),
+          y = xref.fetchIfRef(rawInkList[j + 1]);
         if (typeof x === "number" && typeof y === "number") {
           inkList[j] = x;
           inkList[j + 1] = y;
@@ -57262,7 +57258,24 @@ class DecryptStream extends DecodeStream {
   }
 }
 
+;// ./src/core/sasl_prep.js
+const NON_ASCII_SPACES = new Set([0x00a0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x200b, 0x202f, 0x205f, 0x3000]);
+const COMMONLY_MAPPED_TO_NOTHING = new Set([0x00ad, 0x034f, 0x1806, 0x180b, 0x180c, 0x180d, 0x200b, 0x200c, 0x200d, 0x2060, 0xfe00, 0xfe01, 0xfe02, 0xfe03, 0xfe04, 0xfe05, 0xfe06, 0xfe07, 0xfe08, 0xfe09, 0xfe0a, 0xfe0b, 0xfe0c, 0xfe0d, 0xfe0e, 0xfe0f, 0xfeff]);
+function saslPrep(str) {
+  let mapped = "";
+  for (const char of str) {
+    const code = char.codePointAt(0);
+    if (NON_ASCII_SPACES.has(code)) {
+      mapped += " ";
+    } else if (!COMMONLY_MAPPED_TO_NOTHING.has(code)) {
+      mapped += char;
+    }
+  }
+  return mapped.normalize("NFKC");
+}
+
 ;// ./src/core/crypto.js
+
 
 
 
@@ -57785,6 +57798,14 @@ class CipherTransform {
     return bytesToString(data);
   }
 }
+function utf8PasswordToBytes(password) {
+  try {
+    password = utf8StringToString(password);
+  } catch {
+    warn("CipherTransformFactory: Unable to convert UTF8 encoded password.");
+  }
+  return stringToBytes(password);
+}
 class CipherTransformFactory {
   #fileId;
   static get _defaultPasswordBytes() {
@@ -57978,16 +57999,19 @@ class CipherTransformFactory {
     const encryptMetadata = (algorithm === 4 || algorithm === 5) && dict.get("EncryptMetadata") !== false;
     this.encryptMetadata = encryptMetadata;
     const fileIdBytes = stringToBytes(fileId);
-    let passwordBytes;
+    let passwordBytes, rawPasswordBytes;
     if (password) {
       if (revision === 6) {
-        try {
-          password = utf8StringToString(password);
-        } catch {
-          warn("CipherTransformFactory: Unable to convert UTF8 encoded password.");
+        const preppedPassword = saslPrep(password);
+        passwordBytes = utf8PasswordToBytes(preppedPassword);
+        if (preppedPassword !== password) {
+          rawPasswordBytes = utf8PasswordToBytes(password);
         }
+      } else if (algorithm === 5) {
+        passwordBytes = utf8PasswordToBytes(password);
+      } else {
+        passwordBytes = stringToBytes(password);
       }
-      passwordBytes = stringToBytes(password);
     }
     let encryptionKey;
     if (algorithm !== 5) {
@@ -58001,7 +58025,12 @@ class CipherTransformFactory {
       const ownerEncryption = stringToBytes(dict.get("OE"));
       const userEncryption = stringToBytes(dict.get("UE"));
       const perms = stringToBytes(dict.get("Perms"));
-      encryptionKey = this.#createEncryptionKey20(revision, passwordBytes, ownerPassword, ownerValidationSalt, ownerKeySalt, uBytes, userPassword, userValidationSalt, userKeySalt, ownerEncryption, userEncryption, perms);
+      for (const candidate of rawPasswordBytes ? [passwordBytes, rawPasswordBytes] : [passwordBytes]) {
+        encryptionKey = this.#createEncryptionKey20(revision, candidate, ownerPassword, ownerValidationSalt, ownerKeySalt, uBytes, userPassword, userValidationSalt, userKeySalt, ownerEncryption, userEncryption, perms);
+        if (encryptionKey) {
+          break;
+        }
+      }
     }
     if (!encryptionKey) {
       if (!password) {
@@ -58046,7 +58075,7 @@ class CipherTransformFactory {
         if (!this.encryptionKey) {
           throw new PasswordException("No password given", PasswordResponses.NEED_PASSWORD);
         }
-        if (this.algorithm === 5) {
+        if (this.algorithm === 5 || cfm.name === "AESV3") {
           return AES256Cipher.bind(null, this.encryptionKey);
         }
         if (cfm.name === "V2") {
@@ -58054,9 +58083,6 @@ class CipherTransformFactory {
         }
         if (cfm.name === "AESV2") {
           return AES128Cipher.bind(null, this.#buildObjectKey(num, gen, this.encryptionKey, true));
-        }
-        if (cfm.name === "AESV3") {
-          return AES256Cipher.bind(null, this.encryptionKey);
         }
         throw new FormatError("Unknown crypto method");
       };
@@ -58598,9 +58624,7 @@ class XRef {
         let dict;
         if (isCmd(obj, "xref")) {
           dict = this.processXRefTable(parser);
-          if (!this.topDict) {
-            this.topDict = dict;
-          }
+          this.topDict ||= dict;
           obj = dict.get("XRefStm");
           if (Number.isInteger(obj) && !this._xrefStms.has(obj)) {
             this._xrefStms.add(obj);
@@ -58611,9 +58635,7 @@ class XRef {
             throw new FormatError("Invalid XRef stream");
           }
           dict = this.processXRefStream(obj);
-          if (!this.topDict) {
-            this.topDict = dict;
-          }
+          this.topDict ||= dict;
           if (!dict) {
             throw new FormatError("Failed to read XRef stream");
           }
@@ -60230,20 +60252,17 @@ class PDFDocument {
       if (!(field instanceof Dict)) {
         continue;
       }
+      if (isName(field.get("FT"), "Sig")) {
+        const sigDict = this.xref.fetchIfRef(field.get("V"));
+        if (sigDict instanceof Dict) {
+          const parsed = this.#parseSignatureDict(field, sigDict, fieldRef);
+          if (parsed) {
+            out.push(parsed);
+          }
+        }
+      }
       if (field.has("Kids")) {
         this.#collectSignatureFields(field.get("Kids"), out, visitedRefs);
-        continue;
-      }
-      if (!isName(field.get("FT"), "Sig")) {
-        continue;
-      }
-      const sigDict = this.xref.fetchIfRef(field.get("V"));
-      if (!(sigDict instanceof Dict)) {
-        continue;
-      }
-      const parsed = this.#parseSignatureDict(field, sigDict, fieldRef);
-      if (parsed) {
-        out.push(parsed);
       }
     }
   }
@@ -60307,12 +60326,10 @@ class PDFDocument {
   get signatures() {
     const promise = this.pdfManager.ensureDoc("formInfo").then(async formInfo => {
       if (!formInfo.hasSignatures || !formInfo.hasFields) {
-        this.#signatureData = null;
         return null;
       }
       const annotationGlobals = await this.annotationGlobals;
       if (!annotationGlobals) {
-        this.#signatureData = null;
         return null;
       }
       const fields = annotationGlobals.acroForm.get("Fields");
@@ -61626,12 +61643,7 @@ class PDFEditor {
       }
     } = this;
     if (resourceStreamPath.has(oldRef)) {
-      let ref = oldRefMapping.get(oldRef);
-      if (!ref) {
-        ref = this.newRef;
-        oldRefMapping.put(oldRef, ref);
-      }
-      return ref;
+      return oldRefMapping.getOrPutComputed(oldRef, () => this.newRef);
     }
     const key = oldRef.toString();
     const pending = resourceStreamPromises.get(key);
@@ -61679,6 +61691,13 @@ class PDFEditor {
     });
     return ref;
   }
+  async #resolveStructKids(rawKids, xref) {
+    if (rawKids instanceof Ref) {
+      const fetched = await xref.fetchAsync(rawKids);
+      return Array.isArray(fetched) ? fetched : [rawKids];
+    }
+    return Array.isArray(rawKids) ? rawKids : [rawKids];
+  }
   async #cloneStructTreeNode(parentStructRef, node, xref, removedStructElements, dedupIDs, dedupClasses, dedupRoles, visited = new RefSet()) {
     const {
       currentDocument: {
@@ -61690,18 +61709,11 @@ class PDFEditor {
     if (pg instanceof Ref && !pagesMap.has(pg)) {
       return null;
     }
-    let kids;
-    const k = kids = node.getRaw("K");
-    if (k instanceof Ref) {
-      if (visited.has(k)) {
-        return null;
-      }
-      kids = await xref.fetchAsync(k);
-      if (!Array.isArray(kids)) {
-        kids = [k];
-      }
+    const k = node.getRaw("K");
+    if (k instanceof Ref && visited.has(k)) {
+      return null;
     }
-    kids = Array.isArray(kids) ? kids : [kids];
+    const kids = await this.#resolveStructKids(k, xref);
     const newKids = [];
     const structElemIndices = [];
     for (let kid of kids) {
@@ -61750,10 +61762,11 @@ class PDFEditor {
         if (!kidRef) {
           continue;
         }
-        const newKidRef = oldRefMapping.get(kidRef);
-        if (!newKidRef) {
+        const oldObjRef = kid.getRaw("Obj");
+        if (oldObjRef instanceof Ref && !oldRefMapping.get(oldObjRef)) {
           continue;
         }
+        const newKidRef = oldRefMapping.get(kidRef) || (await this.#collectDependencies(kidRef, true, xref));
         const newKid = this.xref[newKidRef.num];
         const objRef = newKid.getRaw("Obj");
         if (objRef instanceof Ref) {
@@ -62199,11 +62212,15 @@ class PDFEditor {
           return;
         }
         const action = annotationDict.get("A");
+        if (action instanceof Dict && !isName(action.get("S"), "GoTo")) {
+          newAnnotations[newAnnotationIndex] = annotationRef;
+          return;
+        }
         const dest = action instanceof Dict ? action.get("D") : annotationDict.get("Dest");
         if (!dest || Array.isArray(dest) && (!(dest[0] instanceof Ref) || pagesMap.has(dest[0]))) {
           newAnnotations[newAnnotationIndex] = annotationRef;
-        } else if (typeof dest === "string") {
-          const destString = stringToPDFString(dest, true);
+        } else if (dest instanceof Name || typeof dest === "string") {
+          const destString = stringToPDFString(dest instanceof Name ? dest.name : dest, true);
           if (destinations.has(destString)) {
             newAnnotations[newAnnotationIndex] = annotationRef;
             usedNamedDestinations.add(destString);
@@ -62444,20 +62461,33 @@ class PDFEditor {
           newStructTreePronunciationLexicon.push(await this.#collectDependencies(lexiconRef, true, xref));
         }
       }
-      let kids = structTreeRoot.dict.get("K");
-      if (!kids) {
+      const rawKids = structTreeRoot.dict.getRaw("K");
+      if (!rawKids) {
         continue;
       }
-      kids = Array.isArray(kids) ? kids : [kids];
+      const kids = await this.#resolveStructKids(rawKids, xref);
       for (let kid of kids) {
         const kidRef = kid instanceof Ref ? kid : null;
-        if (kidRef && removedStructElements.has(kidRef)) {
+        kid = await xref.fetchIfRefAsync(kid);
+        if (!(kid instanceof Dict)) {
           continue;
         }
-        kid = await xref.fetchIfRefAsync(kid);
+        let setAsSpan = false;
+        if (kidRef && removedStructElements.has(kidRef)) {
+          if (!isName(kid.get("S"), "Link")) {
+            continue;
+          }
+          setAsSpan = true;
+        }
         const newKidRef = await this.#cloneStructTreeNode(kidRef, kid, xref, removedStructElements, dedupIDs, dedupClasses, dedupRoles);
         if (newKidRef) {
           structTreeKids.push(newKidRef);
+          if (kidRef) {
+            oldRefMapping.put(kidRef, newKidRef);
+          }
+          if (setAsSpan) {
+            this.xref[newKidRef.num].setIfName("S", "Span");
+          }
         }
       }
       for (const [id, nodeRef] of idTree || []) {
@@ -63026,28 +63056,37 @@ class PDFEditor {
       }
     }
     const resourcesValuesCache = new Map();
+    const fixAppearanceResources = async stream => {
+      let resources = stream.dict.getRaw("Resources");
+      resources &&= this.xrefWrapper.fetchIfRef(resources);
+      if (!(resources instanceof Dict)) {
+        const newResourcesRef = await resourcesValuesCache.getOrInsertComputed(acroFormDefaultResources, () => this.#cloneObject(acroFormDefaultResources, xref));
+        stream.dict.set("Resources", newResourcesRef);
+        return;
+      }
+      for (const [resKey, resValue] of acroFormDefaultResources.getRawEntries()) {
+        if (resources.has(resKey)) {
+          continue;
+        }
+        let newResValue = resValue;
+        if (resValue instanceof Ref) {
+          newResValue = await this.#collectDependencies(resValue, true, xref);
+        } else if (resValue instanceof Dict || resValue instanceof BaseStream || Array.isArray(resValue)) {
+          newResValue = await resourcesValuesCache.getOrInsertComputed(resValue, () => this.#cloneObject(resValue, xref));
+        }
+        resources.set(resKey, newResValue);
+      }
+    };
     for (const field of drToFix) {
       const ap = field.get("AP");
       for (const [, value] of ap) {
-        if (!(value instanceof BaseStream)) {
-          continue;
-        }
-        let resources = value.dict.getRaw("Resources");
-        if (!resources) {
-          const newResourcesRef = await resourcesValuesCache.getOrInsertComputed(acroFormDefaultResources, () => this.#cloneObject(acroFormDefaultResources, xref));
-          value.dict.set("Resources", newResourcesRef);
-          continue;
-        }
-        resources = xref.fetchIfRef(resources);
-        for (const [resKey, resValue] of acroFormDefaultResources.getRawEntries()) {
-          if (!resources.has(resKey)) {
-            let newResValue = resValue;
-            if (resValue instanceof Ref) {
-              newResValue = await this.#collectDependencies(resValue, true, xref);
-            } else if (resValue instanceof Dict || resValue instanceof BaseStream || Array.isArray(resValue)) {
-              newResValue = await resourcesValuesCache.getOrInsertComputed(resValue, () => this.#cloneObject(resValue, xref));
+        if (value instanceof BaseStream) {
+          await fixAppearanceResources(value);
+        } else if (value instanceof Dict) {
+          for (const [, stream] of value) {
+            if (stream instanceof BaseStream) {
+              await fixAppearanceResources(stream);
             }
-            resources.set(resKey, newResValue);
           }
         }
       }
@@ -63331,7 +63370,7 @@ class PDFEditor {
     rootDict.set("Pages", pagesRef);
     pagesDict.setIfName("Type", "Pages");
     pagesDict.set("Count", pages.length);
-    const maxLeaves = MAX_LEAVES_PER_PAGES_NODE <= 1 ? pages.length : MAX_LEAVES_PER_PAGES_NODE;
+    const maxLeaves =  false ? 0 : MAX_LEAVES_PER_PAGES_NODE;
     const stack = [{
       dict: pagesDict,
       kids: pages,
@@ -63372,8 +63411,16 @@ class PDFEditor {
     }
   }
   #makeNameNumTree(map, areNames) {
-    const allEntries = map.sort(areNames ? ([keyA], [keyB]) => keyA.localeCompare(keyB) : ([keyA], [keyB]) => keyA - keyB);
-    const maxLeaves = MAX_IN_NAME_TREE_NODE <= 1 ? allEntries.length : MAX_IN_NAME_TREE_NODE;
+    const allEntries = map.sort(areNames ? ([keyA], [keyB]) => {
+      if (keyA < keyB) {
+        return -1;
+      }
+      if (keyA > keyB) {
+        return 1;
+      }
+      return 0;
+    } : ([keyA], [keyB]) => keyA - keyB);
+    const maxLeaves =  false ? 0 : MAX_IN_NAME_TREE_NODE;
     const [treeRef, treeDict] = this.newDict;
     const stack = [{
       dict: treeDict,
@@ -63446,7 +63493,7 @@ class PDFEditor {
         if (embeddedFiles.has(name)) {
           const displayName = stringToPDFString(key, true);
           for (let i = 1;; i++) {
-            const deduped = `${displayName}_${i}`;
+            const deduped = stringToAsciiOrUTF16BE(`${displayName}_${i}`);
             if (!embeddedFiles.has(deduped)) {
               name = deduped;
               break;
@@ -63482,7 +63529,7 @@ class PDFEditor {
       [this.namesRef, this.namesDict] = this.newDict;
       this.rootDict.set("Names", this.namesRef);
     }
-    this.namesDict.set("Dests", this.#makeNameNumTree(Array.from(namedDestinations.entries()), true));
+    this.namesDict.set("Dests", this.#makeNameNumTree(Array.from(namedDestinations, ([name, dest]) => [stringToAsciiOrUTF16BE(name), dest]), true));
   }
   #makeStructTree() {
     const {
@@ -63918,7 +63965,7 @@ class WorkerTask {
 }
 class WorkerMessageHandler {
   static {
-    if (typeof window === "undefined" && !isNodeJS && typeof self !== "undefined" && typeof self.postMessage === "function" && "onmessage" in self) {
+    if (typeof window === "undefined" && !(/* inlined export .isNodeJS */false) && typeof self !== "undefined" && typeof self.postMessage === "function" && "onmessage" in self) {
       this.initializeFromPort(self);
     }
   }
@@ -63946,7 +63993,7 @@ class WorkerMessageHandler {
       docId,
       apiVersion
     } = docParams;
-    const workerVersion = "6.1.239";
+    const workerVersion = "6.1.335";
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
     }
@@ -64136,45 +64183,49 @@ class WorkerMessageHandler {
         }, () => {});
       }).then(pdfManagerReady, onFailure);
     }
-    handler.on("GetPage", function (data) {
-      return pdfManager.getPage(data.pageIndex).then(function (page) {
-        return Promise.all([pdfManager.ensure(page, "rotate"), pdfManager.ensure(page, "ref"), pdfManager.ensure(page, "userUnit"), pdfManager.ensure(page, "view")]).then(function ([rotate, ref, userUnit, view]) {
-          return {
-            rotate,
-            ref,
-            refStr: ref?.toString() ?? null,
-            userUnit,
-            view
-          };
-        });
-      });
+    handler.on("GetPage", async function ({
+      pageIndex
+    }) {
+      const page = await pdfManager.getPage(pageIndex);
+      const [rotate, ref, userUnit, view] = await Promise.all([pdfManager.ensure(page, "rotate"), pdfManager.ensure(page, "ref"), pdfManager.ensure(page, "userUnit"), pdfManager.ensure(page, "view")]);
+      return {
+        rotate,
+        ref,
+        refStr: ref?.toString() ?? null,
+        userUnit,
+        view
+      };
     });
-    handler.on("GetPageIndex", function (data) {
-      const pageRef = Ref.get(data.num, data.gen);
-      return pdfManager.ensureCatalog("getPageIndex", [pageRef]);
+    handler.on("GetPageIndex", function ({
+      num,
+      gen
+    }) {
+      return pdfManager.ensureCatalog("getPageIndex", [Ref.get(num, gen)]);
     });
-    handler.on("GetDestinations", function (data) {
+    handler.on("GetDestinations", function () {
       return pdfManager.ensureCatalog("destinations");
     });
-    handler.on("GetDestination", function (data) {
-      return pdfManager.ensureCatalog("getDestination", [data.id]);
+    handler.on("GetDestination", function ({
+      id
+    }) {
+      return pdfManager.ensureCatalog("getDestination", [id]);
     });
-    handler.on("GetPageLabels", function (data) {
+    handler.on("GetPageLabels", function () {
       return pdfManager.ensureCatalog("pageLabels");
     });
-    handler.on("GetPageLayout", function (data) {
+    handler.on("GetPageLayout", function () {
       return pdfManager.ensureCatalog("pageLayout");
     });
-    handler.on("GetPageMode", function (data) {
+    handler.on("GetPageMode", function () {
       return pdfManager.ensureCatalog("pageMode");
     });
-    handler.on("GetViewerPreferences", function (data) {
+    handler.on("GetViewerPreferences", function () {
       return pdfManager.ensureCatalog("viewerPreferences");
     });
-    handler.on("GetOpenAction", function (data) {
+    handler.on("GetOpenAction", function () {
       return pdfManager.ensureCatalog("openAction");
     });
-    handler.on("GetAttachments", function (data) {
+    handler.on("GetAttachments", function () {
       return pdfManager.ensureCatalog("attachments");
     });
     handler.on("GetAttachmentContent", async function (id) {
@@ -64195,13 +64246,14 @@ class WorkerMessageHandler {
         }
       }
     });
-    handler.on("GetDocJSActions", function (data) {
+    handler.on("GetDocJSActions", function () {
       return pdfManager.ensureCatalog("jsActions");
     });
-    handler.on("GetPageJSActions", function ({
+    handler.on("GetPageJSActions", async function ({
       pageIndex
     }) {
-      return pdfManager.getPage(pageIndex).then(page => pdfManager.ensure(page, "jsActions"));
+      const page = await pdfManager.getPage(pageIndex);
+      return pdfManager.ensure(page, "jsActions");
     });
     handler.on("GetAnnotationsByType", async function ({
       types,
@@ -64234,49 +64286,52 @@ class WorkerMessageHandler {
         }
       }
     });
-    handler.on("GetOutline", function (data) {
+    handler.on("GetOutline", function () {
       return pdfManager.ensureCatalog("documentOutline");
     });
-    handler.on("GetOptionalContentConfig", function (data) {
+    handler.on("GetOptionalContentConfig", function () {
       return pdfManager.ensureCatalog("optionalContentConfig");
     });
-    handler.on("GetPermissions", function (data) {
+    handler.on("GetPermissions", function () {
       return pdfManager.ensureCatalog("permissions");
     });
-    handler.on("GetMetadata", function (data) {
+    handler.on("GetMetadata", function () {
       return Promise.all([pdfManager.ensureDoc("documentInfo"), pdfManager.ensureCatalog("metadata"), pdfManager.ensureCatalog("hasStructTree")]);
     });
-    handler.on("GetMarkInfo", function (data) {
+    handler.on("GetMarkInfo", function () {
       return pdfManager.ensureCatalog("markInfo");
     });
-    handler.on("GetData", function (data) {
-      return pdfManager.requestLoadedStream().then(stream => stream.bytes);
+    handler.on("GetData", async function () {
+      const stream = await pdfManager.requestLoadedStream();
+      return stream.bytes;
     });
-    handler.on("GetAnnotations", function ({
+    handler.on("GetAnnotations", async function ({
       pageIndex,
       intent
     }) {
-      return pdfManager.getPage(pageIndex).then(function (page) {
-        const task = new WorkerTask(`GetAnnotations: page ${pageIndex}`);
-        startWorkerTask(task);
-        return page.getAnnotationsData(handler, task, intent).finally(() => {
-          finishWorkerTask(task);
-        });
-      });
+      const page = await pdfManager.getPage(pageIndex);
+      const task = new WorkerTask(`GetAnnotations: page ${pageIndex}`);
+      startWorkerTask(task);
+      try {
+        return await page.getAnnotationsData(handler, task, intent);
+      } finally {
+        finishWorkerTask(task);
+      }
     });
-    handler.on("GetFieldObjects", function (data) {
-      return pdfManager.ensureDoc("fieldObjects").then(fieldObjects => fieldObjects?.allFields || null);
+    handler.on("GetFieldObjects", async function () {
+      const fieldObjects = await pdfManager.ensureDoc("fieldObjects");
+      return fieldObjects?.allFields || null;
     });
-    handler.on("GetSignatures", function (data) {
+    handler.on("GetSignatures", function () {
       return pdfManager.ensureDoc("signatures");
     });
     handler.on("GetSignatureData", function (id) {
       return pdfManager.ensureDoc("getSignatureData", [id]);
     });
-    handler.on("HasJSActions", function (data) {
+    handler.on("HasJSActions", function () {
       return pdfManager.ensureDoc("hasJSActions");
     });
-    handler.on("GetCalculationOrderIds", function (data) {
+    handler.on("GetCalculationOrderIds", function () {
       return pdfManager.ensureDoc("calculationOrderIds");
     });
     handler.on("ExtractPages", async function ({
@@ -64357,8 +64412,7 @@ class WorkerMessageHandler {
         const pdfEditor = new PDFEditor();
         task = new WorkerTask(`ExtractPages: ${pageInfos.length} page(s)`);
         startWorkerTask(task);
-        const buffer = await pdfEditor.extractPages(pageInfos, annotationStorage, pdfManager.pdfDocument, handler, task);
-        return buffer;
+        return await pdfEditor.extractPages(pageInfos, annotationStorage, pdfManager.pdfDocument, handler, task);
       } catch (reason) {
         warn(`extractPages: "${reason}".`);
         return null;
@@ -64506,11 +64560,14 @@ class WorkerMessageHandler {
         xref.resetNewTemporaryRef();
       });
     });
-    handler.on("GetOperatorList", function (data, sink) {
-      const {
-        pageId,
-        pageIndex
-      } = data;
+    handler.on("GetOperatorList", function ({
+      pageId,
+      pageIndex,
+      intent,
+      cacheKey,
+      annotationStorage,
+      modifiedIds
+    }, sink) {
       pdfManager.getPage(pageId).then(function (page) {
         const task = new WorkerTask(`GetOperatorList: page ${pageIndex}`);
         startWorkerTask(task);
@@ -64519,14 +64576,14 @@ class WorkerMessageHandler {
           handler,
           sink,
           task,
-          intent: data.intent,
-          cacheKey: data.cacheKey,
-          annotationStorage: data.annotationStorage,
-          modifiedIds: data.modifiedIds,
+          intent,
+          cacheKey,
+          annotationStorage,
+          modifiedIds,
           pageIndex
-        }).then(operatorListInfo => {
+        }).then(opListInfo => {
           if (start) {
-            info(`page=${pageIndex + 1} - getOperatorList: time=` + `${Date.now() - start}ms, len=${operatorListInfo.length}`);
+            info(`${task.name}; time=${Date.now() - start}ms, len=${opListInfo.length}`);
           }
           sink.close();
         }, reason => {
@@ -64539,13 +64596,12 @@ class WorkerMessageHandler {
         });
       });
     });
-    handler.on("GetTextContent", function (data, sink) {
-      const {
-        pageId,
-        pageIndex,
-        includeMarkedContent,
-        disableNormalization
-      } = data;
+    handler.on("GetTextContent", function ({
+      pageId,
+      pageIndex,
+      includeMarkedContent,
+      disableNormalization
+    }, sink) {
       pdfManager.getPage(pageId).then(function (page) {
         const task = new WorkerTask("GetTextContent: page " + pageIndex);
         startWorkerTask(task);
@@ -64558,7 +64614,7 @@ class WorkerMessageHandler {
           disableNormalization
         }).then(() => {
           if (start) {
-            info(`page=${pageIndex + 1} - getTextContent: time=` + `${Date.now() - start}ms`);
+            info(`${task.name}; time=${Date.now() - start}ms`);
           }
           sink.close();
         }, reason => {
@@ -64571,16 +64627,21 @@ class WorkerMessageHandler {
         });
       });
     });
-    handler.on("GetStructTree", function (data) {
-      return pdfManager.getPage(data.pageIndex).then(page => pdfManager.ensure(page, "getStructTree"));
+    handler.on("GetStructTree", async function ({
+      pageIndex
+    }) {
+      const page = await pdfManager.getPage(pageIndex);
+      return pdfManager.ensure(page, "getStructTree");
     });
-    handler.on("FontFallback", function (data) {
-      return pdfManager.fontFallback(data.id, handler);
+    handler.on("FontFallback", function ({
+      id
+    }) {
+      return pdfManager.fontFallback(id, handler);
     });
-    handler.on("Cleanup", function (data) {
+    handler.on("Cleanup", function () {
       return pdfManager.cleanup(true);
     });
-    handler.on("Terminate", async function (data) {
+    handler.on("Terminate", async function () {
       terminated = true;
       const waitOn = [];
       if (pdfManager) {
@@ -64600,7 +64661,7 @@ class WorkerMessageHandler {
       handler.destroy();
       handler = null;
     });
-    handler.on("Ready", function (data) {
+    handler.on("Ready", function () {
       setupDoc(docParams);
       docParams = null;
     });

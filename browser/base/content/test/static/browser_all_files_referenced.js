@@ -74,6 +74,7 @@ var gExceptionPaths = [
   // Points to theme preview images, which are defined in browser/ but only used
   // in toolkit/mozapps/extensions/content/aboutaddons.js.
   "resource://usercontext-content/builtin-themes/",
+  "resource://usercontext-content/extra-themes-previews/",
 
   // Page data schemas are referenced programmatically.
   "chrome://browser/content/pagedata/schemas/",
@@ -188,7 +189,7 @@ var allowlist = [
   },
 
   // SpiderMonkey parser API, currently unused in browser/ and toolkit/
-  { file: "resource://gre/modules/reflect.sys.mjs" },
+  { file: "moz-src:///toolkit/components/reflect/reflect.sys.mjs" },
 
   // extensions/pref/autoconfig/src/nsReadConfig.cpp
   { file: "resource://gre/defaults/autoconfig/prefcalls.js" },
@@ -241,8 +242,6 @@ var allowlist = [
   { file: "resource://builtin-addons/ipp-activator/breakages/tab.json" },
 
   // Starting from here, files in the allowlist are bugs that need fixing.
-  // Bug 2042933 - consumed by PermissionUI.sys.mjs in a follow-up patch.
-  { file: "resource://app/modules/PermissionPromptTargeting.sys.mjs" },
   // Bug 1339424 (wontfix?)
   {
     file: "chrome://browser/locale/taskbar.properties",
@@ -342,12 +341,6 @@ var allowlist = [
   // `chrome://global/skin/icons/shaft-arrow-${isRTL ? "right" : "left"}.svg`
   { file: "chrome://global/skin/icons/shaft-arrow-left.svg" },
   { file: "chrome://global/skin/icons/shaft-arrow-right.svg" },
-
-  // Bug 1907594 - Created an inital set of messaging system targeting constants
-  // Preparation for future use in ASRouter
-  {
-    file: "resource://app/modules/asrouter/MessagingTargetingConstants.sys.mjs",
-  },
 ];
 
 if (AppConstants.NIGHTLY_BUILD) {

@@ -23,8 +23,8 @@
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_network.h"
-#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/glean/NetwerkMetrics.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/net/DNS.h"
 #include "mozilla/net/DashboardTypes.h"
 #include "nsCOMPtr.h"
@@ -1244,6 +1244,11 @@ bool nsHttpConnectionMgr::ProcessPendingQForEntry(ConnectionEntry* ent,
   if (ent->PendingQueueIsEmpty() && ent->UrgentStartQueueIsEmpty()) {
     return false;
   }
+
+  // Move any HTTP/3 connection that is still in active list but can no longer
+  // serve new transactions.
+  ent->MoveUnusableH3ConnsToPending();
+
   ProcessSpdyPendingQ(ent);
 
   bool dispatchedSuccessfully = false;

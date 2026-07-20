@@ -31,6 +31,8 @@
   <string name="history_search_hint">Buscar el historial</string>
   <!-- Placeholder text shown in search bar when using bookmarks search -->
   <string name="bookmark_search_hint">Buscar marcadores</string>
+  <!-- Content description for the toolbar back button while searching bookmarks -->
+  <string name="bookmark_close_search_description">Retroceder y cerrar búsqueda</string>
   <!-- Placeholder text shown in search bar when using tabs search -->
   <string name="tab_search_hint">Buscar pestañas</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
@@ -149,6 +151,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Pestaña privada</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Contraseñas</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Desinstalar, ¿por qué?</string>
   <!--
     Recent Tabs
 
@@ -643,14 +647,33 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Ayúdanos a llegar a más personas: permite que Mozilla informe a la plataforma de origen que utilizas Firefox. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Puedes ayudarnos a aumentar nuestro alcance si autorizas a Mozilla a comunicarle a la plataforma desde la que accediste que utilizas Firefox. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox se enorgullece de ser independiente y dedicarse a defender la web abierta contra los monopolios tecnológicos.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Te invitamos a darnos tu autorización para contribuir a que Firefox logre su misión.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Cómo utilizamos los datos</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">Más información</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Ayuda Firefox</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Sí</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Permitir y continuar</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">No, gracias</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">No, gracias</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">No</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Las notificaciones te ayudan a estar más seguro con Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1520,6 +1543,8 @@
   <string name="add_tab">Agregar pestaña</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Agregar pestaña privada</string>
+  <!-- Content description (not visible, for screen readers etc.): Create tab group button. Opens the create tab group sheet when pressed -->
+  <string name="create_tab_group_content_description">Crear grupo de pestañas</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">Busca tus pestañas</string>
   <!-- Text shown in the menu to view recently closed tabs -->
@@ -1691,8 +1716,6 @@
   <string name="tab_group_color_pink">Rosa</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">Púrpura</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">Violeta</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">Azul</string>
   <!-- Tab group color: Cyan -->
@@ -1950,6 +1973,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">¿Qué es lo que no funciona?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Borrar motivo seleccionado</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Por favor, ingresa al menos 10 caracteres</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">¿Qué es lo que falla?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1958,8 +1983,6 @@
   <string name="webcompat_reporter_choose_reason_error">Por favor elige una razón</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description_2">Describe el problema en detalle para ayudarnos a investigarlo (opcional)</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">Describe el problema (opcional)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Agregar más información</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -1970,14 +1993,8 @@
   <string name="webcompat_reporter_success_snackbar_text_2">Reporte enviado</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text_2">¿Qué pasó? ¿Qué esperabas que pasara? Incluye los pasos para reproducir el problema.</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">¿Qué pasó? ¿Qué debería haber pasado?</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text_2">Enviar lista de elementos bloqueados por la protección de rastreo</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">Enviar las URL bloqueadas por la protección contra el rastreo</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">La Protección de rastreo mejorada podría bloquear rastreadores y scripts que algunos sitios web necesitan para funcionar bien.</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">Vista previa del informe</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2175,6 +2192,10 @@
   <string name="bookmark_select_folder_new_folder_button_title">Nueva carpeta</string>
   <!-- Bookmark snackbar message for moving a single item. %1$s is the title of the item being moved and %2$s is the new parent folder of the bookmark -->
   <string name="bookmark_moved_single_item">Movido de %1$s a %2$s</string>
+  <!-- Text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results">No se encontraron coincidencias.</string>
+  <!-- Additional text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results_additional_text">¡Prueba otra búsqueda!</string>
   <!--
     Site Permissions
 
@@ -2432,6 +2453,8 @@
   <string name="preferences_take_survey">Responder encuesta</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">No, gracias</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">No se pudo abrir la ventana de confirmación de desinstalación. Por favor, utiliza la función de desinstalación nativa del sistema.</string>
   <!--
     Snackbar
 
@@ -2580,7 +2603,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Ajustes de protección</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Protección contra rastreo mejorada</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Ahora con protección total de cookies, nuestra barrera más poderosa hasta el momento contra los rastreadores entre sitios.</string>
@@ -2589,15 +2616,6 @@
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Saber más</string>
   <plurals name="trackers_blocked_count_2">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="one">%d rastreador bloqueado</item>
-    <item quantity="other">%d rastreadores bloqueados</item>
-  </plurals>
-  <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
 
@@ -3108,6 +3126,30 @@
   <string name="ip_protection_data_limit_reached_snackbar">Has usado %1$d GB de datos de la VPN. El acceso se restablecerá el próximo mes.</string>
   <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
   <string name="ip_protection_data_limit_reached_snackbar_action">Ajustes</string>
+  <!-- Description shown on the browser VPN settings screen prompting the user to turn the VPN on. -->
+  <string name="ip_protection_settings_description" tools:ignore="UnusedResources">Activa la VPN para que tu navegación sea más privada y más difícil de rastrear.</string>
+  <!-- Title shown on the browser VPN settings screen for location selection section. -->
+  <string name="ip_protection_location_title" tools:ignore="UnusedResources">Ubicación</string>
+  <!-- Label for the Recommended server location option which is automatically selected by the browser. -->
+  <string name="ip_protection_recommended_location" tools:ignore="UnusedResources">Recomendada</string>
+  <!-- Headline for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_headline" tools:ignore="UnusedResources,BrandUsage">Protégete aun más con Mozilla VPN</string>
+  <!-- Body for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_body" tools:ignore="UnusedResources">Elige entre más de 300 ubicaciones y protege todas tus aplicaciones en hasta 5 dispositivos.</string>
+  <!-- Label for the button that takes the user to get the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_button" tools:ignore="UnusedResources,BrandUsage">Obtén Mozilla VPN</string>
+  <!-- Title for the browser VPN location picker screen. -->
+  <string name="ip_protection_location_picker_title" tools:ignore="UnusedResources">Elige una ubicación de VPN</string>
+  <!-- Description for what it means to use the Recommended setting and let the app automatically pick the best server location. -->
+  <string name="ip_protection_location_fastest_description" tools:ignore="UnusedResources, BrandUsage">Firefox selecciona la ubicación más rápida</string>
+  <!-- Error message shown when the selected browser VPN location is unavailable. -->
+  <string name="ip_protection_location_unavailable" tools:ignore="UnusedResources">Ubicación no disponible. Elige otra ubicación.</string>
+  <!-- Snackbar (in-app pop-up notification) text shown when the previously selected browser VPN location is unavailable and the recommended location was used instead. -->
+  <string name="ip_protection_location_unavailable_recommended_snackbar" tools:ignore="UnusedResources">La ubicación de VPN seleccionada no está disponible. Conectado a la ubicación recomendada.</string>
+  <!-- Title for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_title" tools:ignore="UnusedResources">La ubicación anterior no está disponible</string>
+  <!-- Description for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_recommended_description" tools:ignore="UnusedResources">Conectado a la ubicación recomendada.</string>
   <!--
     Autofill
 
@@ -3260,8 +3302,6 @@
   <string name="addresses_save_button">Guardar</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Cancelar</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Eliminar dirección</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">¿Eliminar esta dirección?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3816,8 +3856,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">Tu protección está activa.</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">Tienes protección. Si detectamos algo, te lo haremos saber.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">Protección de seguimiento mejorada</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3833,8 +3871,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">Rastreadores bloqueados: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">No se encontraron rastreadores</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">Los rastreadores no están bloqueados</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
@@ -3897,17 +3933,6 @@
     <item quantity="one">%1$d rastreador bloqueado esta semana</item>
     <item quantity="other">%1$d rastreadores bloqueados esta semana</item>
   </plurals>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">Rastreadores bloqueados: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
@@ -4059,18 +4084,8 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Tu opinión es importante. ¿Por qué estás desinstalando la aplicación?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Problemas con la página web</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Problemas de vídeo y descarga</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Problemas de rendimiento</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Problemas de función y diseño</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Cuestiones relacionadas con la privacidad</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Problemas de pago y suscripción</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Enviar comentario y desinstalar</string>
   <!--
     Accessibility
 
@@ -4693,7 +4708,7 @@
   <!-- Content description for the share feedback link on a Firefox Labs feature. This text will be used by screen readers to provide more context on the feedback link. %s is the name of the Firefox Labs feature. -->
   <string name="firefox_labs_share_feedback_content_description">Compartir comentarios sobre %s.</string>
   <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
-  <string name="firefox_labs_restore_default_button_text">Restaurar predeterminados</string>
+  <string name="firefox_labs_restore_default_button_text">Restaurar valores predeterminados</string>
   <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
   <string name="firefox_labs_feature_dialog_title">Se necesita reiniciar</string>
   <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
@@ -4708,6 +4723,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Para activar esta función, reinicia %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Para desactivar esta función, reinicia %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Funcionalidad no disponible para prueba.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">No hay funciones experimentales para probar en este momento</string>
 </resources>

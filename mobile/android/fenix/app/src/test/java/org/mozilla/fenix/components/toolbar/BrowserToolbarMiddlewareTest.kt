@@ -73,7 +73,6 @@ import mozilla.components.compose.browser.toolbar.store.ProgressBarConfig
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineSession.LoadUrlFlags
-import mozilla.components.concept.engine.cookiehandling.CookieBannersStorage
 import mozilla.components.concept.engine.ipprotection.IPProtectionHandler.StateInfo
 import mozilla.components.concept.engine.ipprotection.ServiceState
 import mozilla.components.concept.engine.permission.SitePermissionsStorage
@@ -221,7 +220,6 @@ class BrowserToolbarMiddlewareTest {
         every { id } returns tabId
     }
     private val permissionsStorage: SitePermissionsStorage = mockk()
-    private val cookieBannersStorage: CookieBannersStorage = mockk()
     private val trackingProtectionUseCases: TrackingProtectionUseCases = mockk()
     private val publicSuffixList = PublicSuffixList(testContext)
     private val bookmarksStorage: BookmarksStorage = mockk()
@@ -514,6 +512,17 @@ class BrowserToolbarMiddlewareTest {
     @Test
     fun `WHEN clicking the new tab button with homepage search bar enabled THEN navigate to home screen without focus`() {
         settings.enableHomepageSearchBar = true
+        val middleware = buildMiddleware()
+        val toolbarStore = buildStore(middleware)
+        val newTabButton = toolbarStore.state.displayState.browserActionsEnd[0] as ActionButtonRes
+        toolbarStore.dispatch(newTabButton.onClick as BrowserToolbarEvent)
+
+        verify { navController.navigate(BrowserFragmentDirections.actionGlobalHome(focusOnAddressBar = false)) }
+    }
+
+    @Test
+    fun `GIVEN homepage trending and recent searches is enabled WHEN clicking the new tab button THEN navigate to home screen without focus`() {
+        settings.enableHomepageTrendingRecentSearch = true
         val middleware = buildMiddleware()
         val toolbarStore = buildStore(middleware)
         val newTabButton = toolbarStore.state.displayState.browserActionsEnd[0] as ActionButtonRes
@@ -3884,7 +3893,6 @@ class BrowserToolbarMiddlewareTest {
         browserStore: BrowserStore = this.browserStore,
         ipProtectionStore: IPProtectionStore = this.ipProtectionStore,
         permissionsStorage: SitePermissionsStorage = this.permissionsStorage,
-        cookieBannersStorage: CookieBannersStorage = this.cookieBannersStorage,
         trackingProtectionUseCases: TrackingProtectionUseCases = this.trackingProtectionUseCases,
         bookmarksStorage: BookmarksStorage = this.bookmarksStorage,
         useCases: UseCases = this.useCases,
@@ -3910,7 +3918,6 @@ class BrowserToolbarMiddlewareTest {
         browserStore = browserStore,
         ipProtectionStore = ipProtectionStore,
         permissionsStorage = permissionsStorage,
-        cookieBannersStorage = cookieBannersStorage,
         bookmarksStorage = bookmarksStorage,
         trackingProtectionUseCases = trackingProtectionUseCases,
         useCases = useCases,

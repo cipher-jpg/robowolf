@@ -14,43 +14,46 @@
 #include "ReferrerInfo.h"
 #include "mozIRemoteLazyInputStream.h"
 #include "mozIThirdPartyUtil.h"
-#include "mozilla/LoadInfo.h"
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/CompactPair.h"
+#include "mozilla/Components.h"
 #include "mozilla/ConsoleReportCollector.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/InputStreamLengthHelper.h"
+#include "mozilla/LoadInfo.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/PermissionManager.h"
-#include "mozilla/Components.h"
+#include "mozilla/RemoteLazyInputStreamChild.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_fission.h"
+#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/browser/NimbusFeatures.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/ParentProcessChannelHandle.h"
 #include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/LoadURIOptionsBinding.h"
-#include "mozilla/dom/nsHTTPSOnlyUtils.h"
-#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "mozilla/dom/ParentProcessChannelHandle.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/net/OpaqueResponseUtils.h"
+#include "mozilla/dom/nsHTTPSOnlyUtils.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/net/ChannelClassifierUtils.h"
-#include "mozilla/StaticPrefs_javascript.h"
+#include "mozilla/net/OpaqueResponseUtils.h"
+#include "mozilla/net/SFV.h"
 #include "nsBufferedStreams.h"
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
@@ -61,8 +64,8 @@
 #include "nsEscape.h"
 #include "nsGlobalWindowInner.h"
 #include "nsGlobalWindowOuter.h"
-#include "nsHttpChannel.h"
 #include "nsHTTPCompressConv.h"
+#include "nsHttpChannel.h"
 #include "nsHttpHandler.h"
 #include "nsICacheInfoChannel.h"
 #include "nsICachingChannel.h"
@@ -70,9 +73,9 @@
 #include "nsIConsoleService.h"
 #include "nsIContentPolicy.h"
 #include "nsICookieService.h"
+#include "nsIDNSService.h"
 #include "nsIDOMWindowUtils.h"
 #include "nsIDocShell.h"
-#include "nsIDNSService.h"
 #include "nsIEncodedChannel.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsILoadGroupChild.h"
@@ -80,6 +83,7 @@
 #include "nsIMultiplexInputStream.h"
 #include "nsIMutableArray.h"
 #include "nsINetworkInterceptController.h"
+#include "nsIOService.h"
 #include "nsIObserverService.h"
 #include "nsIPrincipal.h"
 #include "nsIProtocolProxyService.h"
@@ -97,6 +101,7 @@
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsProxyRelease.h"
+#include "nsQueryObject.h"
 #include "nsReadableUtils.h"
 #include "nsRedirectHistoryEntry.h"
 #include "nsServerTiming.h"
@@ -105,10 +110,6 @@
 #include "nsString.h"
 #include "nsThreadUtils.h"
 #include "nsURLHelper.h"
-#include "mozilla/RemoteLazyInputStreamChild.h"
-#include "mozilla/net/SFV.h"
-#include "mozilla/dom/ContentChild.h"
-#include "nsQueryObject.h"
 
 using mozilla::dom::ForceMediaDocument;
 using mozilla::dom::RequestMode;
@@ -227,6 +228,7 @@ HttpBaseChannel::HttpBaseChannel()
   StoreAllowAltSvc(true);
   StoreResponseTimeoutEnabled(true);
   StoreAllRedirectsSameOrigin(true);
+  StoreAllRedirectsSameOriginIgnoringInternal(true);
   StoreAllRedirectsPassTimingAllowCheck(true);
   StoreUpgradableToSecure(true);
   StoreIsUserAgentHeaderModified(false);
@@ -394,6 +396,9 @@ nsresult HttpBaseChannel::Init(nsIURI* aURI, uint32_t aCaps,
 
   RefPtr<mozilla::dom::BrowsingContext> browsingContext;
   mLoadInfo->GetBrowsingContext(getter_AddRefs(browsingContext));
+  if (!browsingContext) {
+    mLoadInfo->GetAssociatedBrowsingContext(getter_AddRefs(browsingContext));
+  }
 
   const nsCString& languageOverride =
       browsingContext ? browsingContext->Top()->GetLanguageOverride()
@@ -3497,6 +3502,37 @@ OpaqueResponse HttpBaseChannel::BlockOrFilterOpaqueResponse(
   return OpaqueResponse::Block;
 }
 
+dom::NoCorsMediaRequestState HttpBaseChannel::NoCorsMediaRequestState() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (!mLoadInfo->GetIsMediaRequest()) {
+    return dom::NoCorsMediaRequestState::NotAvailable;
+  }
+
+  RefPtr<dom::WindowGlobalParent> wgp =
+      dom::WindowGlobalParent::GetByInnerWindowId(
+          mLoadInfo->GetInnerWindowID());
+  if (!wgp || wgp->IsDiscarded()) {
+    return dom::NoCorsMediaRequestState::NotAvailable;
+  }
+
+  return wgp->NoCorsMediaRequestState(mURI);
+}
+
+void HttpBaseChannel::RecordSubsequentNoCorsRequestState() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(mLoadInfo->GetIsMediaRequest());
+
+  RefPtr<dom::WindowGlobalParent> wgp =
+      dom::WindowGlobalParent::GetByInnerWindowId(
+          mLoadInfo->GetInnerWindowID());
+  if (!wgp || wgp->IsDiscarded()) {
+    return;
+  }
+
+  wgp->RecordSubsequentNoCorsRequestState(mURI);
+}
+
 // The specification for ORB is currently being written:
 // https://whatpr.org/fetch/1442.html#orb-algorithm
 // The `opaque-response-safelist check` is implemented in:
@@ -3595,14 +3631,8 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
   // Step 4
   // If it's a media subsequent request, we assume that it will only be made
   // after a successful initial request.
-  bool isMediaRequest;
-  mLoadInfo->GetIsMediaRequest(&isMediaRequest);
-  if (isMediaRequest) {
-    bool isMediaInitialRequest;
-    mLoadInfo->GetIsMediaInitialRequest(&isMediaInitialRequest);
-    if (!isMediaInitialRequest) {
-      return OpaqueResponse::Allow;
-    }
+  if (NoCorsMediaRequestState() == dom::NoCorsMediaRequestState::Subsequent) {
+    return OpaqueResponse::Allow;
   }
 
   // Step 5
@@ -3663,9 +3693,7 @@ OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
   MOZ_ASSERT(mCachedOpaqueResponseBlockingPref);
 
   // Step 9
-  bool isMediaRequest;
-  mLoadInfo->GetIsMediaRequest(&isMediaRequest);
-  if (isMediaRequest) {
+  if (NoCorsMediaRequestState() != dom::NoCorsMediaRequestState::NotAvailable) {
     return BlockOrFilterOpaqueResponse(
         mORB, u"after sniff: media request"_ns,
         OpaqueResponseBlockedTelemetryReason::eAfterSniffMedia,
@@ -3719,7 +3747,7 @@ void HttpBaseChannel::BlockOpaqueResponseAfterSniff(
   MOZ_DIAGNOSTIC_ASSERT(mORB);
   LogORBError(aReason, aTelemetryReason);
   RefPtr<OpaqueResponseBlocker> orb(mORB);
-  orb->BlockResponse(this, NS_BINDING_ABORTED);
+  orb->BlockResponse(this, NS_ERROR_DOM_NETWORK_ERR);
 }
 
 void HttpBaseChannel::AllowOpaqueResponseAfterSniff() {
@@ -4928,6 +4956,8 @@ HttpBaseChannel::CloneReplacementChannelConfig(bool aPreserveMethod,
     config.timedChannelInfo->initiatorType() = mInitiatorType;
     config.timedChannelInfo->allRedirectsSameOrigin() =
         LoadAllRedirectsSameOrigin();
+    config.timedChannelInfo->allRedirectsSameOriginIgnoringInternal() =
+        LoadAllRedirectsSameOriginIgnoringInternal();
     config.timedChannelInfo->allRedirectsPassTimingAllowCheck() =
         LoadAllRedirectsPassTimingAllowCheck();
     // Execute the timing allow check to determine whether
@@ -5076,6 +5106,8 @@ HttpBaseChannel::CloneReplacementChannelConfig(bool aPreserveMethod,
 
     newTimedChannel->SetAllRedirectsSameOrigin(
         config.timedChannelInfo->allRedirectsSameOrigin());
+    newTimedChannel->SetAllRedirectsSameOriginIgnoringInternal(
+        config.timedChannelInfo->allRedirectsSameOriginIgnoringInternal());
 
     if (config.timedChannelInfo->timingAllowCheckForPrincipal()) {
       newTimedChannel->SetAllRedirectsPassTimingAllowCheck(
@@ -5231,6 +5263,13 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     newTimedChannel->SetAllRedirectsSameOrigin(
         config.timedChannelInfo->allRedirectsSameOrigin() &&
         sameOriginWithOriginalUri);
+    // Internal redirects (e.g. a service worker serving a response from a
+    // different URL) are not real cross-origin network hops, so they must not
+    // count as cross-origin for canvas/CSS/media tainting.
+    newTimedChannel->SetAllRedirectsSameOriginIgnoringInternal(
+        config.timedChannelInfo->allRedirectsSameOriginIgnoringInternal() &&
+        (redirectType == ReplacementReason::InternalRedirect ||
+         sameOriginWithOriginalUri));
   }
 
   newChannel->SetLoadGroup(mLoadGroup);
@@ -5669,6 +5708,22 @@ HttpBaseChannel::GetAllRedirectsSameOrigin(bool* aAllRedirectsSameOrigin) {
 NS_IMETHODIMP
 HttpBaseChannel::SetAllRedirectsSameOrigin(bool aAllRedirectsSameOrigin) {
   StoreAllRedirectsSameOrigin(aAllRedirectsSameOrigin);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetAllRedirectsSameOriginIgnoringInternal(
+    bool* aAllRedirectsSameOriginIgnoringInternal) {
+  *aAllRedirectsSameOriginIgnoringInternal =
+      LoadAllRedirectsSameOriginIgnoringInternal();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::SetAllRedirectsSameOriginIgnoringInternal(
+    bool aAllRedirectsSameOriginIgnoringInternal) {
+  StoreAllRedirectsSameOriginIgnoringInternal(
+      aAllRedirectsSameOriginIgnoringInternal);
   return NS_OK;
 }
 
@@ -6894,9 +6949,11 @@ void HttpBaseChannel::LogORBError(
   mLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
 
   nsAutoCString uri;
-  nsresult rv = nsContentUtils::AnonymizeURI(mURI, uri);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
+  if (mURI->SchemeIs("data")) {
+    uri.AssignLiteral("data:...");
+  } else {
+    nsCOMPtr<nsIURI> exposableURI = net::nsIOService::CreateExposableURI(mURI);
+    exposableURI->GetSpec(uri);
   }
 
   uint64_t contentWindowId;

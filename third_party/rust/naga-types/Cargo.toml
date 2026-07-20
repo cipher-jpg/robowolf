@@ -12,8 +12,7 @@
 [package]
 edition = "2021"
 name = "naga-types"
-version = "29.0.0"
-authors = ["gfx-rs developers"]
+version = "30.0.0"
 build = false
 autolib = false
 autobins = false
@@ -89,3 +88,6 @@ default-features = false
 
 [lints.clippy]
 ref_as_ptr = "warn"
+
+[lints.rust]
+missing_debug_implementations = "warn"

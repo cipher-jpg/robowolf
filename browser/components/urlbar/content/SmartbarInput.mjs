@@ -58,8 +58,8 @@ const lazy = XPCOMUtils.declareLazy({
   ExtensionSearchHandler:
     "resource://gre/modules/ExtensionSearchHandler.sys.mjs",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
-  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ReaderMode: "moz-src:///toolkit/components/reader/ReaderMode.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
@@ -101,6 +101,10 @@ const lazy = XPCOMUtils.declareLazy({
 
 const UNLIMITED_MAX_RESULTS = 99;
 const MAX_INPUT_LENGTH = 32000;
+
+// Default Smartbar action before the user types or picks one. The live guess
+// changes with intent detection.
+const DEFAULT_SMARTBAR_ACTION = "chat";
 
 let getBoundsWithoutFlushing = element =>
   element.documentGlobal.windowUtils.getBoundsWithoutFlushing(element);
@@ -279,6 +283,8 @@ ${
   #scrollAnimationId = null;
   #smartbarAction = "";
   #smartbarActionPending = false;
+  #smartbarActionLocked = false;
+  #smartbarSearchEngineName = "";
   #detectedIntent = "";
   #smartbarAssistantIsGenerating = false;
   #smartbarEditor = null;
@@ -316,6 +322,7 @@ ${
   // Properties accessed in tests.
   lastQueryContextPromise = Promise.resolve();
   _autofillPlaceholder = null;
+  _applyingAutofill = false;
   _resultForCurrentValue = null;
   _untrimmedValue = "";
   _enableAutofillPlaceholder = true;
@@ -414,7 +421,7 @@ ${
     if (this.#isSmartbarMode) {
       this.#ensureSmartbarEditor();
       this._inputCta = this.querySelector("input-cta");
-      this._inputCta.setAttribute("action", this.smartbarAction);
+      this.smartbarAction = DEFAULT_SMARTBAR_ACTION;
       this.#updateCtaSearchEngineInfo();
       this._inputCta.addEventListener(
         "aiwindow-input-cta:on-action-change",
@@ -701,6 +708,9 @@ ${
    * Note that it might be called before #init has finished.
    */
   #onContextMenuRebuilt() {
+    if (this.#isAddressbar || this.#isSmartbarMode) {
+      this._initAutofillDismiss();
+    }
     if (this.#isSmartbarMode) {
       this.#initSmartbarContextMenuPaste();
       this._initPasteAndGo();
@@ -849,6 +859,19 @@ ${
       this.#smartbarInputController.setValue(val);
     } else {
       this.inputField.value = val;
+    }
+  }
+
+  #setInputRangeText(replacement, start, end, selectionMode) {
+    if (this.#smartbarInputController) {
+      this.#smartbarInputController.setRangeText(
+        replacement,
+        start,
+        end,
+        selectionMode
+      );
+    } else {
+      this.inputField.setRangeText(replacement, start, end, selectionMode);
     }
   }
 
@@ -1069,7 +1092,7 @@ ${
       case "keyword.enabled":
         this._updatePlaceholderFromDefaultEngine().catch(e =>
           // This can happen if the search service failed.
-          console.warn("Falied to update urlbar placeholder:", e)
+          console.warn("Failed to update urlbar placeholder:", e)
         );
         break;
       case "browser.search.widget.new": {
@@ -1306,7 +1329,7 @@ ${
     const previousSelectionStart = this.selectionStart + offset;
     const previousSelectionEnd = this.selectionEnd + offset;
 
-    this._setValue(value, { allowTrim: true, valueIsTyped: !valid });
+    this.setValue(value, { allowTrim: true, valueIsTyped: !valid });
     this.toggleAttribute("usertyping", !valid && value);
 
     if (this.focused && value != previousUntrimmedValue) {
@@ -1582,6 +1605,11 @@ ${
    * @param {Event} event - The triggering event.
    */
   #handleSuppressedNavigation(event) {
+    // A manual pick always wins over intent detection.
+    if (this.#smartbarActionLocked) {
+      this.#submitLockedAction(event);
+      return;
+    }
     if (this._resultForCurrentValue?.type == UrlbarShared.RESULT_TYPE.URL) {
       // pickResult() reads _lastSearchString for engagement telemetry. The
       // suppressed branch of startQuery() intentionally leaves it untouched
@@ -1624,62 +1652,195 @@ ${
       return;
     }
 
-    const action = event.detail.action;
-    this.smartbarAction = action;
     const isExplicitAction =
       event.type === "aiwindow-input-cta:on-action-change" ||
       event.type === "aiwindow-input-cta:on-search-engine-select";
 
-    // For non-explicit actions, forward to handleNavigation.
-    if (!isExplicitAction) {
-      this.handleNavigation({ event });
+    // Picking an action or engine only locks the button; it doesn't submit.
+    // Submit happens via the primary button or Enter, so return focus to input.
+    if (isExplicitAction) {
+      if (event.type === "aiwindow-input-cta:on-search-engine-select") {
+        this.#smartbarSearchEngineName = event.detail.engineName ?? "";
+        this.smartbarAction = "search";
+      } else {
+        this.#smartbarSearchEngineName = "";
+        this.smartbarAction = event.detail.action;
+      }
+      this.#smartbarActionLocked = true;
+      this.#updateGoGuardrail();
+      this.#updateCtaSearchEngineInfo();
+      this.focus();
       return;
     }
 
-    // Handle explicit actions from smartbar CTA.
-    const committedValue = this.untrimmedValue;
+    this.smartbarAction = event.detail.action;
+    this.handleNavigation({ event });
+  }
+
+  /**
+   * Whether a result is safe to pick on submit. It isn't when the user has been
+   * editing the value after selecting it, unless the result is the heuristic, a
+   * tip, an AI chat result, or its value still matches the input.
+   *
+   * @param {UrlbarResult} [result] - The result for the selected element.
+   * @returns {boolean}
+   */
+  #isSafeToPickResult(result) {
+    return (
+      !!result &&
+      (result.heuristic ||
+        !this.valueIsTyped ||
+        result.type == UrlbarShared.RESULT_TYPE.TIP ||
+        result.type == UrlbarShared.RESULT_TYPE.AI_CHAT ||
+        this.value == this.#getValueFromResult(result))
+    );
+  }
+
+  /**
+   * Whether a submission should be routed through the manually locked action
+   * rather than the generic navigation path. A deliberately keyboard-selected
+   * suggestion row (not an auto-selected heuristic) and one-off searches take
+   * precedence over a manual pick.
+   *
+   * @param {object} options
+   * @param {Element} [options.element] - The selected view element, if any.
+   * @param {UrlbarResult} [options.result] - The result for the selected element.
+   * @param {boolean} options.safeToPickResult - Whether the result is safe to pick.
+   * @param {boolean} options.isComposing - Whether IME composition is active.
+   * @param {HandleNavigationOneOffParams} [options.oneOffParams] - One-off params.
+   * @returns {boolean}
+   */
+  #shouldSubmitLockedAction({
+    element,
+    result,
+    safeToPickResult,
+    isComposing,
+    oneOffParams,
+  }) {
+    if (!this.#isSmartbarMode || !this.#smartbarActionLocked || isComposing) {
+      return false;
+    }
+    const hasSelectedSuggestionRow =
+      element && result && !result.heuristic && safeToPickResult;
+    return !hasSelectedSuggestionRow && !oneOffParams?.engine;
+  }
+
+  /**
+   * Submits the Smartbar honoring a manually locked action, so the user's
+   * explicit choice wins over the live intent guess. Does nothing on an empty
+   * value, and the "Go" guardrail blocks navigation for non-URL text.
+   *
+   * @param {Event} event - The event that triggered the submission.
+   */
+  #submitLockedAction(event) {
+    const value = this.untrimmedValue;
+    if (!value.trim()) {
+      return;
+    }
+
+    switch (this.smartbarAction) {
+      case "chat":
+        this.submitChat(event, value);
+        break;
+      case "search":
+        this.#submitSearch(event, value);
+        break;
+      case "navigate":
+        if (this.#goBlocked) {
+          return;
+        }
+        this.#submitNavigate(event, value);
+        break;
+    }
+  }
+
+  /**
+   * Runs a search for the given value using the remembered engine (from
+   * "Search with…") or the default engine.
+   *
+   * @param {Event} event - The triggering event.
+   * @param {string} value - The value to search for.
+   */
+  #submitSearch(event, value) {
+    const engine =
+      (this.#smartbarSearchEngineName &&
+        lazy.UrlbarSearchUtils.getEngineByName(
+          this.#smartbarSearchEngineName
+        )) ||
+      lazy.UrlbarSearchUtils.getDefaultEngine(this.isPrivate);
+    if (!engine) {
+      return;
+    }
+    const [url, postData] = lazy.UrlbarUtils.getSearchQueryUrl(engine, value);
     this.controller.engagementEvent.record(event, {
       location: this.sapLocation,
-      searchString: committedValue,
+      searchString: value,
       searchSource: this.getSearchSource(event),
-      selType: `${action}_button`,
+      selType: "search_button",
       result: null,
       windowMode: this.windowMode,
     });
-    this.#dispatchSmartbarCommitEvent(event, committedValue);
+    this.#dispatchSmartbarCommitEvent(event, value);
+    this._loadURL(url, event, this._whereToOpen(event), {
+      postData,
+      allowInheritPrincipal: false,
+    });
+    this._recordSearch(engine, event);
+  }
 
-    // Run search
-    if (action === "search") {
-      const engineName = event?.detail?.engineName;
-      const engine = engineName
-        ? lazy.UrlbarSearchUtils.getEngineByName(engineName)
-        : lazy.UrlbarSearchUtils.getDefaultEngine();
-      const [url, postData] = lazy.UrlbarUtils.getSearchQueryUrl(
-        engine,
-        committedValue
-      );
-      this._loadURL(url, event, this._whereToOpen(event), {
-        postData,
+  /**
+   * Navigates to the given value as a URL.
+   *
+   * @param {Event} event - The triggering event.
+   * @param {string} value - The value to navigate to.
+   */
+  #submitNavigate(event, value) {
+    let flags = Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS;
+    if (this.isPrivate) {
+      flags |= Ci.nsIURIFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
+    }
+    const fixupInfo = Services.uriFixup.getFixupURIInfo(value, flags);
+    this.controller.engagementEvent.record(event, {
+      location: this.sapLocation,
+      searchString: value,
+      searchSource: this.getSearchSource(event),
+      selType: "navigate_button",
+      result: null,
+      windowMode: this.windowMode,
+    });
+    this.#dispatchSmartbarCommitEvent(event, value);
+    this._loadURL(
+      fixupInfo.preferredURI.spec,
+      event,
+      this._whereToOpen(event),
+      {
         allowInheritPrincipal: false,
-      });
-      this._recordSearch(engine, event);
-    }
-
-    // Attempt to navigate to URL
-    if (action === "navigate") {
-      let flags = Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS;
-      if (this.isPrivate) {
-        flags |= Ci.nsIURIFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
       }
+    );
+  }
 
-      let fixupInfo = Services.uriFixup.getFixupURIInfo(committedValue, flags);
-      this._loadURL(
-        fixupInfo.preferredURI.spec,
-        event,
-        this._whereToOpen(event),
-        { allowInheritPrincipal: false }
-      );
-    }
+  /**
+   * Whether the "Go" guardrail currently blocks submission: the user locked the
+   * "Go" action but the typed text doesn't look like a web address. The live
+   * intent guess (#detectedIntent) recognizes URL-shaped input as "navigate".
+   *
+   * @returns {boolean}
+   */
+  get #goBlocked() {
+    return (
+      this.#smartbarActionLocked &&
+      this.smartbarAction === "navigate" &&
+      !!this.untrimmedValue.trim() &&
+      this.#detectedIntent !== "navigate"
+    );
+  }
+
+  /**
+   * Reflects the "Go" guardrail state onto the CTA button, making the primary
+   * button inert (but leaving the dropdown usable) while it's blocked.
+   */
+  #updateGoGuardrail() {
+    this._inputCta?.toggleAttribute("submit-disabled", this.#goBlocked);
   }
 
   /**
@@ -1724,16 +1885,23 @@ ${
       result.payload.inPrivateWindow;
     let selectedPrivateEngineResult =
       selectedPrivateResult && result.payload.isPrivateEngine;
-    // Whether the user has been editing the value in the URL bar after selecting
-    // the result. However, if the result type is tip, pick as it is. The result
-    // heuristic is also kept the behavior as is for safety.
-    let safeToPickResult =
-      result &&
-      (result.heuristic ||
-        !this.valueIsTyped ||
-        result.type == UrlbarShared.RESULT_TYPE.TIP ||
-        result.type == UrlbarShared.RESULT_TYPE.AI_CHAT ||
-        this.value == this.#getValueFromResult(result));
+    let safeToPickResult = this.#isSafeToPickResult(result);
+    // A keyboard-selected suggestion row wins over a manual action pick, but an
+    // auto-selected heuristic does not: a locked action otherwise determines the
+    // submission, honoring the user's explicit choice over the live guess.
+    if (
+      this.#shouldSubmitLockedAction({
+        element,
+        result,
+        safeToPickResult,
+        isComposing,
+        oneOffParams,
+      })
+    ) {
+      this.#submitLockedAction(event);
+      return;
+    }
+
     if (
       !isComposing &&
       element &&
@@ -2460,7 +2628,7 @@ ${
         searchSource: this.getSearchSource(event),
         windowMode: this.windowMode,
       })
-      .catch(lazy.logger.error);
+      .catch(e => lazy.logger.error(e));
 
     this.controller.engagementEvent.record(event, {
       result,
@@ -2526,10 +2694,20 @@ ${
     this._lastSearchString = "";
     this._autofillPlaceholder = null;
     this._resultForCurrentValue = null;
-    this.smartbarAction = "";
+    // Reset to the default action and resume guessing on the next input.
+    this.#smartbarActionLocked = false;
+    this.#smartbarSearchEngineName = "";
+    this.smartbarAction = DEFAULT_SMARTBAR_ACTION;
     this.#detectedIntent = "";
+    this.#updateGoGuardrail();
+    this.#updateCtaSearchEngineInfo();
     this.#contextWebsites = [];
     this.#updateContextChips();
+    this.dispatchEvent(
+      new CustomEvent("smartbar-context-chips-changed", {
+        bubbles: true,
+      })
+    );
     this.setSelectionRange(0, 0);
     this.view.close();
   }
@@ -2591,7 +2769,7 @@ ${
       return false;
     }
 
-    // We won't allow trimming when calling _setValue, since it makes too easy
+    // We won't allow trimming when calling setValue, since it makes too easy
     // for the user to wrongly transform `https` into `http`, for example by
     // picking a https://site/path_1 result and editing the path to path_2,
     // then we'd end up visiting http://site/path_2.
@@ -2608,7 +2786,7 @@ ${
       result.autofill ? this._lastSearchString : this.value
     );
     if (canonizedUrl) {
-      this._setValue(canonizedUrl);
+      this.setValue(canonizedUrl);
 
       this.setResultForCurrentValue(result);
       return true;
@@ -2636,7 +2814,7 @@ ${
         });
       }
       if (!enteredSearchMode) {
-        this._setValue(this.#getValueFromResult(result), {
+        this.setValue(this.#getValueFromResult(result), {
           actionType: this.#getActionTypeFromResult(result),
         });
         this.searchMode = null;
@@ -2647,7 +2825,7 @@ ${
 
     if (!result.autofill) {
       let value = this.#getValueFromResult(result, { urlOverride, element });
-      this._setValue(value, {
+      this.setValue(value, {
         actionType: this.#getActionTypeFromResult(result),
       });
     }
@@ -2776,7 +2954,7 @@ ${
       !this.value.endsWith(" ")
     ) {
       this._autofillPlaceholder = null;
-      this._setValue(this.userTypedValue);
+      this.setValue(this.userTypedValue);
     }
 
     return false;
@@ -3202,7 +3380,7 @@ ${
     let currentSearchMode = this.getSearchMode(browser);
     let areSearchModesSame =
       (!currentSearchMode && !searchMode) ||
-      lazy.ObjectUtils.deepEqual(currentSearchMode, searchMode);
+      UrlbarShared.deepEqual(currentSearchMode, searchMode);
 
     // Exit search mode if the passed-in engine is invalid or hidden.
     let engine;
@@ -3545,7 +3723,7 @@ ${
   }
 
   set value(val) {
-    this._setValue(val, { allowTrim: true });
+    this.setValue(val, { allowTrim: true });
   }
 
   get untrimmedValue() {
@@ -3763,7 +3941,7 @@ ${
     this.searchMode = searchMode;
 
     let value = result.payload.query?.trimStart() || "";
-    this._setValue(value);
+    this.setValue(value);
 
     if (startQuery) {
       this.startQuery({ allowAutofill: false });
@@ -4054,7 +4232,7 @@ ${
    *
    * @returns {string} The set value.
    */
-  _setValue(
+  setValue(
     val,
     {
       allowTrim = false,
@@ -4688,37 +4866,38 @@ ${
     adaptiveHistoryInput,
     untrimmedValue,
   }) {
-    const valueMatches = this.value === value;
-    const selectionMatches =
-      this.selectionStart === selectionStart &&
-      this.selectionEnd === selectionEnd;
-    if (valueMatches && selectionMatches) {
-      return;
-    }
-    // The autofilled value may be a URL that includes a scheme at the
-    // beginning.  Do not allow it to be trimmed.
-    if (!valueMatches) {
-      this._setValue(value, { untrimmedValue });
-    }
-    this.setSelectionRange(selectionStart, selectionEnd);
-    // Ensure selection state is cached for contenteditable and events fire.
-    if (!selectionMatches) {
-      if (this.#smartbarInputController) {
-        this.#smartbarInputController.dispatchSelectionChange();
-      } else {
-        this.inputField.dispatchEvent(
-          new Event("selectionchange", { bubbles: true, cancelable: false })
+    // The smartbar editor dispatches `selectionchange` synchronously: Prevent
+    // `_on_selectionchange` from applying the autofill as user text before
+    // `_autofillPlaceholder` is set.
+    this._applyingAutofill = true;
+    try {
+      // When the value only appends an autocompleted suffix, replace just the
+      // suffix instead of the whole value.
+      if (this.value === value.substring(0, selectionStart)) {
+        this._untrimmedValue = untrimmedValue ?? value;
+        this._resultForCurrentValue = null;
+        this.#setInputRangeText(
+          value.substring(selectionStart),
+          selectionStart,
+          this.value.length,
+          "select"
         );
+        this.formatValue();
+      } else {
+        this.setValue(value, { untrimmedValue });
+        this.setSelectionRange(selectionStart, selectionEnd);
       }
+      this._autofillPlaceholder = {
+        value,
+        type,
+        adaptiveHistoryInput,
+        selectionStart,
+        selectionEnd,
+        untrimmedValue,
+      };
+    } finally {
+      this._applyingAutofill = false;
     }
-    this._autofillPlaceholder = {
-      value,
-      type,
-      adaptiveHistoryInput,
-      selectionStart,
-      selectionEnd,
-      untrimmedValue,
-    };
   }
 
   /**
@@ -5157,7 +5336,7 @@ ${
     }
 
     if (moveCursorToStart) {
-      this._setValue(this._untrimmedValue, {
+      this.setValue(this._untrimmedValue, {
         valueIsTyped: this.valueIsTyped,
       });
       this.setSelectionRange(0, 0);
@@ -5199,7 +5378,7 @@ ${
       selectionEnd += offset;
     }
 
-    this._setValue(this._untrimmedValue, {
+    this.setValue(this._untrimmedValue, {
       valueIsTyped: this.valueIsTyped,
     });
 
@@ -5330,6 +5509,125 @@ ${
     insertLocation.insertAdjacentElement("afterend", pasteAndGo);
   }
 
+  // Adds "Dismiss" and "Forget this site" entries to the urlbar input context
+  // menu, both hidden unless the heuristic result is autofill.
+  _initAutofillDismiss() {
+    let contextMenu = this.querySelector("moz-input-box").menupopup;
+    let insertLocation = this.#findMenuItemLocation("cmd_selectAll");
+    if (!insertLocation) {
+      return;
+    }
+
+    // Use ownerDocument so the elements share a docgroup with the context
+    // menu. In smartbar mode this.document points at the top chrome window,
+    // which is a different docgroup than the AI window that hosts the input.
+    let doc = this.ownerDocument;
+    let separator = doc.createXULElement("menuseparator");
+    separator.setAttribute("anonid", "urlbar-input-autofill-dismiss-separator");
+
+    let dismiss = doc.createXULElement("menuitem");
+    dismiss.setAttribute("anonid", "urlbar-input-dismiss-autofill");
+    doc.l10n.setAttributes(dismiss, "urlbar-input-dismiss-autofill");
+    dismiss.addEventListener("command", () => {
+      this.#dismissAdaptiveAutofillFromContextMenu("dismiss");
+    });
+
+    let forget = doc.createXULElement("menuitem");
+    forget.setAttribute("anonid", "urlbar-input-remove-from-history");
+    doc.l10n.setAttributes(forget, "urlbar-input-remove-from-history");
+    forget.addEventListener("command", () => {
+      this.#dismissAdaptiveAutofillFromContextMenu("forget");
+    });
+
+    insertLocation.insertAdjacentElement("afterend", separator);
+    separator.insertAdjacentElement("afterend", dismiss);
+    dismiss.insertAdjacentElement("afterend", forget);
+
+    contextMenu.addEventListener("popupshowing", () => {
+      let { showDismiss, showForget } =
+        this.#autofillDismissContextMenuVisibility();
+      separator.hidden = !showDismiss && !showForget;
+      dismiss.hidden = !showDismiss;
+      forget.hidden = !showForget;
+    });
+  }
+
+  /**
+   * Computes whether the autofill dismiss/forget context menu items should be
+   * shown for the current heuristic autofill result.
+   *
+   * @returns {{ showDismiss: boolean, showForget: boolean }}
+   *   showDismiss is true when the "Dismiss" item should be visible, which
+   *   requires adaptive history autofill to be enabled, the current heuristic
+   *   result to be an autofill of type "adaptive_url", "adaptive_origin" or
+   *   "origin", and the window to not be private. showForget is true when the
+   *   "Remove from history" item should be visible, which requires the
+   *   autofilled URL to be a deep link.
+   */
+  #autofillDismissContextMenuVisibility() {
+    let hidden = { showDismiss: false, showForget: false };
+
+    if (!lazy.UrlbarPrefs.get("autoFill.adaptiveHistory.enabled")) {
+      return hidden;
+    }
+
+    let result = this._resultForCurrentValue;
+    if (!result?.heuristic || !result.autofill) {
+      return hidden;
+    }
+
+    let type = result.autofill.type;
+    if (
+      type !== "adaptive_url" &&
+      type !== "adaptive_origin" &&
+      type !== "origin"
+    ) {
+      return hidden;
+    }
+
+    let isOrigin = lazy.UrlbarUtils.isOriginUrl(result.payload.url);
+    return {
+      showDismiss: !this.isPrivate,
+      showForget: !isOrigin,
+    };
+  }
+
+  /**
+   * Dismisses the current heuristic autofill result.
+   *
+   * @param {"dismiss" | "forget"} action
+   *   "dismiss" blocks the autofill pairing for a period of time.
+   *   "forget" removes the URL from history entirely.
+   */
+  async #dismissAdaptiveAutofillFromContextMenu(action) {
+    let result = this._resultForCurrentValue;
+    if (!result?.heuristic || !result.autofill) {
+      return;
+    }
+
+    Glean.urlbarAutofill.inputContextMenuDismissal[action].add(1);
+
+    let { url } = result.payload;
+    if (action === "forget") {
+      await lazy.PlacesUtils.history.remove(url).catch(console.error);
+    } else {
+      let blockUntilMs =
+        Date.now() + lazy.UrlbarPrefs.get("autoFill.dismissalBlockDurationMs");
+      await lazy.UrlbarUtils.blockAutofill(url, blockUntilMs).catch(
+        console.error
+      );
+    }
+
+    lazy.UrlbarUtils.clearAutofillBackspaceEntryForUrl(url);
+
+    this.setValue(this._lastSearchString);
+    this.startQuery({
+      searchString: this._lastSearchString,
+      allowAutofill: false,
+      resetSearchState: false,
+    });
+  }
+
   /**
    * This notifies observers that the user has entered or selected something in
    * the URL bar which will cause navigation.
@@ -5416,8 +5714,14 @@ ${
       return;
     }
 
-    // Get default engine from current search mode
-    const engine = lazy.UrlbarSearchUtils.getDefaultEngine(this.isPrivate);
+    // Reflect the engine picked from "Search with…", falling back to the
+    // default engine when none was chosen.
+    const engine =
+      (this.#smartbarSearchEngineName &&
+        lazy.UrlbarSearchUtils.getEngineByName(
+          this.#smartbarSearchEngineName
+        )) ||
+      lazy.UrlbarSearchUtils.getDefaultEngine(this.isPrivate);
 
     this._inputCta.searchEngineInfo = {
       name: engine.name,
@@ -5985,7 +6289,7 @@ ${
         }
       }
       if (untrim) {
-        this._setValue(this._untrimmedValue);
+        this.setValue(this._untrimmedValue);
       }
     }
 
@@ -6255,6 +6559,7 @@ ${
     // happens when the user wants to modify the autofilled text by either
     // clicking on it, or pressing HOME, END, RIGHT, …
     if (
+      !this._applyingAutofill &&
       this._autofillPlaceholder &&
       this._autofillPlaceholder.value == this.value &&
       (this._autofillPlaceholder.selectionStart != this.selectionStart ||
@@ -6338,7 +6643,7 @@ ${
       event.stopImmediatePropagation();
 
       const value = oldStart + pasteData + oldEnd;
-      this._setValue(value, { valueIsTyped: true });
+      this.setValue(value, { valueIsTyped: true });
       this.userTypedValue = value;
 
       // Since we prevent the default paste event, we have to ensure the
@@ -6384,10 +6689,14 @@ ${
   } = {}) {
     // When we are in actions search mode we can show more results so
     // increase the limit.
-    let maxResults =
-      this.searchMode?.source != UrlbarShared.RESULT_SOURCE.ACTIONS
-        ? lazy.UrlbarPrefs.get("maxRichResults")
-        : UNLIMITED_MAX_RESULTS;
+    let maxResults;
+    if (this.searchMode?.source == UrlbarShared.RESULT_SOURCE.ACTIONS) {
+      maxResults = UNLIMITED_MAX_RESULTS;
+    } else if (this.#isSmartbarMode) {
+      maxResults = lazy.UrlbarPrefs.get("smartbar.maxResults");
+    } else {
+      maxResults = lazy.UrlbarPrefs.get("maxRichResults");
+    }
     let options = {
       allowAutofill,
       isPrivate: this.isPrivate,
@@ -6948,7 +7257,7 @@ ${
     /** @type {SmartbarAction} */
     let detectedAction;
     if (!firstResult || !firstResult.heuristic) {
-      detectedAction = this.value ? "chat" : "";
+      detectedAction = this.value ? "chat" : DEFAULT_SMARTBAR_ACTION;
     } else {
       switch (firstResult.type) {
         case UrlbarShared.RESULT_TYPE.URL:
@@ -6962,11 +7271,16 @@ ${
           detectedAction = "search";
           break;
         default:
-          detectedAction = "";
+          detectedAction = DEFAULT_SMARTBAR_ACTION;
       }
     }
-    this.smartbarAction = detectedAction;
+    // Always track the live guess, but only let it drive the button while the
+    // user hasn't manually locked an action.
     this.#detectedIntent = detectedAction;
+    if (!this.#smartbarActionLocked) {
+      this.smartbarAction = detectedAction;
+    }
+    this.#updateGoGuardrail();
   }
 
   /**
@@ -7056,6 +7370,45 @@ ${
   }
 
   /**
+   * Returns the user-added context chips, excluding the
+   * implicit current-tab chip, which is derived per tab.
+   *
+   * @returns {ContextWebsite[]}
+   */
+  get contextChips() {
+    return this.#contextWebsites;
+  }
+
+  /**
+   * Whether the user dismissed the implicit current-tab chip. Persisted with
+   * the chips so the dismissal is restored per tab.
+   *
+   * @returns {boolean}
+   */
+  get removedImplicitContextChip() {
+    return !!this.#removedImplicitTabUrl;
+  }
+
+  /**
+   * Replaces the context chips with the saved ones during a tab-state restore and
+   * re-renders. Does not emit the context-chips-change event, so re-applying
+   * saved chips doesn't feed back into the tab state manager.
+   *
+   * @param {ContextWebsite[]} [chips] - The user-added chips to restore.
+   * @param {boolean} [removedImplicitContextChip] - Restored dismissal of the
+   *   implicit current-tab chip.
+   */
+  restoreContextChips(chips = [], removedImplicitContextChip = false) {
+    this.#contextWebsites = [...chips];
+    const currentTabUrl =
+      this.window.gBrowser?.selectedTab?.linkedBrowser?.currentURI?.spec;
+    this.#removedImplicitTabUrl = removedImplicitContextChip
+      ? currentTabUrl
+      : null;
+    this.#updateContextChips();
+  }
+
+  /**
    * Resolves a tab favicon to a URL safe for use in both aiWindow.html and
    * aiChatContent.html. Only chrome: URLs are passed through; all others
    * (data:, moz-remote-image:, https:, etc.) fall back to page-icon: which
@@ -7108,6 +7461,12 @@ ${
   set isSidebarMode(isSidebar) {
     this.#isSidebarMode = !!isSidebar;
     this.#updateContextChips();
+    // Mirror sidebar mode onto the model picker so its shared panel-list styles
+    // (smartwindow-panel-list.css) pick up the sidebar inline margin.
+    const modelSelect = this.querySelector("input-model-select");
+    if (modelSelect) {
+      modelSelect.sidebarMode = this.#isSidebarMode;
+    }
   }
 
   /**
@@ -7134,6 +7493,11 @@ ${
       this.#contextWebsites = [...this.#contextWebsites, mention];
     }
     this.#updateContextChips();
+    this.dispatchEvent(
+      new CustomEvent("smartbar-context-chips-changed", {
+        bubbles: true,
+      })
+    );
   }
 
   /**
@@ -7156,6 +7520,11 @@ ${
 
     if (this.#contextWebsites.length !== originalLength || isCurrentTab) {
       this.#updateContextChips();
+      this.dispatchEvent(
+        new CustomEvent("smartbar-context-chips-changed", {
+          bubbles: true,
+        })
+      );
     }
   }
 }
@@ -7435,7 +7804,7 @@ class AddSearchEngineHelper {
     if (engines1?.length != engines2?.length) {
       return false;
     }
-    return lazy.ObjectUtils.deepEqual(
+    return UrlbarShared.deepEqual(
       engines1.map(e => e.title),
       engines2.map(e => e.title)
     );

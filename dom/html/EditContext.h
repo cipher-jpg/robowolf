@@ -56,6 +56,20 @@ class EditContext final : public DOMEventTargetHelper {
     //      See https://github.com/w3c/edit-context/issues/88
     return std::min(SelectionEnd(), TextLength());
   }
+
+  bool SelectionIsCollapsed() const {
+    return SelectionStartClamped() == SelectionEndClamped();
+  }
+
+  // Minimum of selection start/end, clamped to <= length of text
+  uint32_t SelectionMinClamped() const {
+    return std::min(SelectionStartClamped(), SelectionEndClamped());
+  }
+  // Maximum of selection start/end, clamped to <= length of text
+  uint32_t SelectionMaxClamped() const {
+    return std::max(SelectionStartClamped(), SelectionEndClamped());
+  }
+
   uint32_t CharacterBoundsRangeStart() const {
     return mCodepointRectsStartIndex;
   }
@@ -64,9 +78,7 @@ class EditContext final : public DOMEventTargetHelper {
   nsGenericHTMLElement* GetAssociatedElement() const {
     return mAssociatedElement;
   }
-  void SetAssociatedElement(nsGenericHTMLElement* aElement) {
-    mAssociatedElement = aElement;
-  }
+  void SetAssociatedElement(nsGenericHTMLElement* aElement);
 
   // Anonymous <div> element that holds the text being edited.
   nsGenericHTMLElement& TextContainer() { return *mTextContainer; }
@@ -94,16 +106,38 @@ class EditContext final : public DOMEventTargetHelper {
 
   bool IsActive() const;
 
-  MOZ_CAN_RUN_SCRIPT void UpdateTextAndFireEvent(uint32_t aStart, uint32_t aEnd,
-                                                 const nsAString& aString);
+  // If PreventSetSelection::No is passed to UpdateTextAndFireEvent, the
+  // selection will be moved to the end of the replaced text.
+  // If PreventSetSelection::Yes is passed, the selection will not change.
+  enum class PreventSetSelection { No, Yes };
+  MOZ_CAN_RUN_SCRIPT void UpdateTextAndFireEvent(
+      uint32_t aStart, uint32_t aEnd, const nsAString& aString,
+      PreventSetSelection aPreventSetSelection = PreventSetSelection::No);
   MOZ_CAN_RUN_SCRIPT void StartComposition(
       const WidgetCompositionEvent& aEvent);
   MOZ_CAN_RUN_SCRIPT void EndComposition(const WidgetCompositionEvent& aEvent);
 
+  // Handle eContentCommandReplaceText content command (used by certain IMEs).
+  MOZ_CAN_RUN_SCRIPT void DoContentCommandReplaceText(
+      WidgetContentCommandEvent& aEvent);
+
   MOZ_CAN_RUN_SCRIPT void FireTextFormatUpdate(const TextRangeArray* aRanges,
                                                uint32_t aCompositionOffset);
-  MOZ_CAN_RUN_SCRIPT nsresult FireCharacterBoundsUpdateAndGetRects(
+  MOZ_CAN_RUN_SCRIPT nsresult FireCharacterBoundsUpdateIfNeededAndGetRects(
       uint32_t aStart, uint32_t aEnd, nsTArray<LayoutDeviceIntRect>& aRects);
+  // Get the control bounds for the EditContext,
+  // or Nothing if updateControlBounds has not been called.
+  Maybe<LayoutDeviceIntRect> GetControlBounds() const;
+  // Get the selection bounds for the EditContext,
+  // or Nothing if updateSelectionBounds has not been called.
+  Maybe<LayoutDeviceIntRect> GetSelectionBounds() const;
+  /**
+   * Returns bounds to use as a fallback:
+   * - selection bounds if they have been set,
+   * - otherwise, control bounds if they have been set,
+   * - otherwise, associated element client bounding rect.
+   */
+  LayoutDeviceIntRect FallbackBounds() const;
 
   bool WasTextNextToCaretChangedByTextUpdateHandler() const {
     return mTextNextToCaretChangedByTextUpdateHandler;
@@ -118,14 +152,31 @@ class EditContext final : public DOMEventTargetHelper {
 
   using Rect = gfx::RectTyped<CSSPixel, double>;
 
-  RefPtr<DOMRect> ToDOMRect(const Rect& copy) const;
-  Rect ToRect(const DOMRect& rect) const;
+  RefPtr<DOMRect> ToDOMRect(const Rect& aCopy) const;
+  Rect ToRect(const DOMRect& aRect) const;
+  // Returns bounds set by UpdateControlBounds(), or else associated
+  // element client rectangle if that's not available, or Nothing()
+  // if there is no associated element or it's not framed.
+  Maybe<nsRect> GetControlBoundsOrClientRect() const;
+
+  // Convert aRect to a LayoutDeviceIntRect that is relative to the
+  // top-level viewport (this is what QueryContentEvent is supposed
+  // to return).
+  static LayoutDeviceIntRect ToRootRelativeDeviceRect(
+      const nsPresContext& aPresContext, const Rect& aRect);
+  static LayoutDeviceIntRect ToRootRelativeDeviceRect(
+      const nsPresContext& aPresContext, const nsRect& aRect);
 
   RefPtr<nsGenericHTMLElement> mAssociatedElement;
   RefPtr<nsGenericHTMLElement> mTextContainer;
   nsTArray<Rect> mCodepointRects;
-  Rect mControlBounds;
-  Rect mSelectionBounds;
+  Maybe<Rect> mControlBounds;
+  Maybe<Rect> mSelectionBounds;
+  // Control bounds or client rect of associated element when
+  // updateCharacterBounds() was most recently called. If this has changed, we
+  // want to fire characterboundsupdate again the next time character bounds are
+  // requested.
+  Maybe<nsRect> mControlBoundsAtLastUpdateCharacterBounds;
   RefPtr<nsTextNode> mText;
   uint32_t mSelectionStart = 0;
   uint32_t mSelectionEnd = 0;
@@ -134,6 +185,8 @@ class EditContext final : public DOMEventTargetHelper {
   bool mTextNextToCaretChangedByTextUpdateHandler = false;
   bool mExpectingCharacterBounds = false;
   bool mIsFiringTextUpdate = false;
+  // Set to true if the text which corresponds to mCodepointRects has changed.
+  bool mCodepointRectsTextChanged = false;
 };
 
 }  // namespace mozilla::dom

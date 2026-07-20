@@ -9,8 +9,6 @@
 // real Rust engine stays live, driven via its FFI inputs; an IP-literal origin
 // avoids DNS.
 
-#include "gtest/gtest.h"
-
 #include "ConnectionEntry.h"
 #include "ConnectionEstablisher.h"
 #include "HappyEyeballsConnMgrDelegate.h"
@@ -21,15 +19,16 @@
 #include "NullHttpTransaction.h"
 #include "PendingTransactionInfo.h"
 #include "ZeroRttHandle.h"
+#include "gtest/gtest.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/net/ClassOfService.h"
 #include "mozilla/net/DNS.h"
 #include "nsHttpConnectionInfo.h"
 #include "nsHttpRequestHead.h"
 #include "nsHttpTransaction.h"
+#include "nsIHttpProtocolHandler.h"
 #include "nsISeekableStream.h"
 #include "nsISocketTransportService.h"
-#include "nsIHttpProtocolHandler.h"
 #include "nsNetAddr.h"
 #include "nsServiceManagerUtils.h"
 #include "nsSocketTransportService2.h"
@@ -222,7 +221,10 @@ class RecordingConnMgrDelegate final : public HappyEyeballsConnMgrDelegate {
   void RecordIPFamilyPreference(ConnectionEntry*, uint16_t) override {
     mCalls.AppendElement("RecordIPFamilyPreference"_ns);
   }
-  bool MaybeProcessCoalescingKeys(ConnectionEntry*, nsIDNSAddrRecord*,
+  void ResetIPFamilyPreference(ConnectionEntry*) override {
+    mCalls.AppendElement("ResetIPFamilyPreference"_ns);
+  }
+  bool MaybeProcessCoalescingKeys(ConnectionEntry*, const nsTArray<NetAddr>&,
                                   bool) override {
     mCalls.AppendElement("MaybeProcessCoalescingKeys"_ns);
     return false;
@@ -230,6 +232,11 @@ class RecordingConnMgrDelegate final : public HappyEyeballsConnMgrDelegate {
   bool RemoveTransFromPendingQ(ConnectionEntry*, nsHttpTransaction*) override {
     mCalls.AppendElement("RemoveTransFromPendingQ"_ns);
     return false;
+  }
+  nsresult StartRetryWithoutTRR(ConnectionEntry*, nsHttpTransaction*, uint32_t,
+                                bool, bool, bool) override {
+    mCalls.AppendElement("StartRetryWithoutTRR"_ns);
+    return mStartRetryWithoutTRRRv;
   }
 
   int32_t Count(const char* aName) const {
@@ -253,6 +260,7 @@ class RecordingConnMgrDelegate final : public HappyEyeballsConnMgrDelegate {
   nsTArray<nsCString> mCalls;
   RefPtr<PendingTransactionInfo> mFindResult;
   nsresult mDispatchRv = NS_OK;
+  nsresult mStartRetryWithoutTRRRv = NS_OK;
   bool mSimulateDispatchBindsConnection = false;
   nsTArray<RefPtr<ConnectionHandle>> mDispatchHandles;
 };

@@ -12,6 +12,7 @@ import org.mozilla.fenix.helpers.TestAssetHelper.firstForeignWebPageAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.pdfFormAsset
 import org.mozilla.fenix.ui.efficiency.helpers.BaseTest
+import org.mozilla.fenix.ui.efficiency.selectors.AddToHomeScreenSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.BookmarksSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.BookmarksSelectors.DELETE_BOOKMARK_BUTTON
 import org.mozilla.fenix.ui.efficiency.selectors.BrowserPageSelectors
@@ -281,5 +282,47 @@ class MainMenuTest : BaseTest(
             .openMainMenu()
             .mozClick(MainMenuSelectors.MORE_BUTTON)
             .mozVerify(MainMenuSelectors.TRANSLATE_BUTTON)
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080113
+    @SmokeTest
+    @Test
+    fun verifyTheAddToShortcutsSubMenuOptionTest() {
+        val testPage = mockWebServer.getGenericAsset(1)
+
+        on.browserPage.navigateToPage(testPage.url.toString())
+        on.mainMenu.navigateToPage()
+            .mozClick(MainMenuSelectors.MORE_BUTTON)
+            .mozClick(MainMenuSelectors.ADD_TO_SHORTCUTS_BUTTON)
+        on.browserPage.navigateToPage()
+            .mozVerifyElementsByGroup("addedToShortcutsSnackbar")
+        on.home.navigateToPage()
+            .mozVerify(HomeSelectors.TOP_SITE_ITEM(testPage.title))
+            .mozClick(HomeSelectors.TOP_SITE_ITEM(testPage.title))
+        on.browserPage.navigateToPage()
+        on.mainMenu.navigateToPage()
+            .mozClick(MainMenuSelectors.MORE_BUTTON)
+            .mozClick(MainMenuSelectors.REMOVE_FROM_SHORTCUTS_BUTTON)
+        on.browserPage.navigateToPage()
+        on.home.navigateToPage()
+            .mozWaitUntilAbsent(HomeSelectors.TOP_SITE_ITEM(testPage.title))
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080114
+    @SmokeTest
+    @Test
+    fun verifyTheAddToHomeScreenSubMenuOptionTest() {
+        val testPage = mockWebServer.getGenericAsset(1)
+
+        on.browserPage.navigateToPage(testPage.url.toString())
+        on.addToHomescreen.navigateToPage()
+            .mozClickIfPresent(AddToHomeScreenSelectors.CANCEL_DIALOG_BUTTON)
+        on.browserPage.navigateToPage()
+        on.addToHomescreen.navigateToPage()
+            .mozClickIfPresent(AddToHomeScreenSelectors.ADD_DIALOG_BUTTON)
+            .mozClick(AddToHomeScreenSelectors.SYSTEM_PROMPT_ADD_TO_HOME_SCREEN_BUTTON)
+            .mozClickIfPresent(AddToHomeScreenSelectors.HOME_SCREEN_SHORTCUT(testPage.title))
+        on.browserPage.navigateToPage()
+            .verifyPageContent(testPage.content)
     }
 }

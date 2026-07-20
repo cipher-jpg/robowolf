@@ -8,8 +8,10 @@ const {
   Pocket,
   DiscoveryStream,
   Search,
+  WebNotifications,
   ExternalComponents,
   SportsWidget,
+  PictureOfTheDay,
 } = reducers;
 import { actionTypes as at } from "common/Actions.mjs";
 
@@ -1278,6 +1280,38 @@ describe("Reducers", () => {
       assert.notDeepEqual(nextState.components, oldComponents);
     });
   });
+  describe("PictureOfTheDay", () => {
+    it("PICTURE_OF_THE_DAY_UPDATE stores the picture fields", () => {
+      const next = PictureOfTheDay(INITIAL_STATE.PictureOfTheDay, {
+        type: at.PICTURE_OF_THE_DAY_UPDATE,
+        data: {
+          imageUrl: "https://example.com/x.jpg",
+          thumbnailUrl: "https://example.com/thumb.jpg",
+          title: "T",
+          description: "D",
+          publishedDate: "2026-06-30",
+          lastUpdated: 123,
+        },
+      });
+      assert.propertyVal(next, "imageUrl", "https://example.com/x.jpg");
+      assert.propertyVal(next, "description", "D");
+      assert.propertyVal(next, "publishedDate", "2026-06-30");
+      assert.propertyVal(next, "initialized", true);
+    });
+
+    it("defaults missing fields and returns prevState for other actions", () => {
+      const updated = PictureOfTheDay(INITIAL_STATE.PictureOfTheDay, {
+        type: at.PICTURE_OF_THE_DAY_UPDATE,
+        data: {},
+      });
+      assert.propertyVal(updated, "imageUrl", "");
+      assert.propertyVal(updated, "description", "");
+
+      const prev = INITIAL_STATE.PictureOfTheDay;
+      assert.equal(PictureOfTheDay(prev, { type: "SOME_OTHER_ACTION" }), prev);
+    });
+  });
+
   describe("SportsWidget", () => {
     const baseMatches = {
       previous: [],
@@ -1609,6 +1643,88 @@ describe("Reducers", () => {
         data: { teams: [], matches: { previous: [], current: [], next: [] } },
       });
       assert.deepEqual(next.loadMore, INITIAL_STATE.SportsWidget.loadMore);
+    });
+  });
+
+  describe("Stocks", () => {
+    it("WIDGETS_STOCKS_UPDATE replaces tickers and sets lastUpdated", () => {
+      const action = {
+        type: at.WIDGETS_STOCKS_UPDATE,
+        data: {
+          tickers: [{ ticker: "SPY", name: "SPDR S&P 500 ETF Trust" }],
+          lastUpdated: 1700000000000,
+        },
+      };
+      const nextState = reducers.Stocks(undefined, action);
+      assert.deepEqual(nextState.tickers, action.data.tickers);
+      assert.equal(nextState.lastUpdated, 1700000000000);
+    });
+
+    it("returns previous state for unrelated actions", () => {
+      const prev = { tickers: [{ ticker: "DIA" }], lastUpdated: 1 };
+      assert.equal(reducers.Stocks(prev, { type: "SOME_OTHER_ACTION" }), prev);
+    });
+
+    it("WIDGETS_STOCKS_UPDATE stores the error flag", () => {
+      const action = {
+        type: at.WIDGETS_STOCKS_UPDATE,
+        data: { tickers: [], lastUpdated: 1700000000000, error: true },
+      };
+      const nextState = reducers.Stocks(undefined, action);
+      assert.isTrue(nextState.error);
+    });
+
+    it("WIDGETS_STOCKS_UPDATE defaults error to false when omitted", () => {
+      const action = {
+        type: at.WIDGETS_STOCKS_UPDATE,
+        data: { tickers: [], lastUpdated: 1 },
+      };
+      const nextState = reducers.Stocks(undefined, action);
+      assert.isFalse(nextState.error);
+    });
+  });
+
+  describe("WebNotifications", () => {
+    it("should return INITIAL_STATE by default", () => {
+      const nextState = WebNotifications(undefined, {
+        type: "some_action",
+      });
+      assert.equal(nextState, INITIAL_STATE.WebNotifications);
+    });
+    it("should set initialized and clear error on WEB_NOTIFICATIONS_UPDATED", () => {
+      const prevState = {
+        ...INITIAL_STATE.WebNotifications,
+        error: { step: "snapshot", message: "boom" },
+      };
+      const data = {
+        lastUpdated: 12345,
+        notifications: { abc: { id: "abc", origin: "https://example.com" } },
+        byOrigin: { "https://example.com": ["abc"] },
+      };
+      const nextState = WebNotifications(prevState, {
+        type: at.WEB_NOTIFICATIONS_UPDATED,
+        data,
+      });
+      assert.propertyVal(nextState, "initialized", true);
+      assert.propertyVal(nextState, "lastUpdated", 12345);
+      assert.deepEqual(nextState.notifications, data.notifications);
+      assert.deepEqual(nextState.byOrigin, data.byOrigin);
+      assert.isNull(nextState.error);
+    });
+    it("should set error and preserve other fields on WEB_NOTIFICATIONS_ERROR", () => {
+      const prevState = {
+        ...INITIAL_STATE.WebNotifications,
+        initialized: true,
+        notifications: { abc: { id: "abc" } },
+      };
+      const errorData = { step: "snapshot", message: "boom" };
+      const nextState = WebNotifications(prevState, {
+        type: at.WEB_NOTIFICATIONS_ERROR,
+        data: errorData,
+      });
+      assert.deepEqual(nextState.error, errorData);
+      assert.propertyVal(nextState, "initialized", true);
+      assert.deepEqual(nextState.notifications, prevState.notifications);
     });
   });
 });
