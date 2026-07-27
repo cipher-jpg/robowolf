@@ -12,6 +12,7 @@
  * @import { ChatConversation } from "moz-src:///browser/components/aiwindow/ui/modules/ChatConversation.sys.mjs"
  */
 
+import { getSkillPrompt } from "moz-src:///browser/components/aiwindow/models/PromptLoader.sys.mjs";
 import { searchBrowsingHistory as implSearchBrowsingHistory } from "moz-src:///browser/components/aiwindow/models/SearchBrowsingHistory.sys.mjs";
 import {
   manageTabsAction,
@@ -27,10 +28,6 @@ import {
   sanitizeUntrustedContent,
   isNewPageUrl,
 } from "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs";
-import {
-  FEATURE_MAJOR_VERSIONS,
-  MODEL_FEATURES,
-} from "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -66,7 +63,7 @@ ChromeUtils.defineLazyGetter(lazy, "console", () =>
 // We also make this limited in a non-configurable way so that it reduces the risk
 // of exfiltration for private data. While most users only have a few tabs open at a time,
 // some users can have thousands of tabs open at once.
-const MAX_TABS = 15;
+export const MAX_TABS = 30;
 
 // Allow list of URL protocols for tabs and pages exposed to the LLM. Only http/https are
 // permitted; internal (about:, chrome:, moz-extension:, file:, data:, etc.)
@@ -100,9 +97,11 @@ export const GET_OPEN_TABS = "get_open_tabs";
 export const SEARCH_BROWSING_HISTORY = "search_browsing_history";
 export const GET_PAGE_CONTENT = "get_page_content";
 export const RUN_SEARCH = "run_search";
+export const SEARCH_THE_WEB = "search_the_web";
 export const GET_USER_MEMORIES = "get_user_memories";
 export const GET_NAVIGATION_INFO = "get_navigation_info";
 export const MANAGE_TABS = "manage_tabs";
+export const GET_SKILL = "get_skill";
 export const WORLD_CUP_MATCHES = "world_cup_matches";
 export const WORLD_CUP_LIVE = "world_cup_live";
 export const ADD_MEMORY = "add_memory";
@@ -111,18 +110,23 @@ export const ADD_MEMORY = "add_memory";
 // in Chat.sys.mjs when the pref is off.
 export const WORLD_CUP_TOOLS = new Set([WORLD_CUP_MATCHES, WORLD_CUP_LIVE]);
 export const WORLD_CUP_PREF = "browser.smartwindow.worldcup.enabled";
+export const SEARCH_QUERY_ENDPOINT_PREF =
+  "browser.smartwindow.searchQuery.endpointURL";
+export const SEARCH_QUERY_APIKEY_PREF =
+  "browser.smartwindow.searchQuery.apiKey";
 
 export const TOOLS = [
   GET_OPEN_TABS,
   SEARCH_BROWSING_HISTORY,
   GET_PAGE_CONTENT,
-  RUN_SEARCH,
   GET_USER_MEMORIES,
   GET_NAVIGATION_INFO,
   MANAGE_TABS,
   WORLD_CUP_MATCHES,
   WORLD_CUP_LIVE,
   ADD_MEMORY,
+  SEARCH_THE_WEB,
+  GET_SKILL,
 ];
 
 export const RUN_SEARCH_VERBATIM_QUERY_DESCRIPTION =
@@ -135,7 +139,7 @@ export const RUN_SEARCH_GENERATED_QUERY_DESCRIPION =
   "the search results page content. Use this when the user needs current web " +
   "information that would benefit from a live search.";
 
-const RUN_SEARCH_TOOL_CONFIG_VERBATIM_QUERY = {
+export const RUN_SEARCH_TOOL_CONFIG_VERBATIM_QUERY = {
   type: "function",
   function: {
     name: RUN_SEARCH,
@@ -147,7 +151,7 @@ const RUN_SEARCH_TOOL_CONFIG_VERBATIM_QUERY = {
   },
 };
 
-const RUN_SEARCH_TOOL_CONFIG_GENERATED_QUERY = {
+export const RUN_SEARCH_TOOL_CONFIG_GENERATED_QUERY = {
   type: "function",
   function: {
     name: RUN_SEARCH,
@@ -159,6 +163,38 @@ const RUN_SEARCH_TOOL_CONFIG_GENERATED_QUERY = {
           type: "string",
           description:
             "The search query to execute. Should be specific and search-engine optimized.",
+        },
+      },
+      required: ["query"],
+    },
+  },
+};
+
+export const SEARCH_THE_WEB_DESCRIPTION =
+  "Answer a question using the web. Retrieves and reads web content in the " +
+  "background and returns a grounded answer. Use this whenever the user asks " +
+  "an informational question that needs fresh or external knowledge. Pass a " +
+  "clear, self-contained query; you may rewrite the user's phrasing (for " +
+  "example resolve 'near me' to a place) and add brief context.";
+
+const SEARCH_THE_WEB_TOOL_CONFIG = {
+  type: "function",
+  function: {
+    name: SEARCH_THE_WEB,
+    description: SEARCH_THE_WEB_DESCRIPTION,
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description:
+            "The self-contained question or query to answer from the web.",
+        },
+        context: {
+          type: "string",
+          description:
+            "Optional additional context that helps answer the query, such as " +
+            "a location or a clarification the user gave earlier.",
         },
       },
       required: ["query"],
@@ -237,7 +273,7 @@ export const toolsConfig = [
       },
     },
   },
-  RUN_SEARCH_TOOL_CONFIG_VERBATIM_QUERY,
+  SEARCH_THE_WEB_TOOL_CONFIG,
   {
     type: "function",
     function: {
@@ -407,6 +443,24 @@ export const toolsConfig = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: GET_SKILL,
+      description:
+        "Look up a focused instruction set ('skill') by name. Use when the user's request maps to a known specialty. The available skill names are listed in the system prompt.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "The name of the skill to retrieve.",
+          },
+        },
+        required: ["name"],
+      },
+    },
+  },
 ];
 
 /**
@@ -563,46 +617,6 @@ export class RunSearch {
     if (!tab.selected) {
       tab.documentGlobal.gBrowser.selectedTab = tab;
     }
-  }
-
-  /**
-   * Switches the run_search tool description to the one for verbatim queries
-   *
-   * @param {object} chatToolsConfig
-   * @returns {object}
-   */
-  static setVerbatimSearchQueryDescription(chatToolsConfig) {
-    const indexOfRunSearchConfig = chatToolsConfig.findIndex(
-      item => item.function.name === RUN_SEARCH
-    );
-    if (
-      chatToolsConfig[indexOfRunSearchConfig].function.description !=
-      RUN_SEARCH_VERBATIM_QUERY_DESCRIPTION
-    ) {
-      chatToolsConfig[indexOfRunSearchConfig] =
-        RUN_SEARCH_TOOL_CONFIG_VERBATIM_QUERY;
-    }
-    return chatToolsConfig;
-  }
-
-  /**
-   * Switches the run_search tool description to the one for generated queries
-   *
-   * @param {object} chatToolsConfig
-   * @returns {object}
-   */
-  static setGeneratedSearchQueryDescription(chatToolsConfig) {
-    const indexOfRunSearchConfig = chatToolsConfig.findIndex(
-      item => item.function.name === RUN_SEARCH
-    );
-    if (
-      chatToolsConfig[indexOfRunSearchConfig].function.description !=
-      RUN_SEARCH_GENERATED_QUERY_DESCRIPION
-    ) {
-      chatToolsConfig[indexOfRunSearchConfig] =
-        RUN_SEARCH_TOOL_CONFIG_GENERATED_QUERY;
-    }
-    return chatToolsConfig;
   }
 
   /**
@@ -813,6 +827,41 @@ export class RunSearch {
 }
 
 /**
+ * Awaits `promise`, but rejects early with an AbortError if `signal` aborts
+ * first. A late rejection from `promise` (e.g. once an abort tears down the
+ * page it was reading) is swallowed so it is not reported as unhandled.
+ *
+ * @param {Promise<any>} promise
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<any>}
+ */
+function raceAbort(promise, signal) {
+  if (!signal) {
+    return promise;
+  }
+  // Keep a post-abort rejection from surfacing as an unhandled rejection.
+  promise.catch(() => {});
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(new DOMException("Aborted", "AbortError"));
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      value => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      error => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      }
+    );
+  });
+}
+
+/**
  * Class for handling page content extraction with configurable modes and limits.
  */
 export class GetPageContent {
@@ -823,12 +872,14 @@ export class GetPageContent {
    *
    * @param {object} toolParams
    * @param {string[]} toolParams.url_list
+   * @param {AbortSignal} [toolParams.signal] - Cancels in-flight extractions
+   *   (and tears down any headless browser) when it aborts.
    * @param {ChatConversation} conversation
    * @returns {Promise<Array<string>>}
    *  A promise resolving to a string containing the extracted page content
    *  with a descriptive header, or an error message if extraction fails.
    */
-  static async getPageContent({ url_list }, conversation) {
+  static async getPageContent({ url_list, signal }, conversation) {
     // This is a decision table for allowing and blocking fetches on the configuration of the
     // SecurityProperties and the URLs. Tab URLs don't do any new page loads. Mention urls
     // have been added by the user so they should be allowed. SERP urls came from a
@@ -860,7 +911,8 @@ export class GetPageContent {
           const text = await GetPageContent.#getPageContentsForSingleURL(
             url,
             mentionedUrls,
-            conversation
+            conversation,
+            signal
           );
           ChromeUtils.addProfilerMarker(
             "SmartWindow",
@@ -869,6 +921,9 @@ export class GetPageContent {
           );
           return text;
         } catch (error) {
+          if (signal?.aborted) {
+            return `Content from ${url_list[index]}:\n\n(Page read canceled after a timeout — answer using the results you have.)`;
+          }
           console.error(error);
           return `Could not retrieve the content for the page: ${url_list[index]}`;
         }
@@ -905,10 +960,20 @@ export class GetPageContent {
    * @param {string} url
    * @param {Set<string>} mentionedUrls
    * @param {ChatConversation} conversation
+   * @param {AbortSignal} [signal] - Cancels the extraction (and tears down any
+   *   headless browser) when it aborts.
    *
    * @returns {Promise<string>}
    */
-  static async #getPageContentsForSingleURL(url, mentionedUrls, conversation) {
+  static async #getPageContentsForSingleURL(
+    url,
+    mentionedUrls,
+    conversation,
+    signal
+  ) {
+    if (signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
     // First try to get the contents from an existing tab. This is always allowed from
     // a security perspective as it doesn't involve a network request, so there is
     // no risk for data exfiltration.
@@ -930,7 +995,8 @@ export class GetPageContent {
         pageExtractor,
         conversation,
         `${sanitizeUntrustedContent(tab.label)} (${url})`,
-        url
+        url,
+        signal
       );
     }
 
@@ -954,7 +1020,8 @@ export class GetPageContent {
               pageExtractor,
               conversation,
               label,
-              url
+              url,
+              signal
             ),
           anonymousFetch: true,
         });
@@ -968,7 +1035,13 @@ export class GetPageContent {
     return PageExtractorParent.getHeadlessExtractor({
       urlString: url,
       callback: pageExtractor =>
-        GetPageContent.#runExtraction(pageExtractor, conversation, label, url),
+        GetPageContent.#runExtraction(
+          pageExtractor,
+          conversation,
+          label,
+          url,
+          signal
+        ),
     });
   }
 
@@ -980,17 +1053,28 @@ export class GetPageContent {
    * @param {ChatConversation} conversation
    * @param {string} label
    * @param {string} sourceUrl
+   * @param {AbortSignal} [signal] - Rejects the extraction early if it aborts,
+   *   which lets the headless browser hosting the read be torn down promptly.
    * @returns {Promise<string>}
    *  A promise resolving to a formatted string containing the page content
    *  with mode and label information, or an error message if no content is available.
    */
-  static async #runExtraction(pageExtractor, conversation, label, sourceUrl) {
-    const extraction = await pageExtractor.getText({
-      sufficientLength: GetPageContent.MAX_CHARACTERS,
-      cleanWhitespace: true,
-      removeBoilerplate: true,
-      sourceUrl,
-    });
+  static async #runExtraction(
+    pageExtractor,
+    conversation,
+    label,
+    sourceUrl,
+    signal
+  ) {
+    const extraction = await raceAbort(
+      pageExtractor.getText({
+        sufficientLength: GetPageContent.MAX_CHARACTERS,
+        cleanWhitespace: true,
+        removeBoilerplate: true,
+        sourceUrl,
+      }),
+      signal
+    );
 
     if (!extraction) {
       return `get_page_content returned no content for ${label}.`;
@@ -1183,6 +1267,12 @@ export async function worldCupLive(toolParams, conversation) {
   return trimmed;
 }
 
+// No securityProperties / trust flags: skill prompts are Remote Settings
+// content and carry the same trust level as the system prompt itself.
+export async function getSkill({ toolParams, model }) {
+  return getSkillPrompt(toolParams?.name, model);
+}
+
 /**
  * Counts open http(s) tabs across all active AI windows. Used for
  * browser_action_submit telemetry.
@@ -1257,7 +1347,7 @@ export async function manageTabs(
     conversation.lastBrowserActionType = actionType;
   }
 
-  const promptVersion = String(FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]);
+  const promptVersion = conversation?.systemPromptVersion ?? "";
 
   const baseTelemetryInfo = {
     location: mode,
@@ -1343,4 +1433,5 @@ export const toolFns = {
   worldCupLive,
   manageTabs,
   addMemory,
+  getSkill,
 };

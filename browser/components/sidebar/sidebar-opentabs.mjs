@@ -4,7 +4,12 @@
 
 const lazy = {};
 
-import { html, when } from "chrome://global/content/vendor/lit.all.mjs";
+import {
+  classMap,
+  html,
+  when,
+} from "chrome://global/content/vendor/lit.all.mjs";
+import { searchTabList } from "chrome://browser/content/firefoxview/search-helpers.mjs";
 
 import { SidebarPage } from "./sidebar-page.mjs";
 
@@ -22,6 +27,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
 export class SidebarOpenTabs extends SidebarPage {
   static properties = {
     windows: { type: Array },
+    searchQuery: { type: String },
+  };
+
+  static queries = {
+    searchTextbox: "moz-input-search",
   };
 
   initialWindowsReady = false;
@@ -29,6 +39,7 @@ export class SidebarOpenTabs extends SidebarPage {
   constructor() {
     super();
     this.windows = [];
+    this.searchQuery = "";
     this.controller = new lazy.OpenTabsController();
     this.treeView = new lazy.SidebarTreeView(this, { multiSelect: false });
   }
@@ -42,10 +53,13 @@ export class SidebarOpenTabs extends SidebarPage {
       this.openTabsTarget = lazy.NonPrivateTabs;
     }
     this.openTabsTarget.addEventListener("TabChange", this);
+    this.openTabsTarget.addEventListener("TabRecencyChange", this);
     lazy.SidebarCollapsedWindows.addEventListener(
       "CollapsedWindowsChanged",
       this
     );
+    this.addSidebarFocusedListeners();
+    this.addContextMenuListeners();
     this.openTabsTarget.readyWindowsPromise.finally(() => {
       this.initialWindowsReady = true;
       this.#updateWindowList();
@@ -55,10 +69,13 @@ export class SidebarOpenTabs extends SidebarPage {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.openTabsTarget.removeEventListener("TabChange", this);
+    this.openTabsTarget.removeEventListener("TabRecencyChange", this);
     lazy.SidebarCollapsedWindows.removeEventListener(
       "CollapsedWindowsChanged",
       this
     );
+    this.removeSidebarFocusedListeners();
+    this.removeContextMenuListeners();
   }
 
   shouldUpdate(changedProperties) {
@@ -73,11 +90,37 @@ export class SidebarOpenTabs extends SidebarPage {
       case "TabChange":
         this.#updateWindowList();
         break;
+      case "TabRecencyChange":
       case "CollapsedWindowsChanged":
         this.requestUpdate();
         break;
       default:
         super.handleEvent(e);
+        break;
+    }
+  }
+
+  handleContextMenuEvent(e) {
+    this.triggerNode = this.findTriggerNode(e, "sidebar-tab-row");
+    if (!this.triggerNode) {
+      e.preventDefault();
+      return;
+    }
+    const privateWindowItem = this._contextMenu.querySelector(
+      "#sidebar-opentabs-context-open-in-private-window"
+    );
+    privateWindowItem.hidden = !lazy.PrivateBrowsingUtils.enabled;
+  }
+
+  handleCommandEvent(e) {
+    switch (e.target.id) {
+      case "sidebar-opentabs-context-close-tab": {
+        const { tabElement } = this.triggerNode;
+        tabElement?.documentGlobal.gBrowser.removeTabs([tabElement]);
+        break;
+      }
+      default:
+        super.handleCommandEvent(e);
         break;
     }
   }
@@ -144,7 +187,7 @@ export class SidebarOpenTabs extends SidebarPage {
     }
   }
 
-  #pinnedTabsTemplate(pinnedTabItems) {
+  #pinnedTabsTemplate(pinnedTabItems, isCurrent) {
     return html`
       <div
         class="pinned-tabs"
@@ -155,6 +198,10 @@ export class SidebarOpenTabs extends SidebarPage {
           item => html`
             <moz-button
               type="icon ghost"
+              class=${classMap({
+                selected: item.tabElement?.selected,
+                inactive: !isCurrent,
+              })}
               .iconSrc=${this.#getPinnedIconSrc(item)}
               title=${item.title}
               @click=${() => this.#activateTab(item.tabElement)}
@@ -166,7 +213,10 @@ export class SidebarOpenTabs extends SidebarPage {
   }
 
   #windowCardTemplate(win, winID, isCurrent) {
-    const items = this.getTabItemsForWindow(win);
+    let items = this.getTabItemsForWindow(win);
+    if (this.searchQuery) {
+      items = searchTabList(this.searchQuery, items);
+    }
     const pinnedTabItems = items.filter(item =>
       item.indicators?.includes("pinned")
     );
@@ -190,12 +240,16 @@ export class SidebarOpenTabs extends SidebarPage {
         @toggle=${this.#onCardToggle}
       >
         ${when(pinnedTabItems.length, () =>
-          this.#pinnedTabsTemplate(pinnedTabItems)
+          this.#pinnedTabsTemplate(pinnedTabItems, isCurrent)
         )}
         <sidebar-tab-list
           maxTabsLength="-1"
           secondaryActionClass="dismiss-button"
           .multiSelect=${false}
+          .searchQuery=${this.searchQuery}
+          .mediumView=${true}
+          .inactiveWindow=${!isCurrent}
+          .dateTimeFormat=${"time"}
           .tabItems=${unpinnedTabItems}
           @fxview-tab-list-primary-action=${this.onPrimaryAction}
           @fxview-tab-list-secondary-action=${this.onSecondaryAction}
@@ -204,13 +258,19 @@ export class SidebarOpenTabs extends SidebarPage {
     `;
   }
 
-  render() {
+  #windowCardsTemplate() {
     const topWindow = this.topWindow;
     let currentCard;
     const otherCards = [];
     let index = 1;
     for (const win of this.windows) {
       const winID = index++;
+      if (
+        this.searchQuery &&
+        !searchTabList(this.searchQuery, this.getTabItemsForWindow(win)).length
+      ) {
+        continue;
+      }
       const isCurrent = win === topWindow;
       const card = this.#windowCardTemplate(win, winID, isCurrent);
       if (isCurrent) {
@@ -219,6 +279,53 @@ export class SidebarOpenTabs extends SidebarPage {
         otherCards.push(card);
       }
     }
+    return html`${currentCard}${otherCards}`;
+  }
+
+  #searchResultsTemplate() {
+    const count = this.windows.reduce(
+      (total, win) =>
+        total +
+        searchTabList(this.searchQuery, this.getTabItemsForWindow(win)).length,
+      0
+    );
+    if (!count) {
+      return html`
+        <moz-card>
+          <p
+            class="no-results"
+            data-l10n-id="firefoxview-search-results-empty"
+            data-l10n-args=${JSON.stringify({ query: this.searchQuery })}
+          ></p>
+        </moz-card>
+      `;
+    }
+    return html`
+      <moz-card
+        data-l10n-id="sidebar-search-results-header"
+        data-l10n-args=${JSON.stringify({ query: this.searchQuery })}
+      >
+        <div>
+          <h3
+            slot="secondary-header"
+            data-l10n-id="firefoxview-search-results-count"
+            data-l10n-args=${JSON.stringify({ count })}
+          ></h3>
+          ${this.#windowCardsTemplate()}
+        </div>
+      </moz-card>
+    `;
+  }
+
+  handleSidebarFocusedEvent() {
+    this.searchTextbox?.focus();
+  }
+
+  onSearchQuery(e) {
+    this.searchQuery = e.detail.query;
+  }
+
+  render() {
     return html`
       ${this.stylesheet()}
       <link
@@ -230,9 +337,17 @@ export class SidebarOpenTabs extends SidebarPage {
           data-l10n-id="sidebar-menu-open-tabs-header"
           data-l10n-attrs="heading"
           view="viewOpenTabsSidebar"
-        ></sidebar-panel-header>
+        >
+          <moz-input-search
+            data-l10n-id="firefoxview-search-text-box-tabs"
+            data-l10n-attrs="placeholder"
+            @MozInputSearch:search=${this.onSearchQuery}
+          ></moz-input-search>
+        </sidebar-panel-header>
         <div class="sidebar-panel-scrollable-content">
-          ${currentCard}${otherCards}
+          ${this.searchQuery
+            ? this.#searchResultsTemplate()
+            : this.#windowCardsTemplate()}
         </div>
       </div>
     `;

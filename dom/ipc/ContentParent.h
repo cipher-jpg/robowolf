@@ -753,6 +753,8 @@ class ContentParent final : public PContentParent,
       const OriginAttributes& aOriginAttributes, uint64_t aInnerWindowId,
       const nsCString& aPartitionKey, BlobURLDataRequestResolver&& aResolver);
 
+  bool WasA11yEverActivated() const { return mWasA11yEverActivated; }
+
  protected:
   bool CheckBrowsingContextEmbedder(CanonicalBrowsingContext* aBC,
                                     const char* aOperation) const;
@@ -947,8 +949,8 @@ class ContentParent final : public PContentParent,
       const nsACString& aMimeContentType, const nsACString& aContentDisposition,
       const uint32_t& aContentDispositionHint,
       const nsAString& aContentDispositionFilename, const bool& aForceSave,
-      const int64_t& aContentLength, const bool& aWasFileChannel,
-      nsIURI* aReferrer, const MaybeDiscarded<BrowsingContext>& aContext);
+      const int64_t& aContentLength, nsIURI* aReferrer,
+      const MaybeDiscarded<BrowsingContext>& aContext);
 
   mozilla::ipc::IPCResult RecvPExternalHelperAppConstructor(
       PExternalHelperAppParent* actor, nsIURI* uri,
@@ -956,8 +958,7 @@ class ContentParent final : public PContentParent,
       const nsACString& aContentDisposition,
       const uint32_t& aContentDispositionHint,
       const nsAString& aContentDispositionFilename, const bool& aForceSave,
-      const int64_t& aContentLength, const bool& aWasFileChannel,
-      nsIURI* aReferrer,
+      const int64_t& aContentLength, nsIURI* aReferrer,
       const MaybeDiscarded<BrowsingContext>& aContext) override;
 
   already_AddRefed<PHandlerServiceParent> AllocPHandlerServiceParent();
@@ -1581,6 +1582,8 @@ class ContentParent final : public PContentParent,
   // True if we already created the
   // ClipboardContentAnalysis actor
   uint8_t mClipboardContentAnalysisCreated : 1;
+
+  bool mWasA11yEverActivated : 1 = false;
 
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   bool mBlockShutdownCalled;

@@ -14,7 +14,7 @@
     "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
   );
   const { ContentSharingUtils } = ChromeUtils.importESModule(
-    "resource:///modules/contentsharing/ContentSharingUtils.sys.mjs"
+    "moz-src:///browser/components/contentsharing/ContentSharingUtils.sys.mjs"
   );
 
   ChromeUtils.importESModule(
@@ -88,6 +88,15 @@
         </toolbarbutton>
         <toolbarbutton
           tabindex="0"
+          id="tabGroupEditor_shareTabGroup"
+          class="subviewbutton"
+          badged="true"
+          data-l10n-id="tab-group-editor-action-share-group"
+          hidden="">
+          <html:moz-badge type="new" move-after-stack="true"></html:moz-badge>
+        </toolbarbutton>
+        <toolbarbutton
+          tabindex="0"
           id="tabGroupEditor_copyAllLinks"
           class="subviewbutton">
         </toolbarbutton>
@@ -102,15 +111,6 @@
           id="tabGroupEditor_ungroupTabs"
           class="subviewbutton"
           data-l10n-id="tab-group-editor-action-ungroup">
-        </toolbarbutton>
-        <toolbarbutton
-          tabindex="0"
-          id="tabGroupEditor_shareTabGroup"
-          class="subviewbutton"
-          badged="true"
-          data-l10n-id="tab-group-editor-action-share-tab-group"
-          hidden="">
-          <html:moz-badge type="new" move-after-stack="true"></html:moz-badge>
         </toolbarbutton>
         <toolbarseparator class="tab-group-edit-mode-only" />
         <toolbarbutton
@@ -313,6 +313,7 @@
     #createButton;
     #createMode;
     #keepNewlyCreatedGroup;
+    #nameContainer;
     #nameField;
     #panel;
     #swatches;
@@ -400,6 +401,7 @@
       );
       this.#panel = this.querySelector("panel");
       this.#nameField = this.querySelector("#tab-group-name");
+      this.#nameContainer = this.querySelector(".tab-group-editor-name");
       this.#panel.addEventListener("click", e => {
         if (e.target !== this.#nameField) {
           this.#nameField.blur();
@@ -751,13 +753,11 @@
         label.htmlFor = input.id;
         label.style.setProperty(
           "--tabgroup-swatch-color",
-          Services.prefs.getBoolPref("browser.nova.enabled")
-            ? `var(--tab-group-${colorCode})`
-            : `var(--tab-group-color-${colorCode})`
+          `var(--tab-group-${colorCode})`
         );
         label.style.setProperty(
           "--tabgroup-swatch-color-invert",
-          `var(--tab-group-color-${colorCode}-invert)`
+          `var(--tab-group-${colorCode}-invert)`
         );
         this.#swatchesContainer.append(input, label);
         this.#swatches.push(input);
@@ -888,6 +888,8 @@
         ? MozTabbrowserTabGroupMenu.State.CREATE_AI_INITIAL
         : MozTabbrowserTabGroupMenu.State.CREATE_STANDARD_INITIAL;
 
+      this.#maybeUpdateLayoutForNova();
+
       this.#panel.openPopup(group.firstChild, {
         position: this.#panelPosition,
       });
@@ -931,6 +933,8 @@
         ? MozTabbrowserTabGroupMenu.State.EDIT_AI_INITIAL
         : MozTabbrowserTabGroupMenu.State.EDIT_STANDARD_INITIAL;
 
+      this.#maybeUpdateLayoutForNova();
+
       this.#panel.openPopup(group.firstChild, {
         position: this.#panelPosition,
       });
@@ -944,6 +948,18 @@
       );
       this.#commandButtons.copyAllLinks.disabled = !linkCount;
       this.#maybeDisableOrHideSaveButton();
+    }
+
+    #maybeUpdateLayoutForNova() {
+      const isNovaEnabled = Services.prefs.getBoolPref(
+        "browser.nova.enabled",
+        false
+      );
+      if (isNovaEnabled) {
+        this.#nameContainer.before(this.#swatchesContainer);
+      } else {
+        this.#tabGroupPropertiesActions.prepend(this.#swatchesContainer);
+      }
     }
 
     #maybeDisableOrHideSaveButton() {

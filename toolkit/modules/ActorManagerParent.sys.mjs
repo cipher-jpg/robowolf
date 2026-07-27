@@ -26,6 +26,19 @@ let JSPROCESSACTORS = {
     safeForUntrustedWebProcess: true,
   },
 
+  // Runs the content-analysis DLP WebAssembly module in the privilegedabout
+  // process. The module is compiled there under a non-system principal
+  // because the parent process forbids wasm/eval regardless of principal.
+  ContentAnalysisWasm: {
+    remoteTypes: ["privilegedabout"],
+    parent: {
+      esModuleURI: "resource://gre/modules/ContentAnalysisWasmParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://gre/modules/ContentAnalysisWasmChild.sys.mjs",
+    },
+  },
+
   ContentPrefs: {
     parent: {
       esModuleURI: "resource://gre/modules/ContentPrefServiceParent.sys.mjs",
@@ -101,10 +114,12 @@ let JSPROCESSACTORS = {
 let JSWINDOWACTORS = {
   AboutCertViewer: {
     parent: {
-      esModuleURI: "resource://gre/modules/AboutCertViewerParent.sys.mjs",
+      esModuleURI:
+        "moz-src:///toolkit/components/certviewer/AboutCertViewerParent.sys.mjs",
     },
     child: {
-      esModuleURI: "resource://gre/modules/AboutCertViewerChild.sys.mjs",
+      esModuleURI:
+        "moz-src:///toolkit/components/certviewer/AboutCertViewerChild.sys.mjs",
 
       events: {
         DOMDocElementInserted: { capture: true },
@@ -170,6 +185,16 @@ let JSWINDOWACTORS = {
 
     child: {
       esModuleURI: "resource://gre/actors/AutoCompleteChild.sys.mjs",
+      // On GeckoView the autocomplete popup is a delegated native prompt; we
+      // listen for pagehide (which also fires for bfcache) to tear it down so
+      // it can't outlive its document. Other platforms close the popup via
+      // nsFormFillController, so the listener is GeckoView-only to avoid
+      // instantiating the actor on every navigation elsewhere.
+      ...(AppConstants.MOZ_GECKOVIEW && {
+        events: {
+          pagehide: { mozSystemGroup: true },
+        },
+      }),
     },
 
     allFrames: true,
@@ -663,19 +688,17 @@ let JSWINDOWACTORS = {
     },
     child: {
       esModuleURI: "resource://gre/actors/TranslationsChild.sys.mjs",
-      events: {
-        DOMContentLoaded: {},
-        load: {
-          // Once the page is loaded, it's important that we react to the page's
-          // language tag as soon as possible in order to give a good response time
-          // for showing the translations panel, or for auto-translating, etc.
-          capture: true,
-          createActor: false,
-        },
-      },
     },
-    matches: ["http://*/*", "https://*/*", "file:///*", "moz-extension://*"],
+    matches: [
+      "about:blank",
+      "about:srcdoc",
+      "file:///*",
+      "http://*/*",
+      "https://*/*",
+      "moz-extension://*",
+    ],
     messageManagerGroups: ["browsers"],
+    allFrames: true,
     enablePreference: "browser.translations.enable",
     onPreferenceChanged(isEnabled) {
       const { TranslationsParent } = ChromeUtils.importESModule(
@@ -782,7 +805,8 @@ if (AppConstants.platform != "android") {
 
   JSWINDOWACTORS.PictureInPictureLauncher = {
     parent: {
-      esModuleURI: "resource://gre/modules/PictureInPicture.sys.mjs",
+      esModuleURI:
+        "moz-src:///toolkit/components/pictureinpicture/PictureInPicture.sys.mjs",
     },
     child: {
       esModuleURI: "resource://gre/actors/PictureInPictureChild.sys.mjs",
@@ -797,7 +821,8 @@ if (AppConstants.platform != "android") {
 
   JSWINDOWACTORS.PictureInPicture = {
     parent: {
-      esModuleURI: "resource://gre/modules/PictureInPicture.sys.mjs",
+      esModuleURI:
+        "moz-src:///toolkit/components/pictureinpicture/PictureInPicture.sys.mjs",
     },
     child: {
       esModuleURI: "resource://gre/actors/PictureInPictureChild.sys.mjs",
@@ -809,7 +834,8 @@ if (AppConstants.platform != "android") {
 
   JSWINDOWACTORS.PictureInPictureToggle = {
     parent: {
-      esModuleURI: "resource://gre/modules/PictureInPicture.sys.mjs",
+      esModuleURI:
+        "moz-src:///toolkit/components/pictureinpicture/PictureInPicture.sys.mjs",
     },
     child: {
       esModuleURI: "resource://gre/actors/PictureInPictureChild.sys.mjs",

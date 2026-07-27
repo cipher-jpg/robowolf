@@ -365,10 +365,14 @@ size_t StyleSheetInfo::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
 }
 
 void StyleSheetInfo::AddSheet(StyleSheet* aSheet) {
+  aSheet->mInnerSheetIndex = mSheets.Length();
   mSheets.AppendElement(aSheet);
 }
 
 bool StyleSheetInfo::RemoveSheet(StyleSheet* aSheet) {
+  const size_t index = aSheet->mInnerSheetIndex;
+  MOZ_ASSERT(mSheets[index] == aSheet, "mInnerSheetIndex out of sync?");
+
   // Fix up the parent pointer in children lists.
   StyleSheet* newParent =
       aSheet == mSheets[0] ? mSheets.SafeElementAt(1) : mSheets[0];
@@ -385,9 +389,16 @@ bool StyleSheetInfo::RemoveSheet(StyleSheet* aSheet) {
     return true;
   }
 
-  mSheets.UnorderedRemoveElement(aSheet);
+  {
+    // We don't care about order so can make removals constant time by using
+    // swap and keeping the cached index up to date.
+    const size_t lastIndex = mSheets.Length() - 1;
+    mSheets[lastIndex]->mInnerSheetIndex = index;
+    mSheets.UnorderedRemoveElementAt(index);
+  }
+
   if (mSheets.Length() == 1 &&
-      !mSheets.ElementAt(0)->GetAssociatedDocumentOrShadowRoot()) {
+      !mSheets[0]->GetAssociatedDocumentOrShadowRoot()) {
     // A stylesheet without an associated document just became unique (most
     // likely from the stylesheet cache). Make sure the entry is evicted from
     // the cache eventually.
@@ -489,13 +500,15 @@ void StyleSheet::EnsureUniqueInner() {
     return;
   }
 
-  StyleSheetInfo* clone = mInner->CloneFor(this);
-  MOZ_ASSERT(clone);
-
+  // Remove ourselves from the shared inner before cloning, since CloneFor would
+  // clobber mInnerSheetIndex otherwise.
   DebugOnly<bool> last = mInner->RemoveSheet(this);
   MOZ_ASSERT(
       !last,
       "HasUniqueInner implies mInner should have pointed to more than this");
+
+  StyleSheetInfo* clone = mInner->CloneFor(this);
+  MOZ_ASSERT(clone);
   mInner = clone;
 
   // Fixup the child lists and parent links in the Servo sheet. This is done
@@ -1186,9 +1199,8 @@ RefPtr<StyleSheetParsePromise> StyleSheet::ParseSheet(
   // @import rules are disallowed due to this decision:
   // https://github.com/WICG/construct-stylesheets/issues/119#issuecomment-588352418
   // We may allow @import rules again in the future.
-  auto allowImportRules = SelfOrAncestorIsConstructed()
-                              ? StyleAllowImportRules::No
-                              : StyleAllowImportRules::Yes;
+  auto allowImportRules =
+      IsConstructed() ? StyleAllowImportRules::No : StyleAllowImportRules::Yes;
   if (aLoadData->get()->mRecordErrors) {
     MOZ_ASSERT(NS_IsMainThread());
     RefPtr<StyleStylesheetContents> contents =
@@ -1280,9 +1292,8 @@ void StyleSheet::ParseSheetSync(
     return eCompatibility_FullStandards;
   }();
 
-  auto allowImportRules = SelfOrAncestorIsConstructed()
-                              ? StyleAllowImportRules::No
-                              : StyleAllowImportRules::Yes;
+  auto allowImportRules =
+      IsConstructed() ? StyleAllowImportRules::No : StyleAllowImportRules::Yes;
 
   Inner().mContents =
       Servo_StyleSheet_FromUTF8Bytes(

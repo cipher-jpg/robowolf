@@ -13,9 +13,12 @@
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Maybe.h"  // For Maybe
+#include "mozilla/ServoBindings.h"  // For Servo_SerializeTimelineRangeName, Servo_LengthPercentage_ToCss
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/dom/AnimatableBinding.h"  // For the rangeStart/rangeEnd union
 #include "mozilla/dom/AnimationBinding.h"
+#include "mozilla/dom/CSSNumericValue.h"  // For CSSNumericValue::Parse
 #include "mozilla/dom/CSSNumericValueBinding.h"
 #include "mozilla/dom/CSSTransition.h"
 #include "mozilla/dom/Document.h"
@@ -178,7 +181,7 @@ already_AddRefed<Animation> Animation::Constructor(
 
   RefPtr<Animation> animation = new Animation(global);
   // JS side can't refer to timeline by name.
-  animation->SetTimelineNoUpdate(timeline, nullptr, FromJS::Yes);
+  animation->SetTimelineNoUpdate(timeline, {}, FromJS::Yes);
   animation->SetEffectNoUpdate(aEffect);
 
   return animation.forget();
@@ -297,17 +300,18 @@ void Animation::RemovedNamedTimelineReferenceFromJS(const nsAtom* aName) {
 }
 
 void Animation::SetTimelineFromJS(AnimationTimeline* aTimeline) {
-  TimelineWillSetFromJS();
+  PropertiesWillSetFromJS(CSSAnimationProperties::Timeline);
   // Can't refer to timeline by name from JS side.
   const auto prevTimelineName = GetTimelineName();
-  SetTimeline(aTimeline, nullptr, FromJS::Yes);
-  if (prevTimelineName) {
-    RemovedNamedTimelineReferenceFromJS(prevTimelineName);
+  SetTimeline(aTimeline, {}, FromJS::Yes);
+  if (prevTimelineName.mName) {
+    RemovedNamedTimelineReferenceFromJS(prevTimelineName.mName);
   }
 }
 
 bool Animation::SetTimeline(AnimationTimeline* aTimeline,
-                            const nsAtom* aTimelineName, FromJS aFromJS) {
+                            const ScopedTimelineName& aTimelineName,
+                            FromJS aFromJS) {
   const auto updated = SetTimelineNoUpdate(aTimeline, aTimelineName, aFromJS);
   PostUpdate();
   return updated;
@@ -315,9 +319,10 @@ bool Animation::SetTimeline(AnimationTimeline* aTimeline,
 
 // https://drafts.csswg.org/web-animations-2/#setting-the-timeline
 bool Animation::SetTimelineNoUpdate(AnimationTimeline* aTimeline,
-                                    const nsAtom* aTimelineName,
+                                    const ScopedTimelineName& aTimelineName,
                                     FromJS aFromJS) {
-  if (aFromJS == FromJS::No && TimelineOverridenByJS()) {
+  if (aFromJS == FromJS::No &&
+      (PropertiesOverridenByJS() & CSSAnimationProperties::Timeline)) {
     return false;
   }
   // 1. Let old timeline be the current timeline of animation, if any.
@@ -326,7 +331,7 @@ bool Animation::SetTimelineNoUpdate(AnimationTimeline* aTimeline,
   if (mTimeline == aTimeline) {
     // nullptr -> nullptr but going from/to named timeline is significant.
     if (mTimelineName != aTimelineName) {
-      mTimelineName = aTimelineName;
+      mTimelineName = OwningScopedTimelineName{aTimelineName};
     }
     // Timeline still didn't update, so...
     return false;
@@ -373,7 +378,7 @@ bool Animation::SetTimelineNoUpdate(AnimationTimeline* aTimeline,
     oldTimeline->RemoveAnimation(this);
   }
   mTimeline = aTimeline;
-  mTimelineName = aTimelineName;
+  mTimelineName = OwningScopedTimelineName{aTimelineName};
   // Update the normalized timing and keyframe timeline range ofset because we
   // are using the new timeline.
   if (mEffect) {
@@ -456,12 +461,13 @@ bool Animation::SetTimelineNoUpdate(AnimationTimeline* aTimeline,
   return true;
 }
 
-void Animation::SetTimelineRange(AnimationRange&& aRange) {
-  SetTimelineRangeNoUpdate(std::move(aRange));
+void Animation::SetTimelineRange(AnimationRange&& aRange, FromJS aFromJS) {
+  SetTimelineRangeNoUpdate(std::move(aRange), aFromJS);
   PostUpdate();
 }
 
-void Animation::SetTimelineRangeNoUpdate(AnimationRange&& aRange) {
+void Animation::SetTimelineRangeNoUpdate(AnimationRange&& aRange,
+                                         FromJS aFromJS) {
   if (mTimelineRange == aRange) {
     return;
   }
@@ -472,7 +478,23 @@ void Animation::SetTimelineRangeNoUpdate(AnimationRange&& aRange) {
   //
   // For now, this is not exposed and is set during initialization of the CSS
   // Animations.
-  mTimelineRange = std::move(aRange);
+  const auto overridden = PropertiesOverridenByJS();
+  const auto startOverridden =
+      aFromJS == FromJS::No &&
+      (overridden & CSSAnimationProperties::AnimationRangeStart);
+  const auto endOverridden =
+      aFromJS == FromJS::No &&
+      (overridden & CSSAnimationProperties::AnimationRangeEnd);
+  if (startOverridden && endOverridden) {
+    return;
+  }
+
+  if (!startOverridden) {
+    mTimelineRange.mStart = std::move(aRange.mStart);
+  }
+  if (!endOverridden) {
+    mTimelineRange.mEnd = std::move(aRange.mEnd);
+  }
 
   if (mEffect) {
     mEffect->UpdateNormalizedTiming();
@@ -1135,6 +1157,92 @@ void Animation::SetCurrentTime(const Nullable<CSSNumberish>& aCurrentTime,
       aCurrentTime.Value(), progressBased);
   MOZ_ASSERT(!seekTime.IsNull());
   SetCurrentTime(seekTime.Value());
+}
+
+// https://drafts.csswg.org/web-animations-2/#dom-animation-rangestart
+static void RangeBoundaryToTimelineRangeValue(
+    StyleTimelineRangeName aName, const StyleLengthPercentage& aOffset,
+    nsIGlobalObject* aParent,
+    OwningTimelineRangeOffsetOrCSSNumericValueOrCSSKeywordValueOrUTF8String&
+        aRetVal) {
+  if (aName == StyleTimelineRangeName::Normal) {
+    aRetVal.SetAsUTF8String().AssignLiteral("normal");
+    return;
+  }
+
+  TimelineRangeOffset& result = aRetVal.SetAsTimelineRangeOffset();
+  if (aName != StyleTimelineRangeName::None) {
+    nsAutoCString rangeName;
+    Servo_SerializeTimelineRangeName(aName, &rangeName);
+    result.mRangeName.Construct(std::move(rangeName));
+  }
+  // else: a bare <length-percentage>, so rangeName is left null.
+
+  // Serialize the computed offset and re-parse it into a CSSNumericValue so
+  // percentages, absolute lengths and calc() (including length/percentage
+  // mixes) all round-trip. The text came from the style system, so parsing it
+  // back should not fail; if it somehow does, leave the offset unset.
+  nsAutoCString offsetCss;
+  Servo_LengthPercentage_ToCss(&aOffset, &offsetCss);
+  if (RefPtr<CSSNumericValue> offset =
+          CSSNumericValue::Parse(aParent, offsetCss, IgnoreErrors())) {
+    MOZ_ASSERT(offset);
+    result.mOffset.Construct(offset.forget());
+  }
+}
+
+void Animation::GetRangeStart(JSContext* aCx,
+                              JS::MutableHandle<JS::Value> aRetVal,
+                              ErrorResult& aRv) {
+  OwningTimelineRangeOffsetOrCSSNumericValueOrCSSKeywordValueOrUTF8String value;
+  RangeBoundaryToTimelineRangeValue(mTimelineRange.mStart.name,
+                                    mTimelineRange.mStart.lp, GetParentObject(),
+                                    value);
+  if (!value.ToJSVal(aCx, nullptr, aRetVal)) {
+    aRv.NoteJSContextException(aCx);
+  }
+}
+
+void Animation::GetRangeEnd(JSContext* aCx,
+                            JS::MutableHandle<JS::Value> aRetVal,
+                            ErrorResult& aRv) {
+  OwningTimelineRangeOffsetOrCSSNumericValueOrCSSKeywordValueOrUTF8String value;
+  RangeBoundaryToTimelineRangeValue(mTimelineRange.mEnd.name,
+                                    mTimelineRange.mEnd.lp, GetParentObject(),
+                                    value);
+  if (!value.ToJSVal(aCx, nullptr, aRetVal)) {
+    aRv.NoteJSContextException(aCx);
+  }
+}
+
+void Animation::SetRangeStart(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                              ErrorResult& aRv) {
+  OwningTimelineRangeOffsetOrCSSNumericValueOrCSSKeywordValueOrUTF8String value;
+  if (!value.Init(aCx, aValue, "Animation.rangeStart")) {
+    aRv.NoteJSContextException(aCx);
+    return;
+  }
+  AnimationRange range = mTimelineRange;
+  if (!AnimationUtils::SetAnimationRangeStart(value, range, aRv)) {
+    return;
+  }
+  PropertiesWillSetFromJS(CSSAnimationProperties::AnimationRangeStart);
+  SetTimelineRange(std::move(range), FromJS::Yes);
+}
+
+void Animation::SetRangeEnd(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                            ErrorResult& aRv) {
+  OwningTimelineRangeOffsetOrCSSNumericValueOrCSSKeywordValueOrUTF8String value;
+  if (!value.Init(aCx, aValue, "Animation.rangeEnd")) {
+    aRv.NoteJSContextException(aCx);
+    return;
+  }
+  AnimationRange range = mTimelineRange;
+  if (!AnimationUtils::SetAnimationRangeEnd(value, range, aRv)) {
+    return;
+  }
+  PropertiesWillSetFromJS(CSSAnimationProperties::AnimationRangeEnd);
+  SetTimelineRange(std::move(range), FromJS::Yes);
 }
 
 // ---------------------------------------------------------------------------

@@ -22,10 +22,8 @@ export const DEFAULT_ENGINE_ID = "default-engine";
  */
 export const BACKENDS = Object.freeze({
   onnx: "onnx",
-  wllama: "wllama",
   onnxNative: "onnx-native",
   llamaCpp: "llama.cpp",
-  bestLlama: "best-llama",
   bestOnnx: "best-onnx",
   openai: "openai",
   staticEmbeddings: "static-embeddings",
@@ -36,7 +34,7 @@ export const BACKENDS = Object.freeze({
  * @type {Array<string>}
  * @description Backends using WASM.
  */
-export const WASM_BACKENDS = [BACKENDS.onnx, BACKENDS.wllama];
+export const WASM_BACKENDS = [BACKENDS.onnx];
 
 /**
  * @constant
@@ -184,6 +182,9 @@ export const FEATURES = {
   "smart-intent": {
     engineId: "smart-intent",
   },
+  "smart-intent-en-fr": {
+    engineId: "smart-intent-en-fr",
+  },
   chat: {
     engineId: "smart-openai",
   },
@@ -204,6 +205,14 @@ export const FEATURES = {
   },
   "llm-telemetry": {
     engineId: "llm-telemetry-engine",
+  },
+  //agents
+  "agent-monitor": {
+    engineId: "agent-monitor-engine",
+  },
+  // see browser/components/aiwindow/models/search/SearchAgent.sys.mjs
+  "search-answer-generation": {
+    engineId: "smart-openai",
   },
 };
 

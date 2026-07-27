@@ -171,12 +171,16 @@ Services.ppmm.addMessageListener("PasswordManager:findRecipes", message => {
  * Lazily create a Map of origins to array of browsers with importable logins.
  *
  * @param {origin} formOrigin
+ * @param {nsILoginInfo[]} existingLogins Logins already saved for the origin.
+ *   When any exist, importing is not suggested.
  * @returns {object?} containing array of migration browsers and experiment state.
  */
-async function getImportableLogins(formOrigin) {
+async function getImportableLogins(formOrigin, existingLogins) {
   // Include the experiment state for data and UI decisions; otherwise skip
-  // importing if not supported or disabled.
+  // importing if not supported or disabled. Only suggest importing when there
+  // are no existing Firefox logins saved for the origin.
   const state =
+    !existingLogins?.length &&
     lazy.LoginHelper.suggestImportCount > 0 &&
     lazy.LoginHelper.showAutoCompleteImport;
   return state
@@ -699,7 +703,7 @@ export class LoginManagerParent extends JSWindowActorParent {
     // doesn't support structured cloning.
     let jsLogins = lazy.LoginHelper.loginsToVanillaObjects(logins);
     return {
-      importable: await getImportableLogins(formOrigin),
+      importable: await getImportableLogins(formOrigin, logins),
       logins: jsLogins,
       recipes,
     };
@@ -841,7 +845,7 @@ export class LoginManagerParent extends JSWindowActorParent {
 
     return {
       generatedPassword,
-      importable: await getImportableLogins(formOrigin),
+      importable: await getImportableLogins(formOrigin, logins),
       autocompleteItems,
       logins: jsLogins,
       willAutoSaveGeneratedPassword,
@@ -1049,6 +1053,10 @@ export class LoginManagerParent extends JSWindowActorParent {
     // we don't auto-save logins on form submit
     let notifySaved = false;
 
+    // Resolve the browser to anchor the doorhanger on before any async storage
+    // call.
+    const promptBrowser = lazy.LoginHelper.getBrowserForPrompt(browser);
+
     if (autoFilledLoginGuid) {
       let loginsForGuid = await Services.logins.searchLoginsAsync({
         guid: autoFilledLoginGuid,
@@ -1109,7 +1117,6 @@ export class LoginManagerParent extends JSWindowActorParent {
       existingLogin = this.#findSameLogin(logins, formLogin);
     }
 
-    const promptBrowser = lazy.LoginHelper.getBrowserForPrompt(browser);
     const prompter = this._getPrompter(browser);
 
     if (!canMatchExistingLogin) {
@@ -1239,6 +1246,13 @@ export class LoginManagerParent extends JSWindowActorParent {
       );
       return;
     }
+
+    // Stop-gap until bug 2055772 (a systemic AbortController-based solution):
+    // use a local counter to serialize subsequent calls so that only the most
+    // recent edit updates the doorhanger. Every keystroke triggers its own
+    // async run and these can finish out of order.
+    this._editSeq = (this._editSeq ?? 0) + 1;
+    const seq = this._editSeq;
 
     let framePrincipalOrigin =
       browsingContext.currentWindowGlobal.documentPrincipal.origin;
@@ -1439,6 +1453,13 @@ export class LoginManagerParent extends JSWindowActorParent {
       }
     } else {
       lazy.log("Not auto-saving this login.");
+    }
+
+    if (seq !== this._editSeq) {
+      lazy.log(
+        "A newer password edit superseded this one; skipping doorhanger."
+      );
+      return;
     }
 
     const prompter = this._getPrompter(browser);

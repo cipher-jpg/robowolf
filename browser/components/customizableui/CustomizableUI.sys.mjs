@@ -67,7 +67,7 @@ const kSubviewEvents = ["ViewShowing", "ViewHiding"];
  * The current version. We can use this to auto-add new default widgets as necessary.
  * (would be const but isn't because of testing purposes)
  */
-var kVersion = 25;
+var kVersion = 26;
 
 /**
  * Buttons removed from built-ins by version they were removed. kVersion must be
@@ -378,7 +378,7 @@ var CustomizableUIInternal = {
         type: CustomizableUI.TYPE_TOOLBAR,
         overflowable: true,
         defaultPlacements: navbarPlacements,
-        verticalTabsDefaultPlacements: ["alltabs-button"],
+        verticalTabsDefaultPlacements: ["alltabs-button", "ai-window-toggle"],
         defaultCollapsed: false,
       },
       true
@@ -403,7 +403,9 @@ var CustomizableUIInternal = {
         defaultPlacements: [
           "tabbrowser-tabs",
           "new-tab-button",
+          "spring",
           "alltabs-button",
+          "ai-window-toggle",
         ],
         verticalTabsDefaultPlacements: [],
         defaultCollapsed: null,
@@ -872,6 +874,37 @@ var CustomizableUIInternal = {
         if (!shouldKeepFirefoxView) {
           firefoxViewArea.splice(defaultIndex, 1);
         }
+      }
+    }
+
+    // Add the flexible space that replaced the post-tabs titlebar-spacer to the
+    // left of the alltabs-button. Only the horizontal tab strip layout is
+    // touched, to match the defaults (a fresh vertical-tabs profile doesn't get
+    // this space). For users currently in vertical tabs, that layout lives in
+    // the horizontal snapshot rather than the live tabstrip placements.
+    if (currentVersion < 26) {
+      let insertBeforeAllTabs = placements => {
+        if (!placements) {
+          return placements;
+        }
+        let alltabsIndex = placements.indexOf("alltabs-button");
+        if (
+          alltabsIndex > 0 &&
+          !placements[alltabsIndex - 1].startsWith(kSpecialWidgetPfx + "spring")
+        ) {
+          placements.splice(alltabsIndex, 0, "spring");
+        }
+        return placements;
+      };
+
+      insertBeforeAllTabs(gSavedState.placements[CustomizableUI.AREA_TABSTRIP]);
+
+      let horizontalSnapshot =
+        CustomizableUIInternal.getSavedHorizontalSnapshotState();
+      if (horizontalSnapshot.length) {
+        CustomizableUIInternal.saveHorizontalTabStripState(
+          insertBeforeAllTabs(horizontalSnapshot)
+        );
       }
     }
   },
@@ -3975,14 +4008,14 @@ var CustomizableUIInternal = {
   /**
    * @see CustomizableUI.createWidget
    * @param {CustomizableUICreateWidgetProperties} aProperties
+   * @param {string} [aSource]
+   *   One of the CustomizableUI.SOURCE_* constants; defaults to
+   *   CustomizableUI.SOURCE_EXTERNAL.
    * @returns {string}
    *   The ID of the created widget.
    */
-  createWidget(aProperties) {
-    let widget = this.normalizeWidget(
-      aProperties,
-      CustomizableUI.SOURCE_EXTERNAL
-    );
+  createWidget(aProperties, aSource = CustomizableUI.SOURCE_EXTERNAL) {
+    let widget = this.normalizeWidget(aProperties, aSource);
     // XXXunf This should probably throw.
     if (!widget) {
       lazy.log.error("unable to normalize widget");
@@ -6201,11 +6234,14 @@ export var CustomizableUI = {
    *
    * @param {CustomizableUICreateWidgetProperties} aProperties
    *   The properties for the widget to be created.
+   * @param {string} [aSource]
+   *   One of the CustomizableUI.SOURCE_* constants; defaults to
+   *   CustomizableUI.SOURCE_EXTERNAL.
    * @returns {WidgetGroupWrapper|XULWidgetGroupWrapper}
    */
-  createWidget(aProperties) {
+  createWidget(aProperties, aSource) {
     return CustomizableUIInternal.wrapWidget(
-      CustomizableUIInternal.createWidget(aProperties)
+      CustomizableUIInternal.createWidget(aProperties, aSource)
     );
   },
   /**

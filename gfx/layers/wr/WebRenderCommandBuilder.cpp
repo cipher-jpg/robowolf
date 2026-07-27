@@ -4,14 +4,20 @@
 
 #include "WebRenderCommandBuilder.h"
 
+#include <cstdint>
+
+#include "MediaInfo.h"
+#include "UnitTransforms.h"
+#include "WebRenderCanvasRenderer.h"
+#include "gfxEnv.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/EffectCompositor.h"
 #include "mozilla/ProfilerLabels.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/SVGGeometryFrame.h"
 #include "mozilla/SVGImageFrame.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Logging.h"
@@ -20,23 +26,17 @@
 #include "mozilla/layers/AnimationHelper.h"
 #include "mozilla/layers/ClipManager.h"
 #include "mozilla/layers/ImageClient.h"
-#include "mozilla/layers/RenderRootStateManager.h"
-#include "mozilla/layers/WebRenderBridgeChild.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/layers/IpcResourceUpdateQueue.h"
+#include "mozilla/layers/RenderRootStateManager.h"
 #include "mozilla/layers/SharedSurfacesChild.h"
 #include "mozilla/layers/SourceSurfaceSharedData.h"
 #include "mozilla/layers/StackingContextHelper.h"
+#include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/WebRenderDrawEventRecorder.h"
-#include "UnitTransforms.h"
-#include "gfxEnv.h"
-#include "MediaInfo.h"
+#include "mozilla/layers/WebRenderLayerManager.h"
 #include "nsDisplayListInvalidation.h"
 #include "nsLayoutUtils.h"
 #include "nsTHashSet.h"
-#include "WebRenderCanvasRenderer.h"
-
-#include <cstdint>
 
 namespace mozilla::layers {
 
@@ -2775,17 +2775,25 @@ Maybe<wr::ImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
 
   LayoutDeviceToLayerScale2D layerScale(scale.xScale, scale.yScale);
 
-  // Rect the mask image is placed and sampled over. The blob itself must stay
-  // integer-sized (itemRect/visibleRect, above), but the placement rect we
-  // hand to WebRender becomes the mask clip node's rect, which WebRender snaps
-  // to device pixels at frame time. With pixel alignment disabled, send the
-  // true (unrounded) rect -- the same one the masked content uses -- so the
-  // mask snaps in lockstep with its content instead of carrying our own stale
-  // device-pixel RoundOut.
+  // Rect the mask image is placed and sampled over; it becomes the mask clip
+  // node's rect, which WebRender snaps to device pixels at frame time. Send the
+  // true (unrounded) bounds so WebRender snaps the clip in lockstep with the
+  // masked content -- rather than a stale display-list-time RoundOut -- when
+  // pixel alignment is disabled (bug 1973192). Clamp bounds to the region the
+  // blob actually covers so the clip stays aligned to the blob's alpha: the
+  // union of the building rect (what needs to be painted) and visibleRect (the
+  // rasterized region on the blob's nearest-pixel grid). Clamping to the
+  // building rect alone would drop a partially-covered edge row that the blob
+  // did rasterize (bug 2055747); not clamping at all would span inflated bounds
+  // that were never drawn into the blob (svg/filters/filter-clipped-rect-01).
   LayoutDeviceRect imageRect;
   if (StaticPrefs::layout_disable_pixel_alignment()) {
-    imageRect = LayoutDeviceRect::FromAppUnits(
-        bounds.Intersect(aMaskItem->GetBuildingRect()), appUnitsPerDevPixel);
+    LayoutDeviceRect coverage =
+        LayoutDeviceRect::FromAppUnits(aMaskItem->GetBuildingRect(),
+                                       appUnitsPerDevPixel)
+            .Union(LayerRect(visibleRect) / layerScale);
+    imageRect = LayoutDeviceRect::FromAppUnits(bounds, appUnitsPerDevPixel)
+                    .Intersect(coverage);
   } else {
     imageRect = LayerRect(visibleRect) / layerScale;
   }

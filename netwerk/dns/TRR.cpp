@@ -2,44 +2,44 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "TRR.h"
+
 #include "DNS.h"
 #include "DNSUtils.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsContentUtils.h"
-#include "nsHttpHandler.h"
-#include "nsHttpChannel.h"
-#include "nsHostResolver.h"
-#include "nsIHttpChannel.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsIIOService.h"
-#include "nsIInputStream.h"
-#include "nsIObliviousHttp.h"
-#include "nsIOService.h"
-#include "nsISupports.h"
-#include "nsISupportsUtils.h"
-#include "nsITimedChannel.h"
-#include "nsIUploadChannel2.h"
-#include "nsIURIMutator.h"
-#include "nsNetUtil.h"
-#include "nsQueryObject.h"
-#include "nsStringStream.h"
-#include "nsThreadUtils.h"
-#include "nsURLHelper.h"
 #include "ObliviousHttpChannel.h"
-#include "TRR.h"
+#include "TRRLoadInfo.h"
 #include "TRRService.h"
 #include "TRRServiceChannel.h"
-#include "TRRLoadInfo.h"
-
 #include "mozilla/Base64.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
-#include "mozilla/glean/NetwerkDnsMetrics.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/glean/NetwerkDnsMetrics.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsContentUtils.h"
+#include "nsHostResolver.h"
+#include "nsHttpChannel.h"
+#include "nsHttpHandler.h"
+#include "nsIHttpChannel.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsIIOService.h"
+#include "nsIInputStream.h"
+#include "nsIOService.h"
+#include "nsIObliviousHttp.h"
+#include "nsISupports.h"
+#include "nsISupportsUtils.h"
+#include "nsITimedChannel.h"
+#include "nsIURIMutator.h"
+#include "nsIUploadChannel2.h"
+#include "nsNetUtil.h"
+#include "nsQueryObject.h"
+#include "nsStringStream.h"
+#include "nsThreadUtils.h"
+#include "nsURLHelper.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
 #include "mozilla/glean/NetwerkMetrics.h"
@@ -714,7 +714,7 @@ nsresult TRR::FollowCname(nsIChannel* aChannel) {
   }
 
   // restore mCname as DohDecode() change it
-  mCname = cname;
+  mCname = std::move(cname);
   if (NS_SUCCEEDED(rv) && HasUsableResponse()) {
     ReturnData(aChannel);
     return NS_OK;
@@ -722,9 +722,13 @@ nsresult TRR::FollowCname(nsIChannel* aChannel) {
 
   bool ra = mPacket && mPacket->RecursionAvailable().unwrapOr(false);
   LOG(("ra = %d", ra));
-  if (rv == NS_ERROR_UNKNOWN_HOST && ra) {
+  if (rv == NS_ERROR_UNKNOWN_HOST && ra && mType != TRRTYPE_HTTPSSVC) {
     // If recursion is available, but no addresses have been returned,
     // we can just return a failure here.
+    // This optimization is only valid for A/AAAA CNAME chains: a recursive
+    // resolver that follows a CNAME already inlines the target's addresses.
+    // It does not hold for HTTPS AliasMode, since recursive resolvers do not
+    // chase the SVCB/HTTPS alias, so we must query the TargetName ourselves.
     LOG(("TRR::FollowCname not sending another request as RA flag is set."));
     FailData(NS_ERROR_UNKNOWN_HOST);
     return NS_OK;

@@ -13,10 +13,10 @@
       since a specific date. %1$d is the trackers count number (e.g. 123).
       %2$s is the formatted date (e.g. "February 23, 2026").
     -->
-    <item quantity="one">%1$d rianaitheoir blocáilte ó %2$s</item>
-    <item quantity="two">%1$d rianaitheoir blocáilte ó %2$s</item>
-    <item quantity="few">%1$d rianaitheoir blocáilte ó %2$s</item>
-    <item quantity="many">%1$d rianaitheoir blocáilte ó %2$s</item>
-    <item quantity="other">%1$d rianaitheoir blocáilte ó %2$s</item>
+    <item quantity="one">%1$d lorgaire blocáilte ó %2$s</item>
+    <item quantity="two">%1$d lorgaire blocáilte ó %2$s</item>
+    <item quantity="few">%1$d lorgaire blocáilte ó %2$s</item>
+    <item quantity="many">%1$d lorgaire blocáilte ó %2$s</item>
+    <item quantity="other">%1$d lorgaire blocáilte ó %2$s</item>
   </plurals>
 </resources>

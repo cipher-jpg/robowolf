@@ -88,14 +88,41 @@ add_task(function test_providerType_roundtrip() {
   let result = makeSearchResult();
   // providerType is set on the result after construction (by the providers
   // manager), via a setter rather than a constructor parameter.
-  result.providerType = UrlbarUtils.PROVIDER_TYPE.PROFILE;
+  result.providerType = UrlbarShared.PROVIDER_TYPE.PROFILE;
 
   let restored = roundTrip(result);
 
   Assert.equal(
     restored.providerType,
-    UrlbarUtils.PROVIDER_TYPE.PROFILE,
+    UrlbarShared.PROVIDER_TYPE.PROFILE,
     "set-only providerType preserved"
+  );
+});
+
+add_task(function test_fromWire_skips_payload_validation() {
+  let result = makeUrlResult();
+
+  // Simulate an internal field added to the payload after the result was
+  // validated at creation time (e.g. QuickSuggest's suggestionObject, kept on
+  // the payload for dismissal). Such a field isn't in the payload schema, so
+  // re-validating the payload would reject it.
+  let wire = result.toWire();
+  wire.payload = { ...wire.payload, internalField: { some: "object" } };
+
+  // A validating construction rejects the unknown field...
+  Assert.throws(
+    () => new UrlbarResult(wire),
+    /./,
+    "constructing with validation rejects the internal payload field"
+  );
+
+  // ...but fromWire() carries it through, since the wire payload was already
+  // validated before serialization.
+  let restored = UrlbarResult.fromWire(structuredClone(wire));
+  Assert.deepEqual(
+    restored.payload.internalField,
+    { some: "object" },
+    "fromWire preserves the internal payload field without re-validating"
   );
 });
 

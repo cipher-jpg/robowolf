@@ -16,10 +16,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import mozilla.components.compose.base.modifier.thenConditional
 import mozilla.components.compose.base.theme.AcornTheme
 
@@ -142,29 +141,25 @@ private fun Modifier.focusTextIndexRange(
 ) = composed(
     factory = {
         val density = LocalDensity.current
-        val textMeasurer = rememberTextMeasurer()
         val scrollState = rememberScrollState()
-        val coroutineScope = rememberCoroutineScope()
-        var textLayoutState: TextLayoutResult? by remember { mutableStateOf(null) }
-        var fadeFraction = remember { 0f }
+        var viewportWidth by remember { mutableIntStateOf(0) }
+
+        val textLayoutState = rememberTextLayoutResult(text, textStyle, viewportWidth)
+
+        val fadeFraction = when {
+            viewportWidth > 0 -> (with(density) { fadeLength.toPx() } / viewportWidth).coerceIn(0f, 1f)
+            else -> 0f
+        }
+
+        LaunchedEffect(textLayoutState, highlightRange, scrollState.maxValue) {
+            val layout = textLayoutState ?: return@LaunchedEffect
+            val endScrollValue = computeDomainEndScrollValue(text, highlightRange, scrollState, layout)
+
+            scrollState.scrollTo(endScrollValue)
+        }
 
         onSizeChanged {
-            val currentWidth = with(density) { it.width.toDp() }
-            fadeFraction = (fadeLength / currentWidth).coerceIn(0f, 1f)
-
-            textLayoutState = textMeasurer.measure(
-                text = text,
-                maxLines = 1,
-                style = textStyle,
-                softWrap = false,
-                constraints = Constraints(maxWidth = it.width),
-            ).also {
-                coroutineScope.launch {
-                    val endScrollValue = computeDomainEndScrollValue(text, highlightRange, scrollState, it)
-
-                    scrollState.scrollTo(endScrollValue)
-                }
-            }
+            viewportWidth = it.width
         }
             .thenConditional(
                 Modifier
@@ -204,6 +199,29 @@ private fun Modifier.focusTextIndexRange(
         properties["fadeLengthDp"] = fadeLength.value
     },
 )
+
+@Composable
+@VisibleForTesting
+internal fun rememberTextLayoutResult(
+    text: String,
+    textStyle: TextStyle,
+    viewportWidth: Int,
+): TextLayoutResult? {
+    val textMeasurer = rememberTextMeasurer()
+
+    return remember(text, textStyle, viewportWidth) {
+        when {
+            viewportWidth > 0 -> textMeasurer.measure(
+                text = text,
+                maxLines = 1,
+                style = textStyle,
+                softWrap = false,
+                constraints = Constraints(maxWidth = viewportWidth),
+            )
+            else -> null
+        }
+    }
+}
 
 @VisibleForTesting
 internal fun computeDomainEndScrollValue(

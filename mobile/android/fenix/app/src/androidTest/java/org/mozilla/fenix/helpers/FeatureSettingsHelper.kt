@@ -46,16 +46,6 @@ interface FeatureSettingsHelper {
     var isDeleteSitePermissionsEnabled: Boolean
 
     /**
-     * Whether the Unified Trust Panel is enabled or not.
-     */
-    var isUnifiedTrustPanelEnabled: Boolean
-
-    /**
-     * Whether the Homepage Sports Widget is visible or not.
-     */
-    var isHomepageSportsWidgetVisible: Boolean
-
-    /**
      * The current "Enhanced Tracking Protection" policy.
      * @see ETPPolicy
      */
@@ -138,6 +128,11 @@ interface FeatureSettingsHelper {
      * Whether the voice search entry point is shown in the display-mode browser toolbar.
      */
     var showVoiceSearchInDisplayToolbar: Boolean
+
+    /**
+     * Whether trending and recent searches are shown on the Homepage search.
+     */
+    var isHomepageTrendingRecentSearchEnabled: Boolean
 
     /**
      * Enable or disable the translations prompt after a page that can be translated is loaded.

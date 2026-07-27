@@ -34,6 +34,7 @@ import org.mozilla.fenix.ext.isWideWindow
 import org.mozilla.fenix.search.BrowserToolbarSearchMiddleware
 import org.mozilla.fenix.search.BrowserToolbarSearchStatusSyncMiddleware
 import org.mozilla.fenix.summarization.SummarizationNavigator
+import org.mozilla.fenix.translations.TranslationsEnabledSettings
 
 /**
  * Delegate for building the [BrowserToolbarStore] used in the browser screen.
@@ -95,7 +96,6 @@ object BrowserToolbarStoreBuilder {
                         browserStore = browserStore,
                         ipProtectionStore = components.ipProtection.store,
                         permissionsStorage = components.core.geckoSitePermissionsStorage,
-                        cookieBannersStorage = components.core.cookieBannersStorage,
                         bookmarksStorage = activity.components.core.bookmarksStorage,
                         trackingProtectionUseCases = components.useCases.trackingProtectionUseCases,
                         useCases = components.useCases,
@@ -104,6 +104,7 @@ object BrowserToolbarStoreBuilder {
                         publicSuffixList = components.publicSuffixList,
                         settings = components.settings,
                         summarizationFeatureSettings = components.core.summarizeFeatureSettings,
+                        translationsFeatureSettings = TranslationsEnabledSettings.dataStore(activity),
                         shareUseCases = components.useCases.shareUseCases,
                         navController = navController,
                         summarizationNavigator = SummarizationNavigator(
@@ -144,14 +145,12 @@ object BrowserToolbarStoreBuilder {
                         appStore = appStore,
                         ipProtectionStore = components.ipProtection.store,
                         permissionsStorage = components.core.geckoSitePermissionsStorage,
-                        cookieBannersStorage = components.core.cookieBannersStorage,
                         useCases = components.useCases.customTabsUseCases,
                         trackingProtectionUseCases = components.useCases.trackingProtectionUseCases,
                         publicSuffixList = components.publicSuffixList,
                         clipboard = activity.components.clipboardHandler,
                         navController = navController,
                         closeTabDelegate = { activity.finishAndRemoveTask() },
-                        settings = components.settings,
                         scope = lifecycleScope,
                         isSandboxCustomTab = isSandboxCustomTab,
                     ),

@@ -2,16 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{AlphaType, PremultipliedColorF, YuvFormat, YuvRangedColorSpace};
+use api::{PremultipliedColorF, YuvFormat, YuvRangedColorSpace};
 use api::units::*;
 use euclid::HomogeneousVector;
 use crate::composite::{CompositeFeatures, CompositorClip};
 use crate::pattern::PatternShaderInput;
 use crate::quad::LayoutOrDeviceRect;
-use crate::segment::EdgeMask;
 use crate::transform::GpuTransformId;
 use crate::internal_types::{FrameVec, FrameMemory};
-use crate::prim_store::VECS_PER_SEGMENT;
 use crate::render_task::RenderTaskAddress;
 use crate::render_task_graph::RenderTaskId;
 use crate::renderer::{GpuBufferAddress, GpuBufferBuilderF, GpuBufferHandle, GpuBufferWriterF, GpuBufferDataF, GpuBufferDataI, GpuBufferWriterI, ShaderColorMode};
@@ -24,7 +22,6 @@ use crate::util::pack_as_float;
 // Contains type that must exactly match the same structures declared in GLSL.
 
 pub const VECS_PER_TRANSFORM: usize = 8;
-pub const VECS_PER_SPECIFIC_BRUSH: usize = 3;
 
 #[derive(Copy, Clone, PartialEq)]
 #[repr(C)]
@@ -80,16 +77,6 @@ pub struct CopyInstance {
     pub src_rect: DeviceRect,
     pub dst_rect: DeviceRect,
     pub dst_texture_size: DeviceSize,
-}
-
-#[derive(Debug, Copy, Clone)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[repr(C)]
-pub enum RasterizationSpace {
-    #[allow(unused)]
-    Local = 0,
-    Screen = 1,
 }
 
 #[repr(i32)]
@@ -202,6 +189,7 @@ pub struct BorderInstanceGpuData {
     pub widths: DeviceSize,
     pub radius: DeviceSize,
     pub shape: f32,
+    pub shape_offset: DeviceSize,
 }
 
 impl BorderInstanceGpuData {
@@ -211,7 +199,7 @@ impl BorderInstanceGpuData {
         writer.push_one(self.color0);
         writer.push_one(self.color1);
         writer.push_one([self.widths.width, self.widths.height, self.radius.width, self.radius.height]);
-        writer.push_one([self.shape, 0.0, 0.0, 0.0]);
+        writer.push_one([self.shape, self.shape_offset.width, self.shape_offset.height, 0.0]);
 
         writer.finish()
     }
@@ -720,105 +708,6 @@ pub struct MaskInstance {
 }
 
 
-// Note: This can use up to 12 bits due to how it will
-// be packed in the instance data.
-
-/// Flags that define how the common brush shader
-/// code should process this instance.
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash, MallocSizeOf)]
-pub struct BrushFlags(u16);
-
-bitflags! {
-    impl BrushFlags: u16 {
-        /// Apply perspective interpolation to UVs
-        const PERSPECTIVE_INTERPOLATION = 1;
-        /// Do interpolation relative to segment rect,
-        /// rather than primitive rect.
-        const SEGMENT_RELATIVE = 2;
-        /// Repeat UVs horizontally.
-        const SEGMENT_REPEAT_X = 4;
-        /// Repeat UVs vertically.
-        const SEGMENT_REPEAT_Y = 8;
-        /// Horizontally follow border-image-repeat: round.
-        const SEGMENT_REPEAT_X_ROUND = 16;
-        /// Vertically follow border-image-repeat: round.
-        const SEGMENT_REPEAT_Y_ROUND = 32;
-        /// Whether to position the repetitions so that the middle tile
-        /// is horizontally centered.
-        const SEGMENT_REPEAT_X_CENTERED = 64;
-        /// Whether to position the repetitions so that the middle tile
-        /// is vertically centered.
-        const SEGMENT_REPEAT_Y_CENTERED = 128;
-        /// Middle (fill) area of a border-image-repeat.
-        const SEGMENT_NINEPATCH_MIDDLE = 256;
-        /// The extra segment data is a texel rect.
-        const SEGMENT_TEXEL_RECT = 512;
-        /// Whether to force the anti-aliasing when the primitive
-        /// is axis-aligned.
-        const FORCE_AA = 1024;
-        /// Specifies UV coordinates are normalized
-        const NORMALIZED_UVS = 2048;
-    }
-}
-
-impl core::fmt::Debug for BrushFlags {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        if self.is_empty() {
-            write!(f, "{:#x}", Self::empty().bits())
-        } else {
-            bitflags::parser::to_writer(self, f)
-        }
-    }
-}
-
-/// Convenience structure to encode into PrimitiveInstanceData.
-pub struct BrushInstance {
-    pub prim_header_index: PrimitiveHeaderIndex,
-    pub clip_task_address: RenderTaskAddress,
-    pub segment_index: i32,
-    pub edge_flags: EdgeMask,
-    pub brush_flags: BrushFlags,
-    pub resource_address: i32,
-}
-
-impl From<BrushInstance> for PrimitiveInstanceData {
-    fn from(instance: BrushInstance) -> Self {
-        PrimitiveInstanceData {
-            data: [
-                instance.prim_header_index.0,
-                instance.clip_task_address.0,
-                instance.segment_index
-                | ((instance.brush_flags.bits() as i32) << 16)
-                | ((instance.edge_flags.bits() as i32) << 28),
-                instance.resource_address,
-            ]
-        }
-    }
-}
-
-/// Convenience structure to encode into the image brush's user data.
-#[derive(Copy, Clone, Debug)]
-pub struct ImageBrushUserData {
-    pub color_mode: ShaderColorMode,
-    pub alpha_type: AlphaType,
-    pub raster_space: RasterizationSpace,
-    pub opacity: f32,
-}
-
-impl ImageBrushUserData {
-    #[inline]
-    pub fn encode(&self) -> [i32; 4] {
-        [
-            self.color_mode as i32 | ((self.alpha_type as i32) << 16),
-            self.raster_space as i32,
-            get_shader_opacity(self.opacity),
-            0,
-        ]
-    }
-}
-
 // Texture cache resources can be either a simple rect, or define
 // a polygon within a rect by specifying a UV coordinate for each
 // corner. This is useful for rendering screen-space rasterized
@@ -889,42 +778,3 @@ impl ImageSource {
     }
 }
 
-// Must correspond to ImageBrushPrimitiveData in brush_image.glsl
-// Images are drawn as a white color, modulated by the total
-// opacity coming from any collapsed property bindings.
-#[derive(Copy, Clone, Debug)]
-pub struct ImageBrushPrimitiveData {
-    pub color: PremultipliedColorF,
-    pub background_color: PremultipliedColorF,
-    pub stretch_size: LayoutSize,
-}
-
-impl GpuBufferDataF for ImageBrushPrimitiveData {
-    const NUM_BLOCKS: usize = VECS_PER_SPECIFIC_BRUSH;
-    fn write(&self, writer: &mut GpuBufferWriterF) {
-        writer.push_one(self.color);
-        writer.push_one(self.background_color);
-        writer.push_one([self.stretch_size.width, self.stretch_size.height, 0.0, 0.0]);
-    }
-}
-
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Debug, Clone, MallocSizeOf)]
-pub struct BrushSegmentGpuData {
-    pub local_rect: LayoutRect,
-    /// Each brush shader has its own interpretation of this field.
-    pub extra_data: [f32; 4],
-}
-
-impl GpuBufferDataF for BrushSegmentGpuData {
-    const NUM_BLOCKS: usize = VECS_PER_SEGMENT;
-    fn write(&self, writer: &mut GpuBufferWriterF) {
-        writer.push_one(self.local_rect);
-        writer.push_one(self.extra_data);
-    }
-}
-
-pub fn get_shader_opacity(opacity: f32) -> i32 {
-    (opacity * 65535.0).round() as i32
-}

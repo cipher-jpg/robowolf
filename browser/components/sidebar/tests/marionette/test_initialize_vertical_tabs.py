@@ -128,13 +128,21 @@ class TestInitializeVerticalTabs(MarionetteTestCase):
 
         self.check_tabs_toolbar_visibilities("horizontal")
 
-        # Make sure we ended up with sensible defaults
+        # Make sure we ended up with sensible defaults. The flexible space is a
+        # special widget whose resolved id (customizableui-special-springN) isn't
+        # deterministic, so normalize it back to "spring" before comparing.
+        normalized_ids = [
+            "spring" if wid.startswith("customizableui-special-spring") else wid
+            for wid in horiz_tab_ids
+        ]
         self.assertEqual(
-            horiz_tab_ids,
+            normalized_ids,
             [
                 "tabbrowser-tabs",
                 "new-tab-button",
+                "spring",
                 "alltabs-button",
+                "ai-window-toggle",
             ],
             msg="The tabstrip was populated with the expected defaults",
         )
@@ -243,7 +251,7 @@ class TestInitializeVerticalTabs(MarionetteTestCase):
         self.assertEqual(pref_value, "always-show")
 
         # Restart with vertical tabs disabled. We should get the default for horizontal tabs
-        # which is hide-sidebar
+        # which is hide-on-close
 
         fixture_prefs["sidebar.visibility"] = None
         fixture_prefs["sidebar.verticalTabs"] = False
@@ -254,7 +262,7 @@ class TestInitializeVerticalTabs(MarionetteTestCase):
             return Services.prefs.getStringPref("sidebar.visibility", null);
         """
         )
-        self.assertEqual(pref_value, "hide-sidebar")
+        self.assertEqual(pref_value, "hide-on-close")
 
     def test_hide_drag_to_pin_promo_if_horizontal_tabs_pinned(self):
         # Pin a tab using the horizontal tabstrip.

@@ -152,15 +152,10 @@ export class MLEngineParent extends JSProcessActorParent {
    * - 4 => Transformers >= 3.4.0
    * - 5 => Transformers >= 3.5.1
    *
-   * wllama:
-   * - 3 => wllama 2.2.x
-   * - 4 => wllama 2.3.x
-   *
    * @type {Record<string, number>}
    */
   static WASM_MAJOR_VERSION = {
     [lazy.BACKENDS.onnx]: 5,
-    [lazy.BACKENDS.wllama]: 4,
   };
 
   /**
@@ -173,7 +168,6 @@ export class MLEngineParent extends JSProcessActorParent {
    */
   static WASM_FILENAME = {
     [lazy.BACKENDS.onnx]: "ort-wasm-simd-threaded.jsep.wasm",
-    [lazy.BACKENDS.wllama]: "wllama.wasm",
   };
 
   /**
@@ -414,9 +408,6 @@ export class MLEngineParent extends JSProcessActorParent {
       case "MLEngine:GetWorkerConfig":
         return MLEngineParent.getWorkerConfig();
 
-      case "MLEngine:ChooseBestBackend":
-        return MLEngineParent.chooseBestBackend(message.data);
-
       case "MLEngine:DestroyEngineProcess":
         if (this.processKeepAlive) {
           ChromeUtils.addProfilerMarker(
@@ -647,35 +638,6 @@ export class MLEngineParent extends JSProcessActorParent {
       url: "chrome://global/content/ml/MLEngine.worker.mjs",
       options: { type: "module" },
     };
-  }
-
-  /**
-   * Selects the most appropriate backend for the current environment.
-   *
-   * @static
-   * @param {string} backend - Requested backend or an auto-select sentinel.
-   * @returns {string} Resolved backend identifier.
-   */
-  static chooseBestBackend(backend) {
-    let bestBackend = backend;
-    if (backend === lazy.BACKENDS.bestLlama) {
-      bestBackend = lazy.BACKENDS.wllama;
-      if (lazy.mlUtils?.canUseLlamaCpp()) {
-        bestBackend = lazy.BACKENDS.llamaCpp;
-      }
-
-      lazy.console.debug(
-        `The best available llama backend detected for this machine is ${bestBackend}`
-      );
-    }
-
-    ChromeUtils.addProfilerMarker(
-      "MLEngineParent",
-      undefined,
-      `Backend selected: ${bestBackend} (requested: ${backend})`
-    );
-
-    return bestBackend;
   }
 
   /**
@@ -1703,6 +1665,12 @@ export class MLEngine {
     let tokenCount = 0;
     let characterCount = 0;
 
+    // Only generated (non-prompt) chunks are counted for cadence telemetry.
+    let firstChunkTime = null;
+    let lastChunkTime = null;
+    let generatedChunkCount = 0;
+    let interChunkTimeTotal = 0;
+
     let chunkPromise = responseChunkResolvers.getAndAdvanceChunkPromise();
     let chunkStartTime = ChromeUtils.now();
 
@@ -1718,6 +1686,18 @@ export class MLEngine {
         );
         tokenCount += chunk.metadata.tokens?.length ?? 0;
         characterCount += chunk.metadata.text?.length ?? 0;
+
+        if (!chunk.metadata.isPrompt) {
+          const now = ChromeUtils.now();
+          if (firstChunkTime === null) {
+            firstChunkTime = now;
+          } else {
+            interChunkTimeTotal += now - lastChunkTime;
+          }
+          lastChunkTime = now;
+          generatedChunkCount++;
+        }
+
         yield {
           text: chunk.metadata.text,
           tokens: chunk.metadata.tokens,
@@ -1804,6 +1784,12 @@ export class MLEngine {
       backend: this.pipelineOptions.backend,
       tokenCount,
       characterCount,
+      timeToFirstChunk:
+        firstChunkTime === null ? null : firstChunkTime - startTime,
+      averageChunkTime:
+        generatedChunkCount > 1
+          ? interChunkTimeTotal / (generatedChunkCount - 1)
+          : null,
     });
 
     return result;

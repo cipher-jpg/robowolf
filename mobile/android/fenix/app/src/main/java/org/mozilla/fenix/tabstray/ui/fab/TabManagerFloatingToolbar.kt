@@ -5,6 +5,7 @@
 package org.mozilla.fenix.tabstray.ui.fab
 
 import androidx.annotation.DrawableRes
+import androidx.annotation.VisibleForTesting
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -49,6 +50,7 @@ import mozilla.components.compose.base.text.Text
 import org.mozilla.fenix.R
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
 import org.mozilla.fenix.tabstray.data.createTab
+import org.mozilla.fenix.tabstray.redux.action.TabGroupAction
 import org.mozilla.fenix.tabstray.redux.action.TabsTrayAction
 import org.mozilla.fenix.tabstray.redux.state.Page
 import org.mozilla.fenix.tabstray.redux.state.TabsTrayState
@@ -100,25 +102,30 @@ internal fun TabManagerFloatingToolbar(
                 modifier = Modifier.weight(1f),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                FloatingToolbarActions(
-                    state = state,
-                    onMenuShown = {
-                        onAction(TabsTrayAction.ThreeDotMenuShown)
-                    },
-                    onEnterMultiselectModeClick = {
-                        onAction(TabsTrayAction.EnterSelectMode)
-                    },
-                    onSelectAllTabsClick = {
-                        onAction(TabsTrayAction.SelectAllNormalTabs)
-                    },
-                    onTabSettingsClick = onTabSettingsClick,
-                    onRecentlyClosedClick = onRecentlyClosedClick,
-                    onAccountSettingsClick = onAccountSettingsClick,
-                    onDeleteAllTabsClick = onDeleteAllTabsClick,
-                    onSearchClicked = {
-                        onAction(TabsTrayAction.TabSearchClicked)
-                    },
-                )
+                if (state.selectedPage != Page.TabGroups) {
+                    FloatingToolbarActions(
+                        state = state,
+                        onMenuShown = {
+                            onAction(TabsTrayAction.ThreeDotMenuShown)
+                        },
+                        onEnterMultiselectModeClick = {
+                            onAction(TabsTrayAction.EnterSelectMode)
+                        },
+                        onSelectAllTabsClick = {
+                            onAction(TabsTrayAction.SelectAllNormalTabs)
+                        },
+                        onTabSettingsClick = onTabSettingsClick,
+                        onRecentlyClosedClick = onRecentlyClosedClick,
+                        onNewTabGroupClick = {
+                            onAction(TabGroupAction.NewTabGroupMenuClicked)
+                        },
+                        onAccountSettingsClick = onAccountSettingsClick,
+                        onDeleteAllTabsClick = onDeleteAllTabsClick,
+                        onSearchClicked = {
+                            onAction(TabsTrayAction.TabSearchClicked)
+                        },
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(FirefoxTheme.layout.space.static100))
@@ -132,6 +139,9 @@ internal fun TabManagerFloatingToolbar(
                     onOpenNewNormalTabClicked = onOpenNewNormalTabClicked,
                     onOpenNewPrivateTabClicked = onOpenNewPrivateTabClicked,
                     onSyncedTabsFabClicked = onSyncedTabsFabClicked,
+                    onTabGroupsFabClicked = {
+                        onAction(TabGroupAction.NewTabGroupFabClicked)
+                    },
                 )
             }
         }
@@ -147,6 +157,7 @@ private fun FloatingToolbarActions(
     onSelectAllTabsClick: () -> Unit,
     onTabSettingsClick: () -> Unit,
     onRecentlyClosedClick: () -> Unit,
+    onNewTabGroupClick: () -> Unit,
     onAccountSettingsClick: () -> Unit,
     onDeleteAllTabsClick: () -> Unit,
     onSearchClicked: () -> Unit,
@@ -158,9 +169,11 @@ private fun FloatingToolbarActions(
         selectedPage = state.selectedPage,
         normalTabCount = state.normalTabsState.items.size,
         privateTabCount = state.privateBrowsing.tabs.size,
+        homepageAsNewTabEnabled = state.config.homepageAsNewTabEnabled,
         onAccountSettingsClick = onAccountSettingsClick,
         onTabSettingsClick = onTabSettingsClick,
         onRecentlyClosedClick = onRecentlyClosedClick,
+        onNewTabGroupClick = onNewTabGroupClick,
         onEnterMultiselectModeClick = onEnterMultiselectModeClick,
         onSelectAllTabsClick = onSelectAllTabsClick,
         onDeleteAllTabsClick = { showCloseAllTabsDialog = true },
@@ -226,12 +239,14 @@ private fun FloatingToolbarActions(
     }
 }
 
+@VisibleForTesting
 @Composable
-private fun FloatingToolbarFAB(
+internal fun FloatingToolbarFAB(
     state: TabsTrayState,
     onOpenNewNormalTabClicked: () -> Unit,
     onOpenNewPrivateTabClicked: () -> Unit,
     onSyncedTabsFabClicked: () -> Unit,
+    onTabGroupsFabClicked: () -> Unit,
 ) {
     val isSyncDisabled = !state.sync.isSignedIn || state.sync.syncedTabs.any {
         it is SyncedTabsListItem.Error && it.errorText == stringResource(
@@ -259,7 +274,11 @@ private fun FloatingToolbarFAB(
             onClick = onOpenNewPrivateTabClicked
         }
 
-        Page.TabGroups -> return
+        Page.TabGroups -> {
+            icon = iconsR.drawable.mozac_ic_plus_24
+            contentDescription = stringResource(id = R.string.create_tab_group_content_description)
+            onClick = onTabGroupsFabClicked
+        }
 
         Page.SyncedTabs -> {
             icon = iconsR.drawable.mozac_ic_sync_24
@@ -343,8 +362,10 @@ private fun generateMenuItems(
     selectedPage: Page,
     normalTabCount: Int,
     privateTabCount: Int,
+    homepageAsNewTabEnabled: Boolean,
     onTabSettingsClick: () -> Unit,
     onRecentlyClosedClick: () -> Unit,
+    onNewTabGroupClick: () -> Unit,
     onEnterMultiselectModeClick: () -> Unit,
     onSelectAllTabsClick: () -> Unit,
     onDeleteAllTabsClick: () -> Unit,
@@ -368,6 +389,12 @@ private fun generateMenuItems(
         testTag = TabsTrayTestTag.RECENTLY_CLOSED_TABS,
         onClick = onRecentlyClosedClick,
     )
+    val newTabGroupItem = MenuItem.IconItem(
+        text = Text.Resource(R.string.add_to_new_tab_group_title),
+        drawableRes = iconsR.drawable.mozac_ic_tab_group_24,
+        testTag = TabsTrayTestTag.NEW_TAB_GROUP,
+        onClick = onNewTabGroupClick,
+    )
     val tabSettingsItem = MenuItem.IconItem(
         text = Text.Resource(R.string.tab_tray_menu_tab_settings),
         drawableRes = iconsR.drawable.mozac_ic_settings_24,
@@ -388,16 +415,22 @@ private fun generateMenuItems(
         onClick = onAccountSettingsClick,
     )
     return when {
-        (selectedPage == Page.NormalTabs && normalTabCount == 0) ||
-            (selectedPage == Page.PrivateTabs && privateTabCount == 0) -> listOf(
+        selectedPage == Page.NormalTabs && normalTabCount == 0 -> listOfNotNull(
+            recentlyClosedTabsItem,
+            newTabGroupItem.takeIf { homepageAsNewTabEnabled },
+            tabSettingsItem,
+        )
+
+        selectedPage == Page.PrivateTabs && privateTabCount == 0 -> listOf(
             recentlyClosedTabsItem,
             tabSettingsItem,
         )
 
-        selectedPage == Page.NormalTabs -> listOf(
+        selectedPage == Page.NormalTabs -> listOfNotNull(
             enterSelectModeItem,
             selectAllTabsItem,
             recentlyClosedTabsItem,
+            newTabGroupItem.takeIf { homepageAsNewTabEnabled },
             tabSettingsItem,
             deleteAllTabsItem,
         )

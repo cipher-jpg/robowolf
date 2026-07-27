@@ -4,18 +4,25 @@
 
 package org.mozilla.fenix.ui.efficiency.tests
 
+import mozilla.components.support.ktx.util.PromptAbuserDetector
+import org.junit.After
+import org.junit.Before
 import org.junit.Ignore
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
+import org.mozilla.fenix.helpers.Constants
 import org.mozilla.fenix.helpers.MockBrowserDataHelper
+import org.mozilla.fenix.helpers.TestAssetHelper
 import org.mozilla.fenix.helpers.TestAssetHelper.firstForeignWebPageAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.pdfFormAsset
 import org.mozilla.fenix.ui.efficiency.helpers.BaseTest
+import org.mozilla.fenix.ui.efficiency.selectors.AddToHomeScreenSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.BookmarksSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.BookmarksSelectors.DELETE_BOOKMARK_BUTTON
 import org.mozilla.fenix.ui.efficiency.selectors.BrowserPageSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.CollectionsSelectors
+import org.mozilla.fenix.ui.efficiency.selectors.DownloadsSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.HistorySelectors.NAVIGATE_BACK_BUTTON
 import org.mozilla.fenix.ui.efficiency.selectors.HomeSelectors
 import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors
@@ -32,6 +39,16 @@ class MainMenuTest : BaseTest(
 ) {
 
     private val mockWebServer get() = fenixTestRule.mockWebServer
+
+    @Before
+    fun disablePromptAbuserDetector() {
+        PromptAbuserDetector.validationsEnabled = false
+    }
+
+    @After
+    fun restorePromptAbuserDetector() {
+        PromptAbuserDetector.validationsEnabled = true
+    }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080168
     @SmokeTest
@@ -260,6 +277,7 @@ class MainMenuTest : BaseTest(
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080111
     @SmokeTest
+    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2056644")
     @Test
     fun verifyTheTranslatePageSubMenuOptionTest() {
         val testPage = mockWebServer.firstForeignWebPageAsset
@@ -269,7 +287,7 @@ class MainMenuTest : BaseTest(
             .mozClick(MainMenuSelectors.MORE_BUTTON)
             .mozClick(MainMenuSelectors.TRANSLATE_BUTTON)
             .mozClickIfPresent(BrowserPageSelectors.TRANSLATION_SHEET_TRANSLATE_BUTTON)
-            .mozWaitUntilAbsent(BrowserPageSelectors.TRANSLATION_SHEET_TRANSLATE_BUTTON)
+            .mozWaitUntilAbsent(BrowserPageSelectors.TRANSLATION_SHEET_TRANSLATE_BUTTON, TestAssetHelper.waitingTimeLong)
         on.browserPage
             .openMainMenu()
             .mozClick(MainMenuSelectors.MORE_BUTTON)
@@ -281,5 +299,65 @@ class MainMenuTest : BaseTest(
             .openMainMenu()
             .mozClick(MainMenuSelectors.MORE_BUTTON)
             .mozVerify(MainMenuSelectors.TRANSLATE_BUTTON)
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080113
+    @SmokeTest
+    @Test
+    fun verifyTheAddToShortcutsSubMenuOptionTest() {
+        val testPage = mockWebServer.getGenericAsset(1)
+
+        on.browserPage.navigateToPage(testPage.url.toString())
+        on.mainMenu.navigateToPage()
+            .mozClick(MainMenuSelectors.MORE_BUTTON)
+            .mozClick(MainMenuSelectors.ADD_TO_SHORTCUTS_BUTTON)
+        on.browserPage.navigateToPage()
+            .mozVerifyElementsByGroup("addedToShortcutsSnackbar")
+        on.home.navigateToPage()
+            .mozVerify(HomeSelectors.TOP_SITE_ITEM(testPage.title))
+            .mozClick(HomeSelectors.TOP_SITE_ITEM(testPage.title))
+        on.browserPage.navigateToPage()
+        on.mainMenu.navigateToPage()
+            .mozClick(MainMenuSelectors.MORE_BUTTON)
+            .mozClick(MainMenuSelectors.REMOVE_FROM_SHORTCUTS_BUTTON)
+        on.browserPage.navigateToPage()
+        on.home.navigateToPage()
+            .mozWaitUntilAbsent(HomeSelectors.TOP_SITE_ITEM(testPage.title))
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080114
+    @SmokeTest
+    @Test
+    fun verifyTheAddToHomeScreenSubMenuOptionTest() {
+        val testPage = mockWebServer.getGenericAsset(1)
+
+        on.browserPage.navigateToPage(testPage.url.toString())
+        on.addToHomescreen.navigateToPage()
+            .mozClickIfPresent(AddToHomeScreenSelectors.CANCEL_DIALOG_BUTTON)
+        on.browserPage.navigateToPage()
+        on.addToHomescreen.navigateToPage()
+            .mozClickIfPresent(AddToHomeScreenSelectors.ADD_DIALOG_BUTTON)
+            .mozClick(AddToHomeScreenSelectors.SYSTEM_PROMPT_ADD_TO_HOME_SCREEN_BUTTON)
+            .mozClickIfPresent(AddToHomeScreenSelectors.HOME_SCREEN_SHORTCUT(testPage.title))
+        on.browserPage.navigateToPage()
+            .verifyPageContent(testPage.content)
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080118
+    @SmokeTest
+    @Test
+    fun verifyTheSaveAsPDFSubMenuOptionTest() {
+        val testPage = mockWebServer.getGenericAsset(1)
+
+        on.browserPage.navigateToPage(testPage.url.toString())
+        on.mainMenu.navigateToPage()
+            .mozClick(MainMenuSelectors.MORE_BUTTON)
+            .mozClick(MainMenuSelectors.SAVE_AS_PDF_BUTTON)
+        on.downloads
+            .mozVerifyElementsByGroup("downloadDialog")
+            .mozClick(DownloadsSelectors.DOWNLOAD_DIALOG_CONFIRM_BUTTON)
+            .mozVerify(DownloadsSelectors.DOWNLOAD_COMPLETE_SNACKBAR, timeout = 15_000)
+            .mozClick(DownloadsSelectors.DOWNLOAD_SNACK_BAR_OPEN_BUTTON)
+            .mozVerifyFileOpensInExternalApp(Constants.PackageName.GOOGLE_DOCS)
     }
 }

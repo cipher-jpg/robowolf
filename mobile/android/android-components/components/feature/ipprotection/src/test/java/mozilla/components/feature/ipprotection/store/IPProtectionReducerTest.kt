@@ -127,10 +127,36 @@ class IPProtectionReducerTest {
     }
 
     @Test
-    fun `WHEN ActivationFailed is dispatched THEN activate is cleared`() {
+    fun `WHEN ToggleFailed is dispatched THEN activate is cleared`() {
         val state = buildIPProtectionState().copy(activate = true)
         assertEquals(
             state.copy(activate = null),
+            iPProtectionReducer(state, IPProtectionAction.ToggleFailed),
+        )
+    }
+
+    @Test
+    fun `GIVEN user has already finished auth flow successfully but service is still unauthenticated WHEN ToggleFailed is dispatched THEN activate is cleared and account is set for another check`() {
+        val state = buildIPProtectionState().copy(
+            activate = true,
+            accountState = AccountState(status = AccountStatus.EnrolledAndEntitled),
+            serviceStatus = ServiceState.Unauthenticated,
+        )
+        assertEquals(
+            state.copy(activate = null, accountState = state.accountState.copy(status = AccountStatus.TryAgain)),
+            iPProtectionReducer(state, IPProtectionAction.ToggleFailed),
+        )
+    }
+
+    @Test
+    fun `GIVEN user is entitled and service is ready WHEN ToggleFailed is dispatched THEN activate is cleared and account does not do extra checks`() {
+        val state = buildIPProtectionState().copy(
+            activate = true,
+            accountState = AccountState(status = AccountStatus.EnrolledAndEntitled),
+            serviceStatus = ServiceState.Ready,
+        )
+        assertEquals(
+            state.copy(activate = null, accountState = state.accountState),
             iPProtectionReducer(state, IPProtectionAction.ToggleFailed),
         )
     }
@@ -371,6 +397,19 @@ class IPProtectionReducerTest {
         // The account itself is valid, but the VPN scope still needs to be authorized.
         val state = buildIPProtectionState(
             accountStatus = AccountStatus.NeedsAuthorization,
+            serviceStatus = ServiceState.Unauthenticated,
+        )
+
+        val resultState = iPProtectionReducer(state, IPProtectionAction.Toggle)
+
+        assertEquals(AccountStatus.RequestingAuthorization, resultState.accountState.status)
+    }
+
+    @Test
+    fun `WHEN Toggle is dispatched while unauthenticated and the account check is in progress THEN authorization is still requested`() {
+        // The account itself is valid, but we don't know yet if the VPN scope needs to be authorized.
+        val state = buildIPProtectionState(
+            accountStatus = AccountStatus.TryAgain,
             serviceStatus = ServiceState.Unauthenticated,
         )
 

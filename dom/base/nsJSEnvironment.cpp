@@ -8,6 +8,7 @@
 #include "mozilla/HoldDropJSObjects.h"
 #include "nsAtom.h"
 #include "nsCOMPtr.h"
+#include "nsCRT.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
 #include "nsDOMCID.h"
@@ -802,7 +803,7 @@ nsresult nsJSContext::AddSupportsPrimitiveTojsvals(JSContext* aCx,
 
       p->GetData(&data);
 
-      *aArgv = ::JS_NumberValue(data);
+      aArgv->setNumber(data);
 
       break;
     }
@@ -814,7 +815,7 @@ nsresult nsJSContext::AddSupportsPrimitiveTojsvals(JSContext* aCx,
 
       p->GetData(&data);
 
-      *aArgv = ::JS_NumberValue(data);
+      aArgv->setNumber(data);
 
       break;
     }

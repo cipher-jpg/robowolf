@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "debugger/Frame-inl.h"
-
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, MOZ_ASSERT_IF, MOZ_CRASH
 #include "mozilla/HashTable.h"   // for HashMapEntry
 #include "mozilla/Maybe.h"       // for Maybe
@@ -73,7 +71,8 @@
 #include "wasm/WasmJS.h"           // for WasmInstanceObject
 #include "wasm/WasmStacks.h"       // for wasm::ContStack
 
-#include "debugger/Debugger-inl.h"    // for Debugger::fromJSObject
+#include "debugger/Debugger-inl.h"  // for Debugger::fromJSObject
+#include "debugger/Frame-inl.h"
 #include "gc/WeakMap-inl.h"           // for WeakMap::remove
 #include "vm/Compartment-inl.h"       // for Compartment::wrap
 #include "vm/JSContext-inl.h"         // for JSContext::check
@@ -991,7 +990,7 @@ static WithEnvironmentObject* CreateBindingsEnv(
   JS::Rooted<JS::Value> val(cx);
   for (size_t i = 0; i < bindingKeys.length(); i++) {
     id = bindingKeys[i];
-    cx->markId(id);
+    cx->recordRefToId(id);
     val = bindingValues[i];
     if (!cx->compartment()->wrap(cx, &val) ||
         !NativeDefineDataProperty(cx, bindingsObj, id, val, 0)) {

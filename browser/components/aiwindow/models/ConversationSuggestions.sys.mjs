@@ -19,6 +19,14 @@ import { sanitizeUntrustedContent } from "moz-src:///browser/components/aiwindow
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  HISTORY:
+    "moz-src:///browser/components/aiwindow/models/memories/MemoriesConstants.sys.mjs",
+  MEMORY_FILTER_COMPARATOR:
+    "moz-src:///browser/components/aiwindow/services/MemoryStoreConstants.sys.mjs",
+  MEMORY_SENSITIVITY_CATEGORY_NOT_SENSITIVE:
+    "moz-src:///browser/components/aiwindow/models/memories/MemoriesConstants.sys.mjs",
+  SESSION:
+    "moz-src:///browser/components/aiwindow/models/memories/MemoriesConstants.sys.mjs",
   buildConversation:
     "moz-src:///browser/components/aiwindow/models/PromptLoader.sys.mjs",
   loadPrompt:
@@ -27,6 +35,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 // Max number of memories to include in prompts
 const MAX_NUM_MEMORIES = 8;
+
+// Max number of memories to surface as "Pick up where you left off" pills.
+// The New Tab UI maintains a fixed pill count regardless; this only bounds how
+// many memory-backed candidates the models layer returns.
+const MAX_NUM_MEMORIES_FOR_RESUME_ACTIVITY = 3;
 
 /**
  * Helper to trim conversation history to recent messages, dropping empty messages, tool calls and responses
@@ -110,18 +123,34 @@ const formatJson = obj => {
 
 export const NewTabStarterGenerator = {
   writingPrompts: [
-    "Write a first draft",
-    "Improve writing",
-    "Proofread a message",
+    "aiwindow-starter-writing-first-draft",
+    "aiwindow-starter-writing-improve",
+    "aiwindow-starter-writing-proofread",
   ],
 
-  planningPrompts: ["Simplify a topic", "Brainstorm ideas", "Help make a plan"],
+  planningPrompts: [
+    "aiwindow-starter-planning-simplify",
+    "aiwindow-starter-planning-brainstorm",
+    "aiwindow-starter-planning-plan",
+  ],
 
   // TODO: discuss with design about updating phrasing to "pages" instead of "tabs"
   browsingPrompts: [
-    { text: "Find tabs in history", minTabs: 0, needsHistory: true },
-    { text: "Summarize tabs", minTabs: 1, needsHistory: false },
-    { text: "Compare tabs", minTabs: 2, needsHistory: false },
+    {
+      id: "aiwindow-starter-browsing-history",
+      minTabs: 0,
+      needsHistory: true,
+    },
+    {
+      id: "aiwindow-starter-browsing-summarize",
+      minTabs: 1,
+      needsHistory: false,
+    },
+    {
+      id: "aiwindow-starter-browsing-compare",
+      minTabs: 2,
+      needsHistory: false,
+    },
   ],
 
   getRandom(arr) {
@@ -129,13 +158,13 @@ export const NewTabStarterGenerator = {
   },
 
   /**
-   * Generate conversation starter prompts based on number of open tabs and browsing history prefs.
+   * Generate conversation starter prompt l10n ids based on number of open tabs and browsing history prefs.
    * "places.history.enabled" covers "Remember browsing and download history" while
    * "browser.privatebrowsing.autostart" covers "Always use private mode" and "Never remember history".
    * We need to check both prefs to cover all cases where history can be disabled.
    *
    * @param {number} tabCount - number of open tabs
-   * @returns {Promise<Array>} Array of {text, type} suggestion objects
+   * @returns {Array<{l10nId: string, type: string}>} suggestion objects with l10nId and type
    */
   async getPrompts(tabCount) {
     const historyEnabled = Services.prefs.getBoolPref("places.history.enabled");
@@ -154,16 +183,12 @@ export const NewTabStarterGenerator = {
       ? this.getRandom(validBrowsingPrompts)
       : null;
 
-    const prompts = [
-      { text: writingPrompt, type: "chat" },
-      { text: planningPrompt, type: "chat" },
-    ];
-
+    const ids = [writingPrompt, planningPrompt];
     if (browsingPrompt) {
-      prompts.push({ text: browsingPrompt.text, type: "chat" });
+      ids.push(browsingPrompt.id);
     }
 
-    return prompts;
+    return ids.map(l10nId => ({ l10nId, type: "chat" }));
   },
 };
 
@@ -237,6 +262,7 @@ export async function generateConversationStartersSidebar(
       open_tabs: openedTabs,
       n: String(n),
       date: today,
+      locale: Services.locale.appLocaleAsBCP47,
       assistant_limitations: assistantLimitations,
     });
 
@@ -391,3 +417,50 @@ export const MemoriesGetterForSuggestionPrompts = {
     return memorySummaries;
   },
 };
+
+/**
+ * Gets memories suitable for "Pick up where you left off" suggestions.
+ * Selects memories that are not sensitive and have associated browsing history.
+ * Sorted by frecency and updated_at, returning the most frecent/recently updated memories.
+ *
+ * @param {number} count - Maximum number of memories to return
+ * @returns {Promise<Array<object>>}
+ */
+export async function getMemoriesForResumeActivityConversationStarter(
+  count = MAX_NUM_MEMORIES_FOR_RESUME_ACTIVITY
+) {
+  let attributeFilters = [
+    {
+      field: "sensitivity_category",
+      comparator: lazy.MEMORY_FILTER_COMPARATOR.EQUAL_TO,
+      value: lazy.MEMORY_SENSITIVITY_CATEGORY_NOT_SENSITIVE,
+    },
+    {
+      field: "sources",
+      comparator: lazy.MEMORY_FILTER_COMPARATOR.SOME,
+      value: [lazy.HISTORY, lazy.SESSION],
+    },
+  ];
+  let memories = await MemoriesManager.getMemoriesByAttribute(attributeFilters);
+
+  // Filter out memories that don't have any associated history.
+  // The case of HISTORY as a source, but no history_source_ids,
+  // come from v1 memories, before lineage was tracked.
+  memories = memories.filter(memory => {
+    const sourceIds = memory?.source_ids ?? {};
+    const hasHistory =
+      Array.isArray(sourceIds.history_source_ids) &&
+      !!sourceIds.history_source_ids.length;
+    return hasHistory;
+  });
+
+  // Re-sort by frecency (decreasing) and updated_at (most recent first)
+  memories.sort(
+    (a, b) =>
+      (b.frecency ?? 0) - (a.frecency ?? 0) ||
+      (b.updated_at ?? 0) - (a.updated_at ?? 0)
+  );
+
+  // Slice to requested count
+  return memories.slice(0, count);
+}

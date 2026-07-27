@@ -15,6 +15,10 @@ import {
 import { TippyTopProvider } from "resource:///modules/topsites/TippyTopProvider.sys.mjs";
 import { insertPinned } from "resource:///modules/topsites/TopSites.sys.mjs";
 import { TOP_SITES_MAX_SITES_PER_ROW } from "resource:///modules/topsites/constants.mjs";
+// @backward-compat { version 154 }
+// Sourced from Reducers for its fallback shim. When 154 hits Release, import
+// TOP_SITES_MAX_ROWS from the constants.mjs import above instead.
+import { TOP_SITES_MAX_ROWS } from "resource://newtab/common/Reducers.sys.mjs";
 import { Dedupe } from "resource:///modules/Dedupe.sys.mjs";
 
 import {
@@ -2226,7 +2230,6 @@ export class TopSitesFeed {
     }
     pinnedLinks._links = next;
     pinnedLinks.save();
-    this.pinnedCache.expire();
   }
 
   /**
@@ -2296,8 +2299,19 @@ export class TopSitesFeed {
       // position instead of jumping to the end.
       pins.splice(existingIndex, 0, toPin);
     } else {
-      // A fresh pin (context-menu / search) appends to the group.
+      // A fresh pin (context-menu / search / add button) appends to the group.
       pins.push(toPin);
+      // Grouped-pins growth (classic mode grows in pin() instead). Adding to the
+      // group pushes the last frecency tile off the visible grid. If the grid is
+      // already full of pins there's nothing to push off, so grow by a row instead.
+      const prefs = this.store.getState().Prefs.values;
+      const { rows } = this.store.getState().TopSites;
+      if (
+        rows[getTopSitesCount(prefs) - 1]?.isPinned &&
+        prefs[ROWS_PREF] < TOP_SITES_MAX_ROWS
+      ) {
+        this.store.dispatch(ac.SetPref(ROWS_PREF, prefs[ROWS_PREF] + 1));
+      }
     }
     this._saveGroupedPins(pins);
 
@@ -2320,10 +2334,39 @@ export class TopSitesFeed {
    */
   async pin(action) {
     let { site, index } = action.data;
+    // Grow keys on the requested slot, not the sponsor-adjusted pin position.
+    const requestedIndex = index;
     index = this._adjustPinIndexForSponsoredLinks(site, index);
     // If valid index provided, pin at that position
     if (index >= 0) {
-      await this._pinSiteAt(site, index);
+      const prefs = this.store.getState().Prefs.values;
+      // Classic add button on a full row: replace the last visible frecency tile,
+      // matching how a grouped pin pushes the trailing frecency tile off the grid.
+      // Fall back to growing a row only when there's no organic tile to replace.
+      const count = getTopSitesCount(prefs);
+      const pinsPastGrid = !this._groupedPinsEnabled && requestedIndex >= count;
+      let evictIndex = -1;
+      if (pinsPastGrid) {
+        const { rows } = this.store.getState().TopSites;
+        for (let i = count - 1; i >= 0; i--) {
+          const link = rows[i];
+          if (link && !link.isPinned && !link.sponsored_position) {
+            evictIndex = i;
+            break;
+          }
+        }
+      }
+      if (evictIndex >= 0) {
+        await this._pinSiteAt(
+          site,
+          this._adjustPinIndexForSponsoredLinks(site, evictIndex)
+        );
+      } else {
+        await this._pinSiteAt(site, index);
+        if (pinsPastGrid && prefs[ROWS_PREF] < TOP_SITES_MAX_ROWS) {
+          this.store.dispatch(ac.SetPref(ROWS_PREF, prefs[ROWS_PREF] + 1));
+        }
+      }
       this._broadcastPinnedSitesUpdated();
     } else {
       // Bug 1458658. If the top site is being pinned from an 'Add a Top Site' option,

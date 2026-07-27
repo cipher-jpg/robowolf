@@ -295,10 +295,13 @@ class DefaultTabManagerController(
             fenixBrowserUseCases.addNewHomepageTab(
                 private = isPrivate,
             )
+            handleNavigateToHome()
         } else {
             navController.popBackStack()
             navController.navigate(
-                TabManagementFragmentDirections.actionGlobalHome(focusOnAddressBar = true),
+                TabManagementFragmentDirections.actionGlobalHome(
+                    focusOnAddressBar = !settings.enableHomepageTrendingRecentSearch,
+                ),
             )
         }
 

@@ -5,6 +5,7 @@
 #include "CanvasRenderingContext2D.h"
 
 #include <algorithm>
+#include <numbers>
 
 #include "CanvasImageCache.h"
 #include "CanvasUtils.h"
@@ -2594,7 +2595,7 @@ already_AddRefed<CanvasGradient> CanvasRenderingContext2D::CreateRadialGradient(
 
 already_AddRefed<CanvasGradient> CanvasRenderingContext2D::CreateConicGradient(
     double aAngle, double aCx, double aCy) {
-  double adjustedStartAngle = aAngle + M_PI / 2.0;
+  double adjustedStartAngle = aAngle + std::numbers::pi / 2.0;
   return MakeAndAddRef<CanvasConicGradient>(this, adjustedStartAngle,
                                             Point(aCx, aCy));
 }
@@ -3034,7 +3035,7 @@ void CanvasRenderingContext2D::SetLetterSpacing(
   Maybe<float> value = ParseSpacing(aLetterSpacing, normalized);
   if (value) {
     CurrentState().letterSpacing = *value;
-    CurrentState().letterSpacingStr = normalized;
+    CurrentState().letterSpacingStr = std::move(normalized);
   }
 }
 
@@ -3051,7 +3052,7 @@ void CanvasRenderingContext2D::SetWordSpacing(const nsACString& aWordSpacing) {
   Maybe<float> value = ParseSpacing(aWordSpacing, normalized);
   if (value) {
     CurrentState().wordSpacing = *value;
-    CurrentState().wordSpacingStr = normalized;
+    CurrentState().wordSpacingStr = std::move(normalized);
   }
 }
 
@@ -3112,7 +3113,7 @@ Maybe<float> CanvasRenderingContext2D::ParseSpacing(const nsACString& aSpacing,
     }
     value = style->StyleText()->mLetterSpacing.AsLength().ToCSSPixels();
   }
-  aNormalized = normalized;
+  aNormalized = std::move(normalized);
   return Some(value);
 }
 
@@ -5766,7 +5767,7 @@ static Matrix ComputeRotationMatrix(gfxFloat aRotatedWidth,
       aDegrees == VideoRotation::kDegree_270) {
     std::swap(shiftVideoCenterToOrigin.x, shiftVideoCenterToOrigin.y);
   }
-  auto angle = static_cast<double>(aDegrees) / 180.0 * M_PI;
+  auto angle = static_cast<double>(aDegrees) / 180.0 * std::numbers::pi;
   Matrix rotation = Matrix::Rotation(static_cast<gfx::Float>(angle));
   Point shiftLeftTopToOrigin(aRotatedWidth / 2.0, aRotatedHeight / 2.0);
   return rotation.PreTranslate(shiftVideoCenterToOrigin)

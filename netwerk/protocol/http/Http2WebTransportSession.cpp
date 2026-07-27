@@ -3,17 +3,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
+#include "Http2WebTransportSession.h"
 
 #include "Capsule.h"
 #include "CapsuleEncoder.h"
-#include "Http2WebTransportSession.h"
-#include "Http2WebTransportStream.h"
 #include "Http2Session.h"
+#include "Http2WebTransportStream.h"
+#include "HttpLog.h"
 #include "mozilla/net/NeqoHttp3Conn.h"
-#include "nsIWebTransport.h"
-#include "nsIOService.h"
 #include "nsHttp.h"
+#include "nsIOService.h"
+#include "nsIWebTransport.h"
 
 namespace mozilla::net {
 
@@ -73,6 +73,15 @@ void Http2WebTransportSessionImpl::CloseSession(uint32_t aStatus,
 uint64_t Http2WebTransportSessionImpl::GetStreamId() const { return mStreamId; }
 
 void Http2WebTransportSessionImpl::GetMaxDatagramSize() {}
+
+nsresult Http2WebTransportSessionImpl::ExportKeyingMaterial(
+    const nsTArray<uint8_t>& aLabel, const nsTArray<uint8_t>& aContext,
+    nsTArray<uint8_t>& aKeyingMaterial) {
+  // TODO: Implement exportKeyingMaterial for HTTP/2 WebTransport
+  // HTTP/2 WebTransport over TLS should support this via the underlying TLS
+  // connection, but the implementation is not yet available.
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
 
 void Http2WebTransportSessionImpl::SendDatagram(nsTArray<uint8_t>&& aData,
                                                 uint64_t aTrackingId) {

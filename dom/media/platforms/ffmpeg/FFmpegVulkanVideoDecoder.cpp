@@ -68,8 +68,14 @@ FFmpegVideoDecoder<
 void FFmpegVideoDecoder<LIBAV_VER>::FFmpegVulkanVideoDecoder::Cleanup() {
   FFMPEGV_LOG("FFmpegVulkanVideoDecoder::Cleanup()");
   if (mDevice != VK_NULL_HANDLE) {
-    if (mDeviceWaitIdle) {
-      mDeviceWaitIdle(mDevice);
+    // Wait on per-decoder copy fences instead of vkDeviceWaitIdle, so we
+    // don't stall the shared VkDevice and block other decoders.
+    if (mWaitForFences) {
+      for (uint32_t qi = 0; qi < mCopyQueueCount; qi++) {
+        if (mCopyFence[qi] != VK_NULL_HANDLE) {
+          mWaitForFences(mDevice, 1, &mCopyFence[qi], VK_TRUE, UINT64_MAX);
+        }
+      }
     }
     for (uint32_t qi = 0; qi < mCopyQueueCount; qi++) {
       if ((mCopyCmdBuf[qi] != VK_NULL_HANDLE) &&
@@ -243,7 +249,6 @@ void FFmpegVideoDecoder<
   load(mQueueSubmit, "vkQueueSubmit");
   load(mCmdPipelineBarrier, "vkCmdPipelineBarrier");
   load(mCmdCopyImage, "vkCmdCopyImage");
-  load(mDeviceWaitIdle, "vkDeviceWaitIdle");
 
   load(mCreateImage, "vkCreateImage");
   load(mDestroyImage, "vkDestroyImage");
@@ -425,13 +430,6 @@ void FFmpegVideoDecoder<LIBAV_VER>::FFmpegVulkanVideoDecoder::InitDrmModifiers(
   if (mDrmModifiers.empty()) {
     mDrmModifiers.push_back(DRM_FORMAT_MOD_LINEAR);
     FFMPEGV_LOG("[VULKAN] No suitable modifiers found, using LINEAR");
-  }
-
-  // NVIDIA: query may not expose tiled modifiers, add known-working one if RDD
-  // and GPU share the same device (only when we had a real compositor list).
-  if (aCompositorMods && mNegotiatedCompositorDecoderVendorID == 0x10de &&
-      mDecoderMatchesCompositor && mDrmModifiers[0] == DRM_FORMAT_MOD_LINEAR) {
-    mDrmModifiers[0] = DRM_FORMAT_MOD_NVIDIA_BLOCK_LINEAR_2D(0, 1, 2, 6, 4);
   }
 
   FFMPEGV_LOG("[VULKAN] Using {} modifiers, first=0x{:x}", mDrmModifiers.size(),

@@ -2,27 +2,28 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "WebTransportLog.h"
+#include "WebTransportSessionProxy.h"
+
 #include "Http3WebTransportSession.h"
 #include "Http3WebTransportStream.h"
 #include "ScopedNSSTypes.h"
-#include "WebTransportSessionProxy.h"
-#include "WebTransportStreamProxy.h"
 #include "WebTransportEventService.h"
+#include "WebTransportLog.h"
+#include "WebTransportStreamProxy.h"
+#include "mozilla/LoadInfo.h"
+#include "mozilla/Logging.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
+#include "nsILoadInfo.h"
 #include "nsIRequest.h"
 #include "nsITransportSecurityInfo.h"
 #include "nsIX509Cert.h"
 #include "nsNetUtil.h"
 #include "nsProxyRelease.h"
-#include "nsILoadInfo.h"
 #include "nsSocketTransportService2.h"
-#include "mozilla/Logging.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs_network.h"
-#include "mozilla/LoadInfo.h"
 
 namespace mozilla::net {
 
@@ -222,6 +223,25 @@ WebTransportSessionProxy::RetargetTo(nsIEventTarget* aTarget) {
 
 NS_IMETHODIMP
 WebTransportSessionProxy::GetStats() { return NS_ERROR_NOT_IMPLEMENTED; }
+NS_IMETHODIMP
+WebTransportSessionProxy::ExportKeyingMaterial(
+    const nsTArray<uint8_t>& aLabel, const nsTArray<uint8_t>& aContext,
+    nsTArray<uint8_t>& aKeyingMaterial) {
+  MOZ_ASSERT(OnSocketThread(),
+             "ExportKeyingMaterial must be called on socket thread");
+
+  RefPtr<WebTransportSessionBase> session;
+  {
+    MutexAutoLock lock(mMutex);
+    if (mState != WebTransportSessionProxyState::ACTIVE ||
+        !mWebTransportSession) {
+      return NS_ERROR_NOT_CONNECTED;
+    }
+    session = mWebTransportSession;
+  }
+
+  return session->ExportKeyingMaterial(aLabel, aContext, aKeyingMaterial);
+}
 
 NS_IMETHODIMP
 WebTransportSessionProxy::CloseSession(uint32_t status,

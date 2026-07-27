@@ -6,6 +6,7 @@
 #define NeqoHttp3Conn_h_
 
 #include <cstdint>
+
 #include "mozilla/net/neqo_glue_ffi_generated.h"
 
 namespace mozilla {
@@ -202,6 +203,17 @@ class NeqoHttp3Conn final {
                                     Maybe<int64_t> aSendOrder) {
     return neqo_http3conn_webtransport_set_sendorder(this, aSessionId,
                                                      aSendOrder.ptrOr(nullptr));
+  }
+
+  nsresult ExportWebTransportKeyingMaterial(
+      uint64_t aSessionId, const nsTArray<uint8_t>& aLabel,
+      const nsTArray<uint8_t>& aContext, nsTArray<uint8_t>& aKeyingMaterial) {
+    constexpr uint32_t kKeyingMaterialLength = 32;
+    aKeyingMaterial.SetLength(kKeyingMaterialLength);
+    return neqo_http3conn_export_keying_material(
+        this, aSessionId, aLabel.Elements(), aLabel.Length(),
+        aContext.Elements(), aContext.Length(), aKeyingMaterial.Elements(),
+        kKeyingMaterialLength);
   }
 
  private:

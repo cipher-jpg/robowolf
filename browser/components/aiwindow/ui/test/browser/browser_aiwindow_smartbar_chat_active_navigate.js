@@ -142,12 +142,71 @@ async function assertChatInputStaysChat(input) {
 
     const { called } = await getStubLoadURLResult(browser);
     Assert.ok(!called, `_loadURL should NOT be called for input "${input}"`);
+
+    // Answer the second chat turn so it can finish streaming. The mock engine
+    // does not auto-respond; without this the request stays pending forever.
+    await mockEngineManager.respondTo({
+      purpose: "chat",
+      response: "Second response from mock.",
+    });
+
+    // Wait for the second chat turn to finish streaming before tearing down, so
+    // the fire-and-forget #fetchAIResponse request isn't aborted mid-flight,
+    // which would surface as an uncaught rejection.
+    await SpecialPowers.spawn(browser, [], async () => {
+      const aiWindow = content.document.querySelector("ai-window");
+      const inputCta = ContentTaskUtils.querySelectorDeep(
+        aiWindow,
+        "#ai-window-smartbar input-cta"
+      );
+      await ContentTaskUtils.waitForCondition(
+        () => inputCta.getAttribute("action") != "stop",
+        "Smartbar should return to idle before teardown"
+      );
+    });
   } finally {
     await BrowserTestUtils.closeWindow(win);
     restoreSignIn();
     mockEngineManager.cleanupMocks();
   }
 }
+
+add_task(async function test_chat_active_locked_action_wins_over_chat() {
+  const restoreSignIn = skipSignIn();
+  const mockEngineManager = new MockEngineManager();
+
+  const win = await openAIWindow();
+  const browser = win.gBrowser.selectedBrowser;
+
+  try {
+    await enterChatActiveState(browser, mockEngineManager);
+
+    await stubOpenSERP(browser);
+
+    // A plain question would normally chat while suppressed; locking "search"
+    // must route the suppressed submit through the manual action instead.
+    await typeInSmartbar(browser, "tell me about cats");
+    await selectExplicitSmartbarAction(browser, "search");
+    await waitForSmartbarAction(browser, "search");
+
+    await submitSmartbar(browser);
+
+    const searchResult = await getStubOpenSERPResult(browser);
+    Assert.ok(
+      searchResult.called,
+      "A locked search action should submit as a search even in chat-active mode"
+    );
+    Assert.equal(
+      searchResult.terms,
+      "tell me about cats",
+      `Should have correct search terms`
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(win);
+    restoreSignIn();
+    mockEngineManager.cleanupMocks();
+  }
+});
 
 add_task(async function test_chat_active_non_url_still_chats() {
   await assertChatInputStaysChat("tell me a story");

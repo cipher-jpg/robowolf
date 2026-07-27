@@ -1611,15 +1611,17 @@ void CodeGenerator::visitCompare(LCompare* comp) {
 void CodeGenerator::visitStrictConstantCompareInt32(
     LStrictConstantCompareInt32* comp) {
   ValueOperand value = ToValue(comp->value());
-  int32_t constantVal = comp->mir()->constant();
-  JSOp op = comp->mir()->jsop();
   Register temp = ToRegister(comp->temp0());
   Register output = ToRegister(comp->output());
 
-  masm.cmp64Set(JSOpToCondition(op, false), value.toRegister64(),
-                Imm64(Int32Value(constantVal).asRawBits()), output);
-  masm.cmp64Set(JSOpToCondition(op, false), value.toRegister64(),
-                Imm64(DoubleValue(constantVal).asRawBits()), temp);
+  int32_t constantVal = comp->mir()->constant();
+  JSOp op = comp->mir()->jsop();
+  MOZ_ASSERT(IsStrictEqualityOp(op));
+
+  masm.testValueSet(JSOpToCondition(op, false), value, Int32Value(constantVal),
+                    output);
+  masm.testValueSet(JSOpToCondition(op, false), value, DoubleValue(constantVal),
+                    temp);
 
   if (op == JSOp::StrictEq) {
     masm.or32(temp, output);
@@ -1628,8 +1630,8 @@ void CodeGenerator::visitStrictConstantCompareInt32(
   }
 
   if (constantVal == 0) {
-    masm.cmp64Set(JSOpToCondition(op, false), value.toRegister64(),
-                  Imm64(DoubleValue(-0.0).asRawBits()), temp);
+    masm.testValueSet(JSOpToCondition(op, false), value, DoubleValue(-0.0),
+                      temp);
 
     if (op == JSOp::StrictEq) {
       masm.or32(temp, output);
@@ -1642,8 +1644,10 @@ void CodeGenerator::visitStrictConstantCompareInt32(
 void CodeGenerator::visitStrictConstantCompareInt32AndBranch(
     LStrictConstantCompareInt32AndBranch* comp) {
   ValueOperand value = ToValue(comp->value());
+
   int32_t constantVal = comp->cmpMir()->constant();
   JSOp op = comp->cmpMir()->jsop();
+  MOZ_ASSERT(IsStrictEqualityOp(op));
   Assembler::Condition cond = JSOpToCondition(op, false);
 
   MBasicBlock* ifTrue = comp->ifTrue();
@@ -1680,19 +1684,24 @@ void CodeGenerator::visitStrictConstantCompareInt32AndBranch(
 void CodeGenerator::visitStrictConstantCompareBoolean(
     LStrictConstantCompareBoolean* comp) {
   ValueOperand value = ToValue(comp->value());
-  bool constantVal = comp->mir()->constant();
-  JSOp op = comp->mir()->jsop();
   Register output = ToRegister(comp->output());
 
-  masm.cmp64Set(JSOpToCondition(op, false), value.toRegister64(),
-                Imm64(BooleanValue(constantVal).asRawBits()), output);
+  bool constantVal = comp->mir()->constant();
+  JSOp op = comp->mir()->jsop();
+  MOZ_ASSERT(IsStrictEqualityOp(op));
+
+  masm.testValueSet(JSOpToCondition(op, false), value,
+                    BooleanValue(constantVal), output);
 }
 
 void CodeGenerator::visitStrictConstantCompareBooleanAndBranch(
     LStrictConstantCompareBooleanAndBranch* comp) {
   ValueOperand value = ToValue(comp->value());
+
   bool constantVal = comp->cmpMir()->constant();
-  Assembler::Condition cond = JSOpToCondition(comp->cmpMir()->jsop(), false);
+  JSOp op = comp->cmpMir()->jsop();
+  MOZ_ASSERT(IsStrictEqualityOp(op));
+  Assembler::Condition cond = JSOpToCondition(op, false);
 
   MBasicBlock* ifTrue = comp->ifTrue();
   MBasicBlock* ifFalse = comp->ifFalse();
@@ -3738,7 +3747,7 @@ void CodeGenerator::visitBinaryValueCache(LBinaryValueCache* lir) {
   TypedOrValueRegister rhs = TypedOrValueRegister(ToValue(lir->rhs()));
   ValueOperand output = ToOutValue(lir);
 
-  JSOp jsop = JSOp(*lir->mirRaw()->toInstruction()->resumePoint()->pc());
+  JSOp jsop = lir->mir()->jsop();
 
   switch (jsop) {
     case JSOp::Add:
@@ -3768,7 +3777,7 @@ void CodeGenerator::visitBinaryBoolCache(LBinaryBoolCache* lir) {
   TypedOrValueRegister rhs = TypedOrValueRegister(ToValue(lir->rhs()));
   Register output = ToRegister(lir->output());
 
-  JSOp jsop = JSOp(*lir->mirRaw()->toInstruction()->resumePoint()->pc());
+  JSOp jsop = lir->mir()->jsop();
 
   switch (jsop) {
     case JSOp::Lt:
@@ -4840,9 +4849,25 @@ void CodeGenerator::visitMegamorphicLoadSlot(LMegamorphicLoadSlot* lir) {
   Register temp3 = ToRegister(lir->temp3());
   ValueOperand output = ToOutValue(lir);
 
-  Label cacheHit;
-  masm.emitMegamorphicCacheLookup(lir->mir()->name(), obj, temp0, temp1, temp2,
-                                  output, &cacheHit);
+  Label done;
+  PropertyKey id = lir->mir()->name();
+  masm.movePropertyKey(id, temp0);
+  masm.move32(Imm32(HashPropertyKeyThreadSafe(id)), temp1);
+
+  MOZ_ASSERT(obj == CallTempReg3);
+  MOZ_ASSERT(temp0 == CallTempReg0);
+  MOZ_ASSERT(temp1 == CallTempReg1);
+  MOZ_ASSERT(temp2 == CallTempReg2);
+#if defined(JS_NUNBOX32)
+  MOZ_ASSERT(output.typeReg() == JSReturnReg_Type);
+  MOZ_ASSERT(output.payloadReg() == JSReturnReg_Data);
+#else
+  MOZ_ASSERT(output.payloadOrValueReg() == JSReturnReg);
+#endif
+  TrampolinePtr megamorphicLoadStub = gen->jitRuntime()->megamorphicLoadStub();
+  masm.call(megamorphicLoadStub);
+  masm.branchPtr(Assembler::Equal, temp2,
+                 Imm32(JitRuntime::MegamorphicLoadStubCacheHit), &done);
 
   Label bail;
   masm.branchIfNonNativeObj(obj, temp0, &bail);
@@ -4867,7 +4892,7 @@ void CodeGenerator::visitMegamorphicLoadSlot(LMegamorphicLoadSlot* lir) {
   masm.Pop(output);
 
   masm.branchIfFalseBool(ReturnReg, &bail);
-  masm.bind(&cacheHit);
+  masm.bind(&done);
 
   bailoutFrom(&bail, lir->snapshot());
 }
@@ -4884,8 +4909,28 @@ void CodeGenerator::visitMegamorphicLoadSlotPermissive(
   masm.movePtr(obj, temp3);
 
   Label done, getter, nullGetter;
-  masm.emitMegamorphicCacheLookup(lir->mir()->name(), obj, temp0, temp1, temp2,
-                                  output, &done, &getter);
+  PropertyKey id = lir->mir()->name();
+  masm.movePropertyKey(id, temp0);
+  masm.move32(Imm32(HashPropertyKeyThreadSafe(id)), temp1);
+
+  MOZ_ASSERT(obj == CallTempReg3);
+  MOZ_ASSERT(temp0 == CallTempReg0);
+  MOZ_ASSERT(temp1 == CallTempReg1);
+  MOZ_ASSERT(temp2 == CallTempReg2);
+#if defined(JS_NUNBOX32)
+  MOZ_ASSERT(output.typeReg() == JSReturnReg_Type);
+  MOZ_ASSERT(output.payloadReg() == JSReturnReg_Data);
+#else
+  MOZ_ASSERT(output.payloadOrValueReg() == JSReturnReg);
+#endif
+  MOZ_ASSERT(!output.aliases(temp3));
+  TrampolinePtr megamorphicLoadStub =
+      gen->jitRuntime()->megamorphicLoadStubPermissive();
+  masm.call(megamorphicLoadStub);
+  masm.branchPtr(Assembler::Equal, temp2,
+                 Imm32(JitRuntime::MegamorphicLoadStubCacheHit), &done);
+  masm.branchPtr(Assembler::Equal, temp2,
+                 Imm32(JitRuntime::MegamorphicLoadStubCacheHitGetter), &getter);
 
   masm.movePropertyKey(lir->mir()->name(), temp1);
   pushArg(temp2);
@@ -4905,7 +4950,6 @@ void CodeGenerator::visitMegamorphicLoadSlotPermissive(
 
   masm.bind(&nullGetter);
   masm.moveValue(UndefinedValue(), output);
-
   masm.bind(&done);
 }
 
@@ -4918,10 +4962,25 @@ void CodeGenerator::visitMegamorphicLoadSlotByValue(
   Register temp2 = ToRegister(lir->temp2());
   ValueOperand output = ToOutValue(lir);
 
-  Label cacheHit, bail;
-  masm.emitMegamorphicCacheLookupByValue(idVal, obj, temp0, temp1, temp2,
-                                         output, &cacheHit);
+  Label done, bail, atomizeMiss;
+  masm.xorPtr(temp2, temp2);
+  masm.loadAtomOrSymbolAndHash(idVal, temp0, temp1, &atomizeMiss);
 
+  MOZ_ASSERT(obj == CallTempReg3);
+  MOZ_ASSERT(temp0 == CallTempReg0);
+  MOZ_ASSERT(temp1 == CallTempReg1);
+  MOZ_ASSERT(temp2 == CallTempReg2);
+#if defined(JS_NUNBOX32)
+  MOZ_ASSERT(output.typeReg() == JSReturnReg_Type);
+  MOZ_ASSERT(output.payloadReg() == JSReturnReg_Data);
+#else
+  MOZ_ASSERT(output.payloadOrValueReg() == JSReturnReg);
+#endif
+  TrampolinePtr megamorphicLoadStub = gen->jitRuntime()->megamorphicLoadStub();
+  masm.call(megamorphicLoadStub);
+  masm.branchTest32(Assembler::NonZero, temp2, Imm32(1), &done);
+
+  masm.bind(&atomizeMiss);
   masm.branchIfNonNativeObj(obj, temp0, &bail);
 
   // idVal will be in vp[0], result will be stored in vp[1].
@@ -4953,7 +5012,7 @@ void CodeGenerator::visitMegamorphicLoadSlotByValue(
   masm.setFramePushed(framePushed);
   masm.Pop(output);
 
-  masm.bind(&cacheHit);
+  masm.bind(&done);
 
   bailoutFrom(&bail, lir->snapshot());
 }
@@ -4965,22 +5024,55 @@ void CodeGenerator::visitMegamorphicLoadSlotByValuePermissive(
   Register temp0 = ToRegister(lir->temp0());
   Register temp1 = ToRegister(lir->temp1());
   Register temp2 = ToRegister(lir->temp2());
-  ValueOperand output = ToOutValue(lir);
+
+  Label done, atomizeMiss;
 
   // If we have enough registers available, we can call getters directly from
   // jitcode. On x86, we have to call into the VM.
 #ifndef JS_CODEGEN_X86
-  Label done, getter, nullGetter;
+  ValueOperand output = ToOutValue(lir);
+  Label getter, nullGetter;
   Register temp3 = ToRegister(lir->temp3());
   masm.movePtr(obj, temp3);
+  masm.xorPtr(temp2, temp2);
+  masm.loadAtomOrSymbolAndHash(idVal, temp0, temp1, &atomizeMiss);
 
-  masm.emitMegamorphicCacheLookupByValue(idVal, obj, temp0, temp1, temp2,
-                                         output, &done, &getter);
+  MOZ_ASSERT(obj == CallTempReg3);
+  MOZ_ASSERT(temp0 == CallTempReg0);
+  MOZ_ASSERT(temp1 == CallTempReg1);
+  MOZ_ASSERT(temp2 == CallTempReg2);
+#  if defined(JS_NUNBOX32)
+  MOZ_ASSERT(output.typeReg() == JSReturnReg_Type);
+  MOZ_ASSERT(output.payloadReg() == JSReturnReg_Data);
+#  else
+  MOZ_ASSERT(output.payloadOrValueReg() == JSReturnReg);
+#  endif
+  MOZ_ASSERT(!output.aliases(temp3));
+  TrampolinePtr megamorphicLoadStub =
+      gen->jitRuntime()->megamorphicLoadStubPermissive();
+  masm.call(megamorphicLoadStub);
+  masm.branchTest32(Assembler::NonZero, temp2, Imm32(1), &done);
+  masm.branchTest32(Assembler::NonZero, temp2, Imm32(2), &getter);
 #else
-  Label done;
-  masm.emitMegamorphicCacheLookupByValue(idVal, obj, temp0, temp1, temp2,
-                                         output, &done);
+  masm.xorPtr(temp2, temp2);
+  masm.loadAtomOrSymbolAndHash(idVal, temp0, temp1, &atomizeMiss);
+
+  MOZ_ASSERT(obj == CallTempReg3);
+  MOZ_ASSERT(temp0 == CallTempReg0);
+  MOZ_ASSERT(temp1 == CallTempReg1);
+  MOZ_ASSERT(temp2 == CallTempReg2);
+#  if defined(JS_NUNBOX32)
+  MOZ_ASSERT(ToOutValue(lir).typeReg() == JSReturnReg_Type);
+  MOZ_ASSERT(ToOutValue(lir).payloadReg() == JSReturnReg_Data);
+#  else
+  MOZ_ASSERT(ToOutValue(lir).payloadOrValueReg() == JSReturnReg);
+#  endif
+  TrampolinePtr megamorphicLoadStub = gen->jitRuntime()->megamorphicLoadStub();
+  masm.call(megamorphicLoadStub);
+  masm.branchTest32(Assembler::NonZero, temp2, Imm32(1), &done);
 #endif
+
+  masm.bind(&atomizeMiss);
 
   pushArg(temp2);
   pushArg(idVal);
@@ -5069,10 +5161,13 @@ void CodeGenerator::visitMegamorphicHasProp(LMegamorphicHasProp* lir) {
   Register temp2 = ToRegister(lir->temp2());
   Register output = ToRegister(lir->output());
 
-  Label bail, cacheHit;
-  masm.emitMegamorphicCacheLookupExists(idVal, obj, temp0, temp1, temp2, output,
+  Label bail, cacheHit, atomizeMiss;
+  masm.xorPtr(temp2, temp2);
+  masm.loadAtomOrSymbolAndHash(idVal, temp0, temp1, &atomizeMiss);
+  masm.emitMegamorphicCacheLookupExists(obj, temp0, temp1, temp2, output,
                                         &cacheHit, lir->mir()->hasOwn());
 
+  masm.bind(&atomizeMiss);
   masm.branchIfNonNativeObj(obj, temp0, &bail);
 
   // idVal will be in vp[0], result will be stored in vp[1].
@@ -6668,6 +6763,74 @@ void JitRuntime::generateIonGenericCallStub(MacroAssembler& masm,
   masm.push(returnAddrReg);
 #endif
   masm.jump(&invokeFunctionVMEntry);
+}
+
+void JitRuntime::generateMegamorphicLoadStub(MacroAssembler& masm) {
+  AutoCreatedBy acb(masm, "JitRuntime::generateMegamorphicLoadStub");
+  megamorphicLoadStubOffset_ = startTrampolineCode(masm);
+
+  Register obj = CallTempReg3;
+  Register id = CallTempReg0;
+  Register idHash = CallTempReg1;
+  Register outEntryPtr = CallTempReg2;
+
+#if defined(JS_NUNBOX32)
+  auto output = ValueOperand(JSReturnReg_Type, JSReturnReg_Data);
+  static_assert(!JSReturnReg_Type.aliases(CallTempReg2));
+  static_assert(!JSReturnReg_Data.aliases(CallTempReg2));
+#else
+  auto output = ValueOperand(JSReturnReg);
+  static_assert(!JSReturnReg.aliases(CallTempReg2));
+#endif
+
+  Label cacheHit;
+  masm.emitMegamorphicCacheLookupByValue(obj, id, idHash, outEntryPtr, output,
+                                         &cacheHit);
+
+  masm.abiret();
+
+  // Given we don't need the entry if we got a cache hit, and the entry pointer
+  // will never point into the first code page, we can use the low bits of the
+  // outEntryPtr to indicate success
+  masm.bind(&cacheHit);
+  masm.movePtr(ImmPtr((void*)(MegamorphicLoadStubCacheHit)), outEntryPtr);
+  masm.abiret();
+}
+
+void JitRuntime::generateMegamorphicLoadStubPermissive(MacroAssembler& masm) {
+  AutoCreatedBy acb(masm, "JitRuntime::generateMegamorphicLoadStubPermissive");
+  megamorphicLoadStubPermissiveOffset_ = startTrampolineCode(masm);
+
+  Register obj = CallTempReg3;
+  Register id = CallTempReg0;
+  Register idHash = CallTempReg1;
+  Register outEntryPtr = CallTempReg2;
+
+#if defined(JS_NUNBOX32)
+  auto output = ValueOperand(JSReturnReg_Type, JSReturnReg_Data);
+  static_assert(!JSReturnReg_Type.aliases(CallTempReg2));
+  static_assert(!JSReturnReg_Data.aliases(CallTempReg2));
+#else
+  auto output = ValueOperand(JSReturnReg);
+  static_assert(!JSReturnReg.aliases(CallTempReg2));
+#endif
+
+  Label cacheHit, cacheHitGetter;
+  masm.emitMegamorphicCacheLookupByValue(obj, id, idHash, outEntryPtr, output,
+                                         &cacheHit, &cacheHitGetter);
+
+  masm.abiret();
+
+  // Given we don't need the entry if we got a cache hit, and the entry pointer
+  // will never point into the first code page, we can use the low bits of the
+  // outEntryPtr to indicate success or that output holds a getter.
+  masm.bind(&cacheHit);
+  masm.movePtr(ImmPtr((void*)(MegamorphicLoadStubCacheHit)), outEntryPtr);
+  masm.abiret();
+
+  masm.bind(&cacheHitGetter);
+  masm.movePtr(ImmPtr((void*)(MegamorphicLoadStubCacheHitGetter)), outEntryPtr);
+  masm.abiret();
 }
 
 void JitRuntime::generateIonGenericHandleUnderflow(MacroAssembler& masm,
@@ -10410,11 +10573,13 @@ void CodeGenerator::visitWasmCall(LWasmCall* lir) {
       reloadPinnedRegs = true;
       switchRealm = false;
       break;
-    case wasm::CalleeDesc::BuiltinInstanceMethod:
-      retOffset = masm.wasmCallBuiltinInstanceMethod(
-          desc, callBase->instanceArg(), callee.builtin(),
-          callBase->builtinMethodFailureMode(),
-          callBase->builtinMethodFailureTrap());
+    case wasm::CalleeDesc::BuiltinInstanceMethod: {
+      CodeOffset unused_trapStackMapKey;
+      masm.wasmCallBuiltinInstanceMethod(desc, callBase->instanceArg(),
+                                         callee.builtin(),
+                                         callBase->builtinMethodFailureMode(),
+                                         callBase->builtinMethodFailureTrap(),
+                                         &retOffset, &unused_trapStackMapKey);
       // The builtin ABI preserves the instance and pinned registers. However,
       // builtins may grow the memory which requires us to reload the pinned
       // registers.
@@ -10422,6 +10587,7 @@ void CodeGenerator::visitWasmCall(LWasmCall* lir) {
       reloadPinnedRegs = true;
       switchRealm = false;
       break;
+    }
     case wasm::CalleeDesc::FuncRef:
       if (isReturnCall) {
         ReturnCallAdjustmentInfo retCallInfo(
@@ -12708,72 +12874,7 @@ void CodeGenerator::visitCompareSInline(LCompareSInline* lir) {
         lir, ArgList(ImmGCPtr(str), input), StoreRegisterTo(output));
   }
 
-  Label compareChars;
-  {
-    Label notPointerEqual;
-
-    // If operands point to the same instance, the strings are trivially equal.
-    masm.branchPtr(Assembler::NotEqual, input, ImmGCPtr(str), &notPointerEqual);
-    masm.move32(Imm32(op == JSOp::Eq || op == JSOp::StrictEq), output);
-    masm.jump(ool->rejoin());
-
-    masm.bind(&notPointerEqual);
-
-    Label setNotEqualResult;
-
-    if (str->isAtom()) {
-      // Atoms cannot be equal to each other if they point to different strings.
-      Imm32 atomBit(StringFlags::ATOM_BIT);
-      masm.branchTest32(Assembler::NonZero,
-                        Address(input, JSString::offsetOfFlags()), atomBit,
-                        &setNotEqualResult);
-    }
-
-    if (str->hasTwoByteChars()) {
-      // Pure two-byte strings can't be equal to Latin-1 strings.
-      JS::AutoCheckCannotGC nogc;
-      if (!mozilla::IsUtf16Latin1(str->twoByteRange(nogc))) {
-        masm.branchLatin1String(input, &setNotEqualResult);
-      }
-    }
-
-    // Strings of different length can never be equal.
-    masm.branch32(Assembler::NotEqual,
-                  Address(input, JSString::offsetOfLength()),
-                  Imm32(str->length()), &setNotEqualResult);
-
-    if (str->isAtom()) {
-      Label forwardedPtrEqual;
-      masm.tryFastAtomize(input, output, output, &compareChars);
-
-      // We now have two atoms. Just check pointer equality.
-      masm.branchPtr(Assembler::Equal, output, ImmGCPtr(str),
-                     &forwardedPtrEqual);
-
-      masm.move32(Imm32(op == JSOp::Ne || op == JSOp::StrictNe), output);
-      masm.jump(ool->rejoin());
-
-      masm.bind(&forwardedPtrEqual);
-      masm.move32(Imm32(op == JSOp::Eq || op == JSOp::StrictEq), output);
-      masm.jump(ool->rejoin());
-    } else {
-      masm.jump(&compareChars);
-    }
-
-    masm.bind(&setNotEqualResult);
-    masm.move32(Imm32(op == JSOp::Ne || op == JSOp::StrictNe), output);
-    masm.jump(ool->rejoin());
-  }
-
-  masm.bind(&compareChars);
-
-  // Load the input string's characters.
-  Register stringChars = output;
-  masm.loadStringCharsForCompare(input, str, stringChars, ool->entry());
-
-  // Start comparing character by character.
-  masm.compareStringChars(op, stringChars, str, output);
-
+  masm.equalStrings(op, input, str, output, ool->entry());
   masm.bind(ool->rejoin());
 }
 
@@ -12864,6 +12965,48 @@ void CodeGenerator::visitCompareSSingle(LCompareSSingle* lir) {
                 Address(input, JSString::offsetOfLength()), Imm32(1), output);
 
   masm.bind(&done);
+}
+
+void CodeGenerator::visitStrictConstantCompareString(
+    LStrictConstantCompareString* lir) {
+  ValueOperand value = ToValue(lir->value());
+  Register output = ToRegister(lir->output());
+  Register temp = ToRegister(lir->temp0());
+
+  JSOffThreadAtom* str = lir->mir()->constant();
+  JSOp op = lir->mir()->jsop();
+  MOZ_ASSERT(IsStrictEqualityOp(op));
+
+  OutOfLineCode* ool = nullptr;
+
+  using Fn = bool (*)(JSContext*, HandleString, HandleString, bool*);
+  if (op == JSOp::StrictEq) {
+    ool = oolCallVM<Fn, jit::StringsEqual<EqualityKind::Equal>>(
+        lir, ArgList(temp, ImmGCPtr(str)), StoreRegisterTo(output));
+  } else {
+    MOZ_ASSERT(op == JSOp::StrictNe);
+    ool = oolCallVM<Fn, jit::StringsEqual<EqualityKind::NotEqual>>(
+        lir, ArgList(temp, ImmGCPtr(str)), StoreRegisterTo(output));
+  }
+
+  masm.move32(Imm32(op == JSOp::StrictNe), output);
+  masm.fallibleUnboxString(value, temp, ool->rejoin());
+
+  masm.equalStrings(op, temp, str, output, ool->entry());
+  masm.bind(ool->rejoin());
+}
+
+void CodeGenerator::visitStrictConstantCompareObject(
+    LStrictConstantCompareObject* lir) {
+  ValueOperand value = ToValue(lir->value());
+  Register output = ToRegister(lir->output());
+
+  JSObject* obj = lir->mir()->constant();
+  JSOp op = lir->mir()->jsop();
+  MOZ_ASSERT(IsStrictEqualityOp(op));
+
+  masm.testValueSet(JSOpToCondition(MCompare::Compare_Object, op), value,
+                    JS::ObjectValue(*obj), output);
 }
 
 void CodeGenerator::visitCompareBigInt(LCompareBigInt* lir) {
@@ -13725,33 +13868,50 @@ static void AllocateThinOrFatInlineString(MacroAssembler& masm, Register output,
 }
 
 static void ConcatInlineString(MacroAssembler& masm, Register lhs, Register rhs,
-                               Register output, Register temp1, Register temp2,
-                               Register temp3, gc::Heap initialStringHeap,
-                               Label* failure, CharEncoding encoding) {
+                               Register output, Register andedFlags,
+                               Register temp2, Register temp3,
+                               gc::Heap initialStringHeap, Label* failure,
+                               CharEncoding encoding) {
   JitSpew(JitSpew_Codegen, "# Emitting ConcatInlineString (encoding=%s)",
           (encoding == CharEncoding::Latin1 ? "Latin-1" : "Two-Byte"));
 
   // State: result length in temp2.
 
+#ifdef DEBUG
+  Label skip, rope;
+
   // Ensure both strings are linear.
-  masm.branchIfRope(lhs, failure);
-  masm.branchIfRope(rhs, failure);
+  masm.branchIfRope(lhs, &rope);
+  masm.branchIfRope(rhs, &rope);
+
+  masm.jump(&skip);
+  masm.bind(&rope);
+  masm.assertUnreachable("Ropes encountered in ConcatInlineString.");
+  masm.bind(&skip);
+#endif
 
   // Allocate a JSThinInlineString or JSFatInlineString.
-  AllocateThinOrFatInlineString(masm, output, temp2, temp1, initialStringHeap,
+  AllocateThinOrFatInlineString(masm, output, temp2, temp3, initialStringHeap,
                                 failure, encoding);
 
   // Load chars pointer in temp2.
   masm.loadInlineStringCharsForStore(output, temp2);
 
+#if defined(JS_64BIT) && defined(ENABLE_WASM_SIMD)
+  Label fastPath, done;
+  masm.branchTest32(Assembler::NonZero, andedFlags,
+                    Imm32(StringFlags::INLINE_CHARS_BIT), &fastPath);
+#endif
+
+  Register temp1 = andedFlags;
   auto copyChars = [&](Register src) {
     if (encoding == CharEncoding::TwoByte) {
-      CopyStringCharsMaybeInflate(masm, src, temp2, temp1, temp3);
+      CopyStringCharsMaybeInflate(masm, src, temp2, temp3, temp1);
     } else {
-      masm.loadStringLength(src, temp3);
-      masm.loadStringChars(src, temp1, CharEncoding::Latin1);
-      masm.movePtr(temp1, src);
-      CopyStringChars(masm, temp2, src, temp3, temp1, CharEncoding::Latin1);
+      masm.loadStringLength(src, temp1);
+      masm.loadStringChars(src, temp3, CharEncoding::Latin1);
+      masm.movePtr(temp3, src);
+      CopyStringChars(masm, temp2, src, temp1, temp3, CharEncoding::Latin1);
     }
   };
 
@@ -13761,6 +13921,138 @@ static void ConcatInlineString(MacroAssembler& masm, Register lhs, Register rhs,
 
   // Copy rhs chars. Clobbers the rhs register.
   copyChars(rhs);
+
+  // There's a lot of assumptions in here that inline strings are at least
+  // 16 bytes, so while it's possible to write a faster version for 32-bit,
+  // we elect to just leave 32-bit platforms behind with a little bit slower
+  // string copying.
+#if defined(JS_64BIT) && defined(ENABLE_WASM_SIMD)
+  masm.jump(&done);
+  masm.bind(&fastPath);
+
+  // Note: these assertions are here just to trip if this changes, because all
+  // the code below is very much dependent on the specific sizes.
+  static_assert(JSThinInlineString::MAX_LENGTH_LATIN1 == 16);
+  static_assert(JSThinInlineString::MAX_LENGTH_TWO_BYTE == 8);
+  static_assert(JSFatInlineString::MAX_LENGTH_LATIN1 == 24);
+  static_assert(JSFatInlineString::MAX_LENGTH_TWO_BYTE == 12);
+
+  size_t thinInlineLength = encoding == CharEncoding::Latin1
+                                ? JSThinInlineString::MAX_LENGTH_LATIN1
+                                : JSThinInlineString::MAX_LENGTH_TWO_BYTE;
+
+  // Given that for the lhs we know we're copying into the start of an inline
+  // string then on 64-bit we know we're safe to write 16 bytes, regardless
+  // of the actual length.
+  auto copyLhsFast = [&]() {
+    masm.loadStringLength(lhs, temp1);
+    masm.loadInlineStringCharsForStore(lhs, temp3);
+
+    masm.loadUnalignedSimd128(Address(temp3, 0), ScratchSimd128Reg);
+    masm.storeUnalignedSimd128(ScratchSimd128Reg, Address(temp2, 0));
+
+    Label lhsDone;
+    masm.branch32(Assembler::BelowOrEqual, temp1, Imm32(thinInlineLength),
+                  &lhsDone);
+    masm.loadPtr(Address(temp3, 16), temp3);
+    masm.storePtr(temp3, Address(temp2, 16));
+    masm.bind(&lhsDone);
+
+    if (encoding == CharEncoding::Latin1) {
+      masm.addPtr(temp1, temp2);
+    } else {
+      masm.computeEffectiveAddress(BaseIndex(temp2, temp1, TimesTwo), temp2);
+    }
+  };
+
+  // For the RHS however we don't have any guarantees, but we know we
+  // can handle everything >= 8 bytes with at most three overlapping
+  // 8 byte copies.
+  auto copyRhsFast = [&]() {
+    masm.loadStringLength(rhs, temp1);
+    masm.loadInlineStringCharsForStore(rhs, temp3);
+
+    if (encoding == CharEncoding::TwoByte) {
+      masm.lshift32(Imm32(1), temp1);
+    }
+
+    Label rhsBelow8, rhsBelow4, rhsDone;
+
+    // byteLen >= 8: head + conditional middle + tail.
+    masm.branch32(Assembler::Below, temp1, Imm32(8), &rhsBelow8);
+
+    masm.loadPtr(Address(temp3, 0), lhs);
+    masm.storePtr(lhs, Address(temp2, 0));
+
+    Label rhsTail;
+    masm.branch32(Assembler::BelowOrEqual, temp1,
+                  Imm32(JSThinInlineString::InlineBytes), &rhsTail);
+    masm.loadPtr(Address(temp3, 8), lhs);
+    masm.storePtr(lhs, Address(temp2, 8));
+
+    masm.bind(&rhsTail);
+    masm.loadPtr(BaseIndex(temp3, temp1, TimesOne, -8), lhs);
+    masm.storePtr(lhs, BaseIndex(temp2, temp1, TimesOne, -8));
+    masm.jump(&rhsDone);
+
+    // byteLen 4-7: two overlapping 4-byte copies.
+    masm.bind(&rhsBelow8);
+    masm.branch32(Assembler::Below, temp1, Imm32(4), &rhsBelow4);
+    masm.load32(Address(temp3, 0), lhs);
+    masm.store32(lhs, Address(temp2, 0));
+    masm.load32(BaseIndex(temp3, temp1, TimesOne, -4), lhs);
+    masm.store32(lhs, BaseIndex(temp2, temp1, TimesOne, -4));
+    masm.jump(&rhsDone);
+
+    // byteLen 1-3: first byte + overlapping 2-byte tail.
+    masm.bind(&rhsBelow4);
+    masm.load8ZeroExtend(Address(temp3, 0), lhs);
+    masm.store8(lhs, Address(temp2, 0));
+    masm.branch32(Assembler::Below, temp1, Imm32(2), &rhsDone);
+    masm.load16ZeroExtend(BaseIndex(temp3, temp1, TimesOne, -2), lhs);
+    masm.store16(lhs, BaseIndex(temp2, temp1, TimesOne, -2));
+
+    masm.bind(&rhsDone);
+  };
+
+  // If the output encoding is Latin1, both inputs are Latin1. However if the
+  // output encoding is TwoByte, we only know that at least one of the inputs
+  // is TwoByte.
+  if (encoding == CharEncoding::Latin1) {
+    copyLhsFast();
+    copyRhsFast();
+  } else {
+    auto copyCharsInflate = [&](Register src) {
+      masm.loadStringLength(src, temp3);
+      masm.loadStringChars(src, temp1, CharEncoding::Latin1);
+      masm.movePtr(temp1, src);
+      CopyStringChars(masm, temp2, src, temp3, temp1, CharEncoding::Latin1,
+                      CharEncoding::TwoByte);
+    };
+
+    Label lhsInflate, beginRhs, rhsInflate;
+    masm.branchLatin1String(lhs, &lhsInflate);
+    copyLhsFast();
+    masm.jump(&beginRhs);
+
+    masm.bind(&lhsInflate);
+    copyCharsInflate(lhs);
+
+    // If lhs was latin1, we know rhs must be TwoByte, so we can skip
+    // a branch here and just copy rhs directly
+    copyRhsFast();
+    masm.jump(&done);
+
+    masm.bind(&beginRhs);
+    masm.branchLatin1String(rhs, &rhsInflate);
+    copyRhsFast();
+    masm.jump(&done);
+
+    masm.bind(&rhsInflate);
+    copyCharsInflate(rhs);
+  }
+  masm.bind(&done);
+#endif
 }
 
 void CodeGenerator::visitSubstr(LSubstr* lir) {
@@ -17453,6 +17745,9 @@ bool CodeGenerator::link(JSContext* cx) {
   for (size_t i = 0; i < nurseryObjects.length(); i++) {
     ionScript->nurseryObjects()[i].init(nurseryObjects[i]);
   }
+
+  // Initialization fence for the IonScript.
+  MemoryReleaseFence(script.get());
 
   // Transfer ownership of the IonScript to the JitScript. At this point enough
   // of the IonScript must be initialized for IonScript::Destroy to work.
@@ -21320,7 +21615,7 @@ void CodeGenerator::visitNewTarget(LNewTarget* ins) {
 
   Label useNFormals;
 
-  size_t numFormalArgs = ins->mirRaw()->block()->info().nargs();
+  size_t numFormalArgs = ins->mir()->block()->info().nargs();
   masm.branchPtr(Assembler::Below, argvLen, Imm32(numFormalArgs), &useNFormals);
 
   size_t argsOffset = JitFrameLayout::offsetOfActualArgs();

@@ -380,12 +380,6 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // subtree. It can be cheaper than walking the whole list of stylesheets.
   bool IsDirectlyAssociatedTo(dom::DocumentOrShadowRoot&) const;
 
-  // True if any of this sheet's ancestors were created through the
-  // Constructable StyleSheets API
-  bool SelfOrAncestorIsConstructed() const {
-    return OutermostSheet().IsConstructed();
-  }
-
   // Ture if the sheet's constructor document matches the given document
   bool ConstructorDocumentMatches(const dom::Document& aDocument) const {
     return mConstructorDocument == &aDocument;
@@ -582,26 +576,21 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   RefPtr<URLExtraData> mURLData;
   RefPtr<nsIURI> mOriginalSheetURI;
-  State mState;
 
+  State mState;
   Atomic<uint32_t, ReleaseAcquire> mAsyncParseBlockers{0};
+  // Index within mInner->mSheets.
+  uint32_t mInnerSheetIndex = 0;
 
   // Core information we get from parsed sheets, which are shared amongst
-  // StyleSheet clones.
-  //
-  // Always nonnull until LastRelease().
+  // StyleSheet clones. Always nonnull until LastRelease().
   StyleSheetInfo* mInner;
 
   nsTArray<ServoStyleSet*> mStyleSets;
-
   RefPtr<ServoCSSRuleList> mRuleList;
-
   MozPromiseHolder<StyleSheetParsePromise> mParsePromise;
-
   nsTArray<dom::DocumentOrShadowRoot*> mAdopters;
 
-  // Make StyleSheetInfo and subclasses into friends so they can use
-  // ChildSheetListBuilder.
   friend struct StyleSheetInfo;
 };
 

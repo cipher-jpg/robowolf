@@ -9,7 +9,6 @@
 #include <bit>
 
 #include "jit/shared/Architecture-shared.h"
-
 #include "js/Utility.h"
 
 namespace js {
@@ -136,9 +135,10 @@ class Registers {
 
   static const char* GetName(uint32_t code) {
     static const char* const Names[] = {
-        "zero", "ra", "tp", "sp", "a0", "a1", "a2", "a3", "a4", "a5", "a6",
-        "a7",   "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "rx",
-        "fp",   "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"};
+        "$zero", "$ra", "$tp", "$sp", "$a0", "$a1", "$a2", "$a3",
+        "$a4",   "$a5", "$a6", "$a7", "$t0", "$t1", "$t2", "$t3",
+        "$t4",   "$t5", "$t6", "$t7", "$t8", "$rx", "$fp", "$s0",
+        "$s1",   "$s2", "$s3", "$s4", "$s5", "$s6", "$s7", "$s8"};
     static_assert(Total == std::size(Names), "Table is the correct size");
     if (code >= Total) {
       return "invalid";
@@ -179,6 +179,7 @@ class Registers {
 
   static const SetType NonAllocatableMask =
       (1U << Registers::zero) |  // Always be zero.
+      (1U << Registers::t6) |    // Scratch register.
       (1U << Registers::t7) |    // Scratch register.
       (1U << Registers::t8) |    // Scratch register.
       (1U << Registers::s8) |    // Saved scratch register.
@@ -251,10 +252,10 @@ class FloatRegisters {
 
   static const char* GetName(uint32_t code) {
     static const char* const Names[] = {
-        "f0",  "f1",  "f2",  "f3",  "f4",  "f5",  "f6",  "f7",
-        "f8",  "f9",  "f10", "f11", "f12", "f13", "f14", "f15",
-        "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23",
-        "f24", "f25", "f26", "f27", "f28", "f29", "f30", "f31"};
+        "$f0",  "$f1",  "$f2",  "$f3",  "$f4",  "$f5",  "$f6",  "$f7",
+        "$f8",  "$f9",  "$f10", "$f11", "$f12", "$f13", "$f14", "$f15",
+        "$f16", "$f17", "$f18", "$f19", "$f20", "$f21", "$f22", "$f23",
+        "$f24", "$f25", "$f26", "$f27", "$f28", "$f29", "$f30", "$f31"};
     static_assert(TotalPhys == std::size(Names), "Table is the correct size");
     if (code >= Total) {
       return "invalid";

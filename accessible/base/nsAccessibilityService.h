@@ -5,20 +5,19 @@
 #ifndef _nsAccessibilityService_h_
 #define _nsAccessibilityService_h_
 
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/a11y/CacheConstants.h"
 #include "mozilla/a11y/DocManager.h"
 #include "mozilla/a11y/FocusManager.h"
 #include "mozilla/a11y/Platform.h"
 #include "mozilla/a11y/Role.h"
 #include "mozilla/a11y/SelectionManager.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPtr.h"
-
 #include "nsAtomHashKeys.h"
-#include "nsIContent.h"
-#include "nsIObserver.h"
 #include "nsIAccessibleEvent.h"
+#include "nsIContent.h"
 #include "nsIEventListenerService.h"
+#include "nsIObserver.h"
 #include "nsXULAppAPI.h"
 #include "xpcAccessibilityService.h"
 
@@ -423,6 +422,8 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
    * document being printed and must not do work for any other document.
    */
   static bool IsOnlyForPdfOutput() { return gConsumers == ePdfOutput; }
+
+  static bool IsRunningInParentProcess() { return gConsumers & eMainProcess; }
 
   static uint64_t GetActiveCacheDomains() { return gCacheDomains; }
   bool ShouldAllowNewCacheDomains() { return mShouldAllowNewCacheDomains; }

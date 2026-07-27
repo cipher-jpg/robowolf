@@ -5,10 +5,10 @@
 #ifndef mozilla_net_Http3WebTransportSession_h
 #define mozilla_net_Http3WebTransportSession_h
 
-#include "WebTransportSessionBase.h"
 #include "Http3StreamBase.h"
-#include "nsIWebTransport.h"
+#include "WebTransportSessionBase.h"
 #include "mozilla/net/NeqoHttp3Conn.h"
+#include "nsIWebTransport.h"
 
 namespace mozilla::net {
 
@@ -113,6 +113,10 @@ class Http3WebTransportSession final : public WebTransportSessionBase,
   void OnDatagramReceived(nsTArray<uint8_t>&& aData) override;
 
   void GetMaxDatagramSize() override;
+
+  nsresult ExportKeyingMaterial(const nsTArray<uint8_t>& aLabel,
+                                const nsTArray<uint8_t>& aContext,
+                                nsTArray<uint8_t>& aKeyingMaterial) override;
 
   void OnOutgoingDatagramOutCome(
       uint64_t aId, WebTransportSessionEventListener::DatagramOutcome aOutCome);

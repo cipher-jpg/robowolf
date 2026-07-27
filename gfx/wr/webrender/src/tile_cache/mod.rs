@@ -31,7 +31,7 @@ use crate::invalidation::compare::{OpacityBindingInfo, ColorBindingInfo};
 use crate::picture::{SurfaceTextureDescriptor, PictureCompositeMode, SurfaceIndex, clamp};
 use crate::picture::{get_relative_scale_offset, PictureInstance};
 use crate::picture::MAX_COMPOSITOR_SURFACES_SIZE;
-use crate::prim_store::{PrimitiveInstance, PrimitiveKind, PrimitiveScratchBuffer, PictureIndex};
+use crate::prim_store::{ClipSnap, PrimitiveInstance, PrimitiveKind, PrimitiveScratchBuffer, PictureIndex};
 use crate::prim_store::PrimitiveInstanceIndex;
 use crate::print_tree::{PrintTreePrinter, PrintTree};
 use crate::{profiler, render_backend::DataStores};
@@ -1087,11 +1087,22 @@ impl TileCacheInstance {
 
             let mut clip_snapper = SpaceSnapper::new(surface, frame_context.spatial_tree);
 
+            // The tile cache's shared clip is never a text run: it snaps its
+            // chain to nearest when it carries a real clip root, otherwise it
+            // leaves it exact (matching the device-space sentinel behavior).
+            let clip_snap = if frame_state.clip_tree.get_leaf(shared_clip_leaf_id).prim_clip_root
+                != ClipNodeId::INVALID {
+                ClipSnap::Nearest
+            } else {
+                ClipSnap::Exact
+            };
+
             frame_state.clip_store.set_active_clips(
                 self.spatial_node_index,
                 map_local_to_picture.ref_spatial_node_index,
                 surface.visibility_spatial_node_index,
                 &mut clip_snapper,
+                clip_snap,
                 shared_clip_leaf_id,
                 frame_context.spatial_tree,
                 &frame_state.data_stores.clip,
@@ -2677,9 +2688,20 @@ impl TileCacheInstance {
             }
             PrimitiveKind::LineDecoration { .. } |
             PrimitiveKind::NormalBorder { .. } |
-            PrimitiveKind::BoxShadow { .. } |
-            PrimitiveKind::TextRun { .. } => {
+            PrimitiveKind::BoxShadow { .. } => {
                 // These don't contribute dependencies
+            }
+            PrimitiveKind::TextRun { .. } => {
+                // A text run under an animated transform is rasterized in local
+                // space (see TextRunTemplate::get_raster_space_for_prim, bug
+                // 2053638). Record that as a dependency so the tile invalidates
+                // when the animation ends and the text returns to the crisp
+                // device path - the raster-space flip alone changes neither
+                // prim_uid nor the vert corners, so nothing else would catch it
+                // (bug 2056306).
+                prim_info.raster_space_animating = frame_context.spatial_tree
+                    .get_spatial_node(prim_spatial_node_index)
+                    .is_ancestor_or_self_animating;
             }
         };
 

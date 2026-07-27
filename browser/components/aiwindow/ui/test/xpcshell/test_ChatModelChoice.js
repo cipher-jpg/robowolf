@@ -14,6 +14,7 @@ const {
   _clearRemoteClientForTesting,
   getRemoteClient,
   FEATURE_MAJOR_VERSIONS,
+  MODEL_FEATURES,
 } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs"
 );
@@ -28,19 +29,28 @@ add_task(async function test_getModelForChoice_with_remote_settings_data() {
   try {
     const fakeRecords = [
       {
+        kind: "params",
         feature: "chat",
-        version: `${FEATURE_MAJOR_VERSIONS.chat}.19`,
+        version: `${FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]}.19`,
         model: "qwen3-235b-a22b-instruct-2507-maas",
         model_choice_id: "2",
         owner_name: "Alibaba",
         is_default: true,
       },
       {
+        kind: "params",
         feature: "chat",
-        version: `${FEATURE_MAJOR_VERSIONS.chat}.13`,
+        version: `${FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]}.13`,
         model: "gemini-3.1-flash-lite",
         model_choice_id: "1",
         owner_name: "Google",
+        model_details: {
+          model: "gemini-3.1-flash-lite",
+          ownerName: "Google",
+          labelId: "fast",
+          shortName: "Gemini 3.1 Flash Lite",
+          brandName: "Gemini",
+        },
       },
     ];
 
@@ -52,7 +62,13 @@ add_task(async function test_getModelForChoice_with_remote_settings_data() {
 
     Assert.deepEqual(
       result,
-      { model: "gemini-3.1-flash-lite", ownerName: "Google", labelId: "fast" },
+      {
+        model: "gemini-3.1-flash-lite",
+        ownerName: "Google",
+        labelId: "fast",
+        shortName: "Gemini 3.1 Flash Lite",
+        brandName: "Gemini",
+      },
       "Should return correct model data for choice 1"
     );
   } finally {
@@ -95,26 +111,50 @@ add_task(async function test_getAllModelsData_with_remote_settings() {
   try {
     const fakeRecords = [
       {
+        kind: "params",
         feature: "chat",
-        version: `${FEATURE_MAJOR_VERSIONS.chat}.19`,
+        version: `${FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]}.19`,
         model: "qwen3-235b-a22b-instruct-2507-maas",
         model_choice_id: "2",
         owner_name: "Alibaba",
         is_default: true,
+        model_details: {
+          model: "qwen3-235b-a22b-instruct-2507-maas",
+          ownerName: "Alibaba",
+          labelId: "allpurpose",
+          shortName: "Qwen 3 235B",
+          brandName: "Qwen",
+        },
       },
       {
+        kind: "params",
         feature: "chat",
-        version: `${FEATURE_MAJOR_VERSIONS.chat}.13`,
+        version: `${FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]}.13`,
         model: "gemini-3.1-flash-lite",
         model_choice_id: "1",
         owner_name: "Google",
+        model_details: {
+          model: "gemini-3.1-flash-lite",
+          ownerName: "Google",
+          labelId: "fast",
+          shortName: "Gemini 3.1 Flash Lite",
+          brandName: "Gemini",
+        },
       },
       {
+        kind: "params",
         feature: "chat",
-        version: `${FEATURE_MAJOR_VERSIONS.chat}.10`,
+        version: `${FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]}.10`,
         model: "gpt-oss-120b",
         model_choice_id: "3",
         owner_name: "OpenAI",
+        model_details: {
+          model: "gpt-oss-120b",
+          ownerName: "OpenAI",
+          labelId: "personal",
+          shortName: "GPT OSS 120B",
+          brandName: "GPT OSS",
+        },
       },
     ];
 
@@ -132,16 +172,22 @@ add_task(async function test_getAllModelsData_with_remote_settings() {
           model: "gemini-3.1-flash-lite",
           ownerName: "Google",
           labelId: "fast",
+          shortName: "Gemini 3.1 Flash Lite",
+          brandName: "Gemini",
         },
         2: {
           model: "qwen3-235b-a22b-instruct-2507-maas",
           ownerName: "Alibaba",
           labelId: "allpurpose",
+          shortName: "Qwen 3 235B",
+          brandName: "Qwen",
         },
         3: {
           model: "gpt-oss-120b",
           ownerName: "OpenAI",
           labelId: "personal",
+          shortName: "GPT OSS 120B",
+          brandName: "GPT OSS",
         },
       },
       "Should return all model choices with correct data"
@@ -167,8 +213,9 @@ add_task(async function test_getCachedModelsData_returns_rs_data_after_fetch() {
   try {
     const fakeRecords = [
       {
+        kind: "params",
         feature: "chat",
-        version: `${FEATURE_MAJOR_VERSIONS.chat}.13`, // RS only loads the current major version for chat
+        version: `${FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]}.13`, // RS only loads the current major version for chat
         model: "gemini-rs-model",
         model_choice_id: "1",
         owner_name: "Google",
@@ -204,8 +251,9 @@ add_task(
     try {
       const fakeRecords = [
         {
+          kind: "params",
           feature: "chat",
-          version: `${FEATURE_MAJOR_VERSIONS.chat}.13`, // RS only loads the current major version for chat
+          version: `${FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]}.13`, // RS only loads the current major version for chat
           model: "gemini-rs-model",
           model_choice_id: "1",
           owner_name: "Google",
@@ -251,11 +299,19 @@ add_task(async function test_getAllModelsData_with_fallbacks() {
   try {
     const fakeRecords = [
       {
+        kind: "params",
         feature: "chat",
-        version: `${FEATURE_MAJOR_VERSIONS.chat}.19`,
+        version: `${FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]}.19`,
         model: "gemini-3.1-flash-lite",
         model_choice_id: "1",
         owner_name: "Google",
+        model_details: {
+          model: "gemini-3.1-flash-lite",
+          ownerName: "Google",
+          labelId: "fast",
+          shortName: "Gemini 3.1 Flash Lite",
+          brandName: "Gemini",
+        },
       },
     ];
 
@@ -273,6 +329,8 @@ add_task(async function test_getAllModelsData_with_fallbacks() {
           model: "gemini-3.1-flash-lite",
           ownerName: "Google",
           labelId: "fast",
+          shortName: "Gemini 3.1 Flash Lite",
+          brandName: "Gemini",
         },
         2: {
           model: "qwen3-235b-a22b-instruct-2507-maas",
@@ -299,8 +357,9 @@ add_task(async function test_cache_refreshes_on_sync() {
   try {
     const initialRecords = [
       {
+        kind: "params",
         feature: "chat",
-        version: `${FEATURE_MAJOR_VERSIONS.chat}.1`,
+        version: `${FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]}.1`,
         model: "initial-model",
         model_choice_id: "1",
         owner_name: "Google",
@@ -308,8 +367,9 @@ add_task(async function test_cache_refreshes_on_sync() {
     ];
     const updatedRecords = [
       {
+        kind: "params",
         feature: "chat",
-        version: `${FEATURE_MAJOR_VERSIONS.chat}.2`,
+        version: `${FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]}.2`,
         model: "updated-model",
         model_choice_id: "1",
         owner_name: "Google",

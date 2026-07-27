@@ -1096,7 +1096,7 @@ nsresult UpdateUsageFile(nsIFile* aUsageFile, nsIFile* aUsageJournalFile,
 
   QM_TRY(MOZ_TO_RESULT(binaryStream->Write64(aUsage)));
 
-#if defined(EARLY_BETA_OR_EARLIER) || defined(DEBUG)
+#if defined(NIGHTLY_BUILD) || defined(DEBUG)
   QM_TRY(MOZ_TO_RESULT(stream->Flush()));
 #endif
 
@@ -3158,7 +3158,7 @@ bool VerifyPrincipalInfo(ThreadsafeContentParentHandle* aContentParentHandle,
 
   if (aContentParentHandle &&
       NS_WARN_IF(!ValidatePrincipalCouldPotentiallyBeLoadedBy(
-          prinResult.inspect(), aContentParentHandle->GetRemoteType(), {}))) {
+          prinResult.inspect(), aContentParentHandle->GetRemoteType()))) {
     return false;
   }
 
@@ -4357,20 +4357,23 @@ nsresult Connection::FlushOp::DoDatastoreWork() {
 
   QM_TRY(MOZ_TO_RESULT(autoWriteTransaction.Start(mConnection)));
 
-  QM_TRY_INSPECT(const int64_t& usage,
-                 mWriteOptimizer.Perform(mConnection, mShadowWrites));
+  {
+    QM_SCOPED_CONTEXT("LSFlushOp::CommitFailed"_ns);
+    QM_TRY_INSPECT(const int64_t& usage,
+                   mWriteOptimizer.Perform(mConnection, mShadowWrites));
 
-  QM_TRY_INSPECT(const auto& usageFile,
-                 GetUsageFile(mConnection->DirectoryPath()));
+    QM_TRY_INSPECT(const auto& usageFile,
+                   GetUsageFile(mConnection->DirectoryPath()));
 
-  QM_TRY_INSPECT(const auto& usageJournalFile,
-                 GetUsageJournalFile(mConnection->DirectoryPath()));
+    QM_TRY_INSPECT(const auto& usageJournalFile,
+                   GetUsageJournalFile(mConnection->DirectoryPath()));
 
-  QM_TRY(MOZ_TO_RESULT(UpdateUsageFile(usageFile, usageJournalFile, usage)));
+    QM_TRY(MOZ_TO_RESULT(UpdateUsageFile(usageFile, usageJournalFile, usage)));
 
-  QM_TRY(MOZ_TO_RESULT(autoWriteTransaction.Commit()));
+    QM_TRY(MOZ_TO_RESULT(autoWriteTransaction.Commit()));
 
-  QM_TRY(MOZ_TO_RESULT(usageJournalFile->Remove(false)));
+    QM_TRY(MOZ_TO_RESULT(usageJournalFile->Remove(false)));
+  }
 
   return NS_OK;
 }

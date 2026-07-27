@@ -79,13 +79,13 @@ static ImportPhase ValueToImportPhase(const Value& value) {
 
 #define DEFINE_ATOM_ACCESSOR_METHOD(cls, name, slot) \
   JSAtom* cls::name() const {                        \
-    Value value = getReservedSlot(slot);             \
+    Value value = getReservedSlotTyped(slot);        \
     return &value.toString()->asAtom();              \
   }
 
 #define DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(cls, name, slot) \
   JSAtom* cls::name() const {                                \
-    Value value = getReservedSlot(slot);                     \
+    Value value = getReservedSlotTyped(slot);                \
     if (value.isNull()) {                                    \
       return nullptr;                                        \
     }                                                        \
@@ -97,13 +97,19 @@ static ImportPhase ValueToImportPhase(const Value& value) {
 
 ImportEntry::ImportEntry(Handle<ModuleRequestObject*> moduleRequest,
                          Handle<JSAtom*> maybeImportName,
-                         Handle<JSAtom*> localName, uint32_t lineNumber,
+                         Handle<JSAtom*> localName,
+                         ImportNameValueType importNameValueType,
+                         uint32_t lineNumber,
                          JS::ColumnNumberOneOrigin columnNumber)
     : moduleRequest_(moduleRequest),
       importName_(maybeImportName),
       localName_(localName),
+      importNameValueType_(importNameValueType),
       lineNumber_(lineNumber),
-      columnNumber_(columnNumber) {}
+      columnNumber_(columnNumber) {
+  MOZ_ASSERT_IF(importNameValueType != ImportNameValueType::String,
+                !maybeImportName);
+}
 
 void ImportEntry::trace(JSTracer* trc) {
   TraceEdge(trc, &moduleRequest_, "ImportEntry::moduleRequest_");
@@ -117,14 +123,19 @@ void ImportEntry::trace(JSTracer* trc) {
 ExportEntry::ExportEntry(Handle<JSAtom*> maybeExportName,
                          Handle<ModuleRequestObject*> moduleRequest,
                          Handle<JSAtom*> maybeImportName,
-                         Handle<JSAtom*> maybeLocalName, uint32_t lineNumber,
+                         Handle<JSAtom*> maybeLocalName,
+                         ImportNameValueType importNameValueType,
+                         uint32_t lineNumber,
                          JS::ColumnNumberOneOrigin columnNumber)
     : exportName_(maybeExportName),
       moduleRequest_(moduleRequest),
       importName_(maybeImportName),
       localName_(maybeLocalName),
+      importNameValueType_(importNameValueType),
       lineNumber_(lineNumber),
       columnNumber_(columnNumber) {
+  MOZ_ASSERT_IF(importNameValueType != ImportNameValueType::String,
+                !maybeImportName);
   // Line and column numbers are optional for export entries since direct
   // entries are checked at parse time.
 }
@@ -156,16 +167,16 @@ void RequestedModule::trace(JSTracer* trc) {
 
 /* static */ const JSClass ResolvedBindingObject::class_ = {
     "ResolvedBinding",
-    JSCLASS_HAS_RESERVED_SLOTS(ResolvedBindingObject::SlotCount),
+    JSCLASS_HAS_RESERVED_SLOTS(ResolvedBindingObject::SLOT_COUNT),
 };
 
 ModuleObject* ResolvedBindingObject::module() const {
-  Value value = getReservedSlot(ModuleSlot);
+  Value value = getReservedSlotTyped(MODULE_SLOT);
   return &value.toObject().as<ModuleObject>();
 }
 
 JSAtom* ResolvedBindingObject::bindingName() const {
-  Value value = getReservedSlot(BindingNameSlot);
+  Value value = getReservedSlotTyped(BINDING_NAME_SLOT);
   return &value.toString()->asAtom();
 }
 
@@ -183,8 +194,8 @@ ResolvedBindingObject* ResolvedBindingObject::create(
     return nullptr;
   }
 
-  self->initReservedSlot(ModuleSlot, ObjectValue(*module));
-  self->initReservedSlot(BindingNameSlot, StringValue(bindingName));
+  self->initReservedSlotTyped(MODULE_SLOT, ObjectValue(*module));
+  self->initReservedSlotTyped(BINDING_NAME_SLOT, StringValue(bindingName));
   return self;
 }
 
@@ -203,18 +214,18 @@ void ImportAttribute::trace(JSTracer* trc) {
 // ModuleRequestObject
 /* static */ const JSClass ModuleRequestObject::class_ = {
     "ModuleRequest",
-    JSCLASS_HAS_RESERVED_SLOTS(ModuleRequestObject::SlotCount),
+    JSCLASS_HAS_RESERVED_SLOTS(ModuleRequestObject::SLOT_COUNT),
 };
 
 DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ModuleRequestObject, specifier,
-                                    SpecifierSlot)
+                                    SPECIFIER_SLOT)
 
 JS::ModuleType ModuleRequestObject::moduleType() const {
-  return ValueToModuleType(getReservedSlot(ModuleTypeSlot));
+  return ValueToModuleType(getReservedSlotTyped(MODULE_TYPE_SLOT));
 }
 
 ImportPhase ModuleRequestObject::phase() const {
-  return ValueToImportPhase(getReservedSlot(PhaseSlot));
+  return ValueToImportPhase(getReservedSlotTyped(PHASE_SLOT));
 }
 
 static bool GetModuleType(JSContext* cx,
@@ -282,26 +293,28 @@ ModuleRequestObject* ModuleRequestObject::create(JSContext* cx,
     return nullptr;
   }
 
-  self->initReservedSlot(SpecifierSlot, StringOrNullValue(specifier));
-  self->initReservedSlot(ModuleTypeSlot, ModuleTypeToValue(moduleType));
-  self->initReservedSlot(PhaseSlot, ImportPhaseToValue(phase));
+  self->initReservedSlotTyped(SPECIFIER_SLOT, StringOrNullValue(specifier));
+  self->initReservedSlotTyped(MODULE_TYPE_SLOT, ModuleTypeToValue(moduleType));
+  self->initReservedSlotTyped(PHASE_SLOT, ImportPhaseToValue(phase));
 
   return self;
 }
 
 void ModuleRequestObject::setFirstUnsupportedAttributeKey(Handle<JSAtom*> key) {
-  initReservedSlot(FirstUnsupportedAttributeKeySlot, StringOrNullValue(key));
+  initReservedSlotTyped(FIRST_UNSUPPORTED_ATTRIBUTE_KEY_SLOT,
+                        StringOrNullValue(key));
 }
 
 bool ModuleRequestObject::hasFirstUnsupportedAttributeKey() const {
-  return !getReservedSlot(FirstUnsupportedAttributeKeySlot).isNullOrUndefined();
+  return !getReservedSlotTyped(FIRST_UNSUPPORTED_ATTRIBUTE_KEY_SLOT)
+              .isNullOrUndefined();
 }
 
 JSAtom* ModuleRequestObject::getFirstUnsupportedAttributeKey() const {
   if (!hasFirstUnsupportedAttributeKey()) {
     return nullptr;
   }
-  return &getReservedSlot(FirstUnsupportedAttributeKeySlot)
+  return &getReservedSlotTyped(FIRST_UNSUPPORTED_ATTRIBUTE_KEY_SLOT)
               .toString()
               ->asAtom();
 }
@@ -1010,7 +1023,7 @@ Maybe<uint32_t> CyclicModuleFields::maybePendingAsyncDependencies() const {
 
 /* static */ const JSClass ModuleObject::class_ = {
     "Module",
-    JSCLASS_HAS_RESERVED_SLOTS(ModuleObject::SlotCount) |
+    JSCLASS_HAS_RESERVED_SLOTS(ModuleObject::SLOT_COUNT) |
         JSCLASS_BACKGROUND_FINALIZE,
     &ModuleObject::classOps_,
 };
@@ -1021,14 +1034,14 @@ bool ModuleObject::isInstance(HandleValue value) {
 }
 
 bool ModuleObject::hasCyclicModuleFields() const {
-  bool result = !getReservedSlot(CyclicModuleFieldsSlot).isUndefined();
+  bool result = !getReservedSlotTyped(CYCLIC_MODULE_FIELDS_SLOT).isUndefined();
   MOZ_ASSERT_IF(result, !hasSyntheticModuleFields());
   return result;
 }
 
 CyclicModuleFields* ModuleObject::cyclicModuleFields() {
   MOZ_ASSERT(hasCyclicModuleFields());
-  void* ptr = getReservedSlot(CyclicModuleFieldsSlot).toPrivate();
+  void* ptr = getReservedSlotTyped(CYCLIC_MODULE_FIELDS_SLOT).toPrivate();
   MOZ_ASSERT(ptr);
   return static_cast<CyclicModuleFields*>(ptr);
 }
@@ -1078,7 +1091,7 @@ ModuleObject* ModuleObject::create(JSContext* cx) {
     return nullptr;
   }
 
-  InitReservedSlot(self, CyclicModuleFieldsSlot, fields.release(),
+  InitReservedSlot(self, CYCLIC_MODULE_FIELDS_SLOT.index(), fields.release(),
                    MemoryUse::ModuleCyclicFields);
 
   return self;
@@ -1098,8 +1111,8 @@ ModuleObject* ModuleObject::createSynthetic(
     return nullptr;
   }
 
-  InitReservedSlot(self, SyntheticModuleFieldsSlot, syntheticFields.release(),
-                   MemoryUse::ModuleSyntheticFields);
+  InitReservedSlot(self, SYNTHETIC_MODULE_FIELDS_SLOT.index(),
+                   syntheticFields.release(), MemoryUse::ModuleSyntheticFields);
 
   self->syntheticModuleFields()->exportNames = std::move(exportNames.get());
 
@@ -1120,7 +1133,7 @@ void ModuleObject::finalize(JS::GCContext* gcx, JSObject* obj) {
 }
 
 ModuleEnvironmentObject& ModuleObject::initialEnvironment() const {
-  Value value = getReservedSlot(EnvironmentSlot);
+  Value value = getReservedSlotTyped(MODULE_ENVIRONMENT_SLOT);
   return value.toObject().as<ModuleEnvironmentObject>();
 }
 
@@ -1142,7 +1155,7 @@ IndirectBindingMap& ModuleObject::importBindings() {
 }
 
 ModuleNamespaceObject* ModuleObject::namespace_() {
-  Value value = getReservedSlot(NamespaceSlot);
+  Value value = getReservedSlotTyped(NAMESPACE_SLOT);
   if (value.isUndefined()) {
     return nullptr;
   }
@@ -1154,7 +1167,7 @@ ScriptSourceObject* ModuleObject::scriptSourceObject() const {
 }
 
 JSObject* ModuleObject::moduleSource() const {
-  Value value = getReservedSlot(ModuleSourceSlot);
+  Value value = getReservedSlotTyped(MODULE_SOURCE_SLOT);
   if (value.isUndefined()) {
     return nullptr;
   }
@@ -1171,7 +1184,7 @@ bool ModuleObject::initScriptSlots(JSContext* cx, HandleScript script) {
   MOZ_ASSERT(script);
   MOZ_ASSERT(script->sourceObject());
   MOZ_ASSERT(script->filename());
-  initReservedSlot(ScriptSlot, PrivateGCThingValue(script));
+  initReservedSlotTyped(SCRIPT_SLOT, PrivateGCThingValue(script));
   cyclicModuleFields()->scriptSourceObject = script->sourceObject();
   auto& sources = ObjectRealm::get(this).moduleScriptSources;
   WeakHeapPtr<ScriptSourceObject*> key(script->sourceObject());
@@ -1184,7 +1197,7 @@ bool ModuleObject::initScriptSlots(JSContext* cx, HandleScript script) {
 }
 
 void ModuleObject::initModuleSourceSlot(HandleObject moduleSource) {
-  initReservedSlot(ModuleSourceSlot, ObjectValue(*moduleSource));
+  initReservedSlotTyped(MODULE_SOURCE_SLOT, ObjectValue(*moduleSource));
 }
 
 void ModuleObject::initScriptSourceObject(ScriptSourceObject* sso) {
@@ -1193,7 +1206,8 @@ void ModuleObject::initScriptSourceObject(ScriptSourceObject* sso) {
 
 void ModuleObject::setInitialEnvironment(
     Handle<ModuleEnvironmentObject*> initialEnvironment) {
-  initReservedSlot(EnvironmentSlot, ObjectValue(*initialEnvironment));
+  initReservedSlotTyped(MODULE_ENVIRONMENT_SLOT,
+                        ObjectValue(*initialEnvironment));
 }
 
 void ModuleObject::initImportExportData(
@@ -1226,7 +1240,7 @@ bool ModuleObject::Freeze(JSContext* cx, Handle<ModuleObject*> self) {
 #endif
 
 JSScript* ModuleObject::maybeScript() const {
-  Value value = getReservedSlot(ScriptSlot);
+  Value value = getReservedSlotTyped(SCRIPT_SLOT);
   if (value.isUndefined()) {
     return nullptr;
   }
@@ -1398,14 +1412,15 @@ const LoadedModuleMap& ModuleObject::loadedModules() const {
 }
 
 bool ModuleObject::hasSyntheticModuleFields() const {
-  bool result = !getReservedSlot(SyntheticModuleFieldsSlot).isUndefined();
+  bool result =
+      !getReservedSlotTyped(SYNTHETIC_MODULE_FIELDS_SLOT).isUndefined();
   MOZ_ASSERT_IF(result, !hasCyclicModuleFields());
   return result;
 }
 
 SyntheticModuleFields* ModuleObject::syntheticModuleFields() {
   MOZ_ASSERT(!hasCyclicModuleFields());
-  void* ptr = getReservedSlot(SyntheticModuleFieldsSlot).toPrivate();
+  void* ptr = getReservedSlotTyped(SYNTHETIC_MODULE_FIELDS_SLOT).toPrivate();
   MOZ_ASSERT(ptr);
   return static_cast<SyntheticModuleFields*>(ptr);
 }
@@ -1459,11 +1474,11 @@ void ModuleObject::setMetaObject(JSObject* obj) {
 
 #ifdef DEBUG
 void ModuleObject::setPreload(bool isPreload) {
-  setReservedSlot(PreloadSlot, BooleanValue(isPreload));
+  setReservedSlotTyped(PRELOAD_SLOT, BooleanValue(isPreload));
 }
 
 bool ModuleObject::isPreload() const {
-  return getReservedSlot(PreloadSlot).toBoolean();
+  return getReservedSlotTyped(PRELOAD_SLOT).toBoolean();
 }
 #endif
 
@@ -1558,10 +1573,10 @@ bool ModuleObject::execute(JSContext* cx, Handle<ModuleObject*> self) {
 
 /* static */
 void ModuleObject::onTopLevelEvaluationFinished(ModuleObject* module) {
-  // ScriptSlot is used by debugger to access environments during evaluating
+  // SCRIPT_SLOT is used by debugger to access environments during evaluating
   // the top-level script.
   // Clear the reference at exit to prevent us keeping this alive unnecessarily.
-  module->setReservedSlot(ScriptSlot, UndefinedValue());
+  module->setReservedSlotTyped(SCRIPT_SLOT, UndefinedValue());
 }
 
 /* static */
@@ -1581,12 +1596,12 @@ ModuleNamespaceObject* ModuleObject::createNamespace(
     return nullptr;
   }
 
-  self->initReservedSlot(NamespaceSlot, ObjectValue(*ns));
+  self->initReservedSlotTyped(NAMESPACE_SLOT, ObjectValue(*ns));
   return ns;
 }
 
 void ModuleObject::clearNamespaceOnFailure() {
-  setReservedSlot(NamespaceSlot, UndefinedValue());
+  setReservedSlotTyped(NAMESPACE_SLOT, UndefinedValue());
 }
 
 /* static */
@@ -1650,11 +1665,10 @@ void GraphLoadingStateRecord::trace(JSTracer* trc) { visited.trace(trc); }
 /* static */
 const JSClass GraphLoadingStateRecordObject::class_ = {
     "GraphLoadingStateRecordObject",
-    JSCLASS_HAS_RESERVED_SLOTS(GraphLoadingStateRecordObject::SlotCount) |
+    JSCLASS_HAS_RESERVED_SLOTS(GraphLoadingStateRecordObject::SLOT_COUNT) |
         JSCLASS_BACKGROUND_FINALIZE,
     &GraphLoadingStateRecordObject::classOps_,
 };
-static_assert(GraphLoadingStateRecordObject::StateSlot == 0);
 
 /* static */
 const JSClassOps GraphLoadingStateRecordObject::classOps_ = {
@@ -1679,11 +1693,12 @@ GraphLoadingStateRecordObject* GraphLoadingStateRecordObject::create(
     return nullptr;
   }
 
-  InitReservedSlot(self, StateSlot, state, MemoryUse::GraphLoadingStateRecord);
-  self->initReservedSlot(IsLoadingSlot, Int32Value(isLoading));
-  self->initReservedSlot(PendingModulesCountSlot,
-                         Int32Value(pendingModulesCount));
-  self->initReservedSlot(HostDefinedSlot, hostDefined);
+  InitReservedSlot(self, STATE_SLOT.index(), state,
+                   MemoryUse::GraphLoadingStateRecord);
+  self->initReservedSlotTyped(IS_LOADING_SLOT, Int32Value(isLoading));
+  self->initReservedSlotTyped(PENDING_MODULES_COUNT_SLOT,
+                              Int32Value(pendingModulesCount));
+  self->initReservedSlot(HOST_DEFINED_SLOT, hostDefined);
   return self;
 }
 
@@ -1703,47 +1718,48 @@ GraphLoadingStateRecordObject* GraphLoadingStateRecordObject::create(
     return nullptr;
   }
 
-  InitReservedSlot(self, StateSlot, state, MemoryUse::GraphLoadingStateRecord);
-  self->initReservedSlot(PromiseSlot, ObjectValue(*promise));
-  self->initReservedSlot(IsLoadingSlot, Int32Value(isLoading));
-  self->initReservedSlot(PendingModulesCountSlot,
-                         Int32Value(pendingModulesCount));
-  self->initReservedSlot(HostDefinedSlot, hostDefined);
+  InitReservedSlot(self, STATE_SLOT.index(), state,
+                   MemoryUse::GraphLoadingStateRecord);
+  self->initReservedSlotTyped(PROMISE_SLOT, ObjectValue(*promise));
+  self->initReservedSlotTyped(IS_LOADING_SLOT, Int32Value(isLoading));
+  self->initReservedSlotTyped(PENDING_MODULES_COUNT_SLOT,
+                              Int32Value(pendingModulesCount));
+  self->initReservedSlot(HOST_DEFINED_SLOT, hostDefined);
   return self;
 }
 
 VisitedModuleSet& GraphLoadingStateRecordObject::visited() {
   GraphLoadingStateRecord* state = static_cast<GraphLoadingStateRecord*>(
-      getReservedSlot(StateSlot).toPrivate());
+      getReservedSlotTyped(STATE_SLOT).toPrivate());
   MOZ_ASSERT(state);
   return state->visited;
 }
 
 PromiseObject* GraphLoadingStateRecordObject::promise() {
-  if (getReservedSlot(PromiseSlot).isUndefined()) {
+  if (getReservedSlotTyped(PROMISE_SLOT).isUndefined()) {
     return nullptr;
   }
-  return &getReservedSlot(PromiseSlot).toObject().as<PromiseObject>();
+  return &getReservedSlotTyped(PROMISE_SLOT).toObject().as<PromiseObject>();
 }
 
 bool GraphLoadingStateRecordObject::isLoading() {
-  return getReservedSlot(IsLoadingSlot).toInt32();
+  return getReservedSlotTyped(IS_LOADING_SLOT).toInt32();
 }
 
 void GraphLoadingStateRecordObject::setIsLoading(bool isLoading) {
-  setReservedSlot(IsLoadingSlot, Int32Value(isLoading));
+  setReservedSlotTyped(IS_LOADING_SLOT, Int32Value(isLoading));
 }
 
 uint32_t GraphLoadingStateRecordObject::pendingModulesCount() {
-  return getReservedSlot(PendingModulesCountSlot).toInt32();
+  return getReservedSlotTyped(PENDING_MODULES_COUNT_SLOT).toInt32();
 }
 
 void GraphLoadingStateRecordObject::setPendingModulesCount(uint32_t count) {
-  setReservedSlot(PendingModulesCountSlot, Int32Value(count));
+  setReservedSlotTyped(PENDING_MODULES_COUNT_SLOT, Int32Value(count));
 }
 
 Value GraphLoadingStateRecordObject::hostDefined() {
-  return getReservedSlot(HostDefinedSlot);
+  return getReservedSlot(HOST_DEFINED_SLOT);
 }
 
 bool GraphLoadingStateRecordObject::resolved(
@@ -1754,7 +1770,7 @@ bool GraphLoadingStateRecordObject::resolved(
   }
 
   GraphLoadingStateRecord* state = static_cast<GraphLoadingStateRecord*>(
-      getReservedSlot(StateSlot).toPrivate());
+      getReservedSlotTyped(STATE_SLOT).toPrivate());
   MOZ_ASSERT(state);
   MOZ_ASSERT(state->resolved);
   return state->resolved(cx, hostDefined);
@@ -1769,7 +1785,7 @@ bool GraphLoadingStateRecordObject::rejected(JSContext* cx,
   }
 
   GraphLoadingStateRecord* state = static_cast<GraphLoadingStateRecord*>(
-      getReservedSlot(StateSlot).toPrivate());
+      getReservedSlotTyped(STATE_SLOT).toPrivate());
   MOZ_ASSERT(state);
   MOZ_ASSERT(state->rejected);
   return state->rejected(cx, hostDefined, error);
@@ -1779,7 +1795,7 @@ bool GraphLoadingStateRecordObject::rejected(JSContext* cx,
 void GraphLoadingStateRecordObject::finalize(JS::GCContext* gcx,
                                              JSObject* obj) {
   auto* self = &obj->as<GraphLoadingStateRecordObject>();
-  Value stateValue = self->getReservedSlot(StateSlot);
+  Value stateValue = self->getReservedSlotTyped(STATE_SLOT);
   if (!stateValue.isUndefined()) {
     auto* state = static_cast<GraphLoadingStateRecord*>(stateValue.toPrivate());
     gcx->delete_(obj, state, MemoryUse::GraphLoadingStateRecord);
@@ -1790,7 +1806,7 @@ void GraphLoadingStateRecordObject::finalize(JS::GCContext* gcx,
 void GraphLoadingStateRecordObject::trace(JSTracer* trc, JSObject* obj) {
   GraphLoadingStateRecordObject* self =
       &obj->as<GraphLoadingStateRecordObject>();
-  Value stateValue = self->getReservedSlot(StateSlot);
+  Value stateValue = self->getReservedSlotTyped(STATE_SLOT);
   if (!stateValue.isUndefined()) {
     GraphLoadingStateRecord* state =
         static_cast<GraphLoadingStateRecord*>(stateValue.toPrivate());
@@ -1869,16 +1885,16 @@ bool ModuleBuilder::buildTables(frontend::StencilModuleMetadata& metadata) {
           frontend::StencilModuleEntry entry =
               frontend::StencilModuleEntry::exportFromEntry(
                   importEntry->moduleRequest, importEntry->importName,
-                  exp.exportName, exp.lineno, exp.column);
+                  exp.exportName, importEntry->importNameValueType, exp.lineno,
+                  exp.column);
           if (!metadata.indirectExportEntries.append(entry)) {
             js::ReportOutOfMemory(fc_);
             return false;
           }
         }
       }
-    } else if (exp.importName == frontend::TaggedParserAtomIndex::WellKnown::
-                                     star_all_but_default_star_() &&
-               !exp.exportName) {
+    } else if (exp.importNameValueType == ImportNameValueType::AllButDefault) {
+      MOZ_ASSERT(!exp.exportName);
       if (!metadata.starExportEntries.append(exp)) {
         js::ReportOutOfMemory(fc_);
         return false;
@@ -1994,7 +2010,8 @@ bool frontend::StencilModuleMetadata::createImportEntries(
     MOZ_ASSERT(!entry.exportName);
 
     output.infallibleEmplaceBack(moduleRequest, importName, localName,
-                                 entry.lineno, entry.column);
+                                 entry.importNameValueType, entry.lineno,
+                                 entry.column);
   }
 
   return true;
@@ -2036,7 +2053,8 @@ bool frontend::StencilModuleMetadata::createExportEntries(
     }
 
     output.infallibleEmplaceBack(exportName, moduleRequestObject, importName,
-                                 localName, entry.lineno, entry.column);
+                                 localName, entry.importNameValueType,
+                                 entry.lineno, entry.column);
   }
 
   return true;
@@ -2163,8 +2181,7 @@ bool ModuleBuilder::processAttributes(frontend::StencilModuleRequest& request,
 bool ModuleBuilder::processImport(frontend::BinaryNode* importNode) {
   using namespace js::frontend;
 
-  MOZ_ASSERT(importNode->isKind(ParseNodeKind::ImportDecl) ||
-             importNode->isKind(ParseNodeKind::ImportSourceDecl));
+  MOZ_ASSERT(importNode->isKind(ParseNodeKind::ImportDecl));
 
   auto* moduleRequest = &importNode->right()->as<BinaryNode>();
   MOZ_ASSERT(moduleRequest->isKind(ParseNodeKind::ImportModuleRequest));
@@ -2174,7 +2191,7 @@ bool ModuleBuilder::processImport(frontend::BinaryNode* importNode) {
 
   auto specifier = moduleSpec->atom();
 
-  if (importNode->isKind(ParseNodeKind::ImportSourceDecl)) {
+  if (importNode->as<ImportDeclarationNode>().phase() == ImportPhase::Source) {
     auto* localNameNode = &importNode->left()->as<NameNode>();
     MOZ_ASSERT(localNameNode->isKind(ParseNodeKind::Name));
 
@@ -2197,9 +2214,8 @@ bool ModuleBuilder::processImport(frontend::BinaryNode* importNode) {
                                        &column);
 
     auto entry = StencilModuleEntry::importEntry(
-        moduleRequestIndex, localName,
-        TaggedParserAtomIndex::WellKnown::star_source_star_(), line,
-        JS::ColumnNumberOneOrigin(column));
+        moduleRequestIndex, localName, TaggedParserAtomIndex(),
+        ImportNameValueType::Source, line, JS::ColumnNumberOneOrigin(column));
     return importEntries_.put(localName, entry);
   }
 
@@ -2238,8 +2254,8 @@ bool ModuleBuilder::processImport(frontend::BinaryNode* importNode) {
       markUsedByStencil(localName);
       markUsedByStencil(importName);
       entry = StencilModuleEntry::importEntry(
-          moduleRequestIndex, localName, importName, line,
-          JS::ColumnNumberOneOrigin(column));
+          moduleRequestIndex, localName, importName,
+          ImportNameValueType::String, line, JS::ColumnNumberOneOrigin(column));
     } else {
       MOZ_ASSERT(item->isKind(ParseNodeKind::ImportNamespaceSpec));
       auto* spec = &item->as<UnaryNode>();
@@ -2250,8 +2266,8 @@ bool ModuleBuilder::processImport(frontend::BinaryNode* importNode) {
 
       markUsedByStencil(localName);
       entry = StencilModuleEntry::importEntry(
-          moduleRequestIndex, localName,
-          TaggedParserAtomIndex::WellKnown::star_namespace_star_(), line,
+          moduleRequestIndex, localName, TaggedParserAtomIndex(),
+          ImportNameValueType::Namespace, line,
           JS::ColumnNumberOneOrigin(column));
     }
 
@@ -2482,8 +2498,8 @@ bool ModuleBuilder::processExportFrom(frontend::BinaryNode* exportNode) {
       markUsedByStencil(importName);
       markUsedByStencil(exportName);
       entry = StencilModuleEntry::exportFromEntry(
-          moduleRequestIndex, importName, exportName, line,
-          JS::ColumnNumberOneOrigin(column));
+          moduleRequestIndex, importName, exportName,
+          ImportNameValueType::String, line, JS::ColumnNumberOneOrigin(column));
     } else if (spec->isKind(ParseNodeKind::ExportNamespaceSpec)) {
       auto* exportNameNode = &spec->as<UnaryNode>().kid()->as<NameNode>();
 
@@ -2492,9 +2508,9 @@ bool ModuleBuilder::processExportFrom(frontend::BinaryNode* exportNode) {
 
       markUsedByStencil(exportName);
       entry = StencilModuleEntry::exportFromEntry(
-          moduleRequestIndex,
-          TaggedParserAtomIndex::WellKnown::star_namespace_star_(), exportName,
-          line, JS::ColumnNumberOneOrigin(column));
+          moduleRequestIndex, TaggedParserAtomIndex(), exportName,
+          ImportNameValueType::Namespace, line,
+          JS::ColumnNumberOneOrigin(column));
     } else {
       MOZ_ASSERT(spec->isKind(ParseNodeKind::ExportBatchSpecStmt));
 

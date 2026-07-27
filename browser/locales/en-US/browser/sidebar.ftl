@@ -77,6 +77,8 @@ sidebar-settings2 =
   .label = Settings
 sidebar-hide-tabs-and-sidebar =
   .label = Hide tabs and sidebar
+sidebar-open-tools-from-sidebar =
+  .label = Open tools from sidebar
 sidebar-show-on-the-right =
   .label = Move sidebar to the right
 sidebar-show-on-the-left =
@@ -139,6 +141,13 @@ sidebar-bookmarks-context-menu-delete-bookmark =
   .label = Delete Bookmark
 sidebar-bookmarks-context-menu-delete-separator =
   .label = Delete
+
+## Labels for sidebar open tabs context menu items
+
+# Label for the context menu item that closes the tab the user
+# right-clicked in the Open Tabs sidebar panel.
+sidebar-opentabs-context-close-tab =
+  .label = Close Tab
 
 ## Labels for sidebar menu items.
 

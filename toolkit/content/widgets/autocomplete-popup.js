@@ -120,16 +120,20 @@
                 this.mousedOverIndex = index;
 
                 if (item.selectedByMouseOver) {
-                  const prevKeyboardSelected = this.richlistbox.querySelector(
-                    "autocomplete-row-item[selected]"
-                  );
-                  if (prevKeyboardSelected) {
-                    prevKeyboardSelected.selected = false;
-                  }
-                  this.richlistbox.selectedIndex = index;
+                  this._setSelectedIndex(index, true);
                 }
 
                 this.mLastMoveTime = Date.now();
+                break;
+              }
+              case "mouseout": {
+                if (
+                  this.richlistbox.hasAttribute("pointerselected") &&
+                  !this.richlistbox.contains(event.relatedTarget)
+                ) {
+                  this.mousedOverIndex = -1;
+                  this.selectedIndex = -1;
+                }
                 break;
               }
             }
@@ -139,6 +143,7 @@
       this.richlistbox.addEventListener("mousedown", this.listEvents);
       this.richlistbox.addEventListener("mouseup", this.listEvents);
       this.richlistbox.addEventListener("mousemove", this.listEvents);
+      this.richlistbox.addEventListener("mouseout", this.listEvents);
     }
 
     get richlistbox() {
@@ -174,9 +179,17 @@
     }
 
     set selectedIndex(val) {
-      if (val != this.richlistbox.selectedIndex) {
+      this._setSelectedIndex(val, false);
+    }
+
+    _setSelectedIndex(val, pointer) {
+      const changed = val != this.richlistbox.selectedIndex;
+      if (changed) {
         this._previousSelectedIndex = this.richlistbox.selectedIndex;
       }
+
+      this.richlistbox.toggleAttribute("pointerselected", pointer);
+
       this.richlistbox.selectedIndex = val;
 
       const prevSelectedItem = this.richlistbox.children[
@@ -194,7 +207,7 @@
         selectedItem.selected = true;
       }
 
-      if (selectedItem || prevSelectedItem) {
+      if (changed && (selectedItem || prevSelectedItem)) {
         lazy.AutoCompleteParent.getCurrentActor()?.previewAutoCompleteEntry();
       }
 
@@ -564,6 +577,7 @@
         this.richlistbox.removeEventListener("mousedown", this.listEvents);
         this.richlistbox.removeEventListener("mouseup", this.listEvents);
         this.richlistbox.removeEventListener("mousemove", this.listEvents);
+        this.richlistbox.removeEventListener("mouseout", this.listEvents);
         delete this.listEvents;
       }
     }

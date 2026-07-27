@@ -1,0 +1,688 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+import { html, nothing } from "chrome://global/content/vendor/lit.all.mjs";
+import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/elements/moz-input-text.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/elements/moz-input-url.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/elements/moz-select.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/elements/moz-button.mjs";
+
+const SCHEDULE_TYPES = Object.freeze({
+  DAILY: "daily",
+  WEEKLY: "weekly",
+});
+
+const SCHEDULE_ICON = "chrome://browser/skin/calendar-24.svg";
+const MAX_WATCH_URLS = 5;
+
+// Check times offered by the create card in 30-minute increments
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
+  const hour24 = Math.floor(i / 2);
+  const minute = i % 2 ? 30 : 0;
+  const period = hour24 < 12 ? "AM" : "PM";
+  const hour12 = hour24 % 12 || 12;
+  const mm = String(minute).padStart(2, "0");
+  return {
+    value: `${String(hour24).padStart(2, "0")}:${mm}`,
+    label: `${hour12}:${mm} ${period}`,
+  };
+});
+
+// Indexed by the weekday values used by the scheduler (0 = Sunday)
+const WEEKDAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+/**
+ * A single monitor card:
+ * It has three modes and is host-agnostic - monitor data comes
+ * in via the 'agent' property and every action is a bubbling CustomEvent for
+ * the host to handle. The host also decides the collapse affordance (chat uses
+ * the chevron; the page can click-to-expand), so the component only exposes
+ * 'expanded'/'editing' state
+ *
+ * Modes:
+ *  - "display": collapsed shows the head  with a chevron and
+ *    expanded reveals the value, condition, actions and change history.
+ *  - "create": the full form used when setting up a new monitor.
+ *
+ * Dispatches:
+ *  - agent-monitor-item:toggle       detail: { expanded }
+ *  - agent-monitor-item:edit-toggle  detail: { editing }
+ *  - agent-monitor-item:submit       detail: { mode, id, monitorName, condition, watchUrls, schedule }
+ *  - agent-monitor-item:cancel
+ *  - agent-monitor-item:delete       detail: { id }
+ *  - agent-monitor-item:pause        detail: { id, paused }
+ *  - agent-monitor-item:check-now    detail: { id }
+ *  - agent-monitor-item:open         detail: { id, url }
+ *
+ * @property {Agent} agent - Monitor data:
+ *  {
+ *    id: string,
+ *    monitorName: string,
+ *    url: string,
+ *    faviconText?: string,      // 1-2 char fallback favicon glyph
+ *    faviconColor?: string,     // fallback favicon background
+ *    value?: string,            // current value, e.g. "$278"
+ *    valueMeta?: string,        // e.g. "checked 2:14 PM · was $299"
+ *    condition?: string,        // e.g. "the price drops below $270"
+ *    conditionPresets?: string[],
+ *    status?: { label: string, kind?: "watching"|"paused" },
+ *    cadence?: string,
+ *    history?: Array<{ when: string, oldValue?: string, newValue?: string,
+ *                      note?: string, flag?: string, low?: boolean }>,
+ *  }
+ * @property {"display"|"create"} mode - Which card layout to render
+ * @property {boolean} expanded - Whether the display card is expanded
+ * @property {boolean} editing - Whether the editable condition field is shown
+ */
+export class AgentMonitorItem extends MozLitElement {
+  static properties = {
+    agent: { type: Object },
+    mode: { type: String, reflect: true },
+    expanded: { type: Boolean, reflect: true },
+    editing: { type: Boolean, reflect: true },
+    checkFrequency: { type: String, state: true },
+    scheduleTime: { type: String, state: true },
+    scheduleWeekday: { type: String, state: true },
+    alertDescription: { type: String, state: true },
+    pageUrls: { type: Array, state: true },
+    pendingUrl: { type: String, state: true },
+    pendingUrlError: { type: String, state: true },
+  };
+
+  constructor() {
+    super();
+    this.agent = {};
+    this.mode = "display";
+    this.expanded = false;
+    this.editing = false;
+    this.checkFrequency = SCHEDULE_TYPES.DAILY;
+    this.scheduleTime = "09:00";
+    this.scheduleWeekday = "1";
+    this.alertDescription = "";
+    this.pageUrls = [];
+    this.pendingUrl = "";
+    this.pendingUrlError = "";
+    this.#draftName = null;
+  }
+
+  #draftName;
+
+  willUpdate(changed) {
+    if (changed.has("agent")) {
+      this.#draftName = null;
+
+      const { watchUrls, url, condition } = this.agent ?? {};
+      let seededUrls = [];
+      if (watchUrls?.length) {
+        seededUrls = watchUrls;
+      } else if (url) {
+        seededUrls = [url];
+      }
+      this.pageUrls = seededUrls.filter(u => u?.trim().length);
+      this.alertDescription = condition ?? "";
+      this.pendingUrl = "";
+      this.pendingUrlError = "";
+
+      // Seed the schedule fields from an existing monitor so edit mode reflects
+      // its current scheduled
+      const schedule = this.agent?.schedule;
+      if (schedule) {
+        this.checkFrequency = schedule.frequency ?? this.checkFrequency;
+        this.scheduleTime = schedule.time ?? this.scheduleTime;
+        this.scheduleWeekday = schedule.weekday ?? this.scheduleWeekday;
+      }
+    }
+  }
+
+  #dispatch(type, detail) {
+    this.dispatchEvent(
+      new CustomEvent(type, { detail, bubbles: true, composed: true })
+    );
+  }
+
+  get #monitorName() {
+    return this.#draftName ?? this.agent?.monitorName ?? "";
+  }
+
+  get #isFormValid() {
+    const hasDescription = this.alertDescription?.trim().length > 0;
+    const hasValidUrl = !!this.pageUrls.length;
+    return hasDescription && hasValidUrl && !this.pendingUrlError;
+  }
+
+  #onNameInput(event) {
+    this.#draftName = event.target.value;
+  }
+
+  #onCardClick(e) {
+    if (e.target.closest("button")) {
+      return;
+    }
+    this.#onToggle(e);
+  }
+
+  #onToggle() {
+    this.expanded = !this.expanded;
+    this.#dispatch("agent-monitor-item:toggle", { expanded: this.expanded });
+  }
+
+  #onEditToggle() {
+    this.editing = !this.editing;
+
+    if (this.editing) {
+      this.expanded = true;
+    }
+    this.#dispatch("agent-monitor-item:edit-toggle", { editing: this.editing });
+  }
+
+  #onConditionInput(event) {
+    this.alertDescription = event.target.value;
+  }
+
+  #onPresetClick(preset) {
+    this.alertDescription = preset;
+  }
+
+  // TODO: Bug 2054529 - share this URL validation with about:tools' create form
+  #validateUrl(url) {
+    const value = url.trim();
+    if (!value) {
+      return { valid: true, error: "" };
+    }
+    try {
+      const { protocol } = new URL(value);
+      if (protocol !== "http:" && protocol !== "https:") {
+        return { valid: false, error: "Only HTTP and HTTPS URLs are allowed" };
+      }
+      return { valid: true, error: "" };
+    } catch {
+      return { valid: false, error: "Please enter a valid URL" };
+    }
+  }
+
+  #validatePendingUrl() {
+    this.pendingUrlError = this.pendingUrl.trim()
+      ? this.#validateUrl(this.pendingUrl).error
+      : "";
+  }
+
+  #addUrl() {
+    const url = this.pendingUrl.trim();
+    if (!url) {
+      return;
+    }
+    const { valid, error } = this.#validateUrl(url);
+    if (!valid) {
+      this.pendingUrlError = error;
+      return;
+    }
+    if (this.pageUrls.includes(url)) {
+      this.pendingUrlError = "This URL has already been added";
+      return;
+    }
+    if (this.pageUrls.length >= MAX_WATCH_URLS) {
+      this.pendingUrlError = `Maximum of ${MAX_WATCH_URLS} URLs allowed`;
+      return;
+    }
+    this.pageUrls = [...this.pageUrls, url];
+    this.pendingUrl = "";
+    this.pendingUrlError = "";
+  }
+
+  #removeUrl(url) {
+    this.pageUrls = this.pageUrls.filter(u => u !== url);
+  }
+
+  #displayUrl(url) {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url;
+    }
+  }
+
+  #onPendingUrlInput(event) {
+    this.pendingUrl = event.target.value;
+    this.#validatePendingUrl();
+  }
+
+  #onPendingUrlKeydown(event) {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    this.#addUrl();
+  }
+
+  #onSubmit() {
+    if (!this.#isFormValid) {
+      return;
+    }
+    this.#dispatch("agent-monitor-item:submit", {
+      mode: this.mode,
+      id: this.agent?.id,
+      monitorName: this.#monitorName,
+      condition: this.alertDescription.trim(),
+      watchUrls: [...this.pageUrls],
+      schedule: {
+        frequency: this.checkFrequency,
+        time: this.scheduleTime,
+        weekday: this.scheduleWeekday,
+      },
+    });
+  }
+
+  #renderStatusChip() {
+    const statusInfo = this.agent?.status;
+    if (!statusInfo?.label) {
+      return nothing;
+    }
+    return html`<span
+      class="status-chip ${statusInfo.kind}"
+      data-kind=${statusInfo.kind ?? "watching"}
+    >
+      ${statusInfo.kind === "watching"
+        ? html`<span class="pulse-dot"></span>`
+        : nothing}
+      ${statusInfo.label}
+    </span>`;
+  }
+
+  #renderConditionField() {
+    const presets = this.agent?.conditionPresets ?? [];
+    /* TODO: Bug 2054529 - Add localize strings */
+    return html`
+      <div class="field">
+        <span class="field-label">Alert me when</span>
+        <moz-textarea
+          class="monitor-condition-input"
+          placeholder="e.g. the price drops below $270"
+          .value=${this.alertDescription}
+          @input=${this.#onConditionInput}
+          @change=${this.#onConditionInput}
+          aria-label="Alert condition"
+        ></moz-textarea>
+        ${presets.length
+          ? html`<div class="chip-row">
+              ${presets.map(
+                preset =>
+                  html`<moz-button
+                    class="chip ${preset === this.alertDescription
+                      ? "selected"
+                      : ""}"
+                    label=${preset}
+                    @click=${() => this.#onPresetClick(preset)}
+                  ></moz-button>`
+              )}
+            </div>`
+          : nothing}
+      </div>
+    `;
+  }
+
+  #renderPagesField() {
+    /* TODO: Bug 2054529 - Add localize strings */
+    return html`
+      <div class="field">
+        <span class="field-label">Pages</span>
+        <div class="pages-container">
+          ${this.pageUrls.length
+            ? html`<div class="page-pills-row">
+                ${this.pageUrls.map(
+                  url =>
+                    html`<span class="page-pill">
+                      <span class="page-pill-url"
+                        >${this.#displayUrl(url)}</span
+                      >
+                      <button
+                        type="button"
+                        class="page-pill-remove"
+                        aria-label="Remove page"
+                        @click=${() => this.#removeUrl(url)}
+                      ></button>
+                    </span>`
+                )}
+              </div>`
+            : nothing}
+          <div class="page-input-row">
+            <moz-input-url
+              class="form-input page-url-input ${this.pendingUrlError
+                ? "error"
+                : ""}"
+              placeholder="Enter URL"
+              .value=${this.pendingUrl}
+              @input=${this.#onPendingUrlInput}
+              @keydown=${this.#onPendingUrlKeydown}
+              @blur=${() => this.#validatePendingUrl()}
+              aria-label="Add a page URL"
+            ></moz-input-url>
+            <moz-button
+              size="small"
+              type="icon ghost"
+              class="add-page-btn"
+              iconsrc="chrome://global/skin/icons/plus.svg"
+              aria-label="Add URL"
+              ?disabled=${this.pageUrls.length >= MAX_WATCH_URLS}
+              @click=${() => this.#addUrl()}
+            ></moz-button>
+          </div>
+          ${this.pendingUrlError
+            ? html`<div class="error-message">${this.pendingUrlError}</div>`
+            : nothing}
+        </div>
+      </div>
+    `;
+  }
+
+  #renderHistory() {
+    const historyItems = this.agent?.history ?? [];
+    if (!historyItems.length) {
+      return nothing;
+    }
+    /* TODO: Bug 2054529 - Add localize strings */
+    return html`
+      <div class="section-toggle">Change history</div>
+      <div class="history">
+        ${historyItems.map(
+          item =>
+            html`<div class="history-item ${item.low ? "low" : ""}">
+              <span class="when">${item.when}</span>
+              ${item.oldValue
+                ? html`<span class="old-value">${item.oldValue}</span
+                    ><span class="arrow">→</span>`
+                : nothing}
+              ${item.newValue
+                ? html`<span class="new-value">${item.newValue}</span>`
+                : nothing}
+              ${item.flag
+                ? html`<span class="history-flag">${item.flag}</span>`
+                : nothing}
+              ${item.note
+                ? html`<span class="deemphasized">${item.note}</span>`
+                : nothing}
+            </div>`
+        )}
+      </div>
+    `;
+  }
+
+  #onFrequencyChange(event) {
+    this.checkFrequency = event.target.value;
+  }
+
+  #onScheduleTimeChange(event) {
+    this.scheduleTime = event.target.value;
+  }
+
+  #onWeekdayChange(event) {
+    this.scheduleWeekday = event.target.value;
+  }
+
+  #scheduleSummary() {
+    const schedule = this.agent?.schedule;
+    if (!schedule) {
+      return this.agent?.cadence ?? "";
+    }
+    const time =
+      TIME_OPTIONS.find(opt => opt.value === schedule.time)?.label ??
+      schedule.time;
+    /* TODO: Bug 2054529 - Add localize strings */
+    if (schedule.frequency === SCHEDULE_TYPES.WEEKLY) {
+      const day = WEEKDAYS[Number(schedule.weekday)] ?? "";
+      return `Weekly on ${day} at ${time}`;
+    }
+    return `Daily at ${time}`;
+  }
+
+  #renderTimeField() {
+    return html`<div class="form-section-half">
+      <label class="form-label">Time</label>
+      <moz-select
+        class="form-select"
+        .value=${this.scheduleTime}
+        @change=${this.#onScheduleTimeChange}
+        aria-label="Check time"
+      >
+        ${TIME_OPTIONS.map(
+          opt =>
+            html`<moz-option
+              value=${opt.value}
+              label=${opt.label}
+              iconsrc=${SCHEDULE_ICON}
+            ></moz-option>`
+        )}
+      </moz-select>
+    </div>`;
+  }
+
+  #renderScheduler() {
+    return html`
+      <div class="form-row">
+        <div class="schedule-container">
+          <div class="form-section-half">
+            <label class="form-label">Check</label>
+            <moz-select
+              class="form-select"
+              .value=${this.checkFrequency}
+              @change=${this.#onFrequencyChange}
+              aria-label="Check frequency"
+            >
+              <moz-option
+                value=${SCHEDULE_TYPES.DAILY}
+                label="Daily"
+                iconsrc=${SCHEDULE_ICON}
+              ></moz-option>
+              <moz-option
+                value=${SCHEDULE_TYPES.WEEKLY}
+                label="Weekly"
+                iconsrc=${SCHEDULE_ICON}
+              ></moz-option>
+            </moz-select>
+          </div>
+          ${this.checkFrequency === SCHEDULE_TYPES.WEEKLY
+            ? html`<div class="form-section-half">
+                <label class="form-label">Day</label>
+                <moz-select
+                  class="form-select"
+                  .value=${this.scheduleWeekday}
+                  @change=${this.#onWeekdayChange}
+                  aria-label="Check day"
+                >
+                  ${WEEKDAYS.map(
+                    (day, index) =>
+                      html`<moz-option
+                        value=${String(index)}
+                        label=${day}
+                        iconsrc=${SCHEDULE_ICON}
+                      ></moz-option>`
+                  )}
+                </moz-select>
+              </div>`
+            : nothing}
+        </div>
+        ${this.#renderTimeField()}
+      </div>
+    `;
+  }
+
+  #renderCreate() {
+    const agent = this.agent ?? {};
+    /* TODO: Bug 2054529 - Add localize strings */
+    return html`
+      <div class="monitor-card">
+        <div class="monitor-card-head">
+          <div class="monitor-name-field">
+            <span class="field-label">Monitor Name</span>
+            <moz-input-text
+              class="monitor-name-input"
+              placeholder="Name this monitor"
+              .value=${this.#monitorName}
+              @change=${this.#onNameInput}
+              aria-label="Monitor name"
+            ></moz-input-text>
+          </div>
+        </div>
+        ${agent.value
+          ? html`<div class="monitor-value">
+              <span class="now">${agent.value}</span>
+              ${agent.valueMeta
+                ? html`<span class="from">${agent.valueMeta}</span>`
+                : nothing}
+            </div>`
+          : html``}
+        ${this.#renderConditionField()} ${this.#renderPagesField()}
+        ${this.#renderScheduler()}
+
+        <div class="monitor-card-actions">
+          <span class="spacer"></span>
+          <moz-button
+            type="default"
+            label="Cancel"
+            @click=${() => this.#dispatch("agent-monitor-item:cancel", {})}
+          ></moz-button>
+          <moz-button
+            type="primary"
+            label="Start monitoring"
+            @click=${this.#onSubmit}
+          ></moz-button>
+        </div>
+      </div>
+    `;
+  }
+
+  #renderDisplay() {
+    const agent = this.agent ?? {};
+    /* TODO: Bug 2054529 - Add localize strings */
+    return html`
+      <div class="monitor-card chatcard live" @click=${this.#onCardClick}>
+        <div class="monitor-card-head">
+          <span class="monitor-card-title"
+            ><span class="monitor-card-name">${agent.monitorName}</span></span
+          >
+          <span class="spacer"></span>
+          ${this.#renderStatusChip()}
+          <button
+            type="button"
+            class="page-action edit"
+            title="Edit monitor"
+            aria-label="Edit monitor"
+            aria-pressed=${this.editing}
+            @click=${this.#onEditToggle}
+          ></button>
+          <button
+            type="button"
+            class="chev"
+            aria-expanded=${this.expanded}
+            aria-label="Show monitor details"
+            @click=${this.#onToggle}
+          ></button>
+        </div>
+        ${this.expanded ? this.#renderExpand() : nothing}
+      </div>
+    `;
+  }
+
+  #renderExpand() {
+    const agent = this.agent ?? {};
+    /* TODO: Bug 2054529 - Add localize strings */
+    return html`
+      <div class="watch-expand" @click=${e => e.stopPropagation()}>
+        ${agent.value
+          ? html`<div class="monitor-value">
+              <span class="now">${agent.value}</span>
+              ${agent.valueMeta
+                ? html`<span class="from">${agent.valueMeta}</span>`
+                : nothing}
+            </div>`
+          : nothing}
+        ${this.editing
+          ? html`${this.#renderConditionField()} ${this.#renderPagesField()}
+            ${this.#renderScheduler()}`
+          : html`<div class="monitor-row">
+                <span class="label">Alert me when</span>
+                <span class="val">${agent.condition}</span>
+              </div>
+              ${agent.watchUrls?.length
+                ? html`<div class="monitor-row">
+                    <span class="label">Pages</span>
+                    <div class="page-url-list">
+                      ${agent.watchUrls.map(
+                        url =>
+                          html`<span class="page-url-item"
+                            >${this.#displayUrl(url)}</span
+                          >`
+                      )}
+                    </div>
+                  </div>`
+                : nothing}
+              ${this.#scheduleSummary()
+                ? html`<div class="monitor-row">
+                    <span class="label">Check</span
+                    ><span class="val">${this.#scheduleSummary()}</span>
+                  </div>`
+                : nothing}`}
+        ${this.#renderHistory()}
+        <div class="monitor-card-actions">
+          <button
+            type="button"
+            class="page-action danger delete"
+            title="Delete monitor"
+            aria-label="Delete monitor"
+            @click=${() =>
+              this.#dispatch("agent-monitor-item:delete", { id: agent.id })}
+          ></button>
+          <moz-button
+            type="default"
+            @click=${() =>
+              this.#dispatch("agent-monitor-item:pause", {
+                id: agent.id,
+                paused: agent.status?.kind !== "paused",
+              })}
+          >
+            ${agent.status?.kind === "paused" ? "Resume" : "Pause"}
+          </moz-button>
+          <span class="spacer"></span>
+          ${this.editing
+            ? html`<moz-button type="primary" @click=${this.#onSubmit}>
+                Save
+              </moz-button>`
+            : html`<moz-button
+                type="default"
+                @click=${() =>
+                  this.#dispatch("agent-monitor-item:check-now", {
+                    id: agent.id,
+                  })}
+              >
+                Check now
+              </moz-button>`}
+        </div>
+      </div>
+    `;
+  }
+
+  render() {
+    return html`
+      <link
+        rel="stylesheet"
+        href="chrome://browser/content/aiwindow/components/agent-monitor-item.css"
+      />
+      ${this.mode === "create" ? this.#renderCreate() : this.#renderDisplay()}
+    `;
+  }
+}
+
+customElements.define("agent-monitor-item", AgentMonitorItem);

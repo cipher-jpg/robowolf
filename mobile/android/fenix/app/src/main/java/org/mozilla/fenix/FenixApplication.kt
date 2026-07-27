@@ -18,6 +18,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.runtime.Composable
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.edit
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
 import androidx.emoji2.text.DefaultEmojiCompatConfig
@@ -240,6 +241,13 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 applicationContext.getSharedPreferences(Settings.FENIX_PREFERENCES, MODE_PRIVATE)
             }
 
+            // Allow overriding secret settings with values specified in `local.properties` at build time.
+            // This allows developers to opt-in to a set of features for their own workflow.
+            // Only debug build variants populate this BuildConfig value.
+            if (BuildConfig.SECRET_SETTINGS_OVERRIDES.isNotBlank()) {
+                applySecretSettingsOverrides(applicationContext)
+            }
+
             // Initialization is split into two phases based on if libmegazord is fully initialized.
             setupEarlyMain()
             setupPostMegazord()
@@ -249,6 +257,30 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             val stop = SystemClock.elapsedRealtimeNanos()
             val durationMillis = TimeUnit.NANOSECONDS.toMillis(stop - start)
             PerfStartup.applicationOnCreate.accumulateSamples(listOf(durationMillis))
+        }
+    }
+
+    /**
+     * Applies the secret-settings overrides from [BuildConfig.SECRET_SETTINGS_OVERRIDES]. Each
+     * entry is a `<preference key>=<true|false>` pair joined by `;` that forces a
+     * secret setting to a fixed value on startup so it does not have to be toggled manually in the UI.
+     */
+    private fun applySecretSettingsOverrides(context: Context) {
+        context.getSharedPreferences(Settings.FENIX_PREFERENCES, MODE_PRIVATE).edit {
+            BuildConfig.SECRET_SETTINGS_OVERRIDES.split(";").forEach { entry ->
+                val parts = entry.split("=").map { it.trim() }
+                if (parts.size != 2) {
+                    logger.warn("Ignoring malformed secret setting override: $entry")
+                    return@forEach
+                }
+
+                val (rawKey, rawValue) = parts
+                val value = rawValue.toBooleanStrictOrNull() ?: run {
+                    logger.warn("Ignoring secret setting override with non-boolean value: $entry")
+                    return@forEach
+                }
+                putBoolean(rawKey, value)
+            }
         }
     }
 
@@ -514,7 +546,10 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                         components.fxSuggest.ingestionScheduler.stopPeriodicIngestion()
                     }
                 }
+
                 components.core.fileUploadsDirCleaner.cleanUploadsDirectory()
+                components.settings.deletePocketDatabaseIfNeeded()
+                components.settings.deleteReportSiteDomainsDataStoreIfNeeded()
             }
             // Account manager initialization needs to happen on the main thread.
             GlobalScope.launch(Dispatchers.Main) {
@@ -1088,6 +1123,9 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             bookmarksSuggestion.set(settings.shouldShowBookmarkSuggestions)
             clipboardSuggestionsEnabled.set(settings.shouldShowClipboardSuggestions)
             voiceSearchEnabled.set(settings.shouldShowVoiceSearch)
+            googleLensEnabled.set(
+                settings.googleLensIntegrationEnabled && settings.googleLensIntegrationUserEnabled,
+            )
             openLinksInAppEnabled.set(settings.openLinksInExternalApp)
             signedInSync.set(settings.signedInFxaAccount)
             isolatedContentProcessesEnabled.set(settings.isIsolatedProcessEnabled)

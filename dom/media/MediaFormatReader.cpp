@@ -401,7 +401,8 @@ void MediaFormatReader::DecoderFactory::DoCreateDecoder(Data& aData) {
            mOwner->mCrashHelper,
            CreateDecoderParams::UseNullDecoder(ownerData.mIsNullDecode),
            TrackType::kVideoTrack, std::move(onWaitingForKeyEvent),
-           CreateDecoderParams::VideoFrameRate(ownerData.mMeanRate.Mean()),
+           CreateDecoderParams::VideoFrameRate(
+               static_cast<float>(ownerData.mFrameRateEstimator.Rate())),
            OptionSet(ownerData.mHardwareDecodingDisabled
                          ? Option::HardwareDecoderNotAllowed
                          : Option::Default,
@@ -1505,7 +1506,13 @@ RefPtr<MediaFormatReader::VideoDataPromise> MediaFormatReader::RequestVideoData(
     PROFILER_MARKER_UNTYPED("RequestVideoData SkipVideoDemuxToNextKeyFrame",
                             MEDIA_PLAYBACK);
     RefPtr<VideoDataPromise> p = mVideo.EnsurePromise(__func__);
-    SkipVideoDemuxToNextKeyFrame(*target);
+    // A skip can already be in flight from the decode-error recovery path in
+    // Update(), which starts one without a pending video promise.
+    if (!mSkipRequest.Exists()) {
+      SkipVideoDemuxToNextKeyFrame(*target);
+    } else {
+      LOGV("Video skip already in progress; deferring to its completion");
+    }
     return p;
   }
 
@@ -1625,6 +1632,9 @@ void MediaFormatReader::OnVideoDemuxCompleted(
   mVideo.mDemuxRequest.Complete();
   MOZ_ASSERT(mVideo.mQueuedSamples.IsEmpty());
   mVideo.mQueuedSamples = aSamples->GetMovableSamples();
+  for (const auto& sample : mVideo.mQueuedSamples) {
+    mVideo.mFrameRateEstimator.Observe(*sample);
+  }
   ScheduleUpdate(TrackInfo::kVideoTrack);
 }
 
@@ -2218,8 +2228,6 @@ void MediaFormatReader::HandleDemuxedSamples(
       mWorkingInfoChanged = true;
     }
 
-    decoder.mMeanRate.Reset();
-
     if (sample->mKeyframe) {
       if (samples.Length()) {
         decoder.mQueuedSamples = std::move(samples);
@@ -2234,10 +2242,6 @@ void MediaFormatReader::HandleDemuxedSamples(
       return;
     }
   }
-
-  // Calculate the average frame rate. The first frame will be accounted
-  // for twice.
-  decoder.mMeanRate.Update(sample->mDuration);
 
   if (!decoder.mDecoder) {
     // In Clear Lead situation, the `mInfo` could change from unencrypted to
@@ -3500,7 +3504,7 @@ void MediaFormatReader::GetDebugInfo(dom::MediaFormatReaderDebugInfo& aInfo) {
       videoInfo.mDisplay.width < 0 ? 0 : videoInfo.mDisplay.width;
   aInfo.mVideoHeight =
       videoInfo.mDisplay.height < 0 ? 0 : videoInfo.mDisplay.height;
-  aInfo.mVideoRate = mVideo.mMeanRate.Mean();
+  aInfo.mVideoRate = mVideo.mFrameRateEstimator.Rate();
   aInfo.mVideoHardwareAccelerated = VideoIsHardwareAccelerated();
   aInfo.mVideoNumSamplesOutputTotal = mVideo.mNumSamplesOutputTotal;
   aInfo.mVideoNumSamplesSkippedTotal = mVideo.mNumSamplesSkippedTotal;

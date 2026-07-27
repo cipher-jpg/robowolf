@@ -697,6 +697,13 @@ urlbar:
       description: >-
         Whether or not to show calculator results when a user types a valid
         calculation string into the urlbar.
+    trackerCountFeatureGate:
+      type: boolean
+      fallbackPref: browser.urlbar.trackerCount.featureGate
+      description: >-
+        Boolean used to determine if the "x trackers blocked" pill should be
+        shown in the urlbar. Should be false for Control branch of an
+        experiment.
     unitConversionEnabled:
       type: boolean
       setPref:
@@ -2077,6 +2084,27 @@ sessionRestore:
         2 = open last visited page in a tab,
         3 = re-open previous windows and tabs (session restore enabled)
 
+sessionRestoreNewTab:
+  description: Open a new tab after session restore on startup
+  owner: hsohaney@mozilla.com
+  hasExposure: true
+  exposureDescription: >
+    Recorded when a setting-based session restore occurs at startup,
+    regardless of whether the new tab feature is enabled.
+  variables:
+    enabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.sessionstore.newTabOnRestore
+      description: Whether to open a new tab after session restore on startup.
+    showSetting:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.sessionstore.newTabOnRestore.showSetting
+      description: Whether to show the new-tab-on-restore checkbox in about:preferences.
+
 screenshots:
   description: The built-in Screenshots feature
   owner: sfoster@mozilla.com
@@ -2101,8 +2129,7 @@ password-autocomplete:
 address-autofill-feature:
   description: Enabling address autofill feature
   owner: issozi@mozilla.com
-  hasExposure: true
-  exposureDescription: "Exposure is sent when an address is autofilled."
+  hasExposure: false
   variables:
     status:
       type: boolean
@@ -4520,6 +4547,7 @@ opaqueResponseBlocking:
   owner: farre@mozilla.com
   hasExposure: true
   exposureDescription: Exposure is sent when a response is blocked
+  isEarlyStartup: true
   variables:
     enabled:
       description: Whether ORB is enabled
@@ -4842,6 +4870,12 @@ mailto:
         This pref controls after how many minutes the mailto prompt can be shown
         again, which has been dismissed by clicking a 'not now' button on it.
       fallbackPref: browser.mailto.dualPrompt.dismissNotNowMinutes
+    dialog:
+      type: boolean
+      description: >-
+        Toggle a mailto handler picker dialog shown when a mailto link is
+        clicked. When false, the picker is skipped and the link falls back to
+        the default protocol handling.
 
 nimbusIsReady:
   description: A feature that provides the number of Nimbus is_ready events to send
@@ -5228,7 +5262,7 @@ sidebar:
       description: sidebar.verticalTabs pref value to set on user branch; true to enable vertical tabs
     visibility:
       type: string
-      description: sidebar.visibility pref value ("hide" or "always-show") to set on user branch
+      description: 'sidebar.visibility pref value to set on user branch. Vertical tabs: "always-show", "expand-on-hover", "hide-sidebar". Horizontal tabs: "hide-on-close", "hide-launcher".'
 
 fxms_bmb_button:
   description: A feature for the Firefox Messaging System Bookmarks Bar button surface
@@ -5338,6 +5372,20 @@ smartTabGroups:
         branch: user
         pref: browser.tabs.groups.smart.searchTopicEnabled
       description: For single tab groupings, use the search query as the topic rather than use ML
+
+tabContextMenu:
+  description: Prefs to control the behavior and structure of the tab context menu
+  owner: sfoster@mozilla.com
+  hasExposure: false
+  variables:
+    altStructureEnabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.tabs.contextmenu.altstructure.enabled
+      description: >-
+        Controls whether the updated (alternate) tab context menu layout is
+        shown instead of the classic layout.
 
 externalLinkHandling:
   description: Controls how externally-opened URLs will be handled by Firefox.
@@ -5993,6 +6041,9 @@ smartWindow:
   owner: echa@mozilla.com
   hasExposure: false
   variables:
+    enabled:
+      type: boolean
+      description: Enables the Smart Window feature when true. Turning off this variable will not disable the feature.
     isDefault:
       type: boolean
       setPref:
@@ -6001,6 +6052,12 @@ smartWindow:
       description: >-
         If true, Firefox opens as a Smart Window by default on startup for
         eligible users. Set to false (or unenroll) to disable the rollout.
+    hiddenOnboardingScreenIds:
+      type: string
+      fallbackPref: browser.smartwindow.firstrun.hiddenOnboardingScreenIds
+      description: >-
+        Comma-separated list of screen ids that should be hidden in the Smart
+        Window first run onboarding.
 
 contentSharing:
   description: Controls the content sharing feature, which allows users to share browser content.
@@ -6027,15 +6084,17 @@ webNotificationsPermissionUi:
   owner: omc-core@mozilla.com
   hasExposure: true
   exposureDescription: >-
-    Recorded when the permission prompt is rendered with at least one
-    treatment variable applied and the activationTargeting expression
-    (if set) evaluated truthy.
+    Recorded when an enrolled user is shown the permission prompt and the
+    activationTargeting expression (if set) evaluated truthy, regardless of
+    whether any content variable is set. This fires for the empty-content
+    control branch as well so it is comparable to the treatment branches.
   variables:
     headline:
       type: string
       description: >-
         Overrides the prompt headline. Must contain "<>" for site-name
-        substitution. Falls back to the default copy when unset.
+        substitution; a headline without it falls back to the default copy.
+        Also falls back to the default copy when unset.
     body:
       type: string
       description: >-
@@ -6050,18 +6109,27 @@ webNotificationsPermissionUi:
     secondaryCtaLabel:
       type: string
       description: >-
-        Overrides the (Always) Block button label. Applied uniformly across
-        normal and private browsing modes; the underlying BLOCK action and
-        scope are unchanged.
+        Overrides the (Always) Block button label in normal windows only; left
+        at the default in private browsing, where the wording reflects the
+        session-scoped BLOCK semantics. The underlying BLOCK action and scope
+        are unchanged.
     secondaryCtaAccessKey:
       type: string
       description: Optional access key paired with secondaryCtaLabel.
     logoUrl:
       type: string
       description: >-
-        Optional logo URL used as the prompt's icon. Must be a chrome://,
-        resource:// or https:// URL; any other scheme is rejected and the
-        default icon is shown.
+        Optional logo URL used as the prompt's icon. Must be a chrome:// or
+        resource:// URL; any other scheme is rejected and the default icon is
+        shown.
+    useSiteFavicon:
+      type: boolean
+      description: >-
+        When true, use the requesting site's own favicon as the prompt icon
+        (no logoUrl needed). Prefers the site's cached favicon and falls back to
+        the tab's currently loaded icon (so it still shows on a first-time
+        private-browsing visit), or the default favicon if neither is available.
+        Ignored when a valid logoUrl is set.
     activationTargeting:
       type: string
       description: >-
@@ -6070,3 +6138,27 @@ webNotificationsPermissionUi:
         unset or empty the treatment applies to every prompt the enrolled
         user sees; when set and falsy the prompt falls back to the default
         copy and no exposure event is recorded.
+    headlineL10nId:
+      type: string
+      description: >-
+        Fluent message id (in browser/permissions.ftl) for the headline,
+        resolved in-tree. Takes precedence over headline; the message must
+        contain "<>" (e.g. via the $host variable) for site-name substitution,
+        else the prompt falls back to the default copy.
+    bodyL10nId:
+      type: string
+      description: >-
+        Fluent message id for the body/hint text, resolved in-tree. Takes
+        precedence over body.
+    primaryCtaLabelL10nId:
+      type: string
+      description: >-
+        Fluent message id for the Allow button, resolved in-tree. Takes
+        precedence over primaryCtaLabel; its .accesskey attribute, if present,
+        sets the access key.
+    secondaryCtaLabelL10nId:
+      type: string
+      description: >-
+        Fluent message id for the (Always) Block button, resolved in-tree.
+        Takes precedence over secondaryCtaLabel; its .accesskey attribute, if
+        present, sets the access key. Not applied in private browsing.

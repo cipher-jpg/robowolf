@@ -38,8 +38,6 @@ var gExceptionPaths = [
   "chrome://activity-stream/content/data/content/assets/euo-chatbot.svg",
   "chrome://browser/content/assets/moz-vpn.svg",
   "chrome://browser/content/assets/vpn-logo.svg",
-  "chrome://browser/content/assets/focus-promo.png",
-  "chrome://browser/content/assets/klar-qr-code.svg",
   "chrome://browser/content/asrouter/assets/fox-with-box-on-cloud.svg",
   "chrome://browser/content/asrouter/assets/fox-with-devices.svg",
   "chrome://browser/content/asrouter/assets/fox-with-locked-box.svg",
@@ -74,6 +72,7 @@ var gExceptionPaths = [
   // Points to theme preview images, which are defined in browser/ but only used
   // in toolkit/mozapps/extensions/content/aboutaddons.js.
   "resource://usercontext-content/builtin-themes/",
+  "resource://usercontext-content/extra-themes-previews/",
 
   // Page data schemas are referenced programmatically.
   "chrome://browser/content/pagedata/schemas/",
@@ -137,6 +136,11 @@ var gExceptionPaths = [
   "chrome://browser/skin/illustrations/yelpRealtime-opt-in.svg",
 ];
 
+if (AppConstants.platform == "win") {
+  // Referenced via resource://gfxsanity/
+  gExceptionPaths.push("resource://gre-resources/gfxsanity/");
+}
+
 // These are not part of the omni.ja file, so we find them only when running
 // the test on a non-packaged build.
 if (AppConstants.platform == "macosx") {
@@ -188,7 +192,7 @@ var allowlist = [
   },
 
   // SpiderMonkey parser API, currently unused in browser/ and toolkit/
-  { file: "resource://gre/modules/reflect.sys.mjs" },
+  { file: "moz-src:///toolkit/components/reflect/reflect.sys.mjs" },
 
   // extensions/pref/autoconfig/src/nsReadConfig.cpp
   { file: "resource://gre/defaults/autoconfig/prefcalls.js" },
@@ -241,8 +245,6 @@ var allowlist = [
   { file: "resource://builtin-addons/ipp-activator/breakages/tab.json" },
 
   // Starting from here, files in the allowlist are bugs that need fixing.
-  // Bug 2042933 - consumed by PermissionUI.sys.mjs in a follow-up patch.
-  { file: "resource://app/modules/PermissionPromptTargeting.sys.mjs" },
   // Bug 1339424 (wontfix?)
   {
     file: "chrome://browser/locale/taskbar.properties",
@@ -342,12 +344,6 @@ var allowlist = [
   // `chrome://global/skin/icons/shaft-arrow-${isRTL ? "right" : "left"}.svg`
   { file: "chrome://global/skin/icons/shaft-arrow-left.svg" },
   { file: "chrome://global/skin/icons/shaft-arrow-right.svg" },
-
-  // Bug 1907594 - Created an inital set of messaging system targeting constants
-  // Preparation for future use in ASRouter
-  {
-    file: "resource://app/modules/asrouter/MessagingTargetingConstants.sys.mjs",
-  },
 ];
 
 if (AppConstants.NIGHTLY_BUILD) {
@@ -1002,8 +998,9 @@ add_task(async function checkAllTheFiles() {
     "chrome://devtools",
     "moz-src:///devtools/",
     "resource://devtools/",
-    "resource://devtools-shared-images/",
     "resource://devtools-highlighter-styles/",
+    "resource://devtools-shared-images/",
+    "resource://devtools-webextension-fallback/",
     "resource://app/modules/devtools",
     "resource://gre/modules/devtools",
     "resource://app/localization/en-US/startup/aboutDevTools.ftl",

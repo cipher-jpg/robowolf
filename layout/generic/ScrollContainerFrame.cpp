@@ -7154,30 +7154,6 @@ StyleDirection ScrollContainerFrame::GetScrolledFrameDir() const {
 
 StyleDirection ScrollContainerFrame::GetScrolledFrameDir(
     const nsIFrame* aScrolledFrame, bool aForTextInput) {
-  // If the scrolled frame has unicode-bidi: plaintext, the paragraph
-  // direction set by the text content overrides the direction of the frame
-  if (aScrolledFrame->StyleTextReset()->mUnicodeBidi ==
-      StyleUnicodeBidi::Plaintext) {
-    if (aForTextInput) {
-      // HACK: We rely on inputs only overflowing in one direction, so we scroll
-      // in whichever direction the input overflows. To be a bit resilient we
-      // just use whichever scroll direction would be larger.
-      // TODO(emilio): Remove once the check below is subtler.
-      auto sr = aScrolledFrame->ScrollableOverflowRectRelativeToSelf();
-      auto leftOverflow = -sr.x;
-      auto rightOverflow = sr.XMost() - aScrolledFrame->GetRect().Width();
-      return leftOverflow > rightOverflow ? StyleDirection::Rtl
-                                          : StyleDirection::Ltr;
-    }
-    // TODO(emilio): This check is rather simplistic, see
-    // https://github.com/w3c/csswg-drafts/issues/13816
-    if (nsIFrame* child = aScrolledFrame->PrincipalChildList().FirstChild()) {
-      return nsBidiPresUtils::ParagraphDirection(child) ==
-                     intl::BidiDirection::LTR
-                 ? StyleDirection::Ltr
-                 : StyleDirection::Rtl;
-    }
-  }
   return aScrolledFrame->GetWritingMode().IsBidiLTR() ? StyleDirection::Ltr
                                                       : StyleDirection::Rtl;
 }
@@ -8241,9 +8217,22 @@ void ScrollContainerFrame::ApzSmoothScrollTo(
   // animation for this scroll.
   MOZ_ASSERT(aOrigin != ScrollOrigin::None);
   mApzSmoothScrollDestination = Some(aDestination);
-  AppendScrollUpdate(ScrollPositionUpdate::NewSmoothScroll(
-      aMode, aOrigin, aDestination, aTriggeredByScript,
-      std::move(aSnapTargetIds), aViewportToScroll));
+
+  // If the layout viewport is already at the destination, sending a regular
+  // smooth scroll update would forcibly cancel any ongoing user-triggered
+  // animation. Instead, send a zero-delta update so that APZ only cancels
+  // script-triggered smooth scroll animations without disturbing user-triggered
+  // ones.
+  if (GetScrollPosition() == aDestination &&
+      aViewportToScroll == ViewportType::Layout &&
+      aTriggeredByScript == ScrollTriggeredByScript::Yes) {
+    AppendScrollUpdate(ScrollPositionUpdate::NewZeroDeltaLayoutScroll(
+        aOrigin, aMode, std::move(aSnapTargetIds)));
+  } else {
+    AppendScrollUpdate(ScrollPositionUpdate::NewSmoothScroll(
+        aMode, aOrigin, aDestination, aTriggeredByScript,
+        std::move(aSnapTargetIds), aViewportToScroll));
+  }
 
   nsIContent* content = GetContent();
   if (!DisplayPortUtils::HasNonMinimalNonZeroDisplayPort(content)) {

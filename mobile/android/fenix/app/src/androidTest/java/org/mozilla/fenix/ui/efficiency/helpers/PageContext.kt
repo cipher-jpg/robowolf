@@ -6,6 +6,7 @@ package org.mozilla.fenix.ui.efficiency.helpers
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
+import org.mozilla.fenix.ui.efficiency.pageObjects.AddToHomeScreenComponent
 import org.mozilla.fenix.ui.efficiency.pageObjects.BookmarkSearchPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.BookmarksPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.BrowserPage
@@ -16,6 +17,7 @@ import org.mozilla.fenix.ui.efficiency.pageObjects.HistoryPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.HomePage
 import org.mozilla.fenix.ui.efficiency.pageObjects.MainMenuPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.MicrosurveysPage
+import org.mozilla.fenix.ui.efficiency.pageObjects.OnboardingPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.RecentlyClosedTabsPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SearchBarComponent
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsAboutPage
@@ -54,6 +56,7 @@ import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidCompo
 
 class PageContext(val composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule, *>) {
     // Let's make sure we have them in a lexicographic order
+    val addToHomescreen = AddToHomeScreenComponent(composeRule)
     val bookmarkSearch = BookmarkSearchPage(composeRule)
     val bookmarks = BookmarksPage(composeRule)
     val browserPage = BrowserPage(composeRule)
@@ -64,6 +67,7 @@ class PageContext(val composeRule: AndroidComposeTestRule<HomeActivityIntentTest
     val home = HomePage(composeRule)
     val mainMenu = MainMenuPage(composeRule)
     val microsurveys = MicrosurveysPage(composeRule)
+    val onboarding = OnboardingPage(composeRule)
     val recentlyClosedTabs = RecentlyClosedTabsPage(composeRule)
     val searchBar = SearchBarComponent(composeRule)
     val settings = SettingsPage(composeRule)

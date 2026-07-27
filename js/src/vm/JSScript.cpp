@@ -6,8 +6,6 @@
  * JS script operations.
  */
 
-#include "vm/JSScript-inl.h"
-
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
@@ -74,6 +72,8 @@
 #include "vm/StringType.h"    // JSString, JSAtom
 #include "vm/Time.h"          // AutoIncrementalTimer
 #include "vm/ToSource.h"      // JS::ValueToSource
+
+#include "vm/JSScript-inl.h"
 #ifdef MOZ_VTUNE
 #  include "vtune/VTuneWrapper.h"
 #endif
@@ -3911,24 +3911,6 @@ bool JSScript::dumpGCThings(JSContext* cx, JS::Handle<JSScript*> script,
 }
 
 #endif  // defined(DEBUG) || defined(JS_JITSPEW)
-
-void JSScript::AutoDelazify::holdScript(JS::HandleFunction fun) {
-  if (fun) {
-    JSAutoRealm ar(cx_, fun);
-    script_ = JSFunction::getOrCreateScript(cx_, fun);
-    if (script_) {
-      oldAllowRelazify_ = script_->allowRelazify();
-      script_->clearAllowRelazify();
-    }
-  }
-}
-
-void JSScript::AutoDelazify::dropScript() {
-  if (script_) {
-    script_->setAllowRelazify(oldAllowRelazify_);
-  }
-  script_ = nullptr;
-}
 
 JS::ubi::Base::Size JS::ubi::Concrete<BaseScript>::size(
     mozilla::MallocSizeOf mallocSizeOf) const {

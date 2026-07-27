@@ -169,11 +169,14 @@ object MainMenuSelectors {
         groups = listOf("homeBanner", "homePageMainMenuItems"),
     )
 
+    // Quit is the last item in the scrollable main menu, so mark it requiresScroll: the framework
+    // then polls/swipes it into view (ensureReachable -> mozSwipeTo) before clicking, instead of
+    // asserting on it one-shot while the menu is still settling or the item is below the fold.
     val QUIT_FIREFOX_BUTTON = Selector(
         strategy = SelectorStrategy.COMPOSE_BY_CONTENT_DESCRIPTION,
         value = "Quit $appName",
         description = "Quit Firefox button",
-        groups = listOf(),
+        groups = listOf("requiresScroll"),
     )
 
     val CHANGE_WALLPAPER_BUTTON = Selector(
@@ -211,6 +214,27 @@ object MainMenuSelectors {
         groups = listOf("moreMenuItems"),
     )
 
+    val SAVE_AS_PDF_BUTTON = Selector(
+        strategy = SelectorStrategy.COMPOSE_BY_CONTENT_DESCRIPTION,
+        value = getStringResource(R.string.browser_menu_save_as_pdf_2),
+        description = "Main menu save as PDF button",
+        groups = listOf("moreMenuItems"),
+    )
+
+    val REMOVE_FROM_SHORTCUTS_BUTTON = Selector(
+        strategy = SelectorStrategy.COMPOSE_BY_CONTENT_DESCRIPTION,
+        value = getStringResource(R.string.browser_menu_remove_from_shortcuts),
+        description = "Main menu remove from shortcuts button",
+        groups = listOf("browserViewMainMenuMoreItems"),
+    )
+
+    val ADD_TO_HOMESCREEN_BUTTON = Selector(
+        strategy = SelectorStrategy.COMPOSE_BY_CONTENT_DESCRIPTION,
+        value = getStringResource(R.string.browser_menu_add_to_homescreen),
+        description = "Main menu add to homescreen button",
+        groups = listOf("browserViewMainMenuMoreItems"),
+    )
+
     val all = listOf(
         NEW_PRIVATE_TAB_BUTTON,
         EXTENSIONS_BUTTON,
@@ -240,5 +264,8 @@ object MainMenuSelectors {
         ADD_TO_SHORTCUTS_BUTTON,
         TRANSLATE_BUTTON,
         TRANSLATED_BUTTON,
+        SAVE_AS_PDF_BUTTON,
+        REMOVE_FROM_SHORTCUTS_BUTTON,
+        ADD_TO_HOMESCREEN_BUTTON,
     )
 }

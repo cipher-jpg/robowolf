@@ -161,7 +161,6 @@ devtools.jar:
     skin/images/command-bidi.svg (themes/images/command-bidi.svg)
     skin/images/rules-view-light-mode-simulation.svg (themes/images/rules-view-light-mode-simulation.svg)
     skin/images/rules-view-dark-mode-simulation.svg (themes/images/rules-view-dark-mode-simulation.svg)
-    skin/images/rules-view-print-simulation.svg (themes/images/rules-view-print-simulation.svg)
     skin/images/back.svg (themes/images/back.svg)
     skin/images/forward.svg (themes/images/forward.svg)
     skin/markup.css (themes/markup.css)
@@ -409,7 +408,6 @@ devtools.jar:
     content/aboutdebugging/src/components/shared/IconLabel.css (aboutdebugging/src/components/shared/IconLabel.css)
     content/aboutdebugging/src/components/shared/Message.css (aboutdebugging/src/components/shared/Message.css)
     content/aboutdebugging/src/components/sidebar/Sidebar.css (aboutdebugging/src/components/sidebar/Sidebar.css)
-    content/aboutdebugging/src/components/sidebar/SidebarFixedItem.css (aboutdebugging/src/components/sidebar/SidebarFixedItem.css)
     content/aboutdebugging/src/components/sidebar/SidebarItem.css (aboutdebugging/src/components/sidebar/SidebarItem.css)
     content/aboutdebugging/src/components/sidebar/SidebarRuntimeItem.css (aboutdebugging/src/components/sidebar/SidebarRuntimeItem.css)
 

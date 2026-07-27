@@ -101,10 +101,10 @@ export class UrlbarProviderTabToSearch extends UrlbarProvider {
   }
 
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.PROFILE;
+    return lazy.UrlbarShared.PROVIDER_TYPE.PROFILE;
   }
 
   /**
@@ -217,19 +217,6 @@ export class UrlbarProviderTabToSearch extends UrlbarProvider {
       }
 
       UrlbarProviderTabToSearch.onboardingInteractionAtTime = Date.now();
-    }
-  }
-
-  onEngagement(queryContext, controller, details) {
-    let { result, element } = details;
-    if (result.type == lazy.UrlbarShared.RESULT_TYPE.DYNAMIC) {
-      // Confirm search mode, but only for the onboarding (dynamic) result. The
-      // input will handle confirming search mode for the non-onboarding
-      // `RESULT_TYPE.SEARCH` result since it sets `providesSearchMode`.
-      element.documentGlobal.gURLBar.maybeConfirmSearchModeFromResult({
-        result,
-        checkValue: false,
-      });
     }
   }
 
@@ -362,7 +349,7 @@ function makeOnboardingResult(engine, satisfiesAutofillThreshold = false) {
       engine: engine.name,
       searchUrlDomainWithoutSuffix: searchUrlDomainWithoutSuffix(engine),
       providesSearchMode: true,
-      icon: UrlbarUtils.ICON.SEARCH_GLASS,
+      icon: lazy.UrlbarShared.ICON.SEARCH_GLASS,
       dynamicType: DYNAMIC_RESULT_TYPE,
       satisfiesAutofillThreshold,
     },
@@ -379,7 +366,7 @@ function makeResult(context, engine, satisfiesAutofillThreshold = false) {
       isGeneralPurposeEngine: engine.isGeneralPurposeEngine,
       searchUrlDomainWithoutSuffix: searchUrlDomainWithoutSuffix(engine),
       providesSearchMode: true,
-      icon: UrlbarUtils.ICON.SEARCH_GLASS,
+      icon: lazy.UrlbarShared.ICON.SEARCH_GLASS,
       query: "",
       satisfiesAutofillThreshold,
     },

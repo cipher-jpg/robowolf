@@ -6,10 +6,7 @@
  * This module exports a provider returning the user's recent searches.
  */
 
-import {
-  UrlbarProvider,
-  UrlbarUtils,
-} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
+import { UrlbarProvider } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -40,10 +37,10 @@ export class UrlbarProviderRecentSearches extends UrlbarProvider {
   }
 
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.PROFILE;
+    return lazy.UrlbarShared.PROVIDER_TYPE.PROFILE;
   }
 
   async isActive(queryContext) {
@@ -155,7 +152,7 @@ export class UrlbarProviderRecentSearches extends UrlbarProvider {
           suggestion: result.value,
           title: result.value,
           isBlockable: true,
-          blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+          blockL10n: { id: "urlbar-result-menu-remove-from-history2" },
           helpUrl:
             Services.urlFormatter.formatURLPref("app.support.baseURL") +
             "awesome-bar-result-menu",
