@@ -102,24 +102,6 @@ using namespace ABI::Windows::UI::StartScreen;
 
 #define REG_FAILED(val) (val != ERROR_SUCCESS)
 
-#ifdef DEBUG
-#  define NS_ENSURE_HRESULT(hres, ret)                    \
-    do {                                                  \
-      HRESULT result = hres;                              \
-      if (MOZ_UNLIKELY(FAILED(result))) {                 \
-        mozilla::SmprintfPointer msg = mozilla::Smprintf( \
-            "NS_ENSURE_HRESULT(%s, %s) failed with "      \
-            "result 0x%" PRIX32,                          \
-            #hres, #ret, static_cast<uint32_t>(result));  \
-        NS_WARNING(msg.get());                            \
-        return ret;                                       \
-      }                                                   \
-    } while (false)
-#else
-#  define NS_ENSURE_HRESULT(hres, ret) \
-    if (MOZ_UNLIKELY(FAILED(hres))) return ret
-#endif
-
 using namespace mozilla;
 using mozilla::intl::Localization;
 
@@ -532,15 +514,10 @@ static void DisplayOverlayImageWhileVisible(
   }
 
   auto timer{std::make_shared<nsCOMPtr<nsITimer>>()};
-  auto callback{[timer, aElement, overlayImage](nsITimer* aTimer) {
+  auto lastTime{std::make_shared<TimeStamp>(TimeStamp::Now())};
+  auto callback{[timer, lastTime, aElement, overlayImage](nsITimer* aTimer) {
     if (aElement->IsMoving().valueOr(true)) {
-      // The element is moving
-      aTimer->Cancel();
-      return;
-    }
-
-    if (!aElement->IsVisible()) {
-      // The element isn't visible
+      // The element is moving or not available
       aTimer->Cancel();
       return;
     }
@@ -551,10 +528,13 @@ static void DisplayOverlayImageWhileVisible(
       return;
     }
 
-    overlayImage->AdvanceFrame();
+    const TimeStamp now{TimeStamp::Now()};
+    const TimeDuration elapsed{now - *lastTime};
+    overlayImage->AdvanceAnimation(elapsed);
+    *lastTime = now;
   }};
 
-  const uint32_t kDelayMs{30};
+  const uint32_t kDelayMs{10};
   NS_NewTimerWithCallback(getter_AddRefs(*timer), callback, kDelayMs,
                           nsITimer::TYPE_REPEATING_SLACK,
                           "DisplayOverlayImageWhileVisibleTimer"_ns,
@@ -587,8 +567,8 @@ static void DisplayOverlayImageWhenElementIsStill(
     DisplayOverlayImageWhileVisible(aSerialEventTarget, aElement, aDisplayMode);
   }};
 
-  const uint32_t kTrackingDelayMs{500};
-  NS_NewTimerWithCallback(getter_AddRefs(*timer), callback, kTrackingDelayMs,
+  const uint32_t kDelayMs{500};
+  NS_NewTimerWithCallback(getter_AddRefs(*timer), callback, kDelayMs,
                           nsITimer::TYPE_REPEATING_SLACK,
                           "DisplayOverlayImageWhenElementIsStillTimer"_ns,
                           aSerialEventTarget);
@@ -665,8 +645,8 @@ static void HighlightSetDefaultBrowserButton() {
     }
   }};
 
-  const uint32_t kRetryDelayMs{500};
-  NS_NewTimerWithCallback(getter_AddRefs(*timer), callback, kRetryDelayMs,
+  const uint32_t kDelayMs{500};
+  NS_NewTimerWithCallback(getter_AddRefs(*timer), callback, kDelayMs,
                           nsITimer::TYPE_REPEATING_SLACK,
                           "HighlightSetDefaultBrowserButtonTimer"_ns,
                           serialEventTarget);
@@ -2047,6 +2027,11 @@ static Result<nsString, nsresult> EnsurePinnableShortcutExists(
   MOZ_DIAGNOSTIC_ASSERT(
       !NS_IsMainThread(),
       "EnsurePinnableShortcutExists should be called off main thread only");
+
+  if (xpc::IsInAutomation()) {
+    // We don't create or use pinnable shortcuts in tests.
+    return nsString(u"dummy_test_shortcut_path"_ns);
+  }
 
   nsString shortcutPath;
   nsresult rv = FindPinnableShortcut(aAppUserModelId, aShortcutSubstring,

@@ -98,10 +98,8 @@ restart:
     // Non-global lexical declarations are block-scoped (ergo not hoistable).
     case ParseNodeKind::LetDecl:
     case ParseNodeKind::ConstDecl:
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case ParseNodeKind::UsingDecl:
     case ParseNodeKind::AwaitUsingDecl:
-#endif
       MOZ_ASSERT(node->is<ListNode>());
       *result = false;
       return true;
@@ -158,7 +156,6 @@ restart:
     case ParseNodeKind::BreakStmt:
     case ParseNodeKind::ContinueStmt:
     case ParseNodeKind::ImportDecl:
-    case ParseNodeKind::ImportSourceDecl:
     case ParseNodeKind::ImportSpecList:
     case ParseNodeKind::ImportSpec:
     case ParseNodeKind::ImportNamespaceSpec:
@@ -170,7 +167,6 @@ restart:
     case ParseNodeKind::ExportStmt:
     case ParseNodeKind::ExportBatchSpecStmt:
     case ParseNodeKind::CallImportExpr:
-    case ParseNodeKind::CallImportSourceExpr:
     case ParseNodeKind::CallImportSpec:
     case ParseNodeKind::ImportAttributeList:
     case ParseNodeKind::ImportAttribute:

@@ -18,6 +18,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.runtime.Composable
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.edit
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
 import androidx.emoji2.text.DefaultEmojiCompatConfig
@@ -41,7 +42,6 @@ import mozilla.appservices.autofill.AutofillApiException
 import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.browser.state.action.SearchAction.SearchConfigurationAvailabilityChanged
 import mozilla.components.browser.state.action.SystemAction
-import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.selectedOrDefaultPrivateSearchEngine
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.storage.sync.GlobalPlacesDependencyProvider
@@ -240,6 +240,13 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                 applicationContext.getSharedPreferences(Settings.FENIX_PREFERENCES, MODE_PRIVATE)
             }
 
+            // Allow overriding secret settings with values specified in `local.properties` at build time.
+            // This allows developers to opt-in to a set of features for their own workflow.
+            // Only debug build variants populate this BuildConfig value.
+            if (BuildConfig.SECRET_SETTINGS_OVERRIDES.isNotBlank()) {
+                applySecretSettingsOverrides(applicationContext)
+            }
+
             // Initialization is split into two phases based on if libmegazord is fully initialized.
             setupEarlyMain()
             setupPostMegazord()
@@ -249,6 +256,30 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             val stop = SystemClock.elapsedRealtimeNanos()
             val durationMillis = TimeUnit.NANOSECONDS.toMillis(stop - start)
             PerfStartup.applicationOnCreate.accumulateSamples(listOf(durationMillis))
+        }
+    }
+
+    /**
+     * Applies the secret-settings overrides from [BuildConfig.SECRET_SETTINGS_OVERRIDES]. Each
+     * entry is a `<preference key>=<true|false>` pair joined by `;` that forces a
+     * secret setting to a fixed value on startup so it does not have to be toggled manually in the UI.
+     */
+    private fun applySecretSettingsOverrides(context: Context) {
+        context.getSharedPreferences(Settings.FENIX_PREFERENCES, MODE_PRIVATE).edit {
+            BuildConfig.SECRET_SETTINGS_OVERRIDES.split(";").forEach { entry ->
+                val parts = entry.split("=").map { it.trim() }
+                if (parts.size != 2) {
+                    logger.warn("Ignoring malformed secret setting override: $entry")
+                    return@forEach
+                }
+
+                val (rawKey, rawValue) = parts
+                val value = rawValue.toBooleanStrictOrNull() ?: run {
+                    logger.warn("Ignoring secret setting override with non-boolean value: $entry")
+                    return@forEach
+                }
+                putBoolean(rawKey, value)
+            }
         }
     }
 
@@ -500,9 +531,7 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                     // it's safe to touch `historyStorage. By 'safe', we mainly mean that underlying
                     // places library will be able to load, which requires first running Megazord.init().
                     // The visual completeness tasks are scheduled after the Megazord.init() call.
-                    components.core.historyMetadataService.cleanup(
-                        System.currentTimeMillis() - Core.HISTORY_METADATA_MAX_AGE_IN_MS,
-                    )
+                    components.core.historyMetadataService.cleanup(historyMetadataCleanupCutoff())
 
                     // If Firefox Suggest is enabled, register a worker to periodically ingest
                     // new search suggestions. The worker requires us to have called
@@ -514,7 +543,10 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
                         components.fxSuggest.ingestionScheduler.stopPeriodicIngestion()
                     }
                 }
+
                 components.core.fileUploadsDirCleaner.cleanUploadsDirectory()
+                components.settings.deletePocketDatabaseIfNeeded()
+                components.settings.deleteReportSiteDomainsDataStoreIfNeeded()
             }
             // Account manager initialization needs to happen on the main thread.
             GlobalScope.launch(Dispatchers.Main) {
@@ -829,16 +861,13 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             WebExtensionSupport.initialize(
                 components.core.engine,
                 components.core.store,
-                onNewTabOverride = { _, engineSession, url, selected ->
-                    val shouldCreatePrivateSession =
-                        components.core.store.state.selectedTab?.content?.private
-                            ?: components.settings.openLinksInAPrivateTab
-
+                isInPrivateBrowsingMode = { components.appStore.state.mode.isPrivate },
+                onNewTabOverride = { _, engineSession, url, selected, isPrivate ->
                     components.useCases.tabsUseCases.addTab(
                         url = url,
                         selectTab = selected,
                         engineSession = engineSession,
-                        private = shouldCreatePrivateSession,
+                        private = isPrivate,
                     )
                 },
                 onCloseTabOverride = { _, sessionId ->
@@ -1088,6 +1117,9 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
             bookmarksSuggestion.set(settings.shouldShowBookmarkSuggestions)
             clipboardSuggestionsEnabled.set(settings.shouldShowClipboardSuggestions)
             voiceSearchEnabled.set(settings.shouldShowVoiceSearch)
+            googleLensEnabled.set(
+                settings.googleLensIntegrationEnabled && settings.googleLensIntegrationUserEnabled,
+            )
             openLinksInAppEnabled.set(settings.openLinksInExternalApp)
             signedInSync.set(settings.signedInFxaAccount)
             isolatedContentProcessesEnabled.set(settings.isIsolatedProcessEnabled)
@@ -1291,3 +1323,9 @@ open class FenixApplication : Application(), Provider, ThemeProvider {
         }
     }
 }
+
+/**
+ * Returns the cutoff timestamp (in milliseconds) before which history metadata should be cleaned up.
+ */
+internal fun historyMetadataCleanupCutoff(now: Long = System.currentTimeMillis()): Long =
+    now - Core.HISTORY_METADATA_MAX_AGE_IN_MS

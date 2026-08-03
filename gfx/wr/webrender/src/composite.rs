@@ -8,13 +8,14 @@ use api::ColorDepth;
 use crate::image_source::resolve_image;
 use crate::picture::ResolvedSurfaceTexture;
 use crate::renderer::GpuBufferBuilderF;
-use euclid::Box2D;
+use euclid::{Box2D, SideOffsets2D};
 use crate::gpu_types::{ZBufferId, ZBufferIdGenerator};
 use crate::internal_types::{FrameAllocator, FrameMemory, FrameVec, TextureSource};
 use crate::invalidation::compare::ImageDependency;
 use crate::tile_cache::{TileCacheInstance, TileSurface};
 use crate::tile_cache::TileId;
-use crate::prim_store::{DeferredResolve, PrimitiveInstanceIndex};
+use crate::prim_store::DeferredResolve;
+use crate::visibility::PrimitiveDrawIndex;
 use crate::resource_cache::{ImageRequest, ResourceCache};
 use crate::segment::EdgeMask;
 use crate::util::{extract_inner_rect_safe, Preallocator, ScaleOffset};
@@ -229,7 +230,10 @@ pub struct ExternalSurfaceDescriptor {
     pub update_params: Option<DeviceIntSize>,
     /// If using external compositing, a user key for the client
     pub external_image_id: Option<ExternalImageId>,
-    pub prim_instance_index: PrimitiveInstanceIndex,
+    /// The draw this compositor surface was promoted from. Post-update may
+    /// demote it again, which writes back to the draw header, so the descriptor
+    /// carries a draw index rather than an instance index.
+    pub draw_index: PrimitiveDrawIndex,
 }
 
 impl ExternalSurfaceDescriptor {
@@ -854,6 +858,7 @@ impl CompositeState {
                 let inner_rect = match extract_inner_rect_safe(
                     &clip.rect,
                     &clip.radius,
+                    &SideOffsets2D::<f32, DevicePixel>::zero()
                 ) {
                     Some(rect) => rect,
                     None => return,

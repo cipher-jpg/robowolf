@@ -97,6 +97,11 @@ pref("browser.cache.frecency_half_life_hours", 6);
 // Don't show "Open with" option on download dialog if true.
 pref("browser.download.forbid_open_with", false);
 
+// Number of milliseconds to wait after requesting character bounds from EditContext
+// for updateCharacterBounds() to be called before giving up and unsuppressing
+// IME notifications.
+pref("dom.editcontext.suppress_notifying_ime_timeout", 300);
+
 // Enable indexedDB logging.
 pref("dom.indexedDB.logging.enabled", true);
 // Detailed output in log messages.
@@ -640,9 +645,11 @@ pref("devtools.performance.recording.child.timeout_s", 15);
   // Use a more advanced preset on Nightly and local builds.
   pref("devtools.performance.recording.preset", "firefox-platform");
   pref("devtools.performance.recording.preset.remote", "firefox-platform");
+  pref("devtools.performance.recording.preset.aboutlogging", "firefox-platform");
 #else
   pref("devtools.performance.recording.preset", "web-developer");
   pref("devtools.performance.recording.preset.remote", "web-developer");
+  pref("devtools.performance.recording.preset.aboutlogging", "web-developer");
 #endif
 // The profiler's active tab view has a few issues. Disable it until the issues
 // are ironed out.
@@ -651,23 +658,28 @@ pref("devtools.performance.recording.active-tab-view.enabled", false);
 // profiler's buffer. 10000000 is ~80mb.
 pref("devtools.performance.recording.entries", 10000000);
 pref("devtools.performance.recording.entries.remote", 10000000);
+pref("devtools.performance.recording.entries.aboutlogging", 10000000);
 // Profiler interval in microseconds. 1000µs is 1ms
 pref("devtools.performance.recording.interval", 1000);
 pref("devtools.performance.recording.interval.remote", 1000);
+pref("devtools.performance.recording.interval.aboutlogging", 1000);
 // Profiler duration of entries in the profiler's buffer in seconds.
 // `0` means no time limit for the markers, they roll off naturally from the
 // circular buffer.
 pref("devtools.performance.recording.duration", 0);
 pref("devtools.performance.recording.duration.remote", 0);
+pref("devtools.performance.recording.duration.aboutlogging", 0);
 // Profiler feature set. See tools/profiler/core/platform.cpp for features and
 // explanations. Remote profiling also includes the java feature by default.
 // If the remote debuggee isn't an Android phone, then this feature will
 // be ignored.
 pref("devtools.performance.recording.features", "[\"js\",\"stackwalk\",\"cpu\",\"screenshots\",\"memory\"]");
 pref("devtools.performance.recording.features.remote", "[\"js\",\"stackwalk\",\"cpu\",\"screenshots\",\"memory\",\"java\"]");
+pref("devtools.performance.recording.features.aboutlogging", "[\"js\",\"stackwalk\",\"cpu\",\"screenshots\",\"memory\"]");
 // Threads to be captured by the profiler.
 pref("devtools.performance.recording.threads", "[\"GeckoMain\",\"Compositor\",\"Renderer\"]");
 pref("devtools.performance.recording.threads.remote", "[\"GeckoMain\",\"Compositor\",\"Renderer\"]");
+pref("devtools.performance.recording.threads.aboutlogging", "[\"GeckoMain\",\"Compositor\",\"Renderer\"]");
 // A JSON array of strings, where each string is a file path to an objdir on
 // the host machine. This is used in order to look up symbol information from
 // build artifacts of local builds.
@@ -1469,6 +1481,10 @@ pref("network.proxy.autoconfig_retry_interval_min", 5);    // 5 seconds
 pref("network.proxy.autoconfig_retry_interval_max", 300);  // 5 minutes
 pref("network.proxy.enable_wpad_over_dhcp", true);
 
+// When true, a warning banner will be displayed on error pages when
+// SSLKEYLOGFILE is set
+pref("network.sslkeylog_warning", true);
+
 pref("converter.html2txt.structs",          true); // Output structured phrases (strong, em, code, sub, sup, b, i, u)
 pref("converter.html2txt.header_strategy",  1); // 0 = no indention; 1 = indention, increased with header level; 2 = numbering and slight indention
 
@@ -1735,7 +1751,6 @@ pref("font.blacklist.underline_offset", "FangSong,Gulim,GulimChe,MingLiU,MingLiU
 
 // security-sensitive dialogs should delay button enabling. In milliseconds.
 pref("security.dialog_enable_delay", 1000);
-pref("security.notification_enable_delay", 500);
 
 #ifdef NIGHTLY_BUILD
   // Disallow web documents loaded with the SystemPrincipal
@@ -3015,7 +3030,9 @@ pref("signon.firefoxRelay.terms_of_service_url", "https://www.mozilla.org/%LOCAL
 pref("signon.firefoxRelay.privacy_policy_url", "https://www.mozilla.org/%LOCALE%/privacy/subscription-services/");
 pref("signon.signupDetection.confidenceThreshold",     "0.75");
 
-pref("signon.storage.rust.enabled", false);
+// Logins Rust storage backend is enabled by default
+pref("signon.storage.rust.enabled", true);
+// The following two prefs are managed by Fx internally:
 pref("signon.storage.rust.active", false);
 pref("signon.storage.rust.migrationAttempts", 0);
 
@@ -3134,6 +3151,12 @@ pref("extensions.webextensions.ExtensionStorageIDB.enabled", true);
 pref("extensions.htmlaboutaddons.inline-options.enabled", true);
 // Show recommendations on the extension and theme list views.
 pref("extensions.htmlaboutaddons.recommendations.enabled", true);
+
+// Whether the Nova Themes picker should be enabled in the about:addons page.
+// (disabled by default here, so that other applications embedding Gecko
+// like Thunderbird will not have it enabled by default, and enabled in the
+// Firefox Desktop prefs).
+pref("browser.aboutaddons.novaThemesPickerEnabled", false);
 
 // The URL for the privacy policy related to recommended add-ons.
 pref("extensions.recommendations.privacyPolicyUrl", "");
@@ -3276,12 +3299,11 @@ pref("network.trr.builtin-excluded-domains", "localhost,local");
 // Used for progressive rollout of LNA for ETP strict users
 pref("network.lna.etp.enabled", true);
 
-pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/generate_204");
-pref("captivedetect.canonicalContent", "");
+pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/canonical.html");
+pref("captivedetect.canonicalContent", "<meta http-equiv=\"refresh\" content=\"0;url=https://support.mozilla.org/kb/captive-portal\"/>");
 pref("captivedetect.maxWaitingTime", 5000);
 pref("captivedetect.pollingTime", 3000);
 pref("captivedetect.maxRetryCount", 5);
-pref("captivedetect.expectedStatus", 204);
 
 // The tables used for Safebrowsing phishing and malware checks
 pref("urlclassifier.malwareTable", "goog-malware-proto,goog-unwanted-proto,moztest-harmful-simple,moztest-malware-simple,moztest-unwanted-simple");
@@ -3659,6 +3681,16 @@ pref("browser.ml.minimumPhysicalMemory", 3);
 pref("browser.ml.checkForMemory", true);
 // Allowed overrides for various ml features
 pref("browser.ml.overridePipelineOptions", "{}");
+// How long the PageExtractor waits for a headless page load, in ms.
+pref("browser.ml.pageExtractor.headlessTimeoutMs", 15000);
+
+// Extract video metadata and the transcript from YouTube watch pages during
+// page extraction.
+pref("browser.pageextractor.youtube.enabled", false);
+
+// How long, in milliseconds, to wait for the YouTube transcript panel to render
+// after it is opened before giving up and returning metadata alone.
+pref("browser.pageextractor.youtube.timeoutMs", 3000);
 
 // When a user cancels this number of authentication dialogs coming from
 // a single web page in a row, all following authentication dialogs will
@@ -3894,6 +3926,13 @@ pref("services.common.log.logger.tokenserverclient", "Debug");
   // Enable retrying to execute commands in the child process in case the
   // JSWindowActor gets destroyed.
   pref("remote.retry-on-abort", true);
+
+  // Debugging aid: capture WebDriver/Marionette screenshots by reading back the
+  // actual WebRender composited framebuffer (real on-screen pixels) instead of
+  // re-rendering the document through the software drawSnapshot path. This makes
+  // captured screenshots reflect WebRender-specific rendering, at the cost of
+  // every capture degrading to the composited viewport of the foreground tab.
+  pref("remote.screenshot.use_readback", false);
 #endif
 
 // Enable the JSON View tool (an inspector for application/json documents).
@@ -4035,6 +4074,11 @@ pref("extensions.formautofill.creditCards.heuristics.fathom.types", "cc-number,c
 pref("extensions.formautofill.creditCards.heuristics.fathom.confidenceThreshold", "0.5");
 // This is Only for testing! Set the confidence value (> 0 && <= 1) after a field is identified by fathom
 pref("extensions.formautofill.creditCards.heuristics.fathom.testConfidence", "0");
+
+// Passport autofill is still under development; keep it off by default. See
+// extensions.formautofill.addresses.supported above for the "supported" values.
+pref("extensions.formautofill.passports.supported", "off");
+pref("extensions.formautofill.passports.enabled", false);
 
 pref("extensions.formautofill.loglevel", "Warn");
 

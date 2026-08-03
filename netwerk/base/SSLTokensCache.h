@@ -7,23 +7,29 @@
 
 #include "CertVerifier.h"  // For EVStatus
 #include "mozilla/Maybe.h"
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/Span.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/OriginAttributes.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/net/DashboardTypes.h"
 #include "nsClassHashtable.h"
+#include "nsIAsyncShutdown.h"
 #include "nsIFile.h"
 #include "nsIMemoryReporter.h"
-#include "nsIAsyncShutdown.h"
 #include "nsIObserver.h"
+#include "nsISSLTokensCache.h"
 #include "nsISerialEventTarget.h"
 #include "nsISupportsImpl.h"
 #include "nsITransportSecurityInfo.h"
 #include "nsTArray.h"
 #include "nsTHashMap.h"
 #include "nsXULAppAPI.h"
+
+#ifdef ENABLE_TESTS
+#  include "nsISSLTokensCacheTest.h"
+#endif
 
 class CommonSocketControl;
 struct SslTokensPersistedRecord;
@@ -74,7 +80,31 @@ class SSLTokensCache : public nsIMemoryReporter,
   static nsresult Remove(const nsACString& aKey, uint64_t aId);
   static nsresult RemoveAll(const nsACString& aKey);
   static void Clear();
+  // Clears the NSS in-memory client session cache (if NSS is initialized)
+  // and all resumption tokens, and (in the parent process) forwards the
+  // clear to the socket process via IPC. This is the entry point for
+  // "clear the TLS session cache" from anywhere in the tree; PSM no longer
+  // has its own copy of this logic.
+  static void ClearSessionCacheAndTokens();
+  // Forwards the IPC clear request to the socket process; no-op in non-parent
+  // processes.
+  static void ForwardClearToSocketProcess();
+  // Forwards a PBM-scoped cache-clear request to the socket process (parent
+  // only). The socket process clears only PBM SSLTokensCache entries and the
+  // NSS session cache; normal-browsing tokens are preserved.
+  static void ForwardClearPrivateBrowsingToSocketProcess();
+  // Remove only private-browsing entries (privateBrowsingId != 0).
+  static void ClearPrivateBrowsing();
+  // Socket-process only: clears the NSS in-memory client session cache (if
+  // NSS is initialized) and private-browsing resumption tokens. Invoked by
+  // the socket process in response to a PBM-scoped clear request.
+  static void ClearSessionCacheAndPBMTokens();
   static void RemoveByHostAndOAPattern(
+      const nsACString& aHost, const mozilla::OriginAttributesPattern& aPattern)
+      MOZ_EXCLUDES(sLock);
+  // Removes aHost's matching resumption tokens, clears the NSS in-memory
+  // client session cache, and forwards the clear to the socket process.
+  static void ClearSessionCacheAndTokensForHost(
       const nsACString& aHost, const mozilla::OriginAttributesPattern& aPattern)
       MOZ_EXCLUDES(sLock);
   static void RemoveBySiteAndOAPattern(
@@ -84,10 +114,30 @@ class SSLTokensCache : public nsIMemoryReporter,
   // Serialize the current cache state into STCF format for IPC transport.
   static nsTArray<uint8_t> SerializeForIPC();
 
-  // Replace the cache with STCF data received via IPC.
-  static void DeserializeFromIPC(mozilla::Span<const uint8_t> aData);
+  // Replace the cache with STCF data received via IPC. aRestored is the
+  // provenance to record for the incoming records (see mRestored).
+  static void DeserializeFromIPC(mozilla::Span<const uint8_t> aData,
+                                 bool aRestored);
   // Dispatches DeserializeFromIPC to a background thread; no-ops on empty buf.
-  static void DeserializeFromIPCAsync(mozilla::ipc::ByteBuf&& aBuf);
+  static void DeserializeFromIPCAsync(mozilla::ipc::ByteBuf&& aBuf,
+                                      bool aRestored);
+
+  // Non-consuming snapshot of all current records, for about:networking.
+  static void GetAllRecords(nsTArray<SSLTokensCacheRecordInfo>& aOut);
+
+  // Replaces the cache with aRecords, received directly via IPC from the
+  // socket process (bypassing the Rust/STCF format). Each record's own
+  // restored field is preserved, unlike DeserializeFromIPC which always
+  // records the same provenance for the whole batch.
+  static void ReplaceAllRecords(nsTArray<SSLTokensCacheRecordInfo>&& aRecords);
+
+  // aDecompressedLength, if non-null, receives the size of the decompressed
+  // payload (token + serialized SessionCacheInfo combined), for reporting
+  // the compression ratio against the compressed size.
+  static bool DecodeCompressedPayload(mozilla::Span<const uint8_t> aCompressed,
+                                      nsTArray<uint8_t>& aToken,
+                                      SessionCacheInfo& aInfo,
+                                      uint32_t* aDecompressedLength = nullptr);
 
 #ifdef ENABLE_TESTS
   // Test-only helpers.
@@ -122,6 +172,11 @@ class SSLTokensCache : public nsIMemoryReporter,
   static bool ShouldPersistKey(const nsACString& aKey,
                                uint8_t aOverridableError);
 
+  // Reconcile persistence infrastructure with the current pref value.
+  // The signature matches PrefChangedFunc so it can be passed directly to
+  // Preferences::RegisterCallback; the two parameters are ignored.
+  static void ReconcilePersistence(const char* = nullptr, void* = nullptr);
+
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const
       MOZ_REQUIRES(sLock);
 
@@ -132,6 +187,7 @@ class SSLTokensCache : public nsIMemoryReporter,
   uint32_t mCacheSize MOZ_GUARDED_BY(sLock){0};
 
   // Persistence state (parent process only)
+  bool mPrefCallbackRegistered{false};  // main-thread-only
   bool mWriteObserversRegistered MOZ_GUARDED_BY(sLock){false};
   nsCOMPtr<nsIFile> mBackingFile MOZ_GUARDED_BY(sLock);
   nsCOMPtr<nsISerialEventTarget> mWriteTaskQueue MOZ_GUARDED_BY(sLock);
@@ -151,18 +207,31 @@ class SSLTokensCache : public nsIMemoryReporter,
       MOZ_REQUIRES(sLock);
   static void DispatchLoad(nsCString aPath, uint32_t aLoadGen);
   static void OnLoadCompleteNotify(uint32_t aCount);
+  // Builds a TokenCacheRecord from its raw persisted/IPC fields. Shared by
+  // PutFromPersisted (Rust FFI records) and ReplaceAllRecords (IPC struct
+  // records).
+  static UniquePtr<TokenCacheRecord> MakeRecord(
+      const nsACString& aKey, PRTime aExpirationTime, uint8_t aOverridableError,
+      bool aRestored, nsTArray<uint8_t>&& aCompressedPayload);
+
   // aExpectedGen: mLoadGeneration captured at load start; insertion is skipped
   // if Clear() has run since (generation mismatch).
   // Returns true if the record was inserted, false if skipped (generation
   // mismatch after a concurrent Clear()).
   static bool PutFromPersisted(const SslTokensPersistedRecord* aRec,
-                               uint32_t aExpectedGen);
+                               uint32_t aExpectedGen, bool aRestored);
 
   struct LoadCtx {
     uint32_t loadGen;
     uint32_t count = 0;
   };
   static void LoadCallback(void* aCtx, const SslTokensPersistedRecord* aRec);
+  // Ctx for PutFromPersistedCallback, shared by DeserializeFromIPC and
+  // LoadForTest, which need to pass aRestored through the C FFI callback.
+  struct PersistedPutCtx {
+    uint32_t loadGen;
+    bool restored;
+  };
   static nsDependentCSubstring BasePartFromKey(const nsACString& aKey);
   static nsDependentCSubstring HostFromBasePart(
       const nsDependentCSubstring& aBasePart);
@@ -178,11 +247,19 @@ class SSLTokensCache : public nsIMemoryReporter,
   nsTArray<SslTokensPersistedRecord> CollectSnapshotLocked() const
       MOZ_REQUIRES(sLock);
   static nsTArray<uint8_t> SerializeSnapshotLocked() MOZ_REQUIRES(sLock);
+  // Builds a snapshot of all currently cached records as
+  // SSLTokensCacheRecordInfo. If aFilterForPersistence is true, applies the
+  // same filtering as CollectSnapshotLocked (excludes PBM / cert-error
+  // overrides); GetAllRecords() uses this unfiltered.
+  void CollectRecordInfosLocked(nsTArray<SSLTokensCacheRecordInfo>& aOut,
+                                bool aFilterForPersistence) const
+      MOZ_REQUIRES(sLock);
   // Removes entries matching aPredicate.
   template <typename Pred>
   void RemoveMatchingLocked(Pred&& aPredicate) MOZ_REQUIRES(sLock);
-  // FFI callback used by LoadForTest.
-  static void PutFromPersistedCallback(void*,
+  // FFI callback used by DeserializeFromIPC and LoadForTest; aCtx is a
+  // PersistedPutCtx*.
+  static void PutFromPersistedCallback(void* aCtx,
                                        const SslTokensPersistedRecord* aRec);
 
   class TokenCacheRecord {
@@ -201,6 +278,9 @@ class SSLTokensCache : public nsIMemoryReporter,
     // decompressing the payload.
     uint8_t mOverridableError = 0;
     uint64_t mId = 0;
+    // Not part of the on-storage/IPC format; in-memory only, for
+    // about:networking.
+    bool mRestored = false;
   };
 
   class TokenCacheEntry {
@@ -231,6 +311,28 @@ class SSLTokensCache : public nsIMemoryReporter,
   nsClassHashtable<nsCStringHashKey, TokenCacheEntry> mTokenCacheRecords
       MOZ_GUARDED_BY(sLock);
   nsTArray<TokenCacheRecord*> mExpirationArray MOZ_GUARDED_BY(sLock);
+};
+
+// Scriptable entry point (@mozilla.org/network/ssl-tokens-cache;1) for
+// SSLTokensCache. Stateless: all state lives in the SSLTokensCache singleton
+// reached via its static methods.
+class SSLTokensCacheService final : public nsISSLTokensCache
+#ifdef ENABLE_TESTS
+    ,
+                                    public nsISSLTokensCacheTest
+#endif
+{
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSISSLTOKENSCACHE
+#ifdef ENABLE_TESTS
+  NS_DECL_NSISSLTOKENSCACHETEST
+#endif
+
+  SSLTokensCacheService() = default;
+
+ private:
+  ~SSLTokensCacheService() = default;
 };
 
 }  // namespace net

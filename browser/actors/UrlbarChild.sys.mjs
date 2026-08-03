@@ -5,12 +5,24 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarParentControllerProxy:
-    "moz-src:///browser/components/urlbar/UrlbarParentControllerProxy.sys.mjs",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarQueryContext:
-    "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarQueryContext: "chrome://browser/content/urlbar/UrlbarQueryContext.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
+
+// The content-side input/view methods a parent-side provider hook may invoke
+// over the actor (see the `input`/`view` stand-ins on `UrlbarChildControllerProxy`).
+// An allowlist, so an `InvokeContentAction` message can't reach arbitrary methods.
+const INVOKABLE_CONTENT_ACTIONS = {
+  input: new Set(["search", "setValue", "startQuery"]),
+  view: new Set([
+    "acknowledgeFeedback",
+    "close",
+    "updateResultMenuCommands",
+    "startTail150",
+  ]),
+};
 
 /**
  * @import {UrlbarParent} from "./UrlbarParent.sys.mjs"
@@ -19,28 +31,25 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 
 /**
- * Child-process counterpart of `UrlbarParent`. Each `UrlbarChildController`
- * created by a `<moz-urlbar>` instance asks this actor for the object that
- * runs the query lifecycle and parent-only telemetry on its behalf.
+ * Child-process counterpart of `UrlbarParent`. `UrlbarChildController` builds its
+ * own parent controller; this actor tells the two transports apart
+ * (`usesMessagePath`) and runs the message-path lifecycle.
  *
- * Two transports back that object:
- * - Direct (default for chrome `<moz-urlbar>`): both actors live in the parent
- *   process, so we hand the real `UrlbarParentController` reference back and
- *   methods are invoked synchronously in-process.
- * - Message-passing: used for a content-process `<moz-urlbar>` (e.g.
- *   about:newtab), and for chrome when
- *   `browser.urlbar.ipc.chromeMessagePassing` is set (so the wire path runs in
- *   CI). We hand back a `UrlbarParentControllerProxy` that trades messages with
- *   the parent-side controller, identified by an `instanceId`. The parent's
- *   `Notify` messages are dispatched back to the paired child controller, which
- *   we hold weakly (keyed by `instanceId`) so as not to pin its input.
+ * - Direct path (default for chrome `<moz-urlbar>`): both actors live in the
+ *   parent process, so the child builds a real `UrlbarParentController` in place
+ *   and invokes it synchronously.
+ * - Message path: a content-process `<moz-urlbar>` (e.g. about:newtab), or
+ *   chrome when `browser.urlbar.ipc.chromeMessagePassing` is set (so the message
+ *   path runs in CI). The child builds a `UrlbarParentControllerProxy` that
+ *   trades messages with the parent-side controller, identified by an
+ *   `instanceId` this actor allocates. The parent's `Notify` messages are
+ *   dispatched back to the paired child controller, held weakly (keyed by
+ *   `instanceId`) so as not to pin its input.
  *
  * On the message path the parent retains its controller strongly (keyed by
- * `instanceId`), so we tie that controller's lifetime to the input: the input
- * is registered in a `FinalizationRegistry` that sends `Destroy(instanceId)`
- * when the input is collected, letting the parent drop its entry. (The direct
- * path needs none of this: its controllers are cached in a `WeakMap` keyed by
- * the input.)
+ * `instanceId`), so we tie its lifetime to the input: the input is registered in
+ * a `FinalizationRegistry` that sends `Destroy(instanceId)` when the input is
+ * collected, letting the parent drop its entry.
  */
 export class UrlbarChild extends JSWindowActorChild {
   #nextInstanceId = 0;
@@ -61,33 +70,111 @@ export class UrlbarChild extends JSWindowActorChild {
   });
 
   /**
-   * Returns the object that backs a given `<moz-urlbar>` input's child
-   * controller, creating it on demand. On the direct path, reconnecting the
-   * same element returns the existing controller.
+   * Whether this `<moz-urlbar>` uses the actor message path -- a content-process
+   * input (no in-process parent global), or chrome with
+   * `browser.urlbar.ipc.chromeMessagePassing` -- rather than the in-process
+   * direct path. `UrlbarChildController` keys its controller construction on
+   * this: direct builds a real `UrlbarParentController` in place, message builds
+   * a `UrlbarParentControllerProxy`.
+   *
+   * @type {boolean}
+   */
+  get usesMessagePath() {
+    return (
+      !this.manager.parentActor ||
+      lazy.UrlbarPrefs.get("ipc.chromeMessagePassing")
+    );
+  }
+
+  /**
+   * Converts a privileged promise into one the content realm can consume: the
+   * resolution is cloned in, and a rejection is re-created as a content-realm
+   * `Error` carrying only its message, so neither a system-principal object nor
+   * a chrome stack crosses the boundary.
+   *
+   * @param {Promise} promise
+   *   The privileged promise to convert.
+   * @param {Window} win
+   *   The waived content window to build the content-realm promise in.
+   * @returns {Promise}
+   */
+  #wrapPromise(promise, win) {
+    return new win.Promise((resolve, reject) =>
+      promise.then(
+        result => resolve(Cu.cloneInto(result, win)),
+        ex => {
+          try {
+            reject(new win.Error(ex?.message ?? String(ex)));
+          } catch {
+            // The content window went away, so there's no realm left to build
+            // an error in.
+            reject();
+          }
+        }
+      )
+    );
+  }
+
+  /**
+   * Exposes the actor's content-facing surface on the window for a content-realm
+   * `<moz-urlbar>`, which can't reach the `[ChromeOnly]`
+   * `windowGlobalChild.getActor` nor hold the system-principal actor. Such an
+   * input reads `window.UrlbarActorPort` and calls it in the actor's place (see
+   * `UrlbarChildController`), and `UrlbarContentPrefs` reads the pref methods
+   * from it. Only meaningful in a child process; in the parent both reach their
+   * privileged side directly.
+   *
+   * This is the single surface the content realm gets, so to give content
+   * another capability, add it here.
+   *
+   * Object returns are `cloneInto`'d so content can read them; `sendQuery`
+   * returns a content-realm promise (see `#wrapPromise`).
+   */
+  exposePort() {
+    let win = Cu.waiveXrays(this.contentWindow);
+    win.UrlbarActorPort = Cu.cloneInto(
+      {
+        sendAsyncMessage: (name, data) => this.sendAsyncMessage(name, data),
+        sendQuery: (name, data) =>
+          this.#wrapPromise(this.sendQuery(name, data), win),
+        registerMessagePathInput: input => this.registerMessagePathInput(input),
+        registerChildController: (instanceId, child) =>
+          this.registerChildController(instanceId, child),
+        whereToOpenLink: event => this.whereToOpenLink(event),
+        getFixupInfo: (searchString, isPrivate) =>
+          Cu.cloneInto(this.getFixupInfo(searchString, isPrivate), win),
+        getDisplaySpec: url => this.getDisplaySpec(url),
+        getPref: name => Cu.cloneInto(lazy.UrlbarPrefs.get(name), win),
+        addPrefObserver: observer => lazy.UrlbarPrefs.addObserver(observer),
+        removePrefObserver: observer =>
+          lazy.UrlbarPrefs.removeObserver(observer),
+      },
+      win,
+      { cloneFunctions: true }
+    );
+  }
+
+  actorCreated() {
+    // Only a content realm reads the port; chrome holds the actor and imports
+    // UrlbarPrefs directly, so don't publish it on every chrome window.
+    if (!this.manager.parentActor) {
+      this.exposePort();
+    }
+  }
+
+  /**
+   * Registers a message-path `<moz-urlbar>` input for teardown -- so the parent
+   * drops the controller once the input is collected -- and returns the instance
+   * id the child controller pairs with the proxy it builds.
    *
    * @param {object} input
    *   The `UrlbarInput`/`SmartbarInput` that owns the child controller.
-   * @returns {UrlbarParentController} The real controller (direct path) or, on
-   *   the message path, a `UrlbarParentControllerProxy` that stands in for one.
+   * @returns {number} The instance id to construct the proxy with.
    */
-  getOrCreateController(input) {
-    let parentActor = this.#parentActor;
-    // In-process and not forcing the wire path: hand back the real controller.
-    if (parentActor && !lazy.UrlbarPrefs.get("ipc.chromeMessagePassing")) {
-      return parentActor.getOrCreateController(input);
-    }
-    // Message-passing path: cross-process, or chrome with the pref on.
+  registerMessagePathInput(input) {
     let instanceId = ++this.#nextInstanceId;
     this.#destroyRegistry.register(input, instanceId);
-    // The proxy duck-types as a UrlbarParentController for the child controller.
-    return /** @type {UrlbarParentController} */ (
-      /** @type {unknown} */ (
-        new lazy.UrlbarParentControllerProxy(this, instanceId, {
-          sapName: input.sapName,
-          isPrivate: input.isPrivate,
-        })
-      )
-    );
+    return instanceId;
   }
 
   /**
@@ -104,15 +191,91 @@ export class UrlbarChild extends JSWindowActorChild {
     this.#childControllers.set(instanceId, new WeakRef(child));
   }
 
-  receiveMessage(message) {
-    if (message.name != "Notify") {
-      return;
+  /**
+   * Forwards to `BrowserUtils.whereToOpenLink`. `UrlbarChildController.whereToOpen`
+   * computes the destination itself but can't import `BrowserUtils` (a system
+   * module) from its content-web scope, so it routes this one call through the
+   * actor, which is privileged and runs in the input's own process.
+   *
+   * @param {Event} event
+   *   The event that triggered the opening.
+   * @returns {"current" | "tabshifted" | "tab" | "save" | "window"}
+   */
+  whereToOpenLink(event) {
+    return lazy.BrowserUtils.whereToOpenLink(event, false, false);
+  }
+
+  /**
+   * Runs URI fixup for a string on behalf of the content-web input, which can't
+   * reach `Services.uriFixup`. Returns only the primitives the callers need, so
+   * the input never holds an `nsIURIFixupInfo`.
+   *
+   * @param {string} searchString
+   *   The string to fix up.
+   * @param {boolean} isPrivate
+   *   Whether the fixup runs for a private context.
+   * @returns {?{keywordAsSent: boolean, preferredURIDisplaySpec: ?string}}
+   *   The fixup primitives, or null if fixup threw.
+   */
+  getFixupInfo(searchString, isPrivate) {
+    let info = lazy.UrlbarUtils.getURIFixupInfo(searchString, isPrivate);
+    return info
+      ? {
+          keywordAsSent: info.keywordAsSent,
+          preferredURIDisplaySpec: info.preferredURI?.displaySpec ?? null,
+        }
+      : null;
+  }
+
+  /**
+   * Returns a URL's display spec, or null if it can't be parsed. Lets the
+   * content-web input normalize a URL without reaching `Services.io`.
+   *
+   * @param {string} url
+   *   The URL to parse.
+   * @returns {?string}
+   *   The display spec, or null if parsing threw.
+   */
+  getDisplaySpec(url) {
+    try {
+      return Services.io.newURI(url).displaySpec;
+    } catch (ex) {
+      return null;
     }
-    let { instanceId, name, params, resultViewData } = message.data;
+  }
+
+  receiveMessage(message) {
+    switch (message.name) {
+      case "Notify":
+        this.#receiveNotify(message.data);
+        break;
+      case "InvokeContentAction":
+        this.#invokeContentAction(message.data);
+        break;
+      case "UpdateEngineStore":
+        this.#updateEngineStore(message.data);
+        break;
+    }
+  }
+
+  /**
+   * Dispatches a parent-side `notify()` to the paired child controller.
+   *
+   * @param {object} data The `Notify` message data.
+   * @param {number} data.instanceId The instance whose child controller to notify.
+   * @param {string} data.name The notification (listener method) name.
+   * @param {any[]} data.params The notification arguments.
+   */
+  #receiveNotify({ instanceId, name, params }) {
     let child = this.#childControllers.get(instanceId)?.deref();
     if (!child) {
       this.#childControllers.delete(instanceId);
       return;
+    }
+    // In a content process the child controller is a content object; waive
+    // Xrays so its methods (and `input`/`view`) are callable from here.
+    if (!this.manager.parentActor) {
+      child = Cu.waiveXrays(child);
     }
     let deserialized = params.map(param =>
       param?.serializedQueryContext
@@ -131,23 +294,49 @@ export class UrlbarChild extends JSWindowActorChild {
         return;
       }
     }
-    if (resultViewData) {
-      // params[0] is the query context; reattach the per-result view data the
-      // parent pre-fetched so the view can read it synchronously.
-      deserialized[0].results.forEach((result, i) => {
-        result.viewData = resultViewData[i];
-      });
-    }
     child.notify(name, ...deserialized);
   }
 
   /**
-   * In the parent process: the parent actor
-   * In a child process: undefined
+   * Invokes an allowed input/view method a parent-side provider hook
+   * requested (e.g. `view.close()`, `input.startQuery()`), on the real
+   * content-side objects.
    *
-   * @type {UrlbarParent | undefined}
+   * @param {object} data The `InvokeContentAction` message data.
+   * @param {number} data.instanceId The instance whose input/view to act on.
+   * @param {"input"|"view"} data.target Which content object to invoke on.
+   * @param {string} data.method The allowed method to call.
+   * @param {any[]} data.args The method arguments.
    */
-  get #parentActor() {
-    return this.manager.parentActor?.getActor("Urlbar");
+  #invokeContentAction({ instanceId, target, method, args }) {
+    let child = this.#childControllers.get(instanceId)?.deref();
+    if (!child) {
+      this.#childControllers.delete(instanceId);
+      return;
+    }
+    if (!INVOKABLE_CONTENT_ACTIONS[target]?.has(method)) {
+      console.error(`Urlbar: disallowed content action ${target}.${method}`);
+      return;
+    }
+    // In a content process `child.input`/`child.view` are content objects;
+    // waive Xrays so their methods are callable from here.
+    if (!this.manager.parentActor) {
+      child = Cu.waiveXrays(child);
+    }
+    child[target]?.[method](...args);
+  }
+
+  #updateEngineStore({ instanceId, args }) {
+    let child = this.#childControllers.get(instanceId)?.deref();
+    if (!child) {
+      this.#childControllers.delete(instanceId);
+      return;
+    }
+    // In a content process the child controller is a content object; waive
+    // Xrays so its methods are callable from here.
+    if (!this.manager.parentActor) {
+      child = Cu.waiveXrays(child);
+    }
+    child.updateEngineStore(...args);
   }
 }

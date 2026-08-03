@@ -582,7 +582,9 @@ class BrowsingContextModule extends RootBiDiModule {
       lazy.pprint`Expected "promptUnload" to be a boolean, got ${promptUnload}`
     );
 
-    const context = this._getNavigable(contextId);
+    const context = this._getNavigable(contextId, {
+      skipPrivilegeCheck: true,
+    });
     lazy.assert.topLevel(
       context,
       lazy.pprint`Browsing context with id ${contextId} is not top-level`
@@ -953,7 +955,9 @@ class BrowsingContextModule extends RootBiDiModule {
         );
       }
 
-      contexts = [this._getNavigable(rootId, { supportsChromeScope: true })];
+      contexts = [
+        this._getNavigable(rootId, { supportsPrivilegedScope: true }),
+      ];
     } else {
       switch (scope) {
         case MozContextScope.CHROME: {
@@ -1381,7 +1385,11 @@ class BrowsingContextModule extends RootBiDiModule {
       );
     }
 
-    const context = this._getNavigable(contextId);
+    // Skip the privilege check here since navigate needs to work regardless of
+    // the current page. The URL safety check below handles destination restrictions.
+    const context = this._getNavigable(contextId, {
+      skipPrivilegeCheck: true,
+    });
 
     // webProgress will be stable even if the context navigates, retrieve it
     // immediately before doing any asynchronous call.
@@ -1395,6 +1403,8 @@ class BrowsingContextModule extends RootBiDiModule {
         id: context.id,
       },
       retryOnAbort: true,
+      // Reading the base URL is safe and must work while navigating a privileged page.
+      skipPrivilegeCheck: true,
     });
 
     let targetURI;
@@ -1636,7 +1646,22 @@ class BrowsingContextModule extends RootBiDiModule {
       );
     }
 
-    const context = this._getNavigable(contextId);
+    // Skip the privilege check here since reload needs to work regardless of
+    // the current page. The URL safety check below handles destination restrictions.
+    const context = this._getNavigable(contextId, {
+      skipPrivilegeCheck: true,
+    });
+
+    // Disallow refreshing privileged URLs
+    // unless system access is enabled.
+    if (
+      !lazy.RemoteAgent.allowSystemAccess &&
+      !lazy.isWebdriverSafeNavigationURL(context.currentURI, context)
+    ) {
+      throw new lazy.error.UnsupportedOperationError(
+        lazy.truncate`Reloading "${context.currentURI.spec}" is not allowed in this context`
+      );
+    }
 
     // webProgress will be stable even if the context navigates, retrieve it
     // immediately before doing any asynchronous call.
@@ -2142,7 +2167,12 @@ class BrowsingContextModule extends RootBiDiModule {
       lazy.pprint`Expected "context" to be a string, got ${contextId}`
     );
 
-    const context = this._getNavigable(contextId);
+    // Skip the privilege check here since traverseHistory needs to work
+    // regardless of the current page. The URL safety check below handles
+    // destination restrictions.
+    const context = this._getNavigable(contextId, {
+      skipPrivilegeCheck: true,
+    });
 
     lazy.assert.topLevel(
       context,
@@ -2164,6 +2194,18 @@ class BrowsingContextModule extends RootBiDiModule {
       throw new lazy.error.NoSuchHistoryEntryError(
         `History entry with delta ${delta} not found`
       );
+    }
+
+    if (!lazy.RemoteAgent.allowSystemAccess) {
+      const targetEntry = sessionHistory.getEntryAtIndex(targetIndex);
+
+      // Disallow traversing to privileged URLs
+      // unless system access is enabled.
+      if (!lazy.isWebdriverSafeNavigationURL(targetEntry.URI, context)) {
+        throw new lazy.error.UnsupportedOperationError(
+          lazy.truncate`Navigation to "${targetEntry.URI.spec}" is not allowed in this context`
+        );
+      }
     }
 
     context.goToIndex(targetIndex);
@@ -2485,6 +2527,7 @@ class BrowsingContextModule extends RootBiDiModule {
       const {
         canceled,
         contextId,
+        downloadId,
         filepath,
         navigableId,
         navigationId,
@@ -2494,6 +2537,7 @@ class BrowsingContextModule extends RootBiDiModule {
 
       const browsingContextInfo = {
         context: navigableId,
+        download: downloadId,
         navigation: navigationId,
         status: canceled
           ? DownloadEndStatus.canceled
@@ -2521,6 +2565,7 @@ class BrowsingContextModule extends RootBiDiModule {
     if (this.#subscribedEvents.has("browsingContext.downloadWillBegin")) {
       const {
         contextId,
+        downloadId,
         navigationId,
         navigableId,
         suggestedFilename,
@@ -2530,6 +2575,7 @@ class BrowsingContextModule extends RootBiDiModule {
 
       const browsingContextInfo = {
         context: navigableId,
+        download: downloadId,
         navigation: navigationId,
         suggestedFilename,
         timestamp,
@@ -2874,7 +2920,12 @@ class BrowsingContextModule extends RootBiDiModule {
       "_awaitVisibilityState",
       browsingContext.id,
       { value: expectedState, timeout },
-      { retryOnAbort: true }
+      {
+        retryOnAbort: true,
+        // Awaiting the visibility state is safe and can target a context
+        // (e.g. a previously selected tab) regardless of its privilege level.
+        skipPrivilegeCheck: true,
+      }
     );
   }
 
@@ -2986,7 +3037,12 @@ class BrowsingContextModule extends RootBiDiModule {
           height: targetHeight,
           width: targetWidth,
         },
-        { retryOnAbort: true }
+        {
+          retryOnAbort: true,
+          // Awaiting the resized viewport dimensions is safe
+          // regardless of the context's privilege level.
+          skipPrivilegeCheck: true,
+        }
       );
     }
   }

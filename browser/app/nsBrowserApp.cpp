@@ -43,7 +43,7 @@
 #  define strcasecmp _stricmp
 #  ifdef MOZ_SANDBOX
 #    include "mozilla/sandboxing/SandboxInitialization.h"
-#    include "mozilla/sandboxing/sandboxLogging.h"
+#    include "mozilla/sandboxing/TargetGeckoServices.h"
 #  endif
 #endif
 #include "BinaryPath.h"
@@ -459,7 +459,8 @@ int main(int argc, char* argv[], char* envp[]) {
         return 1;
       }
 
-      childData.ProvideLogFunction = mozilla::sandboxing::ProvideLogFunction;
+      childData.setTargetGeckoServices =
+          mozilla::sandboxing::SetTargetGeckoServices;
     }
 #  endif
 
@@ -517,6 +518,12 @@ int main(int argc, char* argv[], char* envp[]) {
   mozilla::freestanding::gSharedSection.ConvertToReadOnly();
 
   mozilla::CreateAndStorePreXULSkeletonUI(GetModuleHandle(nullptr), argc, argv);
+
+  // Preload cryptbase.dll from the system directory to avoid loading a
+  // planted one. This used to be done unconditionally in mozglue's DllMain;
+  // it's now parent-only, as child processes either don't need it, or by
+  // the time they do the sandbox already guarantees PreferSystem32Images.
+  ::LoadLibraryExW(L"cryptbase.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
 #endif
 
   nsresult rv = InitXPCOMGlue(LibLoadingStrategy::ReadAhead);

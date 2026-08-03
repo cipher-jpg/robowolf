@@ -32,6 +32,7 @@ async function dragLauncher(deltaX, shouldExpand) {
   const { sidebarMain, _launcherSplitter: splitter } = SidebarController;
   EventUtils.synthesizeMouseAtCenter(splitter, { type: "mousedown" });
   await mouseMoveInChunksHorizontal(splitter, deltaX, 10);
+  await waitForRepaint();
   EventUtils.synthesizeMouse(splitter, 0, 0, { type: "mouseup" });
 
   info(`The sidebar should be ${shouldExpand ? "expanded" : "collapsed"}.`);
@@ -122,10 +123,13 @@ add_task(async function test_drag_show_and_hide() {
   await SpecialPowers.pushPrefEnv({
     set: [[SIDEBAR_VISIBILITY_PREF, "hide-sidebar"]],
   });
-  await SidebarController.updateUIState({
-    launcherExpanded: true,
-    launcherVisible: true,
-  });
+  // In "hide-sidebar" mode the launcher starts hidden with no panel open, so
+  // show it via the toolbar button (as a user would) to get a visible, expanded
+  // launcher before dragging it closed.
+  if (!SidebarController._state.launcherVisible) {
+    await SidebarController.handleToolbarButtonClick();
+  }
+  await SidebarController.waitUntilStable();
 
   await dragLauncher(-200, false);
   ok(SidebarController.sidebarContainer.hidden, "Sidebar is hidden.");
@@ -233,6 +237,61 @@ add_task(async function test_resize_of_pinned_tabs() {
     "Pinned tabs container was resized."
   );
 
+  for (let tab of [...gBrowser.tabs]) {
+    if (tab.pinned) {
+      gBrowser.unpinTab(tab);
+    }
+  }
+  while (gBrowser.tabs.length > 1) {
+    BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
+  }
+});
+
+add_task(async function test_stale_pinned_tabs_height_clamped_on_restore() {
+  await SidebarController.updateUIState({
+    launcherExpanded: true,
+  });
+
+  info("Open and pin a few tabs.");
+  for (let i = 0; i < 3; i++) {
+    await BrowserTestUtils.openNewForegroundTab(
+      gBrowser,
+      `data:text/html,<title>${i + 1}</title>`
+    );
+    gBrowser.pinTab(gBrowser.selectedTab);
+  }
+  await SidebarController.waitUntilStable();
+
+  const container = SidebarController._pinnedTabsContainer;
+  const contentHeight =
+    SidebarController._pinnedTabsItemsWrapper.getBoundingClientRect().height;
+  Assert.greater(contentHeight, 0, "Pinned tabs have a measurable height.");
+
+  // Simulate a persisted height that is larger than the current content, as
+  // happens when the height was saved at a narrower sidebar width and then the
+  // sidebar was widened without re-dragging the pinned tabs splitter.
+  const staleHeight = Math.round(contentHeight + 200);
+  info(`Apply a stale persisted height of ${staleHeight}px on restore.`);
+  SidebarController._state.expandedPinnedTabsHeight = staleHeight;
+  SidebarController._state.updatePinnedTabsHeight();
+  await SidebarController.waitUntilStable();
+
+  const appliedHeight = container.getBoundingClientRect().height;
+  info(
+    `content: ${contentHeight}, stale: ${staleHeight}, applied: ${appliedHeight}`
+  );
+  Assert.less(
+    appliedHeight,
+    staleHeight,
+    "The stale, oversized persisted height is not applied verbatim."
+  );
+  Assert.less(
+    appliedHeight - contentHeight,
+    50,
+    "Pinned tabs container is clamped to its content height, leaving no gap."
+  );
+
+  SidebarController._state.expandedPinnedTabsHeight = undefined;
   for (let tab of [...gBrowser.tabs]) {
     if (tab.pinned) {
       gBrowser.unpinTab(tab);

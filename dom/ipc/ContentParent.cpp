@@ -61,6 +61,7 @@
 #include "mozilla/ScriptPreloader.h"
 #include "mozilla/Services.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -219,6 +220,7 @@
 #include "nsILocalStorageManager.h"
 #include "nsIMemoryInfoDumper.h"
 #include "nsIMemoryReporter.h"
+#include "nsINavHistoryService.h"
 #include "nsINetworkLinkService.h"
 #include "nsIObserverService.h"
 #include "nsIParentChannel.h"
@@ -253,12 +255,14 @@
 #include "nsStyleSheetService.h"
 #include "nsThread.h"
 #include "nsThreadUtils.h"
+#include "nsToolkitCompsCID.h"
 #include "nsURLHelper.h"
 #include "nsWidgetsCID.h"
 #include "nsWindowWatcher.h"
 #include "prenv.h"
 #include "prio.h"
 #include "private/pprio.h"
+#include "prtime.h"
 #include "xpcpublic.h"
 
 #ifdef MOZ_WEBRTC
@@ -1646,6 +1650,7 @@ void ContentParent::Init() {
   // shouldn't bring up accessibility.
   if (GetAccService() && !nsAccessibilityService::IsOnlyForPdfOutput()) {
     (void)SendActivateA11y(nsAccessibilityService::GetActiveCacheDomains());
+    mWasA11yEverActivated = true;
   }
 #endif  // #ifdef ACCESSIBILITY
 
@@ -3270,9 +3275,7 @@ mozilla::ipc::IPCResult ContentParent::RecvSetClipboard(
   // aRequestingPrincipal is allowed to be nullptr here.
 
   if (!ValidatePrincipal(aTransferable.dataPrincipal(),
-                         {ValidatePrincipalOptions::AllowNullPtr,
-                          ValidatePrincipalOptions::AllowExpanded,
-                          ValidatePrincipalOptions::AllowSystem})) {
+                         {ValidatePrincipalOptions::AllowNullPtr})) {
     return PrincipalValidationIpcFail(aTransferable.dataPrincipal(), this,
                                       __func__);
   }
@@ -3343,6 +3346,11 @@ nsresult ContentParent::GetClipboardDataInternal(
     return NS_ERROR_INVALID_ARG;
   }
 
+  RefPtr<WindowGlobalParent> window = aRequestingWindowContext.get_canonical();
+  if (window && window->GetContentParent() != this) {
+    return NS_ERROR_ILLEGAL_VALUE;
+  }
+
   nsresult rv;
   nsCOMPtr<nsIClipboard> clipboard(do_GetService(kCClipboardCID, &rv));
   if (NS_FAILED(rv)) {
@@ -3357,7 +3365,6 @@ nsresult ContentParent::GetClipboardDataInternal(
   }
 
   nsCOMPtr<nsITransferable> transferable = result.unwrap();
-  RefPtr<WindowGlobalParent> window = aRequestingWindowContext.get_canonical();
 
   rv = aFunction(clipboard, transferable, aWhichClipboard, window);
   if (NS_FAILED(rv)) {
@@ -3390,6 +3397,11 @@ mozilla::ipc::IPCResult ContentParent::RecvGetClipboard(
     return IPC_FAIL(this, "passed null window to RecvGetClipboard()");
   }
 
+  if (rv == NS_ERROR_ILLEGAL_VALUE) {
+    return IPC_FAIL(
+        this, "attempt to paste into WindowContext loaded in another process");
+  }
+
   return IPC_OK();
 }
 
@@ -3411,6 +3423,11 @@ mozilla::ipc::IPCResult ContentParent::RecvGetClipboardDataIfSmallerThan(
   if (rv == NS_ERROR_INVALID_ARG) {
     return IPC_FAIL(
         this, "passed null window to RecvGetClipboardDataIfSmallerThan()");
+  }
+
+  if (rv == NS_ERROR_ILLEGAL_VALUE) {
+    return IPC_FAIL(
+        this, "attempt to paste into WindowContext loaded in another process");
   }
 
   aResolver(std::move(result));
@@ -4019,6 +4036,7 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
       // accessibility gets fully initiated in chrome process.
       MOZ_ASSERT(!nsAccessibilityService::IsOnlyForPdfOutput());
       (void)SendActivateA11y(nsAccessibilityService::GetActiveCacheDomains());
+      mWasA11yEverActivated = true;
     } else if (*aData == '0') {
       // If possible, shut down accessibility in content process when
       // accessibility gets shutdown in chrome process.
@@ -4696,11 +4714,11 @@ ContentParent::AllocPExternalHelperAppParent(
     const nsACString& aMimeContentType, const nsACString& aContentDisposition,
     const uint32_t& aContentDispositionHint,
     const nsAString& aContentDispositionFilename, const bool& aForceSave,
-    const int64_t& aContentLength, const bool& aWasFileChannel,
-    nsIURI* aReferrer, const MaybeDiscarded<BrowsingContext>& aContext) {
+    const int64_t& aContentLength, nsIURI* aReferrer,
+    const MaybeDiscarded<BrowsingContext>& aContext) {
   RefPtr<ExternalHelperAppParent> parent = new ExternalHelperAppParent(
-      uri, aContentLength, aWasFileChannel, aContentDisposition,
-      aContentDispositionHint, aContentDispositionFilename);
+      uri, aContentLength, aContentDisposition, aContentDispositionHint,
+      aContentDispositionFilename);
   return parent.forget();
 }
 
@@ -4710,8 +4728,20 @@ mozilla::ipc::IPCResult ContentParent::RecvPExternalHelperAppConstructor(
     const nsACString& aContentDisposition,
     const uint32_t& aContentDispositionHint,
     const nsAString& aContentDispositionFilename, const bool& aForceSave,
-    const int64_t& aContentLength, const bool& aWasFileChannel,
-    nsIURI* aReferrer, const MaybeDiscarded<BrowsingContext>& aContext) {
+    const int64_t& aContentLength, nsIURI* aReferrer,
+    const MaybeDiscarded<BrowsingContext>& aContext) {
+  // A content process must never be able to drive a native helper-app launch
+  // of a local file it chose: that decision has to be bound to a channel the
+  // process was actually allowed to open. A file:// URI can only be loaded in
+  // a file content process (mirrors ValidatePrincipalCouldPotentiallyBeLoadedBy
+  // and the sandboxing policy enforced in ProcessIsolation), so reject a
+  // file:// URI coming from any other process.
+  if (uri && uri->SchemeIs("file") &&
+      StaticPrefs::browser_tabs_remote_separateFileUriProcess() &&
+      GetRemoteType() != FILE_REMOTE_TYPE) {
+    return IPC_FAIL(this, "Non-file process sent a file:// URI.");
+  }
+
   BrowsingContext* context = aContext.IsDiscarded() ? nullptr : aContext.get();
   if (!static_cast<ExternalHelperAppParent*>(actor)->Init(
           loadInfoArgs, aMimeContentType, aForceSave, aReferrer, context)) {
@@ -6277,6 +6307,68 @@ static bool WebdriverRunning() {
   return false;
 }
 
+// Whether aDomain (an ETLD+1) was unvisited today, until aNavigationStartTime,
+// per browsing history. Returns false when history is unavailable.
+static bool IsFirstDailyLoad(const nsACString& aDomain,
+                             const TimeStamp& aNavigationStartTime) {
+  if (aNavigationStartTime.IsNull()) {
+    return false;
+  }
+
+  nsCOMPtr<nsINavHistoryService> history =
+      do_GetService(NS_NAVHISTORYSERVICE_CONTRACTID);
+  bool historyDisabled = true;
+  if (!history || NS_FAILED(history->GetHistoryDisabled(&historyDisabled)) ||
+      historyDisabled) {
+    return false;
+  }
+
+  nsCOMPtr<nsINavHistoryQuery> query;
+  nsCOMPtr<nsINavHistoryQueryOptions> options;
+  if (NS_FAILED(history->GetNewQuery(getter_AddRefs(query))) ||
+      NS_FAILED(history->GetNewQueryOptions(getter_AddRefs(options)))) {
+    return false;
+  }
+
+  // Convert the monotonic navigation start to Places' wall-clock visit_date.
+  PRTime navigationStart =
+      PR_Now() -
+      static_cast<PRTime>(
+          (TimeStamp::Now() - aNavigationStartTime).ToMicroseconds());
+
+  if (NS_FAILED(query->SetDomain(aDomain)) ||
+      NS_FAILED(query->SetDomainIsHost(false)) ||
+      NS_FAILED(query->SetBeginTimeReference(
+          nsINavHistoryQuery::TIME_RELATIVE_TODAY)) ||
+      NS_FAILED(query->SetBeginTime(0)) ||
+      NS_FAILED(query->SetEndTime(navigationStart)) ||
+      NS_FAILED(options->SetResultType(
+          nsINavHistoryQueryOptions::RESULTS_AS_VISIT)) ||
+      NS_FAILED(options->SetMaxResults(1)) ||
+      NS_FAILED(options->SetQueryType(
+          nsINavHistoryQueryOptions::QUERY_TYPE_HISTORY))) {
+    return false;
+  }
+
+  nsCOMPtr<nsINavHistoryResult> result;
+  if (NS_FAILED(
+          history->ExecuteQuery(query, options, getter_AddRefs(result)))) {
+    return false;
+  }
+
+  nsCOMPtr<nsINavHistoryContainerResultNode> root;
+  if (NS_FAILED(result->GetRoot(getter_AddRefs(root))) ||
+      NS_FAILED(root->SetContainerOpen(true))) {
+    return false;
+  }
+
+  uint32_t visitCount = 0;
+  nsresult rv = root->GetChildCount(&visitCount);
+  root->SetContainerOpen(false);
+
+  return NS_SUCCEEDED(rv) && visitCount == 0;
+}
+
 #ifdef ANDROID
 void ContentParent::RecordAndroidAppLinkTelemetry(
     mozilla::performance::pageload_event::PageloadEventData* aPageloadData,
@@ -6385,6 +6477,8 @@ mozilla::ipc::IPCResult ContentParent::RecvRecordPageLoadEvent(
   // that can be used to fingerprint the client.  Otherwise, use the regular
   // pageload event ping.
   if (aPageloadEventData.HasDomain()) {
+    aPageloadEventData.SetIsFirstDailyLoad(
+        IsFirstDailyLoad(aPageloadEventData.GetDomain(), aNavigationStartTime));
     aPageloadEventData.SendAsPageLoadDomainEvent();
   } else {
     aPageloadEventData.SendAsPageLoadEvent();
@@ -6965,7 +7059,7 @@ mozilla::ipc::IPCResult ContentParent::RecvDiscardBrowsingContext(
 
       context->Detach(/* aFromIPC */ true);
     }
-    context->AddFinalDiscardListener(aResolve);
+    context->AddFinalDiscardListener(std::move(aResolve));
     return IPC_OK();
   }
 

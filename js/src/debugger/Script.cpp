@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "debugger/Script-inl.h"
-
 #include "mozilla/Maybe.h"   // for Some, Maybe
 #include "mozilla/Span.h"    // for Span
 #include "mozilla/Vector.h"  // for Vector
@@ -48,6 +46,7 @@
 #include "wasm/WasmJS.h"              // for WasmInstanceObject
 #include "wasm/WasmTypeDecls.h"       // for Bytes
 
+#include "debugger/Script-inl.h"
 #include "gc/Marking-inl.h"       // for MaybeForwardedObjectIs
 #include "vm/BytecodeUtil-inl.h"  // for BytecodeRangeWithPosition
 #include "vm/JSAtomUtils-inl.h"   // for PrimitiveValueToId
@@ -1496,9 +1495,7 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::Yield:
     case JSOp::Await:
     case JSOp::CanSkipAwait:
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case JSOp::AddDisposable:
-#endif
       return true;
 
     case JSOp::Nop:
@@ -1518,10 +1515,8 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::Try:
     case JSOp::Throw:
     case JSOp::ThrowWithStack:
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case JSOp::TakeDisposeCapability:
     case JSOp::CreateSuppressedError:
-#endif
     case JSOp::Goto:
     case JSOp::TableSwitch:
     case JSOp::Case:
@@ -1713,7 +1708,6 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::Finally:
     case JSOp::GetRval:
     case JSOp::ThrowMsg:
-    case JSOp::ForceInterpreter:
       return false;
 
     case JSOp::InitAliasedLexical: {

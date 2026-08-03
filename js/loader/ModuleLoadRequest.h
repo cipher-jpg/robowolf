@@ -5,15 +5,17 @@
 #ifndef js_loader_ModuleLoadRequest_h
 #define js_loader_ModuleLoadRequest_h
 
-#include "LoadContextBase.h"
-#include "ScriptLoadRequest.h"
-#include "ModuleLoaderBase.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/HoldDropJSObjects.h"
+
+#include "LoadContextBase.h"
+#include "ModuleLoaderBase.h"
+#include "nsTHashtable.h"
+#include "nsURIHashKey.h"
+#include "ScriptLoadRequest.h"
+
 #include "js/RootingAPI.h"
 #include "js/Value.h"
-#include "nsURIHashKey.h"
-#include "nsTHashtable.h"
 
 namespace JS::loader {
 
@@ -69,6 +71,11 @@ class ModuleLoadRequest final : public ScriptLoadRequest {
   void ModuleLoaded();
   void ModuleErrored();
   void LoadFailed();
+
+  // Tells the load context that this request stopped waiting on an in-progress
+  // fetch of the same URL. Must be called whenever that happens, whether the
+  // fetch resolved or was canceled.
+  void NotifyModuleWaitFinished();
 
   ModuleLoadRequest* GetRootModule() {
     if (!mRootModule) {

@@ -24,6 +24,7 @@ internal object TabsTrayTestTag {
 
     const val ACCOUNT_SETTINGS = "$THREE_DOT_BUTTON.accountSettings"
     const val CLOSE_ALL_TABS = "$THREE_DOT_BUTTON.closeAllTabs"
+    const val NEW_TAB_GROUP = "$THREE_DOT_BUTTON.newTabGroup"
     const val RECENTLY_CLOSED_TABS = "$THREE_DOT_BUTTON.recentlyClosedTabs"
     const val SELECT_TABS = "$THREE_DOT_BUTTON.selectTabs"
     const val SELECT_ALL_TABS = "$THREE_DOT_BUTTON.selectAllTabs"
@@ -66,6 +67,7 @@ internal object TabsTrayTestTag {
 
     // Bottom sheet group items
     const val TAB_GROUP_BOTTOM_SHEET_ROOT = "$TAB_GROUP_ROOT.bottomSheet"
+    const val BOTTOM_SHEET_ADD_TAB_BUTTON = "$TAB_GROUP_BOTTOM_SHEET_ROOT.addTab"
     const val BOTTOM_SHEET_SHARE_BUTTON = "$TAB_GROUP_BOTTOM_SHEET_ROOT.share"
     const val BOTTOM_SHEET_CIRCLE = "$TAB_GROUP_BOTTOM_SHEET_ROOT.circle"
     const val BOTTOM_SHEET_COLOR_LIST = "$TAB_GROUP_BOTTOM_SHEET_ROOT.colors"
@@ -79,6 +81,7 @@ internal object TabsTrayTestTag {
     const val TAB_GROUP_THREE_DOT_BUTTON = "$TAB_GROUP_ROOT.threeDotButton"
     const val EDIT_TAB_GROUP = "$TAB_GROUP_THREE_DOT_BUTTON.editGroup"
     const val CLOSE_TAB_GROUP = "$TAB_GROUP_THREE_DOT_BUTTON.closeGroup"
+    const val UNGROUP_TAB_GROUP = "$TAB_GROUP_THREE_DOT_BUTTON.ungroup"
     const val DELETE_TAB_GROUP = "$TAB_GROUP_THREE_DOT_BUTTON.deleteGroup"
 
     // Bottom app bar

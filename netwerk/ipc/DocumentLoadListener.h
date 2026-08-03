@@ -5,12 +5,12 @@
 #ifndef mozilla_net_DocumentLoadListener_h
 #define mozilla_net_DocumentLoadListener_h
 
+#include "EarlyHintsService.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Variant.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/dom/SessionHistoryEntry.h"
-#include "EarlyHintsService.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/net/NeckoCommon.h"
 #include "mozilla/net/NeckoParent.h"
 #include "mozilla/net/PDocumentChannelParent.h"
@@ -409,6 +409,14 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   // Return the Window Context which which contains the element which the load
   // is being performed in. For toplevel loads, this will return `nullptr`.
   dom::WindowGlobalParent* GetParentWindowContext() const;
+
+  // Checks for a completed speculation rules prefetch record matching aURI.
+  // If found, copies the prefetch's cookies into the destination partition
+  // and marks the navigation timing as activated from a prefetch.
+  // Only called for document (navigational) loads.
+  // Spec:
+  // https://wicg.github.io/nav-speculation/prefetch.html#create-navigation-params-from-a-prefetch-record
+  void TryActivateFromPrefetch(nsIURI* aURI);
 
   void AddURIVisit(nsIChannel* aChannel, uint32_t aLoadFlags);
   bool HasCrossOriginOpenerPolicyMismatch() const;

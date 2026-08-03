@@ -5,10 +5,10 @@
 #ifndef HappyEyeballsConnMgrDelegate_h_
 #define HappyEyeballsConnMgrDelegate_h_
 
-#include "nsISupportsImpl.h"
 #include "mozilla/AlreadyAddRefed.h"
-
-class nsIDNSAddrRecord;
+#include "mozilla/net/DNS.h"
+#include "nsISupportsImpl.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 namespace net {
@@ -51,11 +51,19 @@ class HappyEyeballsConnMgrDelegate {
                                        bool aAbandon) = 0;
   virtual void RecordIPFamilyPreference(ConnectionEntry* aEntry,
                                         uint16_t aFamily) = 0;
+  virtual void ResetIPFamilyPreference(ConnectionEntry* aEntry) = 0;
   virtual bool MaybeProcessCoalescingKeys(ConnectionEntry* aEntry,
-                                          nsIDNSAddrRecord* aRecord,
+                                          const nsTArray<NetAddr>& aAddresses,
                                           bool aIsHttp3) = 0;
   virtual bool RemoveTransFromPendingQ(ConnectionEntry* aEntry,
                                        nsHttpTransaction* aTrans) = 0;
+  // Start a fresh Happy Eyeballs attempt for aTrans. aRetryWithoutTRR resolves
+  // with TRR disabled (the TRR-resolved -> native-DNS fallback); otherwise it's
+  // a plain retry (e.g. a claimed attempt that had refused a local peer).
+  virtual nsresult StartRetry(ConnectionEntry* aEntry,
+                              nsHttpTransaction* aTrans, uint32_t aCaps,
+                              bool aSpeculative, bool aUrgentStart,
+                              bool aAllow1918, bool aRetryWithoutTRR) = 0;
 
  protected:
   virtual ~HappyEyeballsConnMgrDelegate() = default;

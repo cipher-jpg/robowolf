@@ -2,27 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "AppleUtils.h"
 #include "CoreTextFontList.h"
+
+#include "AppleUtils.h"
+#include "MainThreadUtils.h"
+#include "SharedFontList-impl.h"
 #include "gfxFontConstants.h"
 #include "gfxMacFont.h"
 #include "gfxUserFontSet.h"
-
 #include "harfbuzz/hb.h"
-
-#include "MainThreadUtils.h"
-
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/gfx/2D.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/Utf16.h"
-
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/glean/GfxMetrics.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsCharTraits.h"
 #include "nsComponentManagerUtils.h"
@@ -30,7 +28,6 @@
 #include "nsDirectoryServiceUtils.h"
 #include "nsIDirectoryEnumerator.h"
 #include "nsServiceManagerUtils.h"
-#include "SharedFontList-impl.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -377,12 +374,17 @@ nsresult CTFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
 }
 
 gfxFont* CTFontEntry::CreateFontInstance(const gfxFontStyle* aFontStyle) {
-  RefPtr<UnscaledFontMac> unscaledFont(mUnscaledFont);
+  RefPtr<UnscaledFontMac> unscaledFont;
+  {
+    AutoReadLock lock(mLock);
+    unscaledFont = RefPtr<UnscaledFontMac>(mUnscaledFont);
+  }
   if (!unscaledFont) {
     CGFontRef baseFont = GetFontRef();
     if (!baseFont) {
       return nullptr;
     }
+    AutoWriteLock lock(mLock);
     unscaledFont = new UnscaledFontMac(baseFont, mIsDataUserFont);
     mUnscaledFont = unscaledFont;
   }

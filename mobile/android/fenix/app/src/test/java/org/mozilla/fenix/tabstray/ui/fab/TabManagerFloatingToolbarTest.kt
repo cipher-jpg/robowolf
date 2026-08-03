@@ -215,6 +215,54 @@ class TabManagerFloatingToolbarTest {
         }
     }
 
+    @Test
+    fun `GIVEN on tab groups page WHEN clicking the FAB THEN the tab groups fab callback is invoked`() {
+        var clicked = false
+        val state = TabsTrayState(selectedPage = Page.TabGroups)
+
+        composeTestRule.setContent {
+            FloatingToolbarFAB(
+                state = state,
+                onOpenNewNormalTabClicked = {},
+                onOpenNewPrivateTabClicked = {},
+                onSyncedTabsFabClicked = {},
+                onTabGroupsFabClicked = { clicked = true },
+            )
+        }
+
+        composeTestRule.onNodeWithTag(TabsTrayTestTag.FAB)
+            .assertIsDisplayed()
+            .performClick()
+
+        assert(clicked)
+    }
+
+    @Test
+    fun `GIVEN homepage as new tab is enabled WHEN on the normal tabs menu THEN the new tab group item is shown`() {
+        val initialState = TabsTrayState(
+            normalTabsState = TabsTrayState.NormalTabsState(items = testTabs),
+            config = TabsTrayState.TabsTrayConfig(homepageAsNewTabEnabled = true),
+        )
+
+        setTestContent(initialState = initialState)
+
+        composeTestRule.onNodeWithTag(TabsTrayTestTag.THREE_DOT_BUTTON).performClick()
+        composeTestRule.onNodeWithTag(TabsTrayTestTag.NEW_TAB_GROUP).assertExists()
+    }
+
+    @Test
+    fun `GIVEN homepage as new tab is disabled WHEN on the normal tabs menu THEN the new tab group item is not shown`() {
+        val initialState = TabsTrayState(
+            normalTabsState = TabsTrayState.NormalTabsState(items = testTabs),
+            config = TabsTrayState.TabsTrayConfig(homepageAsNewTabEnabled = false),
+        )
+
+        setTestContent(initialState = initialState)
+
+        composeTestRule.onNodeWithTag(TabsTrayTestTag.THREE_DOT_BUTTON).performClick()
+        composeTestRule.onNodeWithTag(TabsTrayTestTag.NEW_TAB_GROUP).assertDoesNotExist()
+    }
+
     private fun hasTextColor(color: androidx.compose.ui.graphics.Color) =
         SemanticsMatcher("Has text color matching $color") { node ->
             val textLayoutResults = mutableListOf<TextLayoutResult>()

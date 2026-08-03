@@ -2,59 +2,61 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsBaseParentChannel.h"
-#include "nsHttp.h"
+#include "mozilla/net/NeckoParent.h"
+
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
 #include "mozilla/ContentPrincipal.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/net/ExtensionProtocolHandler.h"
-#include "mozilla/net/PageThumbProtocolHandler.h"
-#include "mozilla/net/MozNewTabWallpaperProtocolHandler.h"
-#include "mozilla/net/NeckoParent.h"
-#include "mozilla/net/HttpChannelParent.h"
 #include "mozilla/net/CookieServiceParent.h"
+#include "mozilla/net/ExtensionProtocolHandler.h"
+#include "mozilla/net/HttpChannelParent.h"
+#include "mozilla/net/MozNewTabWallpaperProtocolHandler.h"
+#include "mozilla/net/PageThumbProtocolHandler.h"
 #include "mozilla/net/WebSocketChannelParent.h"
 #include "mozilla/net/WebSocketEventListenerParent.h"
+#include "nsBaseParentChannel.h"
+#include "nsHttp.h"
 #ifdef MOZ_WIDGET_ANDROID
 #  include "mozilla/net/GeckoViewContentChannelParent.h"
 #endif
-#include "mozilla/net/DocumentChannelParent.h"
-#include "mozilla/net/CacheEntryWriteHandleParent.h"
 #include "mozilla/net/AltDataOutputStreamParent.h"
+#include "mozilla/net/CacheEntryWriteHandleParent.h"
 #include "mozilla/net/DNSRequestParent.h"
+#include "mozilla/net/DocumentChannelParent.h"
 #include "mozilla/net/IPCTransportProvider.h"
+#include "mozilla/net/PSocketProcessBridgeParent.h"
 #include "mozilla/net/RemoteStreamGetter.h"
 #include "mozilla/net/RequestContextService.h"
 #include "mozilla/net/SocketProcessParent.h"
-#include "mozilla/net/PSocketProcessBridgeParent.h"
 #ifdef MOZ_WEBRTC
 #  include "mozilla/net/StunAddrsRequestParent.h"
 #  include "mozilla/net/WebrtcTCPSocketParent.h"
 #endif
-#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/MaybeDiscarded.h"
-#include "mozilla/dom/network/TCPSocketParent.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/network/TCPServerSocketParent.h"
+#include "mozilla/dom/network/TCPSocketParent.h"
 #include "mozilla/dom/network/UDPSocketParent.h"
 #ifdef MOZ_PLACES
 #  include "mozilla/places/PageIconProtocolHandler.h"
 #endif
+#include "SerializedLoadContext.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/MozPromise.h"
-#include "nsPrintfCString.h"
 #include "mozilla/dom/HTMLDNSPrefetch.h"
-#include "nsEscape.h"
-#include "SerializedLoadContext.h"
 #include "nsAuthInformationHolder.h"
-#include "nsISpeculativeConnect.h"
+#include "nsEscape.h"
 #include "nsFileChannel.h"
 #include "nsHttpHandler.h"
 #include "nsIMIMEService.h"
-#include "nsNetUtil.h"
 #include "nsIOService.h"
+#include "nsISpeculativeConnect.h"
+#include "nsNetUtil.h"
+#include "nsPrintfCString.h"
 
 using IPC::SerializedLoadContext;
 using mozilla::dom::BrowserParent;
@@ -338,6 +340,22 @@ PWebSocketEventListenerParent* NeckoParent::AllocPWebSocketEventListenerParent(
   RefPtr<WebSocketEventListenerParent> c =
       new WebSocketEventListenerParent(aInnerWindowID);
   return c.forget().take();
+}
+
+mozilla::ipc::IPCResult NeckoParent::RecvPWebSocketEventListenerConstructor(
+    PWebSocketEventListenerParent* aActor, const uint64_t& aInnerWindowID) {
+  RefPtr<dom::WindowGlobalParent> wgp =
+      dom::WindowGlobalParent::GetByInnerWindowId(aInnerWindowID);
+  if (wgp && wgp->GetContentParent() == ContentParent::Cast(Manager())) {
+    return IPC_OK();
+  }
+
+  if (wgp) {
+    return IPC_FAIL(this, "Invalid aInnerWindowID");
+  }
+
+  (void)PWebSocketEventListenerParent::Send__delete__(aActor);
+  return IPC_OK();
 }
 
 bool NeckoParent::DeallocPWebSocketEventListenerParent(

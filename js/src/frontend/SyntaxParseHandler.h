@@ -472,13 +472,9 @@ class SyntaxParseHandler {
                                     const TokenPos& pos) {
     return NodeGeneric;
   }
-  BinaryNodeResult newImportDeclaration(Node importSpecSet, Node moduleRequest,
+  BinaryNodeResult newImportDeclaration(Node importClause, Node moduleRequest,
+                                        ImportPhase phase,
                                         const TokenPos& pos) {
-    return NodeGeneric;
-  }
-  BinaryNodeResult newImportSourceDeclaration(Node importedBinding,
-                                              Node moduleRequest,
-                                              const TokenPos& pos) {
     return NodeGeneric;
   }
   BinaryNodeResult newImportSpec(Node importNameNode, Node bindingName) {
@@ -512,7 +508,7 @@ class SyntaxParseHandler {
     return NodeGeneric;
   }
   BinaryNodeResult newCallImport(NullaryNodeType importHolder, Node singleArg,
-                                 ParseNodeKind kind) {
+                                 ImportPhase phase) {
     return NodeGeneric;
   }
   BinaryNodeResult newCallImportSpec(Node specifierArg, Node optionalArg) {
@@ -697,10 +693,8 @@ class SyntaxParseHandler {
     MOZ_ASSERT(kind != ParseNodeKind::LetDecl);
     MOZ_ASSERT(kind != ParseNodeKind::ConstDecl);
     MOZ_ASSERT(kind != ParseNodeKind::ParamsBody);
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     MOZ_ASSERT(kind != ParseNodeKind::UsingDecl);
     MOZ_ASSERT(kind != ParseNodeKind::AwaitUsingDecl);
-#endif
     return NodeGeneric;
   }
 
@@ -714,12 +708,9 @@ class SyntaxParseHandler {
       return NodeVarDeclaration;
     }
     MOZ_ASSERT(kind == ParseNodeKind::LetDecl ||
-               kind == ParseNodeKind::ConstDecl
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-               || kind == ParseNodeKind::UsingDecl ||
-               kind == ParseNodeKind::AwaitUsingDecl
-#endif
-    );
+               kind == ParseNodeKind::ConstDecl ||
+               kind == ParseNodeKind::UsingDecl ||
+               kind == ParseNodeKind::AwaitUsingDecl);
     return NodeLexicalDeclaration;
   }
 

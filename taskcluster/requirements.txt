@@ -517,9 +517,9 @@ mozilla-repo-urls==0.1.1 \
     # via
     #   -c ../third_party/python/requirements.txt
     #   taskcluster-taskgraph
-mozilla-taskgraph==4.3.0 \
-    --hash=sha256:33807de7ca2174bdb8f617b506273b1d6fd6fd6a0d5e54fe069f1d367e5a3d33 \
-    --hash=sha256:69d8c792f10f0a89680ccda09a28201086c7fdc890ccf32c69348c8362a97432
+mozilla-taskgraph==5.0.0 \
+    --hash=sha256:2429a88db8efa6f190ba15867ff526a93c8534015ec9bbfcd648e1fbed996104 \
+    --hash=sha256:b7e0586e0a5dad8e9ffd8de6aac56e56ca2f52faa8c89fbbd4dcf2d924e00058
     # via -r requirements.in
 msgspec==0.20.0 ; python_full_version < '3.10' \
     --hash=sha256:00648b1e19cf01b2be45444ba9dc961bd4c056ffb15706651e64e5d6ec6197b7 \
@@ -1259,9 +1259,9 @@ taskcluster==93.1.5 \
     # via
     #   -c ../third_party/python/requirements.txt
     #   taskcluster-taskgraph
-taskcluster-taskgraph==24.1.1 \
-    --hash=sha256:07118c4e8ab02350adf7a2b230feca72eb558949f2a18da81217bfcbbedd41fa \
-    --hash=sha256:49df0d02004811c1651631cecc705f7fd24f0c793ed44534c7298dff9a96c32d
+taskcluster-taskgraph==24.2.3 \
+    --hash=sha256:80017dc5fcd98bdd0fa4357cd3fcabd6719447c029f3ee569e1c830a527bec56 \
+    --hash=sha256:e2af9e09395c34bba456cf26e3952822f359922bc75f696ba7948269b47e3289
     # via
     #   -r requirements.in
     #   mozilla-taskgraph

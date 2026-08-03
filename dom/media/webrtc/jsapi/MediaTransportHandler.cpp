@@ -139,6 +139,16 @@ class MediaTransportHandlerSTS : public MediaTransportHandler,
     uint64_t mBytesReceived = 0;
     uint64_t mPacketsSent = 0;
     uint64_t mPacketsReceived = 0;
+    // Number of times the selected candidate pair has changed (spec:
+    // RTCTransportStats.selectedCandidatePairChanges), plus the last selected
+    // pair we observed used to detect changes. Maintained in
+    // OnConnectionStateChange, and cumulative across the transport's lifetime.
+    uint32_t mSelectedCandidatePairChanges = 0;
+    std::pair<std::string, std::string> mLastSelectedCandidatePair;
+    // The most recent ICE transport state observed in OnConnectionStateChange.
+    // GetIceStats reports this rather than deriving from
+    // NrIceMediaStream::state(), which has no "new" state.
+    dom::RTCIceTransportState mIceState = dom::RTCIceTransportState::New;
   };
 
   using MediaTransportHandler::OnAlpnNegotiated;
@@ -1001,8 +1011,9 @@ void MediaTransportHandler::OnGatheringStateChange(
 }
 
 void MediaTransportHandler::OnConnectionStateChange(
-    const std::string& aTransportId, dom::RTCIceTransportState aState) {
-  mConnectionStateChange.Notify(aTransportId, aState);
+    const std::string& aTransportId, dom::RTCIceTransportState aState,
+    const Maybe<dom::IceCandidateAttributePair>& aSelectedPair) {
+  mConnectionStateChange.Notify(aTransportId, aState, aSelectedPair);
 }
 
 void MediaTransportHandler::OnPacketReceived(std::string&& aTransportId,
@@ -1033,21 +1044,23 @@ void MediaTransportHandler::OnEncryptedSending(const std::string& aTransportId,
 
 void MediaTransportHandler::OnStateChange(
     const std::string& aTransportId, TransportLayer::State aState,
-    nsTArray<nsTArray<uint8_t>>&& aRemoteCerts) {
+    nsTArray<nsTArray<uint8_t>>&& aRemoteCerts,
+    Maybe<dom::RTCErrorParams> aError) {
   {
     MutexAutoLock lock(mStateCacheMutex);
     mStateCache[aTransportId] = aState;
   }
-  mStateChange.Notify(aTransportId, aState, std::move(aRemoteCerts));
+  mStateChange.Notify(aTransportId, aState, std::move(aRemoteCerts), aError);
 }
 
-void MediaTransportHandler::OnRtcpStateChange(const std::string& aTransportId,
-                                              TransportLayer::State aState) {
+void MediaTransportHandler::OnRtcpStateChange(
+    const std::string& aTransportId, TransportLayer::State aState,
+    Maybe<dom::RTCErrorParams> aError) {
   {
     MutexAutoLock lock(mStateCacheMutex);
     mRtcpStateCache[aTransportId] = aState;
   }
-  mRtcpStateChange.Notify(aTransportId, aState);
+  mRtcpStateChange.Notify(aTransportId, aState, aError);
 }
 
 static uint16_t ToDtlsWireVersion(uint16_t aProtocolVersion) {
@@ -1139,28 +1152,28 @@ RefPtr<dom::RTCStatsPromise> MediaTransportHandlerSTS::GetIceStats(
                 transport.mIceLocalUsernameFragment.Construct(
                     NS_ConvertASCIItoUTF16(ufrag.c_str()));
               }
-              switch (stream->state()) {
-                case NrIceMediaStream::ICE_CONNECTING:
-                  transport.mIceState.Construct(
-                      dom::RTCIceTransportState::Checking);
-                  break;
-                case NrIceMediaStream::ICE_OPEN:
-                  transport.mIceState.Construct(
-                      dom::RTCIceTransportState::Connected);
-                  break;
-                case NrIceMediaStream::ICE_CLOSED:
-                  transport.mIceState.Construct(
-                      dom::RTCIceTransportState::Closed);
-                  break;
-              }
+              auto transportIt = mTransports.find(stream->GetId());
+              // Report the ICE transport state captured from connection-state
+              // changes, which distinguishes "new" (no connectivity checks yet)
+              // from "checking"; NrIceMediaStream::state() has no "new" state.
+              // This also keeps the stat consistent with RTCIceTransport.state.
+              transport.mIceState.Construct(
+                  transportIt != mTransports.end()
+                      ? transportIt->second.mIceState
+                      : dom::RTCIceTransportState::New);
               // XXX(Bug 1225723) Determine if dtlsState should be `required`.
               transport.mDtlsState = dom::RTCDtlsTransportState::New;
-              auto transportIt = mTransports.find(stream->GetId());
+              // The DTLS role is not known until it has been negotiated (via
+              // a=setup) and a DTLS transport exists. Until then, report
+              // "unknown" rather than leaving the member unset. This is
+              // overridden below once the DTLS transport is available.
+              transport.mDtlsRole.Construct(dom::RTCDtlsRole::Unknown);
               if (transportIt != mTransports.end() &&
                   transportIt->second.mFlow) {
                 if (auto* dtlsLayer = static_cast<TransportLayerDtls*>(
                         transportIt->second.mFlow->GetLayer(
                             TransportLayerDtls::ID()))) {
+                  transport.mDtlsRole.Reset();
                   transport.mDtlsRole.Construct(
                       dtlsLayer->role() == TransportLayerDtls::CLIENT
                           ? dom::RTCDtlsRole::Client
@@ -1252,6 +1265,10 @@ RefPtr<dom::RTCStatsPromise> MediaTransportHandlerSTS::GetIceStats(
                 transport.mPacketsReceived.Construct(
                     transportIt->second.mPacketsReceived);
               }
+              transport.mSelectedCandidatePairChanges.Construct(
+                  transportIt != mTransports.end()
+                      ? transportIt->second.mSelectedCandidatePairChanges
+                      : 0);
               // XXX(Bug 2037532) Fill missing fields on the transport.
               GetIceStats(*stream, aNow, stats.get(), transport);
 
@@ -1622,7 +1639,31 @@ static mozilla::dom::RTCIceTransportState toDomIceTransportState(
 
 void MediaTransportHandlerSTS::OnConnectionStateChange(
     NrIceMediaStream* aIceStream, NrIceCtx::ConnectionState aState) {
-  OnConnectionStateChange(aIceStream->GetId(), toDomIceTransportState(aState));
+  // Capture the currently-selected pair (if any) at the same time the state
+  // change is observed, so the spec's unified "change the selected candidate
+  // pair and state" algorithm can run with both bits of information
+  // atomically.
+  Maybe<dom::IceCandidateAttributePair> selectedPair;
+  std::string localAttr;
+  std::string remoteAttr;
+  // Only get the pair for the RTP component (1). webrtc-pc has no way of
+  // surfacing a separate pair for RTCP when rtcp-mux is not in use.
+  if (NS_SUCCEEDED(
+          aIceStream->GetActivePairAsAttributes(1, &localAttr, &remoteAttr))) {
+    selectedPair = Some(dom::IceCandidateAttributePair(nsCString(localAttr),
+                                                       nsCString(remoteAttr)));
+  }
+  if (auto it = mTransports.find(aIceStream->GetId());
+      it != mTransports.end()) {
+    it->second.mIceState = toDomIceTransportState(aState);
+    auto newPair = std::make_pair(localAttr, remoteAttr);
+    if (newPair != it->second.mLastSelectedCandidatePair) {
+      it->second.mSelectedCandidatePairChanges += 1;
+      it->second.mLastSelectedCandidatePair = std::move(newPair);
+    }
+  }
+  OnConnectionStateChange(aIceStream->GetId(), toDomIceTransportState(aState),
+                          selectedPair);
 }
 
 // The stuff below here will eventually go into the MediaTransportChild class
@@ -1684,25 +1725,55 @@ void MediaTransportHandlerSTS::OnCandidateError(NrIceMediaStream* aStream,
   OnCandidateError(std::move(info));
 }
 
+dom::RTCErrorParams GetErrorInfo(const TransportLayerDtls& aDtlsLayer) {
+  dom::RTCErrorInit error;
+  if (aDtlsLayer.HasFingerprintError()) {
+    // We might have sent an alert for this, but webrtc-pc says sendAlert is
+    // only set when the error detail is "dtls-failure".
+    error.mErrorDetail = dom::RTCErrorDetailType::Fingerprint_failure;
+  } else {
+    error.mErrorDetail = dom::RTCErrorDetailType::Dtls_failure;
+    // Spec says these cannot be set in the "fingerprint-failure" case
+    aDtlsLayer.GetSentAlert().apply(
+        [&](auto value) { error.mSentAlert.Construct(value); });
+    aDtlsLayer.GetReceivedAlert().apply(
+        [&](auto value) { error.mReceivedAlert.Construct(value); });
+  }
+
+  return dom::RTCErrorParams{error, aDtlsLayer.GetErrorDescription()};
+}
+
 void MediaTransportHandlerSTS::OnStateChange(TransportLayer* aLayer,
                                              TransportLayer::State aState) {
   nsTArray<nsTArray<uint8_t>> remoteCerts;
+
+  MOZ_ASSERT(aLayer->id() == TransportLayerDtls::ID());
+  Maybe<dom::RTCErrorParams> error;
+  TransportLayerDtls* dtlsLayer = static_cast<TransportLayerDtls*>(aLayer);
   if (aState == TransportLayer::TS_OPEN) {
-    MOZ_ASSERT(aLayer->id() == TransportLayerDtls::ID());
-    TransportLayerDtls* dtlsLayer = static_cast<TransportLayerDtls*>(aLayer);
     OnAlpnNegotiated(dtlsLayer->GetNegotiatedAlpn());
     remoteCerts = dtlsLayer->GetPeerCertChainDer();
+  } else if (aState == TransportLayer::TS_ERROR) {
+    error = Some(GetErrorInfo(*dtlsLayer));
   }
 
   // DTLS state indicates the readiness of the transport as a whole, because
   // SRTP uses the keys from the DTLS handshake.
-  MediaTransportHandler::OnStateChange(aLayer->flow_id(), aState,
-                                       std::move(remoteCerts));
+  MediaTransportHandler::OnStateChange(
+      aLayer->flow_id(), aState, std::move(remoteCerts), std::move(error));
 }
 
 void MediaTransportHandlerSTS::OnRtcpStateChange(TransportLayer* aLayer,
                                                  TransportLayer::State aState) {
-  MediaTransportHandler::OnRtcpStateChange(aLayer->flow_id(), aState);
+  MOZ_ASSERT(aLayer->id() == TransportLayerDtls::ID());
+  Maybe<dom::RTCErrorParams> error;
+  TransportLayerDtls* dtlsLayer = static_cast<TransportLayerDtls*>(aLayer);
+  if (aState == TransportLayer::TS_ERROR) {
+    error = Some(GetErrorInfo(*dtlsLayer));
+  }
+
+  MediaTransportHandler::OnRtcpStateChange(aLayer->flow_id(), aState,
+                                           std::move(error));
 }
 
 void MediaTransportHandlerSTS::PacketReceived(TransportLayer* aLayer,

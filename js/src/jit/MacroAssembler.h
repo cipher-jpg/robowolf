@@ -905,6 +905,11 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                             Register dest,
                                             bool hasInlineICScript = false);
 
+  // Branch to |notEntryFrame| if the current frame is not the first frame of
+  // its activation.
+  inline void branchIfNotActivationEntryFrame(Register scratch,
+                                              Label* notEntryFrame);
+
   // Load the number of actual arguments from the frame's JitFrameLayout.
   inline void loadNumActualArgs(Register framePtr, Register dest);
 
@@ -1051,6 +1056,7 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void andPtr(Register src, Register dest) PER_ARCH;
   inline void andPtr(Imm32 imm, Register dest) PER_ARCH;
   inline void andPtr(Imm32 imm, Register src, Register dest) PER_ARCH;
+  inline void andPtr(Imm32 imm, const Address& dest) PER_ARCH;
 
   inline void and64(Imm64 imm, Register64 dest) PER_ARCH;
   inline void or64(Imm64 imm, Register64 dest) PER_ARCH;
@@ -1266,6 +1272,19 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void flexibleDivMod32(
       Register lhs, Register rhs, Register divOutput, Register remOutput,
       bool isUnsigned, const LiveRegisterSet& volatileLiveRegs) PER_SHARED_ARCH;
+
+  // Inline fast path for the JS remainder operator on doubles. If both
+  // operands are integer-valued and fit in a signed intptr_t, the remainder is
+  // computed with an integer division and stored in |output|. Otherwise this
+  // jumps to |fail| without touching |lhs|, |rhs| or |output|, and the caller
+  // is expected to fall back to js::NumberMod.
+  //
+  // |temp1| and |temp2| must be different registers and are both clobbered.
+  void modDoubleIntegerFastPath(FloatRegister lhs, FloatRegister rhs,
+                                FloatRegister output, Register temp1,
+                                Register temp2,
+                                const LiveRegisterSet& volatileLiveRegs,
+                                Label* fail);
 
   inline void divFloat32(FloatRegister src, FloatRegister dest) PER_SHARED_ARCH;
   inline void divDouble(FloatRegister src, FloatRegister dest) PER_SHARED_ARCH;
@@ -2138,6 +2157,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
   template <typename T>
   inline void testBigIntSet(Condition cond, const T& src,
                             Register dest) PER_SHARED_ARCH;
+
+  void testValueSet(Condition cond, const ValueOperand& lhs, const Value& rhs,
+                    Register dest) PER_ARCH;
 
  public:
   // The fallibleUnbox* methods below combine a Value type check with an unbox.
@@ -3819,14 +3841,28 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // register for the offset if the offset is large, and instructions to set it
   // up.
   void wasmLoad(const wasm::MemoryAccessDesc& access, Register memoryBase,
-                Register ptr, AnyRegister output) DEFINED_ON(arm64, riscv64);
+                Register ptr, AnyRegister output) DEFINED_ON(arm64);
   void wasmLoadI64(const wasm::MemoryAccessDesc& access, Register memoryBase,
-                   Register ptr, Register64 output) DEFINED_ON(arm64, riscv64);
+                   Register ptr, Register64 output) DEFINED_ON(arm64);
   void wasmStore(const wasm::MemoryAccessDesc& access, AnyRegister value,
-                 Register memoryBase, Register ptr) DEFINED_ON(arm64, riscv64);
+                 Register memoryBase, Register ptr) DEFINED_ON(arm64);
   void wasmStoreI64(const wasm::MemoryAccessDesc& access, Register64 value,
-                    Register memoryBase, Register ptr)
-      DEFINED_ON(arm64, riscv64);
+                    Register memoryBase, Register ptr) DEFINED_ON(arm64);
+
+  // RISCV64 additionally supports ZeroExtendIndex. The other parameters are the
+  // same as for ARM64.
+  void wasmLoad(const wasm::MemoryAccessDesc& access, Register memoryBase,
+                Register ptr, AnyRegister output,
+                wasm::ZeroExtendIndex zeroExtend) DEFINED_ON(riscv64);
+  void wasmLoadI64(const wasm::MemoryAccessDesc& access, Register memoryBase,
+                   Register ptr, Register64 output,
+                   wasm::ZeroExtendIndex zeroExtend) DEFINED_ON(riscv64);
+  void wasmStore(const wasm::MemoryAccessDesc& access, AnyRegister value,
+                 Register memoryBase, Register ptr,
+                 wasm::ZeroExtendIndex zeroExtend) DEFINED_ON(riscv64);
+  void wasmStoreI64(const wasm::MemoryAccessDesc& access, Register64 value,
+                    Register memoryBase, Register ptr,
+                    wasm::ZeroExtendIndex zeroExtend) DEFINED_ON(riscv64);
 
   // `ptr` will always be updated.
   void wasmUnalignedLoad(const wasm::MemoryAccessDesc& access,
@@ -3986,20 +4022,26 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // This function takes care of loading the pointer to the current instance
   // as the implicit first argument. It preserves instance and pinned registers.
   // (instance & pinned regs are non-volatile registers in the system ABI).
-  CodeOffset wasmCallBuiltinInstanceMethod(const wasm::CallSiteDesc& desc,
-                                           const ABIArg& instanceArg,
-                                           wasm::SymbolicAddress builtin,
-                                           wasm::FailureMode failureMode,
-                                           wasm::Trap failureTrap);
+  // Offsets for stackmaps for the call and (if required) for the following
+  // failure trap, are returned.
+  void wasmCallBuiltinInstanceMethod(const wasm::CallSiteDesc& desc,
+                                     const ABIArg& instanceArg,
+                                     wasm::SymbolicAddress builtin,
+                                     wasm::FailureMode failureMode,
+                                     wasm::Trap failureTrap,
+                                     CodeOffset* callStackMapKey,
+                                     CodeOffset* trapStackMapKey);
 
   // Performs the appropriate check based on the instance call's FailureMode,
   // and traps if the check fails. The resultRegister should likely be
   // ReturnReg, but this depends on whatever you do with registers immediately
-  // after the call.
-  void wasmTrapOnFailedInstanceCall(Register resultRegister,
-                                    wasm::FailureMode failureMode,
-                                    wasm::Trap failureTrap,
-                                    const wasm::TrapSiteDesc& trapSiteDesc);
+  // after the call. In the case where a trap is generated, the returned
+  // CodeOffset points at the first byte of the instruction following the trap,
+  // and that is where a stackmap, if needed, should be keyed.  If a trap is not
+  // generated, a CodeOffset satisfying !CodeOffset::bound() is returned.
+  CodeOffset wasmTrapOnFailedInstanceCall(
+      Register resultRegister, wasm::FailureMode failureMode,
+      wasm::Trap failureTrap, const wasm::TrapSiteDesc& trapSiteDesc);
 
   // Performs a bounds check for ranged wasm operations like memory.fill or
   // array.fill. This handles the bizarre edge case in the wasm spec where a
@@ -4487,6 +4529,13 @@ class MacroAssembler : public MacroAssemblerSpecific {
                            Register output)
       DEFINED_ON(mips64, loong64, riscv64);
 
+  void wasmCompareExchange(const wasm::MemoryAccessDesc& access,
+                           const BaseIndex& mem, Register expected,
+                           Register replacement, Register valueTemp,
+                           Register offsetTemp, Register maskTemp,
+                           Register output, wasm::ZeroExtendIndex zeroExtend)
+      DEFINED_ON(riscv64);
+
   void wasmAtomicExchange(const wasm::MemoryAccessDesc& access,
                           const Address& mem, Register value, Register output)
       DEFINED_ON(arm, arm64, x86_shared);
@@ -4506,6 +4555,12 @@ class MacroAssembler : public MacroAssemblerSpecific {
                           Register valueTemp, Register offsetTemp,
                           Register maskTemp, Register output)
       DEFINED_ON(mips64, loong64, riscv64);
+
+  void wasmAtomicExchange(const wasm::MemoryAccessDesc& access,
+                          const BaseIndex& mem, Register value,
+                          Register valueTemp, Register offsetTemp,
+                          Register maskTemp, Register output,
+                          wasm::ZeroExtendIndex zeroExtend) DEFINED_ON(riscv64);
 
   void wasmAtomicFetchOp(const wasm::MemoryAccessDesc& access, AtomicOp op,
                          Register value, const Address& mem, Register temp,
@@ -4533,6 +4588,12 @@ class MacroAssembler : public MacroAssemblerSpecific {
                          Register valueTemp, Register offsetTemp,
                          Register maskTemp, Register output)
       DEFINED_ON(mips64, loong64, riscv64);
+
+  void wasmAtomicFetchOp(const wasm::MemoryAccessDesc& access, AtomicOp op,
+                         Register value, const BaseIndex& mem,
+                         Register valueTemp, Register offsetTemp,
+                         Register maskTemp, Register output,
+                         wasm::ZeroExtendIndex zeroExtend) DEFINED_ON(riscv64);
 
   // Read-modify-write with memory.  Return no value.
   //
@@ -4566,6 +4627,12 @@ class MacroAssembler : public MacroAssemblerSpecific {
                           Register valueTemp, Register offsetTemp,
                           Register maskTemp)
       DEFINED_ON(mips64, loong64, riscv64);
+
+  void wasmAtomicEffectOp(const wasm::MemoryAccessDesc& access, AtomicOp op,
+                          Register value, const BaseIndex& mem,
+                          Register valueTemp, Register offsetTemp,
+                          Register maskTemp, wasm::ZeroExtendIndex zeroExtend)
+      DEFINED_ON(riscv64);
 
   // 64-bit wide operations.
 
@@ -4601,6 +4668,12 @@ class MacroAssembler : public MacroAssemblerSpecific {
                              Register64 replacement,
                              Register64 output) PER_ARCH;
 
+  void wasmCompareExchange64(const wasm::MemoryAccessDesc& access,
+                             const BaseIndex& mem, Register64 expected,
+                             Register64 replacement, Register64 output,
+                             wasm::ZeroExtendIndex zeroExtend)
+      DEFINED_ON(riscv64);
+
   // x86: `value` must be ecx:ebx; `output` must be edx:eax.
   // ARM: Registers must be distinct; `value` and `output` must be (even,odd)
   // pairs.
@@ -4613,6 +4686,11 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void wasmAtomicExchange64(const wasm::MemoryAccessDesc& access,
                             const BaseIndex& mem, Register64 value,
                             Register64 output) PER_ARCH;
+
+  void wasmAtomicExchange64(const wasm::MemoryAccessDesc& access,
+                            const BaseIndex& mem, Register64 value,
+                            Register64 output, wasm::ZeroExtendIndex zeroExtend)
+      DEFINED_ON(riscv64);
 
   // x86: `output` must be edx:eax, `temp` must be ecx:ebx.
   // x64: For And, Or, and Xor `output` must be rax.
@@ -4629,6 +4707,12 @@ class MacroAssembler : public MacroAssemblerSpecific {
                            Register64 value, const BaseIndex& mem,
                            Register64 temp, Register64 output)
       DEFINED_ON(arm, arm64, mips64, loong64, riscv64, x64);
+
+  void wasmAtomicFetchOp64(const wasm::MemoryAccessDesc& access, AtomicOp op,
+                           Register64 value, const BaseIndex& mem,
+                           Register64 temp, Register64 output,
+                           wasm::ZeroExtendIndex zeroExtend)
+      DEFINED_ON(riscv64);
 
   void wasmAtomicFetchOp64(const wasm::MemoryAccessDesc& access, AtomicOp op,
                            const Address& value, const Address& mem,
@@ -5755,6 +5839,13 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void compareStrings(JSOp op, Register left, Register right, Register result,
                       Label* fail);
 
+  // Compares two strings for equality based on the JSOP.
+  // This checks for identical pointers, atoms, and length. If |str| is short
+  // enough for inline comparison (cf. |canCompareStringCharsInline|),
+  // string characters are compared directly, otherwise jumps to |fail|.
+  void equalStrings(JSOp op, Register input, const JSOffThreadAtom* str,
+                    Register result, Label* fail);
+
   // Result of the typeof operation. Falls back to slow-path for proxies.
   void typeOfObject(Register objReg, Register scratch, Label* slow,
                     Label* isObject, Label* isCallable, Label* isUndefined);
@@ -5783,31 +5874,22 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   void emitExtractValueFromMegamorphicCacheEntry(
       Register obj, Register entry, Register scratch1, Register scratch2,
-      ValueOperand output, Label* cacheHit, Label* cacheMiss,
+      ValueOperand output, Label* cacheHit, Label* cacheMissWithEntry,
       Label* cacheHitGetter);
 
-  template <typename IdOperandType>
-  void emitMegamorphicCacheLookupByValueCommon(
-      IdOperandType id, Register obj, Register scratch1, Register scratch2,
-      Register outEntryPtr, Label* cacheMiss, Label* cacheMissWithEntry);
+  void emitMegamorphicCacheLookupByValueCommon(Register obj, Register scratchId,
+                                               Register scratchIdHash,
+                                               Register outEntryPtr,
+                                               Label* cacheMissWithEntry);
 
-  void emitMegamorphicCacheLookup(PropertyKey id, Register obj,
-                                  Register scratch1, Register scratch2,
-                                  Register outEntryPtr, ValueOperand output,
-                                  Label* cacheHit,
-                                  Label* cacheHitGetter = nullptr);
-
-  // NOTE: |id| must either be a ValueOperand or a Register. If it is a
-  // Register, we assume that it is an atom.
-  template <typename IdOperandType>
-  void emitMegamorphicCacheLookupByValue(IdOperandType id, Register obj,
-                                         Register scratch1, Register scratch2,
+  void emitMegamorphicCacheLookupByValue(Register obj, Register scratchId,
+                                         Register scratchIdHash,
                                          Register outEntryPtr,
                                          ValueOperand output, Label* cacheHit,
                                          Label* cacheHitGetter = nullptr);
 
-  void emitMegamorphicCacheLookupExists(ValueOperand id, Register obj,
-                                        Register scratch1, Register scratch2,
+  void emitMegamorphicCacheLookupExists(Register obj, Register scratchId,
+                                        Register scratchIdHash,
                                         Register outEntryPtr, Register output,
                                         Label* cacheHit, bool hasOwn);
 
@@ -6147,9 +6229,15 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   // Align the stack pointer based on the number of arguments which are pushed
   // on the stack, such that the JitFrameLayout would be correctly aligned on
-  // the JitStackAlignment.
-  void alignJitStackBasedOnNArgs(Register nargs, bool countIncludesThis);
+  // the JitStackAlignment. |extraArgs| is the number of additional arguments,
+  // known at compile time, that are pushed on top of |nargs|.
+  void alignJitStackBasedOnNArgs(Register nargs, bool countIncludesThis,
+                                 uint32_t extraArgs = 0);
   void alignJitStackBasedOnNArgs(uint32_t argc, bool countIncludesThis);
+
+  // As above, but |numValues| is the total number of Values pushed above the
+  // JitFrameLayout.
+  void alignJitStackBasedOnNumValues(uint32_t numValues);
 
   inline void assertStackAlignment(uint32_t alignment, int32_t offset = 0);
 

@@ -5,8 +5,9 @@
 #ifndef MOZILLA_GFX_UNSCALEDFONTGDI_H_
 #define MOZILLA_GFX_UNSCALEDFONTGDI_H_
 
-#include "2D.h"
 #include <windows.h>
+
+#include "2D.h"
 
 namespace mozilla {
 namespace gfx {
@@ -33,6 +34,8 @@ class UnscaledFontGDI final : public UnscaledFont {
       Float aGlyphSize, const uint8_t* aInstanceData,
       uint32_t aInstanceDataLength, const FontVariation* aVariations,
       uint32_t aNumVariations) override;
+
+  static const LOGFONT* ValidLOGFONT(const uint8_t* aData, size_t aDataLength);
 
  private:
   LOGFONT mLogFont;

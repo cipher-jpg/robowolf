@@ -22,10 +22,8 @@ export const DEFAULT_ENGINE_ID = "default-engine";
  */
 export const BACKENDS = Object.freeze({
   onnx: "onnx",
-  wllama: "wllama",
   onnxNative: "onnx-native",
   llamaCpp: "llama.cpp",
-  bestLlama: "best-llama",
   bestOnnx: "best-onnx",
   openai: "openai",
   staticEmbeddings: "static-embeddings",
@@ -36,7 +34,7 @@ export const BACKENDS = Object.freeze({
  * @type {Array<string>}
  * @description Backends using WASM.
  */
-export const WASM_BACKENDS = [BACKENDS.onnx, BACKENDS.wllama];
+export const WASM_BACKENDS = [BACKENDS.onnx];
 
 /**
  * @constant
@@ -171,6 +169,19 @@ export const FEATURES = {
     engineId: "formfill-classification-engine",
     fluentId: "mlmodel-formfill-engine",
   },
+  // Triple-encoder Approach 3: the field-type classifier is split into a stock
+  // feature-extraction encoder (produces per-field pooled embeddings) and a
+  // small ONNX fusion "head" (windowed embeddings -> field-type logits).
+  // Both engines are driven from
+  // toolkit/components/formautofill/shared/FormAutofillML.sys.mjs
+  "formfill-encoder": {
+    engineId: "formfill-encoder-engine",
+    fluentId: "mlmodel-formfill-engine",
+  },
+  "formfill-head": {
+    engineId: "formfill-head-engine",
+    fluentId: "mlmodel-formfill-engine",
+  },
   // see toolkit/components/ml/content/nlp/EmbeddingsGenerator.sys.mjs
   "simple-text-embedder": {
     engineId: "simple-text-embedder-engine",
@@ -183,6 +194,9 @@ export const FEATURES = {
   // see browser/components/aiwindow/models/IntentClassifier.sys.mjs
   "smart-intent": {
     engineId: "smart-intent",
+  },
+  "smart-intent-en-fr": {
+    engineId: "smart-intent-en-fr",
   },
   chat: {
     engineId: "smart-openai",
@@ -204,6 +218,14 @@ export const FEATURES = {
   },
   "llm-telemetry": {
     engineId: "llm-telemetry-engine",
+  },
+  //agents
+  "agent-monitor": {
+    engineId: "agent-monitor-engine",
+  },
+  // see browser/components/aiwindow/models/search/SearchAgent.sys.mjs
+  "search-answer-generation": {
+    engineId: "smart-openai",
   },
 };
 

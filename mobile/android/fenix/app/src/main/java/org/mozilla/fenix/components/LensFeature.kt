@@ -27,6 +27,7 @@ import mozilla.components.lib.state.ext.flowScoped
 import mozilla.components.support.base.feature.LifecycleAwareFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.base.log.logger.Logger
+import org.mozilla.fenix.GleanMetrics.GoogleLens
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.appstate.AppAction.LensAction
 import org.mozilla.fenix.components.lens.LensCameraActivity
@@ -120,22 +121,25 @@ class LensFeature(
 
         currentScope.launch {
             try {
+                val isPrivate = appStore.state.mode.isPrivate
+
                 // Download and upload the image bytes ourselves; this uses the browser's
                 // User-Agent and cookies, which succeeds for hosts that block Lens's server-side
-                // fetcher. When the client-side upload yields no result, fall back to letting Lens
-                // fetch the image by URL -- but not in private mode, where we must not hand the
-                // source image URL to Google.
-                val uploadedUrl = try {
-                    uploader.uploadFromUrl(imageUrl)
+                // fetcher. In private mode the upload runs in the private cookie context so the
+                // Lens session it establishes matches the private tab the result is opened in.
+                val uploadResult = try {
+                    uploader.uploadFromUrl(imageUrl, isPrivate)
                 } catch (e: IOException) {
-                    logger.debug("Lens image upload failed, falling back to uploadbyurl for $imageUrl", e)
+                    logger.debug("Lens image upload failed for $imageUrl", e)
                     null
                 }
 
-                val isPrivate = appStore.state.mode.isPrivate
-                val resultUrl = uploadedUrl
-                    ?: if (isPrivate) null else uploader.buildUploadByUrl(imageUrl)
-
+                val resultUrl = uploadResult?.resultUrl
+                recordSearchCompleted(
+                    succeeded = resultUrl != null,
+                    source = SOURCE_CONTEXT_MENU,
+                    httpStatusCode = uploadResult?.httpStatusCode,
+                )
                 if (resultUrl != null) {
                     context.components.useCases.tabsUseCases.addTab(
                         url = resultUrl,
@@ -192,20 +196,43 @@ class LensFeature(
         }
 
         currentScope.launch {
+            val source = data.getStringExtra(LensCameraActivity.EXTRA_IMAGE_SOURCE) ?: SOURCE_UNKNOWN
             try {
-                val resultUrl = uploader.upload(imageUri)
+                val isPrivate = appStore.state.mode.isPrivate
+                val uploadResult = uploader.upload(imageUri, isPrivate)
+                val resultUrl = uploadResult.resultUrl
+                recordSearchCompleted(
+                    succeeded = resultUrl != null,
+                    source = source,
+                    httpStatusCode = uploadResult.httpStatusCode,
+                )
                 if (resultUrl != null) {
                     appStore.dispatch(LensAction.LensResultAvailable(resultUrl))
                 } else {
                     appStore.dispatch(LensAction.LensDismissed)
                 }
             } catch (e: IOException) {
+                recordSearchCompleted(succeeded = false, source = source)
                 appStore.dispatch(LensAction.LensDismissed)
             }
         }
     }
 
+    private fun recordSearchCompleted(succeeded: Boolean, source: String, httpStatusCode: Int? = null) {
+        GoogleLens.searchCompleted.record(
+            GoogleLens.SearchCompletedExtra(
+                succeeded = succeeded,
+                httpStatusCode = httpStatusCode,
+                source = source,
+            ),
+        )
+    }
+
     companion object {
+        @VisibleForTesting internal const val SOURCE_CONTEXT_MENU = "context_menu"
+
+        @VisibleForTesting internal const val SOURCE_UNKNOWN = "unknown"
+
         /**
          * Registers [LensFeature] with a [Fragment].
          * Returns null if the Google Lens integration is disabled.

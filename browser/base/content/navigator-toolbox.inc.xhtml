@@ -83,6 +83,9 @@
                        cui-areatype="toolbar"
                        removable="true"/>
 
+        <toolbarspring cui-areatype="toolbar"
+                       class="chromeclass-toolbar-additional"/>
+
         <toolbarbutton id="alltabs-button"
                        class="toolbarbutton-1 chromeclass-toolbar-additional tabs-alltabs-button"
                        delegatesanchor="true"
@@ -93,17 +96,7 @@
       </hbox>
     </hbox>
 
-    <hbox class="titlebar-spacer" type="post-tabs"/>
-
 #include private-browsing-indicator.inc.xhtml
-
-    <toolbarbutton id="ai-window-toggle"
-                    class="toolbarbutton-1 chromeclass-toolbar-additional"
-                    data-l10n-id="toolbar-button-ai-window-toggle"
-                    cui-areatype="toolbar"
-                    removable="false"
-                    aria-haspopup="true"
-                    hidden="true"/>
 
     <toolbarbutton class="content-analysis-indicator toolbarbutton-1 content-analysis-indicator-icon"/>
 
@@ -150,19 +143,11 @@
         <toolbarbutton id="reload-button" class="toolbarbutton-1"
                        data-l10n-id="toolbar-button-reload"
                        command="Browser:ReloadOrDuplicate"
-                       tooltip="dynamic-shortcut-tooltip">
-          <box class="toolbarbutton-animatable-box">
-            <image class="toolbarbutton-animatable-image"/>
-          </box>
-        </toolbarbutton>
+                       tooltip="dynamic-shortcut-tooltip"/>
         <toolbarbutton id="stop-button" class="toolbarbutton-1"
                        data-l10n-id="toolbar-button-stop"
                        command="Browser:Stop"
-                       tooltip="dynamic-shortcut-tooltip">
-          <box class="toolbarbutton-animatable-box">
-            <image class="toolbarbutton-animatable-image"/>
-          </box>
-        </toolbarbutton>
+                       tooltip="dynamic-shortcut-tooltip"/>
       </toolbaritem>
       <toolbarspring cui-areatype="toolbar" class="chromeclass-toolbar-additional"/>
       <toolbarspring cui-areatype="toolbar"
@@ -205,9 +190,27 @@
             <image id="remote-control-icon"/>
           </box>
 
-          <box id="trust-icon-container" align="center" role="button" data-l10n-id="urlbar-identity-button" urlbar-slot="site-info">
+          <box
+            id="trust-icon-container"
+            align="center"
+            role="button"
+            data-l10n-id="urlbar-identity-button2"
+            data-l10n-args='{"count":0}'
+            data-l10n-attrs="aria-label"
+            urlbar-slot="site-info"
+          >
             <image id="trust-icon"/>
             <label id="trust-label" crop="center" flex="1" data-l10n-id="urlbar-trust-icon-notsecure-label" />
+            <span id="trust-icon-tracker-count-longform-wrapper">
+              <label
+                id="trust-icon-tracker-count-longform"
+                data-l10n-id="urlbar-trust-icon-trackers-blocked-longform-label"
+                data-l10n-args='{"count":0}'
+              />
+            </span>
+            <span id="trust-icon-tracker-count-shortform-wrapper">
+              <label id="trust-icon-tracker-count-shortform" />
+            </span>
           </box>
 
           <!-- Use onclick instead of normal popup= syntax since the popup
@@ -228,10 +231,15 @@
                 class="identity-box"
                 pageproxystate="invalid"
                 urlbar-slot="site-info">
+            <!-- Shown when trustPanel.featureGate is off, or for
+            chromeUI/extensionPage where tracker blocking never runs, so we
+            never update `data-l10n-args`. -->
             <box id="identity-icon-box"
                   role="button"
                   align="center"
-                  data-l10n-id="urlbar-identity-button"
+                  data-l10n-id="urlbar-identity-button2"
+                  data-l10n-args='{"count":0}'
+                  data-l10n-attrs="aria-label"
                   class="identity-box-button">
               <image id="identity-icon"/>
               <label id="identity-icon-label" crop="center" flex="1"/>
@@ -500,6 +508,19 @@
 
     <toolbarbutton id="taskbar-tabs-audio" class="toolbarbutton-1 chromeclass-toolbar-additional"
                     removable="false" overflows="false"/>
+
+    <toolbaritem id="smartwindow-group-tabs-button"
+                 class="chromeclass-toolbar-additional"
+                 hidden="true"
+                 overflows="false"
+                 removable="false">
+      <toolbarbutton id="smartwindow-group-tabs-button-inner"
+                      class="toolbarbutton-1"
+                      aria-haspopup="dialog"
+                      aria-expanded="false"
+                      data-l10n-id="smartwindow-group-tabs-button">
+      </toolbarbutton>
+    </toolbaritem>
 
     <toolbaritem id="smartwindow-ask-button"
                  class="chromeclass-toolbar-additional"

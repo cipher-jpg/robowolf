@@ -1484,7 +1484,7 @@ class BuildDriver(MozbuildObject):
                             message = "Build argument '{target}' is a subdirectory and was ignored."
                             # Don't tell agents how to override, because they do
                             # override
-                            if not is_running_under_coding_agent:
+                            if not is_running_under_coding_agent():
                                 message += (
                                     "\nUse --allow-subdirectory-build to override."
                                 )
@@ -1500,7 +1500,11 @@ class BuildDriver(MozbuildObject):
                     if make_dir is None and make_target is None:
                         return 1
 
-                    if config.is_artifact_build and target.startswith("installers-"):
+                    if (
+                        config.is_artifact_build
+                        and target.startswith("installers-")
+                        and config.substs.get("MOZ_USE_LEGACY_L10N")
+                    ):
                         # See https://bugzilla.mozilla.org/show_bug.cgi?id=1387485
                         self.log(
                             logging.ERROR,

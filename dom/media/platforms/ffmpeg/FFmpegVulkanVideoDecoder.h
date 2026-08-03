@@ -73,7 +73,6 @@ struct FFmpegVulkanVideoDecoder {
   PFN_vkQueueSubmit mQueueSubmit = nullptr;
   PFN_vkCmdPipelineBarrier mCmdPipelineBarrier = nullptr;
   PFN_vkCmdCopyImage mCmdCopyImage = nullptr;
-  PFN_vkDeviceWaitIdle mDeviceWaitIdle = nullptr;
 
   // Function pointers - image & memory
   PFN_vkCreateImage mCreateImage = nullptr;
@@ -121,6 +120,8 @@ struct FFmpegVulkanVideoDecoder {
       '\0',
   };
   bool mDecoderMatchesCompositor = false;
+  // Set when ImageFormatProperties2 left only LINEAR and we forced NVIDIA BL.
+  bool mForcedNvidiaBlockLinear = false;
   ~FFmpegVulkanVideoDecoder();
   void Cleanup();
 

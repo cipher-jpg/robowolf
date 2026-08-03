@@ -82,7 +82,7 @@ function makeSuggestedIndexResult(suggestedIndex, resultSpan = 1) {
       title: "suggested index",
       helpUrl: "http://example.com/",
       isBlockable: true,
-      blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+      blockL10n: { id: "urlbar-result-menu-remove-from-history2" },
     },
   });
 }
@@ -156,7 +156,7 @@ function makeProviderResults({ count = 0, type = undefined, specs = [] }) {
                 title: str,
                 helpUrl: "http://example.com/",
                 isBlockable: true,
-                blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+                blockL10n: { id: "urlbar-result-menu-remove-from-history2" },
               },
             })
           );
@@ -338,7 +338,7 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
       "suggestedIndex after first search"
     );
     Assert.equal(
-      UrlbarUtils.getSpanForResult(result.element.row.result),
+      UrlbarShared.getSpanForResult(result.element.row.result),
       resultSpan,
       "resultSpan after first search"
     );
@@ -446,7 +446,7 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
 
       // resultSpan
       Assert.equal(
-        UrlbarUtils.getSpanForResult(row.result),
+        UrlbarShared.getSpanForResult(row.result),
         rowState.resultSpan || 1,
         `resultSpan at index ${rowIndex} during update`
       );
@@ -512,7 +512,7 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
         `suggestedIndex at index ${i} after update`
       );
       Assert.equal(
-        UrlbarUtils.getSpanForResult(result),
+        UrlbarShared.getSpanForResult(result),
         resultSpan,
         `resultSpan at index ${i} after update`
       );

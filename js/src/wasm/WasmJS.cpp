@@ -2279,7 +2279,7 @@ const JSFunctionSpec WasmInstanceObject::static_methods[] = {
 
 bool WasmInstanceObject::isNewborn() const {
   MOZ_ASSERT(is<WasmInstanceObject>());
-  return getReservedSlot(INSTANCE_SLOT).isUndefined();
+  return getReservedSlotTyped(INSTANCE_SLOT).isUndefined();
 }
 
 // WeakScopeMap maps from function index to js::Scope. This maps is weak
@@ -2383,13 +2383,13 @@ WasmInstanceObject* WasmInstanceObject::create(
 
     MOZ_ASSERT(obj->isTenured(), "assumed by WasmTableObject write barriers");
 
-    InitReservedSlot(obj, SCOPES_SLOT, scopes.release(),
+    InitReservedSlot(obj, SCOPES_SLOT.index(), scopes.release(),
                      MemoryUse::WasmInstanceScopes);
 
-    InitReservedSlot(obj, GLOBALS_SLOT, indirectGlobalObjs.release(),
+    InitReservedSlot(obj, GLOBALS_SLOT.index(), indirectGlobalObjs.release(),
                      MemoryUse::WasmInstanceGlobals);
 
-    obj->initReservedSlot(INSTANCE_SCOPE_SLOT, UndefinedValue());
+    obj->initReservedSlotTyped(INSTANCE_SCOPE_SLOT, UndefinedValue());
 
     // The INSTANCE_SLOT may not be initialized if Instance allocation fails,
     // leading to an observable "newborn" state in tracing/finalization.
@@ -2402,7 +2402,7 @@ WasmInstanceObject* WasmInstanceObject::create(
       return nullptr;
     }
 
-    InitReservedSlot(obj, INSTANCE_SLOT, instance,
+    InitReservedSlot(obj, INSTANCE_SLOT.index(), instance,
                      MemoryUse::WasmInstanceInstance);
     MOZ_ASSERT(!obj->isNewborn());
   }
@@ -2416,8 +2416,8 @@ WasmInstanceObject* WasmInstanceObject::create(
 }
 
 void WasmInstanceObject::initExportsObj(JSObject& exportsObj) {
-  MOZ_ASSERT(getReservedSlot(EXPORTS_OBJ_SLOT).isUndefined());
-  setReservedSlot(EXPORTS_OBJ_SLOT, ObjectValue(exportsObj));
+  MOZ_ASSERT(getReservedSlotTyped(EXPORTS_OBJ_SLOT).isUndefined());
+  setReservedSlotTyped(EXPORTS_OBJ_SLOT, ObjectValue(exportsObj));
 }
 
 static bool GetImportArg(JSContext* cx, HandleValue importArg,
@@ -2490,11 +2490,11 @@ bool WasmInstanceObject::construct(JSContext* cx, unsigned argc, Value* vp) {
 
 Instance& WasmInstanceObject::instance() const {
   MOZ_ASSERT(!isNewborn());
-  return *(Instance*)getReservedSlot(INSTANCE_SLOT).toPrivate();
+  return *(Instance*)getReservedSlotTyped(INSTANCE_SLOT).toPrivate();
 }
 
 JSObject& WasmInstanceObject::exportsObj() const {
-  return getReservedSlot(EXPORTS_OBJ_SLOT).toObject();
+  return getReservedSlotTyped(EXPORTS_OBJ_SLOT).toObject();
 }
 
 WasmFunctionScope* WasmInstanceObject::getExistingFunctionScope(
@@ -2507,12 +2507,12 @@ WasmFunctionScope* WasmInstanceObject::getExistingFunctionScope(
 }
 
 WasmInstanceObject::UnspecifiedScopeMap& WasmInstanceObject::scopes() const {
-  return *(UnspecifiedScopeMap*)(getReservedSlot(SCOPES_SLOT).toPrivate());
+  return *(UnspecifiedScopeMap*)(getReservedSlotTyped(SCOPES_SLOT).toPrivate());
 }
 
 WasmInstanceObject::GlobalObjectVector& WasmInstanceObject::indirectGlobals()
     const {
-  return *(GlobalObjectVector*)getReservedSlot(GLOBALS_SLOT).toPrivate();
+  return *(GlobalObjectVector*)getReservedSlotTyped(GLOBALS_SLOT).toPrivate();
 }
 
 /* static */
@@ -2526,8 +2526,9 @@ bool WasmInstanceObject::getExportedFunction(
 /* static */
 WasmInstanceScope* WasmInstanceObject::getScope(
     JSContext* cx, Handle<WasmInstanceObject*> instanceObj) {
-  if (!instanceObj->getReservedSlot(INSTANCE_SCOPE_SLOT).isUndefined()) {
-    return (WasmInstanceScope*)instanceObj->getReservedSlot(INSTANCE_SCOPE_SLOT)
+  if (!instanceObj->getReservedSlotTyped(INSTANCE_SCOPE_SLOT).isUndefined()) {
+    return (WasmInstanceScope*)instanceObj
+        ->getReservedSlotTyped(INSTANCE_SCOPE_SLOT)
         .toGCThing();
   }
 
@@ -2537,8 +2538,8 @@ WasmInstanceScope* WasmInstanceObject::getScope(
     return nullptr;
   }
 
-  instanceObj->setReservedSlot(INSTANCE_SCOPE_SLOT,
-                               PrivateGCThingValue(instanceScope));
+  instanceObj->setReservedSlotTyped(INSTANCE_SCOPE_SLOT,
+                                    PrivateGCThingValue(instanceScope));
 
   return instanceScope;
 }
@@ -2572,6 +2573,174 @@ WasmFunctionScope* WasmInstanceObject::getFunctionScope(
 
   return funcScope;
 }
+
+#ifdef ENABLE_WASM_COMPONENTS
+// ============================================================================
+// WebAssembly.ComponentInstance class and methods
+
+const JSClassOps WasmComponentInstanceObject::classOps_ = {
+    .finalize = WasmComponentInstanceObject::finalize,
+    .trace = WasmComponentInstanceObject::trace,
+};
+
+const JSClass WasmComponentInstanceObject::class_ = {
+    "WebAssembly.ComponentInstance",
+    JSCLASS_DELAY_METADATA_BUILDER |
+        JSCLASS_HAS_RESERVED_SLOTS(
+            WasmComponentInstanceObject::RESERVED_SLOTS) |
+        JSCLASS_FOREGROUND_FINALIZE,
+    &WasmComponentInstanceObject::classOps_,
+    &WasmComponentInstanceObject::classSpec_,
+};
+
+const JSClass& WasmComponentInstanceObject::protoClass_ = PlainObject::class_;
+
+static constexpr char WasmComponentInstanceName[] = "ComponentInstance";
+
+const ClassSpec WasmComponentInstanceObject::classSpec_ = {
+    CreateWasmConstructor<WasmComponentInstanceObject,
+                          WasmComponentInstanceName>,
+    GenericCreatePrototype<WasmComponentInstanceObject>,
+    WasmComponentInstanceObject::static_methods,
+    nullptr,
+    WasmComponentInstanceObject::methods,
+    WasmComponentInstanceObject::properties,
+    nullptr,
+    ClassSpec::DontDefineConstructor,
+};
+
+const JSPropertySpec WasmComponentInstanceObject::properties[] = {
+    JS_STRING_SYM_PS(toStringTag, "WebAssembly.ComponentInstance",
+                     JSPROP_READONLY),
+    JS_PS_END,
+};
+
+const JSFunctionSpec WasmComponentInstanceObject::methods[] = {
+    JS_FS_END,
+};
+
+const JSFunctionSpec WasmComponentInstanceObject::static_methods[] = {
+    JS_FS_END,
+};
+
+bool WasmComponentInstanceObject::isNewborn() const {
+  MOZ_ASSERT(is<WasmComponentInstanceObject>());
+  return getReservedSlotTyped(INSTANCE_SLOT).isUndefined();
+}
+
+/* static */
+void WasmComponentInstanceObject::finalize(JS::GCContext* gcx, JSObject* obj) {
+  WasmComponentInstanceObject& instance =
+      obj->as<WasmComponentInstanceObject>();
+  if (!instance.isNewborn()) {
+    ComponentInstance::destroy(&instance.instance());
+    gcx->removeCellMemory(obj, sizeof(ComponentInstance),
+                          MemoryUse::WasmComponentInstanceInstance);
+  }
+}
+
+/* static */
+void WasmComponentInstanceObject::trace(JSTracer* trc, JSObject* obj) {
+  WasmComponentInstanceObject& instanceObj =
+      obj->as<WasmComponentInstanceObject>();
+  if (!instanceObj.isNewborn()) {
+    instanceObj.instance().tracePrivate(trc);
+  }
+}
+
+/* static */
+WasmComponentInstanceObject* WasmComponentInstanceObject::create(
+    JSContext* cx, HandleObject proto, const SharedComponent component) {
+  ComponentInstance* instance = nullptr;
+  Rooted<WasmComponentInstanceObject*> obj(cx);
+
+  {
+    // We must delay creating metadata for this object until after all its
+    // slots have been initialized. We must also create the metadata before
+    // calling init as that may allocate new objects.
+    AutoSetNewObjectMetadata metadata(cx);
+    obj = NewObjectWithGivenProto<WasmComponentInstanceObject>(cx, proto);
+    if (!obj) {
+      return nullptr;
+    }
+
+    // The INSTANCE_SLOT may not be initialized if instance allocation fails,
+    // leading to an observable "newborn" state in tracing/finalization.
+    MOZ_ASSERT(obj->isNewborn());
+
+    // Create this just before constructing the instance to avoid rooting
+    // hazards.
+    instance = ComponentInstance::create(cx, obj, component);
+    if (!instance) {
+      return nullptr;
+    }
+
+    InitReservedSlot(obj, INSTANCE_SLOT.index(), instance,
+                     MemoryUse::WasmComponentInstanceInstance);
+    MOZ_ASSERT(!obj->isNewborn());
+  }
+
+  if (!instance->init(cx)) {
+    return nullptr;
+  }
+
+  return obj;
+}
+
+/* static */
+bool WasmComponentInstanceObject::construct(JSContext* cx, unsigned argc,
+                                            Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  Log(cx, "sync new ComponentInstance() started");
+
+  if (!ThrowIfNotConstructing(cx, args, "ComponentInstance")) {
+    return false;
+  }
+
+  if (!args.requireAtLeast(cx, "WebAssembly.ComponentInstance", 1)) {
+    return false;
+  }
+
+  if (!args[0].isObject()) {
+    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                             JSMSG_WASM_BAD_COMPONENT_ARG);
+    return false;
+  }
+
+  Rooted<WasmComponentObject*> componentObj(
+      cx, args[0].toObject().maybeUnwrapIf<WasmComponentObject>());
+  if (!componentObj) {
+    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                             JSMSG_WASM_BAD_COMPONENT_ARG);
+    return false;
+  }
+
+  // TODO(wasm-cm): Introduce imports
+
+  RootedObject proto(
+      cx, GetWasmConstructorPrototype(cx, args, JSProto_WasmComponentInstance));
+  if (!proto) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  Rooted<WasmComponentInstanceObject*> instanceObj(cx);
+  if (!componentObj->component().instantiate(cx, proto, &instanceObj)) {
+    return false;
+  }
+
+  Log(cx, "sync new ComponentInstance() succeeded");
+
+  args.rval().setObject(*instanceObj);
+  return true;
+}
+
+ComponentInstance& WasmComponentInstanceObject::instance() const {
+  MOZ_ASSERT(!isNewborn());
+  return *(ComponentInstance*)getReservedSlotTyped(INSTANCE_SLOT).toPrivate();
+}
+#endif
 
 // ============================================================================
 // WebAssembly.Memory class and methods
@@ -2637,8 +2806,8 @@ WasmMemoryObject* WasmMemoryObject::create(
     return nullptr;
   }
 
-  obj->initReservedSlot(BUFFER_SLOT, ObjectValue(*buffer));
-  obj->initReservedSlot(ISHUGE_SLOT, BooleanValue(isHuge));
+  obj->initReservedSlotTyped(BUFFER_SLOT, ObjectValue(*buffer));
+  obj->initReservedSlotTyped(ISHUGE_SLOT, BooleanValue(isHuge));
   MOZ_ASSERT(!obj->hasObservers());
 
   return obj;
@@ -2738,7 +2907,7 @@ ArrayBufferObjectMaybeShared* WasmMemoryObject::refreshBuffer(
                                   JSMSG_SC_SAB_REFCNT_OFLO);
         return nullptr;
       }
-      memoryObj->setReservedSlot(BUFFER_SLOT, ObjectValue(*newBuffer));
+      memoryObj->setReservedSlotTyped(BUFFER_SLOT, ObjectValue(*newBuffer));
       return newBuffer;
     }
   }
@@ -2900,7 +3069,7 @@ bool WasmMemoryObject::toFixedLengthBufferImpl(JSContext* cx,
   if (!fixedBuffer) {
     return false;
   }
-  memory->setReservedSlot(BUFFER_SLOT, ObjectValue(*fixedBuffer));
+  memory->setReservedSlotTyped(BUFFER_SLOT, ObjectValue(*fixedBuffer));
   args.rval().set(ObjectValue(*fixedBuffer));
   return true;
 }
@@ -2953,7 +3122,7 @@ bool WasmMemoryObject::toResizableBufferImpl(JSContext* cx,
   if (!resizableBuffer) {
     return false;
   }
-  memory->setReservedSlot(BUFFER_SLOT, ObjectValue(*resizableBuffer));
+  memory->setReservedSlotTyped(BUFFER_SLOT, ObjectValue(*resizableBuffer));
   args.rval().set(ObjectValue(*resizableBuffer));
   return true;
 }
@@ -2990,7 +3159,7 @@ const JSFunctionSpec WasmMemoryObject::static_methods[] = {
 };
 
 ArrayBufferObjectMaybeShared& WasmMemoryObject::buffer() const {
-  return getReservedSlot(BUFFER_SLOT)
+  return getReservedSlotTyped(BUFFER_SLOT)
       .toObject()
       .as<ArrayBufferObjectMaybeShared>();
 }
@@ -3061,13 +3230,13 @@ bool WasmMemoryObject::isShared() const {
 }
 
 bool WasmMemoryObject::hasObservers() const {
-  return !getReservedSlot(OBSERVERS_SLOT).isUndefined();
+  return !getReservedSlotTyped(OBSERVERS_SLOT).isUndefined();
 }
 
 WasmMemoryObject::InstanceSet& WasmMemoryObject::observers() const {
   MOZ_ASSERT(hasObservers());
   return *reinterpret_cast<InstanceSet*>(
-      getReservedSlot(OBSERVERS_SLOT).toPrivate());
+      getReservedSlotTyped(OBSERVERS_SLOT).toPrivate());
 }
 
 WasmMemoryObject::InstanceSet* WasmMemoryObject::getOrCreateObservers(
@@ -3079,7 +3248,7 @@ WasmMemoryObject::InstanceSet* WasmMemoryObject::getOrCreateObservers(
       return nullptr;
     }
 
-    InitReservedSlot(this, OBSERVERS_SLOT, observers.release(),
+    InitReservedSlot(this, OBSERVERS_SLOT.index(), observers.release(),
                      MemoryUse::WasmMemoryObservers);
   }
 
@@ -3087,7 +3256,7 @@ WasmMemoryObject::InstanceSet* WasmMemoryObject::getOrCreateObservers(
 }
 
 bool WasmMemoryObject::isHuge() const {
-  return getReservedSlot(ISHUGE_SLOT).toBoolean();
+  return getReservedSlotTyped(ISHUGE_SLOT).toBoolean();
 }
 
 bool WasmMemoryObject::movingGrowable() const {
@@ -3210,7 +3379,7 @@ uint64_t WasmMemoryObject::grow(Handle<WasmMemoryObject*> memory,
     return uint64_t(int64_t(-1));
   }
 
-  memory->setReservedSlot(BUFFER_SLOT, ObjectValue(*newBuf));
+  memory->setReservedSlotTyped(BUFFER_SLOT, ObjectValue(*newBuf));
 
   // Only notify moving-grow-observers after the BUFFER_SLOT has been updated
   // since observers will call buffer().
@@ -3277,7 +3446,7 @@ const ClassSpec WasmTableObject::classSpec_ = {
 
 bool WasmTableObject::isNewborn() const {
   MOZ_ASSERT(is<WasmTableObject>());
-  return getReservedSlot(TABLE_SLOT).isUndefined();
+  return getReservedSlotTyped(TABLE_SLOT).isUndefined();
 }
 
 /* static */
@@ -3327,7 +3496,7 @@ WasmTableObject* WasmTableObject::create(JSContext* cx, const TableType& type,
   }
 
   size_t size = table->gcMallocBytes();
-  InitReservedSlot(obj, TABLE_SLOT, table.forget().take(), size,
+  InitReservedSlot(obj, TABLE_SLOT.index(), table.forget().take(), size,
                    MemoryUse::WasmTableTable);
 
   MOZ_ASSERT(!obj->isNewborn());
@@ -3637,7 +3806,7 @@ const JSFunctionSpec WasmTableObject::static_methods[] = {
 };
 
 Table& WasmTableObject::table() const {
-  return *(Table*)getReservedSlot(TABLE_SLOT).toPrivate();
+  return *(Table*)getReservedSlotTyped(TABLE_SLOT).toPrivate();
 }
 
 bool WasmTableObject::fillRange(JSContext* cx, uint32_t index, uint32_t length,
@@ -3735,8 +3904,8 @@ WasmGlobalObject* WasmGlobalObject::create(JSContext* cx, HandleVal value,
     ReportOutOfMemory(cx);
     return nullptr;
   }
-  obj->initReservedSlot(MUTABLE_SLOT, JS::BooleanValue(isMutable));
-  InitReservedSlot(obj, VAL_SLOT, val, MemoryUse::WasmGlobalCell);
+  obj->initReservedSlotTyped(MUTABLE_SLOT, JS::BooleanValue(isMutable));
+  InitReservedSlot(obj, VAL_SLOT.index(), val, MemoryUse::WasmGlobalCell);
 
   // It's simpler to initialize the cell after the object has been created,
   // to avoid needing to root the cell before the object creation.
@@ -3911,17 +4080,19 @@ const JSFunctionSpec WasmGlobalObject::static_methods[] = {
 };
 
 bool WasmGlobalObject::isMutable() const {
-  return getReservedSlot(MUTABLE_SLOT).toBoolean();
+  return getReservedSlotTyped(MUTABLE_SLOT).toBoolean();
 }
 
 ValType WasmGlobalObject::type() const { return val().get().type(); }
 
 HeapPtrVal& WasmGlobalObject::mutableVal() {
-  return *reinterpret_cast<HeapPtrVal*>(getReservedSlot(VAL_SLOT).toPrivate());
+  return *reinterpret_cast<HeapPtrVal*>(
+      getReservedSlotTyped(VAL_SLOT).toPrivate());
 }
 
 const HeapPtrVal& WasmGlobalObject::val() const {
-  return *reinterpret_cast<HeapPtrVal*>(getReservedSlot(VAL_SLOT).toPrivate());
+  return *reinterpret_cast<HeapPtrVal*>(
+      getReservedSlotTyped(VAL_SLOT).toPrivate());
 }
 
 void WasmGlobalObject::setVal(wasm::HandleVal value) {
@@ -4072,7 +4243,7 @@ WasmTagObject* WasmTagObject::create(JSContext* cx,
   }
 
   tagType.get()->AddRef();
-  obj->initReservedSlot(TYPE_SLOT, PrivateValue((void*)tagType.get()));
+  obj->initReservedSlotTyped(TYPE_SLOT, PrivateValue((void*)tagType.get()));
 
   return obj;
 }
@@ -4113,7 +4284,7 @@ const JSFunctionSpec WasmTagObject::static_methods[] = {
 };
 
 const TagType* WasmTagObject::tagType() const {
-  return (const TagType*)getFixedSlot(TYPE_SLOT).toPrivate();
+  return (const TagType*)getFixedSlotTyped(TYPE_SLOT).toPrivate();
 };
 
 const wasm::ValTypeVector& WasmTagObject::valueTypes() const {
@@ -4336,12 +4507,12 @@ WasmExceptionObject* WasmExceptionObject::create(JSContext* cx,
   }
 
   MOZ_ASSERT(obj->isNewborn());
-  obj->initFixedSlot(TAG_SLOT, ObjectValue(*tag));
+  obj->initFixedSlotTyped(TAG_SLOT, ObjectValue(*tag));
   tagType->AddRef();
-  obj->initFixedSlot(TYPE_SLOT, PrivateValue((void*)tagType));
-  InitReservedSlot(obj, DATA_SLOT, data, tagType->tagSize(),
+  obj->initFixedSlotTyped(TYPE_SLOT, PrivateValue((void*)tagType));
+  InitReservedSlot(obj, DATA_SLOT.index(), data, tagType->tagSize(),
                    MemoryUse::WasmExceptionData);
-  obj->initFixedSlot(STACK_SLOT, ObjectOrNullValue(stack));
+  obj->initFixedSlotTyped(STACK_SLOT, ObjectOrNullValue(stack));
 
   MOZ_ASSERT(!obj->isNewborn());
 
@@ -4374,7 +4545,7 @@ WasmExceptionObject* WasmExceptionObject::wrapJSValue(JSContext* cx,
 
 bool WasmExceptionObject::isNewborn() const {
   MOZ_ASSERT(is<WasmExceptionObject>());
-  return getReservedSlot(DATA_SLOT).isUndefined();
+  return getReservedSlotTyped(DATA_SLOT).isUndefined();
 }
 
 bool WasmExceptionObject::isWrappedJSValue() const {
@@ -4495,11 +4666,11 @@ bool WasmExceptionObject::getStack(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 JSObject* WasmExceptionObject::stack() const {
-  return getReservedSlot(STACK_SLOT).toObjectOrNull();
+  return getReservedSlotTyped(STACK_SLOT).toObjectOrNull();
 }
 
 uint8_t* WasmExceptionObject::typedMem() const {
-  return (uint8_t*)getReservedSlot(DATA_SLOT).toPrivate();
+  return (uint8_t*)getReservedSlotTyped(DATA_SLOT).toPrivate();
 }
 
 bool WasmExceptionObject::loadArg(JSContext* cx, size_t offset,
@@ -4558,11 +4729,11 @@ const JSFunctionSpec WasmExceptionObject::static_methods[] = {
 };
 
 const TagType* WasmExceptionObject::tagType() const {
-  return (const TagType*)getReservedSlot(TYPE_SLOT).toPrivate();
+  return (const TagType*)getReservedSlotTyped(TYPE_SLOT).toPrivate();
 }
 
 WasmTagObject& WasmExceptionObject::tag() const {
-  return getReservedSlot(TAG_SLOT).toObject().as<WasmTagObject>();
+  return getReservedSlotTyped(TAG_SLOT).toObject().as<WasmTagObject>();
 }
 
 // ============================================================================
@@ -5284,6 +5455,10 @@ class CompileStreamTask : public PromiseHelperTask, public JS::StreamConsumer {
   enum StreamState { Env, Code, Tail, Closed };
   ExclusiveWaitableData<StreamState> streamState_;
 
+  // Total number of bytes streamed so far. Written and read on the stream
+  // thread only; used to cap the total module size (see consumeChunk).
+  size_t bytesLength_;
+
   // Immutable:
   const bool instantiate_;
   const PersistentRootedObject importObj_;
@@ -5374,6 +5549,22 @@ class CompileStreamTask : public PromiseHelperTask, public JS::StreamConsumer {
   }
 
   bool consumeChunk(const uint8_t* begin, size_t length) override {
+    // Enforce the MaxModuleBytes limit early.
+    if (length > MaxModuleBytes - bytesLength_) {
+      // The state tells us whether we are before or after the helper thread
+      // started.
+      if (streamState_.lock().get() == Env) {
+        return rejectAndDestroyBeforeHelperThreadStarted(StreamOOMCode);
+      }
+      return rejectAndDestroyAfterHelperThreadStarted(StreamOOMCode);
+    }
+    bytesLength_ += length;
+    return consumeChunkImpl(begin, length);
+  }
+
+  // The chunk-processing worker. consumeChunk() re-dispatches trailing bytes to
+  // the next state through this method so that they are counted once, above.
+  bool consumeChunkImpl(const uint8_t* begin, size_t length) {
     switch (streamState_.lock().get()) {
       case Env: {
         if (!envBytes_->append(begin, length)) {
@@ -5411,7 +5602,7 @@ class CompileStreamTask : public PromiseHelperTask, public JS::StreamConsumer {
         streamState_.lock().get() = Code;
 
         if (extraBytes) {
-          return consumeChunk(begin + length - extraBytes, extraBytes);
+          return consumeChunkImpl(begin + length - extraBytes, extraBytes);
         }
 
         return true;
@@ -5435,7 +5626,7 @@ class CompileStreamTask : public PromiseHelperTask, public JS::StreamConsumer {
         streamState_.lock().get() = Tail;
 
         if (uint32_t extraBytes = length - copyLength) {
-          return consumeChunk(begin + copyLength, extraBytes);
+          return consumeChunkImpl(begin + copyLength, extraBytes);
         }
 
         return true;
@@ -5565,6 +5756,7 @@ class CompileStreamTask : public PromiseHelperTask, public JS::StreamConsumer {
                     HandleObject importObj)
       : PromiseHelperTask(cx, promise),
         streamState_(mutexid::WasmStreamStatus, Env),
+        bytesLength_(0),
         instantiate_(instantiate),
         importObj_(cx, importObj),
         compileArgs_(&compileArgs),
@@ -5600,10 +5792,11 @@ class CompileStreamTask : public PromiseHelperTask, public JS::StreamConsumer {
 // WebAssembly.{compileStreaming,instantiateStreaming} while waiting for
 // the Promise<Response> to resolve to a (hopefully) Promise.
 class ResolveResponseClosure : public NativeObject {
-  static const unsigned COMPILE_ARGS_SLOT = 0;
-  static const unsigned PROMISE_OBJ_SLOT = 1;
-  static const unsigned INSTANTIATE_SLOT = 2;
-  static const unsigned IMPORT_OBJ_SLOT = 3;
+  static constexpr auto COMPILE_ARGS_SLOT = TypedSlot<ValueType::Double>(0);
+  static constexpr auto PROMISE_OBJ_SLOT = TypedSlot<ValueType::Object>(1);
+  static constexpr auto INSTANTIATE_SLOT = TypedSlot<ValueType::Boolean>(2);
+  static constexpr auto IMPORT_OBJ_SLOT =
+      TypedSlot<ValueType::Object, ValueType::Null>(3);
   static const JSClassOps classOps_;
 
   static void finalize(JS::GCContext* gcx, JSObject* obj) {
@@ -5628,25 +5821,28 @@ class ResolveResponseClosure : public NativeObject {
     }
 
     args.AddRef();
-    InitReservedSlot(obj, COMPILE_ARGS_SLOT, const_cast<CompileArgs*>(&args),
+    InitReservedSlot(obj, COMPILE_ARGS_SLOT.index(),
+                     const_cast<CompileArgs*>(&args),
                      MemoryUse::WasmResolveResponseClosure);
-    obj->setReservedSlot(PROMISE_OBJ_SLOT, ObjectValue(*promise));
-    obj->setReservedSlot(INSTANTIATE_SLOT, BooleanValue(instantiate));
-    obj->setReservedSlot(IMPORT_OBJ_SLOT, ObjectOrNullValue(importObj));
+    obj->initReservedSlotTyped(PROMISE_OBJ_SLOT, ObjectValue(*promise));
+    obj->initReservedSlotTyped(INSTANTIATE_SLOT, BooleanValue(instantiate));
+    obj->initReservedSlotTyped(IMPORT_OBJ_SLOT, ObjectOrNullValue(importObj));
     return obj;
   }
 
   CompileArgs& compileArgs() const {
-    return *(CompileArgs*)getReservedSlot(COMPILE_ARGS_SLOT).toPrivate();
+    return *(CompileArgs*)getReservedSlotTyped(COMPILE_ARGS_SLOT).toPrivate();
   }
   PromiseObject& promise() const {
-    return getReservedSlot(PROMISE_OBJ_SLOT).toObject().as<PromiseObject>();
+    return getReservedSlotTyped(PROMISE_OBJ_SLOT)
+        .toObject()
+        .as<PromiseObject>();
   }
   bool instantiate() const {
-    return getReservedSlot(INSTANTIATE_SLOT).toBoolean();
+    return getReservedSlotTyped(INSTANTIATE_SLOT).toBoolean();
   }
   JSObject* importObj() const {
-    return getReservedSlot(IMPORT_OBJ_SLOT).toObjectOrNull();
+    return getReservedSlotTyped(IMPORT_OBJ_SLOT).toObjectOrNull();
   }
 };
 
@@ -5924,7 +6120,7 @@ bool WasmSuspendingObject::construct(JSContext* cx, unsigned argc, Value* vp) {
   if (!suspending) {
     return false;
   }
-  suspending->setWrappedFunction(callable);
+  suspending->initWrappedFunction(callable);
   args.rval().setObject(*suspending);
   return true;
 }
@@ -6111,6 +6307,13 @@ static bool WebAssemblyClassFinish(JSContext* cx, HandleObject object,
                                                 JSProto_WasmComponent};
     if (!WebAssemblyDefineConstructor(cx, wasm, componentEntry, &ctorValue,
                                       &id)) {
+      return false;
+    }
+
+    constexpr NameAndProtoKey componentInstanceEntry = {
+        "ComponentInstance", JSProto_WasmComponentInstance};
+    if (!WebAssemblyDefineConstructor(cx, wasm, componentInstanceEntry,
+                                      &ctorValue, &id)) {
       return false;
     }
   }

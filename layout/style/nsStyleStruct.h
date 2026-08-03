@@ -517,6 +517,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleMargin {
   // TODO: Add support per-axis/side clipping, see
   // https://github.com/w3c/csswg-drafts/issues/7245
   mozilla::StyleOverflowClipMargin mOverflowClipMargin;
+
+  mozilla::StyleMarginTrim mMarginTrim;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePadding {
@@ -1575,7 +1577,7 @@ struct StyleScrollTimeline {
   StyleScrollTimeline() = default;
   explicit StyleScrollTimeline(const StyleScrollTimeline& aCopy) = default;
 
-  nsAtom* GetName() const { return mName.value.AsAtom(); }
+  const StyleTimelineName& GetName() const { return mName; }
   StyleScrollAxis GetAxis() const { return mAxis; }
 
   bool operator==(const StyleScrollTimeline&) const = default;
@@ -1590,7 +1592,7 @@ struct StyleViewTimeline {
   StyleViewTimeline() = default;
   explicit StyleViewTimeline(const StyleViewTimeline& aCopy) = default;
 
-  nsAtom* GetName() const { return mName.value.AsAtom(); }
+  const StyleTimelineName& GetName() const { return mName; }
   StyleScrollAxis GetAxis() const { return mAxis; }
   const StyleViewTimelineInset& GetInset() const { return mInset; }
 
@@ -2025,6 +2027,14 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleContent {
     return mozilla::Span(items.items).From(items.alt_start);
   }
 
+  /**
+   * True if the 'content' change from aOld to aNew can be applied by rewriting
+   * the existing generated text nodes in place rather than reframing the full
+   * subtree.
+   */
+  static bool CanUpdateGeneratedContentText(const nsStyleContent& aOld,
+                                            const nsStyleContent& aNew);
+
   mozilla::StyleContent mContent;
   mozilla::StyleCounterIncrement mCounterIncrement;
   mozilla::StyleCounterReset mCounterReset;
@@ -2119,14 +2129,15 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
     return mAnimations[aIndex % mAnimationRangeEndCount].GetRangeEnd();
   }
 
-  nsAtom* GetScrollTimelineName(uint32_t aIndex) const {
+  const mozilla::StyleTimelineName& GetScrollTimelineName(
+      uint32_t aIndex) const {
     return mScrollTimelines[aIndex % mScrollTimelineNameCount].GetName();
   }
   mozilla::StyleScrollAxis GetScrollTimelineAxis(uint32_t aIndex) const {
     return mScrollTimelines[aIndex % mScrollTimelineAxisCount].GetAxis();
   }
 
-  nsAtom* GetViewTimelineName(uint32_t aIndex) const {
+  const mozilla::StyleTimelineName& GetViewTimelineName(uint32_t aIndex) const {
     return mViewTimelines[aIndex % mViewTimelineNameCount].GetName();
   }
   mozilla::StyleScrollAxis GetViewTimelineAxis(uint32_t aIndex) const {

@@ -5,9 +5,9 @@
 #include "NativeFontResourceGDI.h"
 
 #include "Logging.h"
-#include "mozilla/RefPtr.h"
 #include "ScaledFontWin.h"
 #include "UnscaledFontGDI.h"
+#include "mozilla/RefPtr.h"
 
 namespace mozilla {
 namespace gfx {
@@ -36,12 +36,11 @@ NativeFontResourceGDI::~NativeFontResourceGDI() {
 already_AddRefed<UnscaledFont> NativeFontResourceGDI::CreateUnscaledFont(
     uint32_t aIndex, const uint8_t* aInstanceData,
     uint32_t aInstanceDataLength) {
-  if (aInstanceDataLength < sizeof(LOGFONT)) {
-    gfxWarning() << "GDI unscaled font instance data is truncated.";
+  const LOGFONT* logFont =
+      UnscaledFontGDI::ValidLOGFONT(aInstanceData, aInstanceDataLength);
+  if (!logFont) {
     return nullptr;
   }
-
-  const LOGFONT* logFont = reinterpret_cast<const LOGFONT*>(aInstanceData);
   RefPtr unscaledFont = MakeRefPtr<UnscaledFontGDI>(*logFont);
   return unscaledFont.forget();
 }

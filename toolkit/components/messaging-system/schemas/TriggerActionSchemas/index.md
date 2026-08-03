@@ -1,38 +1,11 @@
-# Trigger Listeners
+# Triggers
 
-A set of action listeners that can be used to trigger CFR messages.
+Triggers can be used to decide when messages are shown.
 
 ## Usage
 
-[As part of the CFR definition](https://searchfox.org/mozilla-central/rev/2bfe3415fb3a2fba9b1c694bc0b376365e086927/browser/components/newtab/lib/CFRMessageProvider.jsm#194) the message can register at most one trigger used to decide when the message is shown.
-
-Most triggers (unless otherwise specified) take the same arguments of `hosts` and/or `patterns`
-used to target the message to specific websites.
-
-```javascript
-// Optional set of hosts to filter out triggers only to certain websites
-let params: string[];
-// Optional set of [match patterns](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Match_patterns) to filter out triggers only to certain websites
-let patterns: string[];
-```
-
-```javascript
-{
-  ...
-  // Show the message when opening mozilla.org
-  "trigger": { "id": "openURL", "params": ["mozilla.org", "www.mozilla.org"] }
-  ...
-}
-```
-
-```javascript
-{
-  ...
-  // Show the message when opening any HTTP, HTTPS URL.
-  trigger: { id: "openURL", patterns: ["*://*/*"] }
-  ...
-}
-```
+Messages can define a single `trigger` object used to determine when the message should be shown.
+The `trigger` object must include an `id` string identifying the trigger action and may include optional trigger-specific properties such as `params`, `patterns`, or `regexPatterns`.
 
 ## Multiple triggers
 
@@ -65,7 +38,9 @@ targeting, use separate messages instead.
 ## Available trigger actions
 
 - [`openArticleURL`](#openarticleurl)
+- [`bookmarkAdded`](#bookmarkadded)
 - [`openBookmarkedURL`](#openbookmarkedurl)
+- [`visitBookmarkedURL`](#visitbookmarkedurl)
 - [`userBookmarkFolderActivity`](#userbookmarkfolderactivity)
 - [`frequentVisits`](#frequentvisits)
 - [`openURL`](#openurl)
@@ -98,16 +73,71 @@ targeting, use separate messages instead.
 - [`selectableProfilesUpdated`](#selectableprofilesupdated)
 - [`smartWindowNewTab`](#smartwindownewtab)
 - [`nimbusUpdate`](#nimbusupdate)
+- [`lastWindowClose`](#lastwindowclose)
 
 ### `openArticleURL`
 
 Happens when the user loads a Reader Mode compatible webpage.
+
+Supports filtering with `params`, [`patterns`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Match_patterns), and `regexPatterns`.
+
+```javascript
+// Optional set of hosts to filter out triggers only to certain websites
+let params: string[];
+// Optional set of Match patterns to filter out triggers only to certain websites
+let patterns: string[];
+// Optional regular expression patterns to filter out triggers only to certain websites
+let regexPatterns: string[];
+```
+
+```javascript
+{
+  ...
+  // Show the message when opening mozilla.org
+  "trigger": { "id": "openArticleURL", "params": ["mozilla.org", "www.mozilla.org"] }
+  ...
+}
+```
+
+```javascript
+{
+  ...
+  // Show the message when opening any HTTP, HTTPS URL.
+  trigger: { id: "openArticleURL", patterns: ["*://*/*"] }
+  ...
+}
+```
+
+```javascript
+{
+  ...
+  // Show the message when opening a URL that matches the regular expression.
+  trigger: { id: "openArticleURL", regexPatterns: ["^https://.*\\.mozilla\\.org/.*"] }
+  ...
+}
+```
+
+### `bookmarkAdded`
+
+Fires when the user adds a bookmark through any UI path, including the URL bar
+star icon, the Bookmarks menu, the keyboard shortcut, the "Bookmark Link" and
+"Bookmark All Tabs" commands, and the Library window.
+
+Bulk and non-interactive sources (import, restore, sync) and tag operations are
+ignored, so mass operations such as an add-on importing or syncing bookmarks do
+not fire the trigger. It fires at most once per operation and does not fire in
+private windows.
 
 ### `openBookmarkedURL`
 
 Happens when the user bookmarks or navigates to a bookmarked URL.
 
 Does not filter by host or patterns.
+
+### `visitBookmarkedURL`
+
+Fires when the user navigates to a URL that is already bookmarked. This does not fire when the user creates a bookmark, only when they open one. Does not
+fire in private windows.
 
 ### `userBookmarkFolderActivity`
 
@@ -138,6 +168,44 @@ interface visit {
 let recentVisits: visit[];
 ```
 
+Supports filtering with `params`, [`patterns`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Match_patterns), and `regexPatterns`.
+
+```javascript
+// Optional set of hosts to filter out triggers only to certain websites
+let params: string[];
+// Optional set of Match patterns to filter out triggers only to certain websites
+let patterns: string[];
+// Optional regular expression patterns to filter out triggers only to certain websites
+let regexPatterns: string[];
+```
+
+```javascript
+{
+  ...
+  // Show the message when visiting mozilla.org
+  "trigger": { "id": "frequentVisits", "params": ["mozilla.org", "www.mozilla.org"] }
+  ...
+}
+```
+
+```javascript
+{
+  ...
+  // Show the message when visiting any HTTP, HTTPS URL.
+  trigger: { id: "frequentVisits", patterns: ["*://*/*"] }
+  ...
+}
+```
+
+```javascript
+{
+  ...
+  // Show the message when visiting a URL that matches the regular expression.
+  trigger: { id: "frequentVisits", regexPatterns: ["^https://.*\\.mozilla\\.org/.*"] }
+  ...
+}
+```
+
 ### `openURL`
 
 Happens every time the user loads a new URL that matches the provided `hosts` or `patterns`.
@@ -146,6 +214,44 @@ During a browsing session it keeps track of visits to unique urls that can be us
 ```javascript
 // True on the third visit for the URL which the trigger matched on
 visitsCount >= 3
+```
+
+Supports filtering with `params`, [`patterns`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Match_patterns), and `regexPatterns`.
+
+```javascript
+// Optional set of hosts to filter out triggers only to certain websites
+let params: string[];
+// Optional set of Match patterns to filter out triggers only to certain websites
+let patterns: string[];
+// Optional regular expression patterns to filter out triggers only to certain websites
+let regexPatterns: string[];
+```
+
+```javascript
+{
+  ...
+  // Show the message when opening mozilla.org
+  "trigger": { "id": "openURL", "params": ["mozilla.org", "www.mozilla.org"] }
+  ...
+}
+```
+
+```javascript
+{
+  ...
+  // Show the message when opening any HTTP, HTTPS URL.
+  trigger: { id: "openURL", patterns: ["*://*/*"] }
+  ...
+}
+```
+
+```javascript
+{
+  ...
+  // Show the message when opening a URL that matches the regular expression.
+  trigger: { id: "openURL", regexPatterns: ["^https://.*\\.mozilla\\.org/.*"] }
+  ...
+}
 ```
 
 ### `newSavedLogin`
@@ -576,3 +682,57 @@ via Nimbus experiments. It replaces the deprecated `momentsUpdate` pseudo-trigge
 ```
 
 Does not filter by host, patterns, or params.
+
+### `lastWindowClose`
+
+Fires when the user closes the last open browser window. Popup windows (opened
+with `toolbar=no`) do not trigger it, and it's skipped if closing the window
+would show (or just showed) the "closing multiple tabs" warning, so the two
+don't stack.
+
+Closing the window is delayed until the matched message resolves. Closing the window is
+cancelled, the message shows, and the close is re-requested once it's done.
+Only the `spotlight` template currently supports this trigger. If a button's action needs to finish
+before the window actually closes, set`needsAwait: true` on that action.
+
+```js
+{
+  trigger: { id: "lastWindowClose" },
+  template: "spotlight",
+  content: {
+    template: "multistage",
+    modal: "window",
+    screens: [
+      {
+        content: {
+          primary_button: {
+            action: { type: "SOME_ACTION", needsAwait: true, dismiss: true }
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+### `splitViewUsed`
+
+Fires after a configurable delay (default 15 seconds, `browser.tabs.splitview.trigger.delay_ms`)
+of continuous use of Split View. Leaving Split View before the delay elapses cancels the
+countdown; returning starts a fresh one.
+
+```js
+{
+  trigger: { id: "splitViewUsed" }
+}
+```
+```js
+// The trigger also tracks the number of distinct Split Views the user has
+// created (not re-entries into an existing one), via the splitViewCreateCount
+// context variable. Here, the message is excluded for a user's first-ever
+// Split View.
+{
+  trigger: { id: "splitViewUsed" },
+  targeting: "splitViewCreateCount > 1"
+}
+```

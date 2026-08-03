@@ -85,6 +85,10 @@ internal fun iPProtectionReducer(
         )
     }
 
+    is IPProtectionAction.CountryListChanged -> {
+        state.copy(countries = action.countries)
+    }
+
    is IPProtectionAction.AccountStateChanged -> {
         state.copy(accountState = state.accountState.copy(status = action.state))
     }
@@ -144,6 +148,23 @@ internal fun iPProtectionReducer(
                     )
                 }
 
+                // It is a bit of an edge case, but if we hit a toggle action while the account
+                // check is still in progress, we do want to move forward with authorization flow.
+                //
+                // An account check can be triggered, that will move the state into either entitled
+                // or needs authorization state. But if the check is taking longer, then the toggle
+                // action should move the state into requesting auth anyway.
+                //
+                // Ideally, we want to have an explicit state transition path for an account check;
+                // for now, that is what we ship with.
+                if (status == AccountStatus.TryAgain) {
+                    return state.copy(
+                        accountState = state.accountState.copy(
+                            status = AccountStatus.RequestingAuthorization,
+                        ),
+                    )
+                }
+
                 if (status == AccountStatus.Authenticated) {
                     throw IllegalStateException("VPN state machine is in a bad state")
                 }
@@ -158,8 +179,20 @@ internal fun iPProtectionReducer(
     }
 
     is IPProtectionAction.ToggleFailed -> {
+        // There could be a race condition where a signed-in user is able to start the vpn auth flow
+        // while their account manager is still in "warming up" state (e.g. it's still updating fxa
+        // token after those expire). In that case, the user might finish auth flow in "entitled"
+        // account state, but ip service was never informed about an eligible account.
+        val accountState = if (state.accountState.status == AccountStatus.EnrolledAndEntitled &&
+            state.serviceStatus == ServiceState.Unauthenticated
+        ) {
+            state.accountState.copy(status = AccountStatus.TryAgain)
+        } else {
+            state.accountState
+        }
+
         // Reset `activate` so the next Toggle reads as a fresh edge in observeToggle().
-        state.copy(activate = null)
+        state.copy(activate = null, accountState = accountState)
     }
 
     is IPProtectionAction.CheckAccount -> {

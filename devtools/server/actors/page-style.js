@@ -60,9 +60,6 @@ loader.lazyRequireGetter(
 loader.lazyGetter(this, "PSEUDO_ELEMENTS", () => {
   return InspectorUtils.getCSSPseudoElementNames();
 });
-loader.lazyGetter(this, "FONT_VARIATIONS_ENABLED", () => {
-  return Services.prefs.getBoolPref("layout.css.font-variations.enabled");
-});
 
 const NORMAL_FONT_WEIGHT = 400;
 const BOLD_FONT_WEIGHT = 700;
@@ -147,7 +144,7 @@ class PageStyleActor extends Actor {
         fontStyleLevel4: CSS.supports("font-style: oblique 20deg"),
         // Whether getAllUsedFontFaces/getUsedFontFaces accepts the includeVariations
         // argument.
-        fontVariations: FONT_VARIATIONS_ENABLED,
+        fontVariations: CSS.supports("font-variation-settings: 'liga' 1"),
         // Whether the page supports values of font-weight from CSS Fonts Level 4.
         // font-weight at CSS Fonts Level 4 accepts values in increments of 1 rather
         // than 100. However, CSS.supports() returns false positives, so we guard with the
@@ -441,7 +438,7 @@ class PageStyleActor extends Actor {
         };
       }
 
-      if (options.includeVariations && FONT_VARIATIONS_ENABLED) {
+      if (options.includeVariations) {
         // Round font variation axes values
         fontFace.variationAxes = font.getVariationAxes().map(axis => ({
           ...axis,
@@ -835,22 +832,25 @@ class PageStyleActor extends Actor {
     rawNode = null,
     { inherited, isSystem, pseudoElement, keyframes } = {}
   ) {
-    let element = inherited?.rawNode || rule.currentlySelectedElement;
-    // if we have a pseudoElement, the sibling-count() and sibling-index() are computed
-    // based on its binding element
-    if (element.implementedPseudoElement) {
-      element = CssLogic.getBindingElementAndPseudo(element).bindingElement;
-    }
-
-    const parentNode = element?.parentNode;
-    const siblingCount = parentNode?.childElementCount;
+    let siblingCount;
     let siblingIndex;
-    if (parentNode) {
-      for (let i = 0; i < siblingCount; i++) {
-        if (parentNode.children[i] === element) {
-          // sibling-index() is 1-based
-          siblingIndex = i + 1;
-          break;
+    if (rawNode) {
+      let element = rawNode;
+      // if we have a pseudoElement, the sibling-count() and sibling-index() are computed
+      // based on its binding element
+      if (element.implementedPseudoElement) {
+        element = CssLogic.getBindingElementAndPseudo(element).bindingElement;
+      }
+
+      const parentNode = element?.parentNode;
+      siblingCount = parentNode?.childElementCount;
+      if (parentNode) {
+        for (let i = 0; i < siblingCount; i++) {
+          if (parentNode.children[i] === element) {
+            // sibling-index() is 1-based
+            siblingIndex = i + 1;
+            break;
+          }
         }
       }
     }

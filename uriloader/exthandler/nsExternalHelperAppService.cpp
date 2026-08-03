@@ -6,6 +6,7 @@
 
 /* This must occur *after* base/basictypes.h to avoid typedefs conflicts. */
 #include "mozilla/Base64.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/ResultExtensions.h"
 
 #include "mozilla/dom/ContentChild.h"
@@ -13,6 +14,7 @@
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/RandomNum.h"
 #include "mozilla/ScopeExit.h"
@@ -720,7 +722,6 @@ nsresult nsExternalHelperAppService::DoContentContentProcessHelper(
   nsCString disp;
   nsCOMPtr<nsIURI> uri;
   int64_t contentLength = -1;
-  bool wasFileChannel = false;
   uint32_t contentDisposition = -1;
   nsAutoString fileName;
   nsCOMPtr<nsILoadInfo> loadInfo;
@@ -731,9 +732,6 @@ nsresult nsExternalHelperAppService::DoContentContentProcessHelper(
   aChannel->GetContentDispositionFilename(fileName);
   aChannel->GetContentDispositionHeader(disp);
   loadInfo = aChannel->LoadInfo();
-
-  nsCOMPtr<nsIFileChannel> fileChan(do_QueryInterface(aChannel));
-  wasFileChannel = fileChan != nullptr;
 
   nsCOMPtr<nsIURI> referrer;
   NS_GetReferrerFromChannel(aChannel, getter_AddRefs(referrer));
@@ -748,8 +746,8 @@ nsresult nsExternalHelperAppService::DoContentContentProcessHelper(
   RefPtr childListener = MakeRefPtr<ExternalHelperAppChild>();
   MOZ_ALWAYS_TRUE(child->SendPExternalHelperAppConstructor(
       childListener, uri, loadInfoArgs, nsCString(aMimeContentType), disp,
-      contentDisposition, fileName, aForceSave, contentLength, wasFileChannel,
-      referrer, aContentContext));
+      contentDisposition, fileName, aForceSave, contentLength, referrer,
+      aContentContext));
 
   NS_ADDREF(*aStreamListener = childListener);
 
@@ -976,6 +974,49 @@ static const char kExternalProtocolDefaultPref[] =
     "network.protocol-handler.external-default";
 
 // static
+bool nsExternalHelperAppService::SchemeRequiresUserActivationToLaunch(
+    nsIPrincipal* aTriggeringPrincipal, const nsACString& aScheme) {
+  if (!StaticPrefs::network_protocol_handler_prompt_without_user_activation()) {
+    return false;
+  }
+
+  // Only web content has to prove user activation; chrome and extensions are
+  // trusted to launch these protocols on their own. This mirrors the exemption
+  // in nsContentDispatchChooser._hasProtocolHandlerPermission, so that we never
+  // consume an activation for a load that isn't going to be gated. Both
+  // allowlist privileged principals; everything else is gated.
+  if (aTriggeringPrincipal &&
+      (aTriggeringPrincipal->IsSystemPrincipal() ||
+       aTriggeringPrincipal->GetIsAddonOrExpandedAddonPrincipal())) {
+    return false;
+  }
+
+  // Only schemes that would otherwise launch without a prompt (i.e. those with
+  // `network.protocol-handler.external.<scheme>` set) are gated. Currently this
+  // is only mailto.
+  nsAutoCString externalPref(kExternalProtocolPrefPrefix);
+  externalPref += aScheme;
+  return Preferences::GetBool(externalPref.get(), false);
+}
+
+// static
+void nsExternalHelperAppService::MaybeConsumeUserActivationForExternalScheme(
+    mozilla::dom::WindowContext* aWindowContext,
+    nsIPrincipal* aTriggeringPrincipal, const nsACString& aScheme) {
+  // A null window context is expected: a document being torn down or not yet
+  // associated with an inner window has none, and then there is no activation
+  // to consume. When we do have one it must be in-process, because
+  // ConsumeTransientUserGestureActivation() only acts on the process hosting
+  // the context; an out-of-process context would silently no-op and let a
+  // single gesture chain multiple launches.
+  MOZ_DIAGNOSTIC_ASSERT(!aWindowContext || aWindowContext->IsInProcess());
+  if (aWindowContext &&
+      SchemeRequiresUserActivationToLaunch(aTriggeringPrincipal, aScheme)) {
+    aWindowContext->ConsumeTransientUserGestureActivation();
+  }
+}
+
+// static
 nsresult nsExternalHelperAppService::EscapeURI(nsIURI* aURI, nsIURI** aResult) {
   MOZ_ASSERT(aURI);
   MOZ_ASSERT(aResult);
@@ -1181,7 +1222,7 @@ nsExternalHelperAppService::LoadURI(nsIURI* aURI,
   return chooser->HandleURI(
       handler, escapedURI,
       aRedirectPrincipal ? aRedirectPrincipal : aTriggeringPrincipal,
-      aBrowsingContext, aTriggeredExternally);
+      aBrowsingContext, aTriggeredExternally, aHasValidUserGestureActivation);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -146,6 +146,7 @@ if CONFIG["GCC_USE_GNU_LD"]:
 GYP_DIRS += ["nss"]
 GYP_DIRS["nss"].input = "nss/nss.gyp"
 GYP_DIRS["nss"].variables = gyp_vars
+GYP_DIRS["nss"].install_static_libs = ["mozpkix"]
 
 sandbox_vars = {
     # NSS explicitly exports its public symbols
@@ -172,6 +173,10 @@ if CONFIG["OS_TARGET"] == "WINNT":
         # MinGW uses GNU as which doesn't recognize the -safeseh flag.
         if CONFIG["CC_TYPE"] == "clang-cl":
             sandbox_vars["ASFLAGS"] = ["-safeseh"]
+
+    sandbox_vars["DELAYLOAD_DLLS"] = [
+        "advapi32.dll",
+    ]
 
     DELAYLOAD_DLLS += [
         "winmm.dll",

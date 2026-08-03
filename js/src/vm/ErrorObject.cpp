@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "vm/ErrorObject-inl.h"
-
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
@@ -54,6 +52,7 @@
 #include "vm/ToSource.h"  // js::ValueToSource
 
 #include "vm/Compartment-inl.h"
+#include "vm/ErrorObject-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
@@ -76,9 +75,7 @@ const JSClass ErrorObject::protoClasses[JSEXN_ERROR_LIMIT] = {
     IMPLEMENT_ERROR_PROTO_CLASS(EvalError),
     IMPLEMENT_ERROR_PROTO_CLASS(RangeError),
     IMPLEMENT_ERROR_PROTO_CLASS(ReferenceError),
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     IMPLEMENT_ERROR_PROTO_CLASS(SuppressedError),
-#endif
     IMPLEMENT_ERROR_PROTO_CLASS(SyntaxError),
     IMPLEMENT_ERROR_PROTO_CLASS(TypeError),
     IMPLEMENT_ERROR_PROTO_CLASS(URIError),
@@ -137,9 +134,7 @@ IMPLEMENT_NATIVE_ERROR_PROPERTIES(AggregateError)
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(EvalError)
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(RangeError)
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(ReferenceError)
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(SuppressedError)
-#endif
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(SyntaxError)
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(TypeError)
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(URIError)
@@ -181,9 +176,7 @@ const ClassSpec ErrorObject::classSpecs[JSEXN_ERROR_LIMIT] = {
     IMPLEMENT_NATIVE_ERROR_SPEC(EvalError),
     IMPLEMENT_NATIVE_ERROR_SPEC(RangeError),
     IMPLEMENT_NATIVE_ERROR_SPEC(ReferenceError),
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     IMPLEMENT_NATIVE_ERROR_SPEC(SuppressedError),
-#endif
     IMPLEMENT_NATIVE_ERROR_SPEC(SyntaxError),
     IMPLEMENT_NATIVE_ERROR_SPEC(TypeError),
     IMPLEMENT_NATIVE_ERROR_SPEC(URIError),
@@ -227,9 +220,7 @@ const JSClass ErrorObject::classes[JSEXN_ERROR_LIMIT] = {
     IMPLEMENT_ERROR_CLASS(EvalError),
     IMPLEMENT_ERROR_CLASS(RangeError),
     IMPLEMENT_ERROR_CLASS(ReferenceError),
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     IMPLEMENT_ERROR_CLASS(SuppressedError),
-#endif
     IMPLEMENT_ERROR_CLASS(SyntaxError),
     IMPLEMENT_ERROR_CLASS(TypeError),
     IMPLEMENT_ERROR_CLASS(URIError),
@@ -266,11 +257,7 @@ static ErrorObject* CreateErrorObject(JSContext* cx, const CallArgs& args,
   // non-standard fileName and lineNumber arguments when we have an options
   // object argument and the exception type is not SuppressedError.
   bool hasOptions =
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
       args.get(messageArg + 1).isObject() && exnType != JSEXN_SUPPRESSEDERR;
-#else
-      args.get(messageArg + 1).isObject();
-#endif
 
   Rooted<mozilla::Maybe<Value>> cause(cx, mozilla::Nothing());
   if (hasOptions) {
@@ -358,10 +345,8 @@ static bool Error(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(exnType != JSEXN_AGGREGATEERR,
              "AggregateError has its own constructor function");
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   MOZ_ASSERT(exnType != JSEXN_SUPPRESSEDERR,
              "SuppressedError has its own constuctor function");
-#endif
 
   JSProtoKey protoKey =
       JSCLASS_CACHED_PROTO_KEY(&ErrorObject::classes[exnType]);
@@ -428,7 +413,6 @@ static bool AggregateError(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 // Explicit Resource Management Proposal
 // SuppressedError ( error, suppressed, message )
 // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-suppressederror
@@ -480,7 +464,6 @@ static bool SuppressedError(JSContext* cx, unsigned argc, Value* vp) {
   args.rval().setObject(*obj);
   return true;
 }
-#endif
 
 /* static */
 JSObject* ErrorObject::createProto(JSContext* cx, JSProtoKey key) {
@@ -521,14 +504,10 @@ JSObject* ErrorObject::createConstructor(JSContext* cx, JSProtoKey key) {
     if (type == JSEXN_AGGREGATEERR) {
       native = AggregateError;
       nargs = 2;
-    }
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-    else if (type == JSEXN_SUPPRESSEDERR) {
+    } else if (type == JSEXN_SUPPRESSEDERR) {
       native = SuppressedError;
       nargs = 3;
-    }
-#endif
-    else {
+    } else {
       native = Error;
       nargs = 1;
     }
@@ -586,7 +565,7 @@ bool js::ErrorObject::init(JSContext* cx, Handle<ErrorObject*> obj,
   cx->check(obj, stack);
 
   // Null out early in case of error, for exn_finalize's sake.
-  obj->initReservedSlot(ERROR_REPORT_SLOT, PrivateValue(nullptr));
+  obj->initReservedSlotTyped(ERROR_REPORT_SLOT, PrivateValue(nullptr));
 
   if (!SharedShape::ensureInitialCustomShape<ErrorObject>(cx, obj)) {
     return false;
@@ -631,8 +610,8 @@ bool js::ErrorObject::init(JSContext* cx, Handle<ErrorObject*> obj,
       obj->lookupPure(NameToId(cx->names().cause))->slot() == CAUSE_SLOT);
 
   JSErrorReport* report = errorReport.release();
-  obj->initReservedSlot(STACK_SLOT, ObjectOrNullValue(stack));
-  obj->setReservedSlot(ERROR_REPORT_SLOT, PrivateValue(report));
+  obj->initReservedSlotTyped(STACK_SLOT, ObjectOrNullValue(stack));
+  obj->setReservedSlotTyped(ERROR_REPORT_SLOT, PrivateValue(report));
   obj->initReservedSlot(FILENAME_SLOT, StringValue(fileName));
   obj->initReservedSlot(LINENUMBER_SLOT, Int32Value(lineNumber));
   obj->initReservedSlot(COLUMNNUMBER_SLOT,
@@ -645,10 +624,11 @@ bool js::ErrorObject::init(JSContext* cx, Handle<ErrorObject*> obj,
   } else {
     obj->initReservedSlot(CAUSE_SLOT, MagicValue(JS_ERROR_WITHOUT_CAUSE));
   }
-  obj->initReservedSlot(SOURCEID_SLOT, Int32Value(sourceId));
+  obj->initReservedSlotTyped(SOURCEID_SLOT, Int32Value(sourceId));
   if (obj->mightBeWasmTrap()) {
-    MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(obj->getClass()) > WASM_TRAP_SLOT);
-    obj->initReservedSlot(WASM_TRAP_SLOT, BooleanValue(false));
+    MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(obj->getClass()) >
+               WASM_TRAP_SLOT.index());
+    obj->initReservedSlotTyped(WASM_TRAP_SLOT, BooleanValue(false));
   }
 
   return true;
@@ -737,7 +717,7 @@ JSErrorReport* js::ErrorObject::getOrCreateErrorReport(JSContext* cx) {
   if (!copy) {
     return nullptr;
   }
-  setReservedSlot(ERROR_REPORT_SLOT, PrivateValue(copy.get()));
+  setReservedSlotTyped(ERROR_REPORT_SLOT, PrivateValue(copy.get()));
   return copy.release();
 }
 
@@ -816,8 +796,8 @@ bool js::ErrorObject::setStack_impl(JSContext* cx, const CallArgs& args) {
 
 void js::ErrorObject::setFromWasmTrap() {
   MOZ_ASSERT(mightBeWasmTrap());
-  MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(getClass()) > WASM_TRAP_SLOT);
-  setReservedSlot(WASM_TRAP_SLOT, BooleanValue(true));
+  MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(getClass()) > WASM_TRAP_SLOT.index());
+  setReservedSlotTyped(WASM_TRAP_SLOT, BooleanValue(true));
 }
 
 JSString* js::ErrorToSource(JSContext* cx, HandleObject obj) {

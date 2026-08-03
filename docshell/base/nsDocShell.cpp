@@ -124,6 +124,7 @@
 #include "nsIDOMWindow.h"
 #include "nsIEditingSession.h"
 #include "nsIEffectiveTLDService.h"
+#include "nsExternalHelperAppService.h"
 #include "nsIExternalProtocolService.h"
 #include "nsIFormPOSTActionChannel.h"
 #include "nsIFrame.h"
@@ -4289,13 +4290,17 @@ nsDocShell::LoadPageAsViewSource(nsIDocShell* aOtherDocShell,
   if (!aOtherDocShell) {
     return NS_ERROR_INVALID_POINTER;
   }
+  auto* otherDocShell = nsDocShell::Cast(aOtherDocShell);
+
+  Document* otherDoc = otherDocShell->GetDocument();
+  NS_ENSURE_TRUE(otherDoc, NS_ERROR_UNEXPECTED);
+
   nsCOMPtr<nsIURI> newURI;
   nsresult rv = NS_NewURI(getter_AddRefs(newURI), aURI);
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  auto* otherDocShell = nsDocShell::Cast(aOtherDocShell);
   RefPtr loadState = MakeRefPtr<nsDocShellLoadState>(newURI);
   if (!otherDocShell->FillLoadStateFromCurrentEntry(*loadState)) {
     return NS_ERROR_INVALID_POINTER;
@@ -4306,8 +4311,10 @@ nsDocShell::LoadPageAsViewSource(nsIDocShell* aOtherDocShell,
   // is only exposed to system code.  The triggering principal for this load
   // should be the system principal.
   loadState->SetTriggeringPrincipal(nsContentUtils::GetSystemPrincipal());
-  loadState->SetPrincipalToInherit(nullptr);
-  loadState->SetPartitionedPrincipalToInherit(nullptr);
+  RefPtr<nsIPrincipal> nullPrincipal =
+      NullPrincipal::CreateWithInheritedAttributes(otherDoc->NodePrincipal());
+  loadState->SetPrincipalToInherit(nullPrincipal);
+  loadState->SetPartitionedPrincipalToInherit(nullPrincipal);
   loadState->SetOriginalURI(nullptr);
   loadState->SetResultPrincipalURI(nullptr);
 
@@ -9210,12 +9217,6 @@ nsIPrincipal* nsDocShell::GetInheritedPrincipal(
     referrerInfo->GetOriginalReferrer(getter_AddRefs(referrer));
   }
   if (httpChannelInternal) {
-    if (aLoadState->HasInternalLoadFlags(
-            INTERNAL_LOAD_FLAGS_FORCE_ALLOW_COOKIES)) {
-      aRv = httpChannelInternal->SetThirdPartyFlags(
-          nsIHttpChannelInternal::THIRD_PARTY_FORCE_ALLOW);
-      MOZ_ASSERT(NS_SUCCEEDED(aRv));
-    }
     if (aLoadState->FirstParty()) {
       aRv = httpChannelInternal->SetDocumentURI(aLoadState->URI());
       MOZ_ASSERT(NS_SUCCEEDED(aRv));
@@ -10056,24 +10057,17 @@ nsresult nsDocShell::CompleteInitialAboutBlankLoad(
   nsresult rv;
   // Match the DocumentChannel case where the default for third-partiness
   // differs from the default in LoadInfo construction here.
-  // toolkit/components/antitracking/test/browser/browser_aboutblank.js
-  // fails without this.
   BrowsingContext* top = mBrowsingContext->Top();
   if (top == mBrowsingContext) {
-    // If we're at the top, this must be a window.open()ed
-    // window, and we can't be third-party relative to ourselves.
     aLoadInfo->SetIsThirdPartyContextToTopWindow(false);
   } else {
-    if (Document* topDoc = top->GetDocument()) {
-      bool thirdParty = false;
+    bool thirdParty = true;
+    if (Document* topDoc = top->GetExtantDocument();
+        topDoc && aLoadState->PrincipalToInherit()) {
       (void)topDoc->GetPrincipal()->IsThirdPartyPrincipal(
           aLoadState->PrincipalToInherit(), &thirdParty);
-      aLoadInfo->SetIsThirdPartyContextToTopWindow(thirdParty);
-    } else {
-      // If top is in a different process, we have to be third-party relative
-      // to it.
-      aLoadInfo->SetIsThirdPartyContextToTopWindow(true);
     }
+    aLoadInfo->SetIsThirdPartyContextToTopWindow(thirdParty);
   }
 
   if (!mDocumentViewer) {
@@ -10731,10 +10725,7 @@ bool nsDocShell::OnNewURI(nsIURI* aURI, nsIChannel* aChannel,
     SetCacheKeyOnHistoryEntry(cacheKey);
   }
 
-  // If this is a POST request, we do not want to include this in global
-  // history.
-  if (ShouldAddURIVisit(aChannel) && updateGHistory && aAddToGlobalHistory &&
-      !net::ChannelIsPost(aChannel)) {
+  if (ShouldAddURIVisit(aChannel) && updateGHistory && aAddToGlobalHistory) {
     nsCOMPtr<nsIURI> previousURI;
     uint32_t previousFlags = 0;
 
@@ -10745,7 +10736,8 @@ bool nsDocShell::OnNewURI(nsIURI* aURI, nsIChannel* aChannel,
       ExtractLastVisit(aChannel, getter_AddRefs(previousURI), &previousFlags);
     }
 
-    AddURIVisit(aURI, previousURI, previousFlags, responseStatus);
+    AddURIVisit(aURI, previousURI, previousFlags, responseStatus,
+                net::ChannelIsPost(aChannel));
   }
 
   // aCloneSHChildren exactly means "we are not loading a new document".
@@ -11231,9 +11223,11 @@ void nsDocShell::UpdateActiveEntry(
     // Link this entry to the previous active entry.
     mActiveEntry = MakeUnique<SessionHistoryInfo>(*previousActiveEntry, aURI);
   } else {
+    Document* doc = GetDocument();
+    MOZ_ASSERT(doc);
     mActiveEntry = MakeUnique<SessionHistoryInfo>(
-        aURI, aTriggeringPrincipal, nullptr, nullptr, aPolicyContainer,
-        mContentTypeHint);
+        aURI, aTriggeringPrincipal, doc->NodePrincipal(), nullptr,
+        aPolicyContainer, mContentTypeHint);
   }
   mActiveEntry->SetOriginalURI(aOriginalURI);
   mActiveEntry->SetUnstrippedURI(nullptr);
@@ -11597,7 +11591,7 @@ void nsDocShell::SaveLastVisit(nsIChannel* aChannel, nsIURI* aURI,
 /* static */ void nsDocShell::InternalAddURIVisit(
     nsIURI* aURI, nsIURI* aPreviousURI, uint32_t aChannelRedirectFlags,
     uint32_t aResponseStatus, BrowsingContext* aBrowsingContext,
-    nsIWidget* aWidget, uint32_t aLoadType, bool aWasUpgraded) {
+    nsIWidget* aWidget, uint32_t aLoadType, bool aWasUpgraded, bool aIsPost) {
   MOZ_ASSERT(aURI, "Visited URI is null!");
   MOZ_ASSERT(aLoadType != LOAD_ERROR_PAGE && aLoadType != LOAD_BYPASS_HISTORY,
              "Do not add error or bypass pages to global history");
@@ -11653,6 +11647,10 @@ void nsDocShell::SaveLastVisit(nsIChannel* aChannel, nsIURI* aURI,
           IHistory::REDIRECT_SOURCE | IHistory::REDIRECT_SOURCE_UPGRADED;
     }
 
+    if (aIsPost) {
+      visitURIFlags |= IHistory::SOURCE_IS_POST_RESPONSE;
+    }
+
     (void)history->VisitURI(aWidget, aURI, aPreviousURI, visitURIFlags,
                             aBrowsingContext->BrowserId());
   }
@@ -11660,13 +11658,13 @@ void nsDocShell::SaveLastVisit(nsIChannel* aChannel, nsIURI* aURI,
 
 void nsDocShell::AddURIVisit(nsIURI* aURI, nsIURI* aPreviousURI,
                              uint32_t aChannelRedirectFlags,
-                             uint32_t aResponseStatus) {
+                             uint32_t aResponseStatus, bool aIsPost) {
   nsPIDOMWindowOuter* outer = GetWindow();
   nsCOMPtr<nsIWidget> widget = widget::WidgetUtils::DOMWindowToWidget(outer);
 
   InternalAddURIVisit(aURI, aPreviousURI, aChannelRedirectFlags,
                       aResponseStatus, mBrowsingContext, widget, mLoadType,
-                      false);
+                      false, aIsPost);
 }
 
 //*****************************************************************************
@@ -12246,6 +12244,19 @@ nsresult nsDocShell::OnLinkClick(
   const bool hasValidUserGestureActivation =
       ownerDoc->HasValidTransientUserGestureActivation();
   loadState->SetHasValidUserGestureActivation(hasValidUserGestureActivation);
+
+  // For protocols that would launch without a prompt (e.g. mailto), consume the
+  // transient user gesture activation so a single gesture can't chain multiple
+  // launches. Do this here, at the same point the activation value is captured
+  // on the load state, rather than later in OnLinkClickSync: that runs
+  // asynchronously, and consuming there would be inconsistent with the scripted
+  // navigation path (see BrowsingContext::Navigate). The pre-consume value is
+  // already recorded on the load state above. See bug 299116.
+  if (nsAutoCString scheme; NS_SUCCEEDED(aURI->GetScheme(scheme))) {
+    nsExternalHelperAppService::MaybeConsumeUserActivationForExternalScheme(
+        ownerDoc->GetWindowContext(), loadState->TriggeringPrincipal(), scheme);
+  }
+
   loadState->SetTextDirectiveUserActivation(
       ownerDoc->ConsumeTextDirectiveUserActivation() ||
       hasValidUserGestureActivation);
@@ -12359,13 +12370,19 @@ nsresult nsDocShell::OnLinkClickSync(nsIContent* aContent,
         nsresult rv =
             extProtService->IsExposedProtocol(scheme.get(), &isExposed);
         if (NS_SUCCEEDED(rv) && !isExposed) {
-          return extProtService->LoadURI(
-              aLoadState->URI(), triggeringPrincipal, nullptr, mBrowsingContext,
-              /* aTriggeredExternally */
-              false,
-              /* aHasValidUserGestureActivation */
-              aContent->OwnerDoc()->HasValidTransientUserGestureActivation(),
-              /* aNewWindowTarget */ false);
+          // Use the activation captured on the load state at click/submit time
+          // (OnLinkClick, HTMLFormElement::SubmitSubmission), rather than
+          // re-reading from the document here: this runs asynchronously, by
+          // which point the transient activation may have expired. Consumption
+          // of the activation (for gated schemes like mailto) also happens at
+          // that capture point. See bug 299116.
+          bool hasValidUserGestureActivation =
+              aLoadState->HasValidUserGestureActivation();
+          return extProtService->LoadURI(aLoadState->URI(), triggeringPrincipal,
+                                         nullptr, mBrowsingContext,
+                                         /* aTriggeredExternally */
+                                         false, hasValidUserGestureActivation,
+                                         /* aNewWindowTarget */ false);
         }
       }
     }

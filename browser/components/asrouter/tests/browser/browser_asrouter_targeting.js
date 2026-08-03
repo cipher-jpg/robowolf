@@ -13,7 +13,6 @@ ChromeUtils.defineESModuleGetters(this, {
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
   CFRMessageProvider: "resource:///modules/asrouter/CFRMessageProvider.sys.mjs",
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
   InfoBar: "resource:///modules/asrouter/InfoBar.sys.mjs",
@@ -92,12 +91,12 @@ const testCrashDumpFiles = [
   {
     path: "/path/to/crash1.dmp",
     id: "crash1",
-    date: new Date(2026, 1, 1).getTime(), // Feb 1, 2026
+    date: Date.now() - 30 * 24 * 60 * 60 * 1000, // 30 days ago
   },
   {
     path: "/path/to/crash2.dmp",
     id: "crash2",
-    date: new Date(2026, 2, 1).getTime(), // Mar 1, 2026
+    date: Date.now() - 30 * 24 * 60 * 60 * 1000, // 30 days ago
   },
   {
     path: "/path/to/crash3.dmp",
@@ -1295,6 +1294,33 @@ add_task(async function check_pinned_tabs() {
       gBrowser.unpinTab(tab);
     }
   );
+});
+
+add_task(async function check_has_active_ai_window() {
+  is(
+    await ASRouterTargeting.Environment.hasActiveAIWindow,
+    false,
+    "No active Smart Window without one open"
+  );
+});
+
+add_task(async function check_has_active_ai_window_true() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.smartwindow.enabled", true]],
+  });
+
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  win.document.documentElement.setAttribute("ai-window", "");
+
+  is(
+    await ASRouterTargeting.Environment.hasActiveAIWindow,
+    true,
+    "Should detect an active Smart Window while one is open"
+  );
+
+  win.document.documentElement.removeAttribute("ai-window");
+  await BrowserTestUtils.closeWindow(win);
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_tabsOpenInTopWindow() {
@@ -2761,6 +2787,16 @@ add_task(async function test_newtabAddonVersion() {
 });
 
 add_task(async function check_backupsInfo() {
+  if (AppConstants.platform === "macosx") {
+    // Bug 2033325: backupsInfo short-circuits on macOS.
+    Assert.deepEqual(
+      await ASRouterTargeting.Environment.backupsInfo,
+      { found: false },
+      "Should return {found: false} on macOS"
+    );
+    return;
+  }
+
   const sandbox = sinon.createSandbox();
   registerCleanupFunction(() => sandbox.restore());
 
@@ -3070,6 +3106,81 @@ add_task(async function check_daysSinceLastCrash_returnsDaysSinceLastCrash() {
       await ASRouterTargeting.Environment.daysSinceLastCrash,
       10,
       "should return 10 for most recent crash from 10 days ago"
+    );
+  } finally {
+    sandbox.restore();
+  }
+});
+
+add_task(async function check_crashCountInLastDay_noCrashesReturnsZero() {
+  const sandbox = sinon.createSandbox();
+  try {
+    sandbox.stub(QueryCache.getters.crashData, "get").resolves([]);
+    is(
+      await ASRouterTargeting.Environment.crashCountInLastDay,
+      0,
+      "should return 0 for empty crash dumps"
+    );
+  } finally {
+    sandbox.restore();
+  }
+});
+
+add_task(async function check_crashCountInLastDay_onlyCountsRecentCrashes() {
+  const sandbox = sinon.createSandbox();
+  try {
+    sandbox.stub(QueryCache.getters.crashData, "get").resolves([
+      ...testCrashDumpFiles,
+      {
+        path: "/path/to/crash4.dmp",
+        id: "crash4",
+        date: new Date().getTime() - 60 * 60 * 1000,
+      },
+    ]);
+    is(
+      await ASRouterTargeting.Environment.crashCountInLastDay,
+      1,
+      "should only count the crash from within the last 24 hours"
+    );
+  } finally {
+    sandbox.restore();
+  }
+});
+
+add_task(async function check_crashCountInLastWeek_noCrashesReturnsZero() {
+  const sandbox = sinon.createSandbox();
+  try {
+    sandbox.stub(QueryCache.getters.crashData, "get").resolves([]);
+    is(
+      await ASRouterTargeting.Environment.crashCountInLastWeek,
+      0,
+      "should return 0 for empty crash dumps"
+    );
+  } finally {
+    sandbox.restore();
+  }
+});
+
+add_task(async function check_crashCountInLastWeek_onlyCountsRecentCrashes() {
+  const sandbox = sinon.createSandbox();
+  try {
+    sandbox.stub(QueryCache.getters.crashData, "get").resolves([
+      ...testCrashDumpFiles,
+      {
+        path: "/path/to/crash4.dmp",
+        id: "crash4",
+        date: new Date().getTime() - 2 * 24 * 60 * 60 * 1000,
+      },
+      {
+        path: "/path/to/crash5.dmp",
+        id: "crash5",
+        date: new Date().getTime() - 5 * 24 * 60 * 60 * 1000,
+      },
+    ]);
+    is(
+      await ASRouterTargeting.Environment.crashCountInLastWeek,
+      2,
+      "should only count crashes from within the last 7 days"
     );
   } finally {
     sandbox.restore();

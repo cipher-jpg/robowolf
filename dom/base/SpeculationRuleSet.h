@@ -8,7 +8,6 @@
 #include "mozilla/Result.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/dom/speculationrules_ffi_generated.h"
 #include "nsStringFwd.h"
 
 class nsIGlobalObject;
@@ -19,6 +18,10 @@ class ErrorResult;
 }
 
 namespace mozilla::dom {
+
+class Document;
+class PrefetchCandidates;
+enum class SpeculationRuleParseError;
 
 class SpeculationRuleSet final {
  public:
@@ -34,6 +37,10 @@ class SpeculationRuleSet final {
 
   static void ReportParseError(nsIGlobalObject* aGlobal,
                                SpeculationRuleParseError aError);
+
+  void ConsiderLoads(PrefetchCandidates* aCandidates);
+
+  void SetUseCounters(Document& aDocument) const;
 };
 
 }  // namespace mozilla::dom

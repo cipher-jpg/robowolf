@@ -358,14 +358,6 @@ bool FFmpegVideoDecoder<LIBAV_VER>::CreateVulkanDeviceContext(
     return false;
   }
 
-  // Create FFmpeg context with the selected device
-  AVDictionary* opts = nullptr;
-  auto cleanupDict = MakeScopeExit([&] {
-    if (opts) {
-      mLib->av_dict_free(&opts);
-    }
-  });
-
   const char* device_extensions =
       "VK_KHR_timeline_semaphore+"
       "VK_KHR_external_memory_fd+"
@@ -382,18 +374,19 @@ bool FFmpegVideoDecoder<LIBAV_VER>::CreateVulkanDeviceContext(
       "VK_KHR_internally_synchronized_queues+"
 #    endif
       "VK_KHR_video_decode_av1";
-  mLib->av_dict_set(&opts, "device_extensions", device_extensions, 0);
 
-  int ret = mLib->av_hwdevice_ctx_create(
-      &mVulkanDeviceContext, AV_HWDEVICE_TYPE_VULKAN,
-      mVulkanDecoder.mNegotiatedVulkanDeviceName, opts, 0);
-  if (ret < 0) {
-    FFMPEG_LOG("av_hwdevice_ctx_create failed for {}",
+  // Share one VkDevice across all decoders in the process to avoid paying
+  // vkCreateDevice per stream.
+  mVulkanDeviceHolder = VulkanDeviceHolder::GetOrCreate(
+      mLib, mVulkanDecoder.mNegotiatedVulkanDeviceName, device_extensions);
+  if (!mVulkanDeviceHolder) {
+    FFMPEG_LOG("VulkanDeviceHolder::GetOrCreate failed for {}",
                mVulkanDecoder.mNegotiatedVulkanDeviceName);
     return false;
   }
 
-  mCodecContext->hw_device_ctx = mLib->av_buffer_ref(mVulkanDeviceContext);
+  mVulkanDeviceContext = mVulkanDeviceHolder->Ref();
+  mCodecContext->hw_device_ctx = mVulkanDeviceHolder->Ref();
 
   AVHWDeviceContext* devCtx = (AVHWDeviceContext*)mVulkanDeviceContext->data;
   AVVulkanDeviceContext* vkCtx = (AVVulkanDeviceContext*)devCtx->hwctx;
@@ -441,7 +434,18 @@ int FFmpegVideoDecoder<LIBAV_VER>::ChooseVulkanPixelFormatFromContext(
           (mVulkanDecoder.mDrmModifiers[0] == DRM_FORMAT_MOD_LINEAR) &&
           (mVulkanDecoder.mDrmModifiers.size() == 1);
     }
-    if (VulkanDirectDecodeExportEnabled() && !drmModsAreLinearOrEmpty) {
+    // Forced BL means ImageFormatProperties2 rejected YCbCr tiled modifiers, so
+    // the decode image cannot reliably use DRM-modifier tiling. Keep BL only
+    // for the copy-path export buffers; skip direct export (avoids GL import
+    // hangs and a useless LINEAR decode path that would double-copy).
+    if (VulkanDirectDecodeExportEnabled() &&
+        mVulkanDecoder.mForcedNvidiaBlockLinear) {
+      FFMPEGV_LOG(
+          "[VULKAN] Direct export disabled: forced NVIDIA BL after "
+          "ImageFormatProperties2 left only LINEAR");
+    }
+    if (VulkanDirectDecodeExportEnabled() &&
+        !mVulkanDecoder.mForcedNvidiaBlockLinear && !drmModsAreLinearOrEmpty) {
       AVVulkanFramesContext* hwfc = (AVVulkanFramesContext*)frames_ctx->hwctx;
       void* const originalCreatePnext = hwfc->create_pnext;
       int formatCount = 0;
@@ -621,6 +625,27 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::InitVulkanDecoder() {
     FFMPEG_LOG("Vulkan FFmpeg decoder disabled by pref");
     return NS_ERROR_NOT_AVAILABLE;
   }
+
+#    if LIBAVCODEC_VERSION_MAJOR == 60
+  // libavcodec 60 only supports the experimental VK_MESA_video_decode_av1,
+  // but RADV replaced it with stable VK_KHR_video_decode_av1 in Mesa 24.1.
+  // Skip Vulkan AV1 decoding so VA-API can take over.
+  if (mCodecID == AV_CODEC_ID_AV1) {
+    FFMPEG_LOG(
+        "Vulkan AV1 decode KHR extension is unavailable with libavcodec 60; "
+        "falling back");
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+#    endif
+
+#    if LIBAVCODEC_VERSION_MAJOR < 62
+  if (mCodecID == AV_CODEC_ID_VP9) {
+    FFMPEG_LOG(
+        "Vulkan VP9 decoding requires libavcodec 62 or newer; trying another "
+        "hardware decoder");
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+#    endif
 
   FFMPEG_LOG("Initialising Vulkan FFmpeg decoder");
 
@@ -1436,73 +1461,6 @@ static bool IsKeyFrame(const AVFrame* aFrame) {
 #endif
 }
 
-#if LIBAVCODEC_VERSION_MAJOR >= 58
-void FFmpegVideoDecoder<LIBAV_VER>::DecodeStats::DecodeStart() {
-  mDecodeStart = TimeStamp::Now();
-}
-
-bool FFmpegVideoDecoder<LIBAV_VER>::DecodeStats::IsDecodingSlow() const {
-  return mDecodedFramesLate > mMaxLateDecodedFrames;
-}
-
-void FFmpegVideoDecoder<LIBAV_VER>::DecodeStats::UpdateDecodeTimes(
-    int64_t aDuration) {
-  TimeStamp now = TimeStamp::Now();
-  double decodeTime = (now - mDecodeStart).ToMilliseconds();
-  mDecodeStart = now;
-
-  const double frameDuration = AssertedCast<double>(aDuration) / 1000.0;
-  if (frameDuration <= 0.0) {
-    FFMPEGV_LOG("Incorrect frame duration, skipping decode stats.");
-    return;
-  }
-
-  mDecodedFrames++;
-  mAverageFrameDuration =
-      (mAverageFrameDuration * AssertedCast<double>(mDecodedFrames - 1) +
-       frameDuration) /
-      AssertedCast<double>(mDecodedFrames);
-  mAverageFrameDecodeTime =
-      (mAverageFrameDecodeTime * AssertedCast<double>(mDecodedFrames - 1) +
-       decodeTime) /
-      AssertedCast<double>(mDecodedFrames);
-
-  FFMPEGV_LOG(
-      "Frame decode takes {:.2f} ms average decode time {:.2f} ms frame "
-      "duration "
-      "{:.2f} average frame duration {:.2f} decoded {} frames\n",
-      decodeTime, mAverageFrameDecodeTime, frameDuration, mAverageFrameDuration,
-      mDecodedFrames);
-
-  // Frame duration and frame decode times may vary and may not
-  // neccessarily lead to video playback failure.
-  //
-  // Checks frame decode time and recent frame duration and also
-  // frame decode time and average frame duration (video fps).
-  //
-  // Log a problem only if both indicators fails.
-  if (decodeTime > frameDuration && decodeTime > mAverageFrameDuration) {
-    PROFILER_MARKER_TEXT("FFmpegVideoDecoder::DoDecode", MEDIA_PLAYBACK, {},
-                         "frame decode takes too long");
-    mDecodedFramesLate++;
-    mLastDelayedFrameNum = mDecodedFrames;
-    FFMPEGV_LOG("  slow decode: failed to decode in time (decoded late {})",
-                mDecodedFramesLate);
-  } else if (mLastDelayedFrameNum) {
-    // Reset mDecodedFramesLate in case of correct decode during
-    // mDelayedFrameReset period.
-    double correctPlaybackTime =
-        AssertedCast<double>(mDecodedFrames - mLastDelayedFrameNum) *
-        mAverageFrameDuration;
-    if (correctPlaybackTime > mDelayedFrameReset) {
-      FFMPEGV_LOG("  mLastFramePts reset due to seamless decode period");
-      mDecodedFramesLate = 0;
-      mLastDelayedFrameNum = 0;
-    }
-  }
-}
-#endif
-
 MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     MediaRawData* aSample, uint8_t* aData, int aSize, bool* aGotFrame,
     MediaDataDecoder::DecodedData& aResults) {
@@ -2228,10 +2186,21 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImageVulkan(
 
   auto* devCtx = (AVHWDeviceContext*)mVulkanDeviceContext->data;
   auto* vkDevCtx = (AVVulkanDeviceContext*)devCtx->hwctx;
-  if (!mVulkanDecoder.InitCtx(
-          vkDevCtx->act_dev, vkDevCtx->phys_dev, vkDevCtx->get_proc_addr,
-          vkDevCtx->inst,
-          (uint32_t)std::max<int>(vkDevCtx->queue_family_tx_index, 0))) {
+  uint32_t txQueueFamily = 0;
+#    if LIBAVCODEC_VERSION_MAJOR >= 63
+  // FFmpeg 63 replaced queue_family_tx_index with the qf array.
+  for (int i = 0; i < vkDevCtx->nb_qf; i++) {
+    if (vkDevCtx->qf[i].flags & VK_QUEUE_TRANSFER_BIT) {
+      txQueueFamily = (uint32_t)std::max(vkDevCtx->qf[i].idx, 0);
+      break;
+    }
+  }
+#    else
+  txQueueFamily = (uint32_t)std::max<int>(vkDevCtx->queue_family_tx_index, 0);
+#    endif
+  if (!mVulkanDecoder.InitCtx(vkDevCtx->act_dev, vkDevCtx->phys_dev,
+                              vkDevCtx->get_proc_addr, vkDevCtx->inst,
+                              txQueueFamily)) {
     return MediaResult(
         NS_ERROR_DOM_MEDIA_FATAL_ERR,
         RESULT_DETAIL("Failed to init Vulkan Context structure"));

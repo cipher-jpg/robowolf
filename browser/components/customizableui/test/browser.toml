@@ -294,6 +294,7 @@ skip-if = [
 
 ["browser_customization_context_menus.js"]
 skip-if = [
+  "nova", # Bug 2057926
   "os == 'win' && standalone", # Bug 2028648
 ]
 
@@ -315,6 +316,9 @@ https_first_disabled = true
 ["browser_flexible_space_area.js"]
 
 ["browser_help_panel_cloning.js"]
+skip-if = [
+  "nova", # Bug 2057935
+]
 
 ["browser_hidden_widget_overflow.js"]
 
@@ -367,9 +371,12 @@ tags = "fullscreen"
 
 ["browser_panelUINotifications_multiWindow.js"]
 
-["browser_panelUINotifications_novaUpdatePromo.js"]
+["browser_panelUINotifications_novaUpdateBanner.js"]
 
 ["browser_panel_keyboard_navigation.js"]
+skip-if = [
+  "nova", # Bug 2058027
+]
 
 ["browser_panel_locationSpecific.js"]
 
@@ -457,6 +464,8 @@ skip-if = [
 ]
 
 ["browser_uidensity_auto_compact.js"]
+
+["browser_uidensity_auto_touch.js"]
 
 ["browser_unified_extensions_reset.js"]
 

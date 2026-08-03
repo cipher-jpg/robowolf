@@ -131,24 +131,6 @@ def enable_decorators(value):
 set_config("ENABLE_DECORATORS", enable_decorators)
 set_define("ENABLE_DECORATORS", enable_decorators)
 
-# Enable explicit resource management
-# ===================================================
-option(
-    "--disable-explicit-resource-management",
-    default=True,
-    help="{Enable|Disable} explicit resource management",
-)
-
-
-@depends("--disable-explicit-resource-management")
-def enable_explicit_resource_management(value):
-    if value:
-        return True
-
-
-set_config("ENABLE_EXPLICIT_RESOURCE_MANAGEMENT", enable_explicit_resource_management)
-set_define("ENABLE_EXPLICIT_RESOURCE_MANAGEMENT", enable_explicit_resource_management)
-
 # Portable Baseline Intepreter
 # =======================================================
 option(
@@ -560,6 +542,23 @@ def jit_disasm_riscv(jit_enabled, spew, simulator, target, debug):
 
 set_config("JS_DISASM_RISCV64", jit_disasm_riscv)
 set_define("JS_DISASM_RISCV64", jit_disasm_riscv)
+
+
+@depends("--enable-jit", "--enable-jitspew", simulator, target, moz_debug)
+def jit_disasm_loong64(jit_enabled, spew, simulator, target, debug):
+    if not jit_enabled:
+        return
+
+    if simulator and (debug or spew):
+        if getattr(simulator, "loong64", None):
+            return True
+
+    if target.cpu == "loongarch64" and (debug or spew):
+        return True
+
+
+set_config("JS_DISASM_LOONG64", jit_disasm_loong64)
+set_define("JS_DISASM_LOONG64", jit_disasm_loong64)
 
 
 @depends("--enable-jit", "--enable-jitspew", simulator, target, moz_debug)

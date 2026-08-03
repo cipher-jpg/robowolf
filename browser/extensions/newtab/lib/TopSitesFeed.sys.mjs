@@ -15,6 +15,10 @@ import {
 import { TippyTopProvider } from "resource:///modules/topsites/TippyTopProvider.sys.mjs";
 import { insertPinned } from "resource:///modules/topsites/TopSites.sys.mjs";
 import { TOP_SITES_MAX_SITES_PER_ROW } from "resource:///modules/topsites/constants.mjs";
+// @backward-compat { version 154 }
+// Sourced from Reducers for its fallback shim. When 154 hits Release, import
+// TOP_SITES_MAX_ROWS from the constants.mjs import above instead.
+import { TOP_SITES_MAX_ROWS } from "resource://newtab/common/Reducers.sys.mjs";
 import { Dedupe } from "resource:///modules/Dedupe.sys.mjs";
 
 import {
@@ -33,6 +37,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ContextId: "moz-src:///browser/modules/ContextId.sys.mjs",
   FilterAdult: "resource:///modules/FilterAdult.sys.mjs",
   LinksCache: "resource:///modules/LinksCache.sys.mjs",
+  MozAdsPlacementRequest:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustAdsClient.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   ObliviousHTTP: "resource://gre/modules/ObliviousHTTP.sys.mjs",
@@ -653,66 +659,7 @@ export class ContileIntegration {
       if (!adsFeedEnabled) {
         // Fetch tiles via UAPI service directly from TopSitesFeed.sys.mjs
         if (unifiedAdsTilesEnabled) {
-          let fetchPromise;
-          const marsOhttpEnabled = Services.prefs.getBoolPref(
-            "browser.newtabpage.activity-stream.unifiedAds.ohttp.enabled",
-            false
-          );
-          const ohttpRelayURL = Services.prefs.getStringPref(
-            "browser.newtabpage.activity-stream.discoverystream.ohttp.relayURL",
-            ""
-          );
-          const ohttpConfigURL = Services.prefs.getStringPref(
-            "browser.newtabpage.activity-stream.discoverystream.ohttp.configURL",
-            ""
-          );
-          const headers = new Headers();
-          headers.append("content-type", "application/json");
-
-          const endpointBaseUrl = state.Prefs.values[PREF_UNIFIED_ADS_ENDPOINT];
-
-          // We need some basic data that we can pass along to the ohttp request.
-          // We purposefully don't use ohttp on this request. We also expect to
-          // mostly hit the HTTP cache rather than the network with these requests.
-          if (marsOhttpEnabled) {
-            const preflightResponse = await this._topSitesFeed.fetch(
-              `${endpointBaseUrl}v1/ads-preflight`,
-              {
-                method: "GET",
-              }
-            );
-            const preFlight = await preflightResponse.json();
-
-            if (preFlight) {
-              // If we don't get a normalized_ua, it means it matched the default userAgent.
-              headers.append(
-                "X-User-Agent",
-                preFlight.normalized_ua || lazy.userAgent
-              );
-              headers.append("X-Geoname-ID", preFlight.geoname_id);
-              headers.append("X-Geo-Location", preFlight.geo_location);
-            }
-          }
-
-          let blockedSponsors =
-            this._topSitesFeed.store.getState().Prefs.values[
-              PREF_UNIFIED_ADS_BLOCKED_LIST
-            ];
-
-          // Also block the user's current default search engine hostname so
-          // MARS returns a substitute sponsor instead of leaving us short.
-          const blocksList = Array.from(
-            new Set(
-              blockedSponsors
-                .split(",")
-                .concat(this._topSitesFeed._currentSearchHostname || [])
-                .filter(item => item)
-            )
-          );
-
-          // Overwrite URL to Unified Ads endpoint
-          const fetchUrl = `${endpointBaseUrl}v1/ads`;
-
+          // Shared set up for manual MARS call and ads-client calls
           const placementsArray = state.Prefs.values[
             PREF_UNIFIED_ADS_PLACEMENTS
           ]?.split(`,`)
@@ -725,60 +672,125 @@ export class ContileIntegration {
             .filter(item => item)
             .map(item => parseInt(item, 10));
 
-          const controller = new AbortController();
-          const { signal } = controller;
-
-          const adsBackendConfig = state.Prefs.values?.adsBackendConfig || {};
-
-          const options = {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              context_id: await lazy.ContextId.request(),
-              flags: adsBackendConfig,
-              placements: placementsArray.map((placement, index) => ({
-                placement,
-                count: countsArray[index],
-              })),
-              blocks: blocksList,
-            }),
-            credentials: "omit",
-            signal,
-          };
-
-          if (marsOhttpEnabled && ohttpConfigURL && ohttpRelayURL) {
-            const config =
-              await lazy.ObliviousHTTP.getOHTTPConfig(ohttpConfigURL);
-            if (!config) {
-              console.error(
-                new Error(
-                  `OHTTP was configured for ${fetchUrl} but we couldn't fetch a valid config`
-                )
-              );
-              return null;
-            }
-
-            // ObliviousHTTP.ohttpRequest only accepts a key/value object, and not
-            // a Headers instance. We normalize any headers to a key/value object.
-            //
-            // We use instanceof here since isInstance isn't available for
-            // Headers, it seems.
-            // eslint-disable-next-line mozilla/use-isInstance
-            if (options.headers && options.headers instanceof Headers) {
-              options.headers = Object.fromEntries(options.headers);
-            }
-
-            fetchPromise = lazy.ObliviousHTTP.ohttpRequest(
-              ohttpRelayURL,
-              config,
-              fetchUrl,
-              options
-            );
+          if (this._topSitesFeed.adsClient) {
+            body = await this._fetchSitesWithAdsClient(placementsArray);
           } else {
-            fetchPromise = this._topSitesFeed.fetch(fetchUrl, options);
-          }
+            let fetchPromise;
+            const marsOhttpEnabled = Services.prefs.getBoolPref(
+              "browser.newtabpage.activity-stream.unifiedAds.ohttp.enabled",
+              false
+            );
+            const ohttpRelayURL = Services.prefs.getStringPref(
+              "browser.newtabpage.activity-stream.discoverystream.ohttp.relayURL",
+              ""
+            );
+            const ohttpConfigURL = Services.prefs.getStringPref(
+              "browser.newtabpage.activity-stream.discoverystream.ohttp.configURL",
+              ""
+            );
+            const headers = new Headers();
+            headers.append("content-type", "application/json");
 
-          response = await fetchPromise;
+            const endpointBaseUrl =
+              state.Prefs.values[PREF_UNIFIED_ADS_ENDPOINT];
+
+            // We need some basic data that we can pass along to the ohttp request.
+            // We purposefully don't use ohttp on this request. We also expect to
+            // mostly hit the HTTP cache rather than the network with these requests.
+            if (marsOhttpEnabled) {
+              const preflightResponse = await this._topSitesFeed.fetch(
+                `${endpointBaseUrl}v1/ads-preflight`,
+                {
+                  method: "GET",
+                }
+              );
+              const preFlight = await preflightResponse.json();
+
+              if (preFlight) {
+                // If we don't get a normalized_ua, it means it matched the default userAgent.
+                headers.append(
+                  "X-User-Agent",
+                  preFlight.normalized_ua || lazy.userAgent
+                );
+                headers.append("X-Geoname-ID", preFlight.geoname_id);
+                headers.append("X-Geo-Location", preFlight.geo_location);
+              }
+            }
+
+            let blockedSponsors =
+              this._topSitesFeed.store.getState().Prefs.values[
+                PREF_UNIFIED_ADS_BLOCKED_LIST
+              ];
+
+            // Also block the user's current default search engine hostname so
+            // MARS returns a substitute sponsor instead of leaving us short.
+            const blocksList = Array.from(
+              new Set(
+                blockedSponsors
+                  .split(",")
+                  .concat(this._topSitesFeed._currentSearchHostname || [])
+                  .filter(item => item)
+              )
+            );
+
+            // Overwrite URL to Unified Ads endpoint
+            const fetchUrl = `${endpointBaseUrl}v1/ads`;
+
+            const controller = new AbortController();
+            const { signal } = controller;
+
+            const adsBackendConfig = state.Prefs.values?.adsBackendConfig || {};
+
+            const options = {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                context_id: await lazy.ContextId.request(),
+                flags: adsBackendConfig,
+                placements: placementsArray.map((placement, index) => ({
+                  placement,
+                  count: countsArray[index],
+                })),
+                blocks: blocksList,
+              }),
+              credentials: "omit",
+              signal,
+            };
+
+            if (marsOhttpEnabled && ohttpConfigURL && ohttpRelayURL) {
+              const config =
+                await lazy.ObliviousHTTP.getOHTTPConfig(ohttpConfigURL);
+              if (!config) {
+                console.error(
+                  new Error(
+                    `OHTTP was configured for ${fetchUrl} but we couldn't fetch a valid config`
+                  )
+                );
+                return null;
+              }
+
+              // ObliviousHTTP.ohttpRequest only accepts a key/value object, and not
+              // a Headers instance. We normalize any headers to a key/value object.
+              //
+              // We use instanceof here since isInstance isn't available for
+              // Headers, it seems.
+              // eslint-disable-next-line mozilla/use-isInstance
+              if (options.headers && options.headers instanceof Headers) {
+                options.headers = Object.fromEntries(options.headers);
+              }
+
+              fetchPromise = lazy.ObliviousHTTP.ohttpRequest(
+                ohttpRelayURL,
+                config,
+                fetchUrl,
+                options
+              );
+            } else {
+              fetchPromise = this._topSitesFeed.fetch(fetchUrl, options);
+            }
+
+            response = await fetchPromise;
+          }
         } else {
           // (Default) Fetch tiles via Contile service from TopSitesFeed.sys.mjs
           const fetchUrl = Services.prefs.getStringPref(CONTILE_ENDPOINT_PREF);
@@ -903,6 +915,42 @@ export class ContileIntegration {
       return await this._loadTilesFromCache();
     }
     return false;
+  }
+
+  async _fetchSitesWithAdsClient(placements) {
+    const options = lazy.AdsClient.requestOptions();
+
+    const requests = placements.map(
+      placementId =>
+        new lazy.MozAdsPlacementRequest({
+          placementId,
+          iabContent: null,
+        })
+    );
+
+    const tiles = await this._topSitesFeed.adsClient.requestTileAds(
+      requests,
+      options
+    );
+
+    return Object.fromEntries(
+      tiles.entries().map(([placementId, tile]) => [
+        placementId,
+        [
+          {
+            block_key: tile.blockKey,
+            name: tile.name,
+            url: tile.url,
+            image_url: tile.imageUrl,
+            callbacks: {
+              impression: tile.callbacks.impression,
+              click: tile.callbacks.click,
+            },
+            // Attributions are not returned from MAC
+          },
+        ],
+      ])
+    );
   }
 }
 
@@ -2226,7 +2274,6 @@ export class TopSitesFeed {
     }
     pinnedLinks._links = next;
     pinnedLinks.save();
-    this.pinnedCache.expire();
   }
 
   /**
@@ -2296,8 +2343,19 @@ export class TopSitesFeed {
       // position instead of jumping to the end.
       pins.splice(existingIndex, 0, toPin);
     } else {
-      // A fresh pin (context-menu / search) appends to the group.
+      // A fresh pin (context-menu / search / add button) appends to the group.
       pins.push(toPin);
+      // Grouped-pins growth (classic mode grows in pin() instead). Adding to the
+      // group pushes the last frecency tile off the visible grid. If the grid is
+      // already full of pins there's nothing to push off, so grow by a row instead.
+      const prefs = this.store.getState().Prefs.values;
+      const { rows } = this.store.getState().TopSites;
+      if (
+        rows[getTopSitesCount(prefs) - 1]?.isPinned &&
+        prefs[ROWS_PREF] < TOP_SITES_MAX_ROWS
+      ) {
+        this.store.dispatch(ac.SetPref(ROWS_PREF, prefs[ROWS_PREF] + 1));
+      }
     }
     this._saveGroupedPins(pins);
 
@@ -2320,10 +2378,39 @@ export class TopSitesFeed {
    */
   async pin(action) {
     let { site, index } = action.data;
+    // Grow keys on the requested slot, not the sponsor-adjusted pin position.
+    const requestedIndex = index;
     index = this._adjustPinIndexForSponsoredLinks(site, index);
     // If valid index provided, pin at that position
     if (index >= 0) {
-      await this._pinSiteAt(site, index);
+      const prefs = this.store.getState().Prefs.values;
+      // Classic add button on a full row: replace the last visible frecency tile,
+      // matching how a grouped pin pushes the trailing frecency tile off the grid.
+      // Fall back to growing a row only when there's no organic tile to replace.
+      const count = getTopSitesCount(prefs);
+      const pinsPastGrid = !this._groupedPinsEnabled && requestedIndex >= count;
+      let evictIndex = -1;
+      if (pinsPastGrid) {
+        const { rows } = this.store.getState().TopSites;
+        for (let i = count - 1; i >= 0; i--) {
+          const link = rows[i];
+          if (link && !link.isPinned && !link.sponsored_position) {
+            evictIndex = i;
+            break;
+          }
+        }
+      }
+      if (evictIndex >= 0) {
+        await this._pinSiteAt(
+          site,
+          this._adjustPinIndexForSponsoredLinks(site, evictIndex)
+        );
+      } else {
+        await this._pinSiteAt(site, index);
+        if (pinsPastGrid && prefs[ROWS_PREF] < TOP_SITES_MAX_ROWS) {
+          this.store.dispatch(ac.SetPref(ROWS_PREF, prefs[ROWS_PREF] + 1));
+        }
+      }
       this._broadcastPinnedSitesUpdated();
     } else {
       // Bug 1458658. If the top site is being pinned from an 'Add a Top Site' option,

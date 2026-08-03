@@ -754,6 +754,11 @@ NS_IMETHODIMP EditorBase::GetIsSelectionEditable(bool* aIsSelectionEditable) {
 }
 
 bool EditorBase::IsSelectionEditable() {
+  if (ComputeEditContext()) {
+    // If there's an active EditContext, then we should always allow
+    // editing commands even if the DOM selection is not editable.
+    return true;
+  }
   AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return false;
@@ -879,6 +884,13 @@ nsresult EditorBase::GetSelection(SelectionType aSelectionType,
                               ToRawSelectionType(aSelectionType)))
                     .take();
   return NS_WARN_IF(!*aSelection) ? NS_ERROR_FAILURE : NS_OK;
+}
+
+nsFrameSelection* EditorBase::GetEditableFrameSelection() const {
+  EditContext* editContext = GetEditActionEditContext();
+  return editContext && editContext->IsCanvas()
+             ? nullptr
+             : SelectionRef().GetFrameSelection();
 }
 
 nsresult EditorBase::DoTransactionInternal(nsITransaction* aTransaction) {
@@ -1987,6 +1999,17 @@ nsresult EditorBase::PasteAsAction(nsIClipboard::ClipboardType aClipboardType,
         return EditorBase::ToGenericNSResult(rv);
       }
     }
+    // Active EditContext could have changed in the paste handler.
+    if (RefPtr<Document> document = GetDocument()) {
+      // In certain cases, we don't update the active EditContext synchronously,
+      // such as setting contenteditable on an ancestor of the focused
+      // EditContext editor. So we need to ensure that it's up-to-date now.
+      // TODO: Perhaps we can still update the active EditContext synchronously,
+      //       and just fire events asynchronously in these cases?
+      //       See https://github.com/w3c/edit-context/issues/127
+      document->UpdateTextEditContext();
+    }
+    editActionData.UpdateEditContext();
   } else {
     // The caller must already have dispatched a "paste" event.
     editActionData.NotifyOfDispatchingClipboardEvent();
@@ -4131,16 +4154,21 @@ nsresult EditorBase::OnCompositionChange(
     TextComposition::CompositionChangeEventHandlingMarker
         compositionChangeEventHandlingMarker(mComposition,
                                              &aCompositionChangeEvent);
-    AutoPlaceholderBatch treatAsOneTransaction(*this, *nsGkAtoms::IMETxnName,
-                                               ScrollSelectionIntoView::Yes,
-                                               __FUNCTION__);
-
+    Maybe<AutoPlaceholderBatch> treatAsOneTransaction;
+    // We don't need the placeholder transaction for EditContext, and it
+    // causes issues to create one here since InsertTextAsSubAction
+    // can blur the editor (in the textupdate handler) which
+    // recursively calls OnCompositionChange.
+    if (!GetEditActionEditContext()) {
+      treatAsOneTransaction.emplace(*this, *nsGkAtoms::IMETxnName,
+                                    ScrollSelectionIntoView::Yes, __FUNCTION__);
+      MOZ_ASSERT(mIsInEditSubAction,
+                 "AutoPlaceholderBatch should've notified the observers of "
+                 "before-edit");
+    }
     // XXX Why don't we get caret after the DOM mutation?
     RefPtr<nsCaret> caret = GetCaretForSelection();
 
-    MOZ_ASSERT(
-        mIsInEditSubAction,
-        "AutoPlaceholderBatch should've notified the observes of before-edit");
     // If we're updating composition, we need to ignore normal selection
     // which may be updated by the web content.
     const auto purpose = [&]() -> InsertTextFor {
@@ -4163,9 +4191,13 @@ nsresult EditorBase::OnCompositionChange(
   }
 
   if (RefPtr editContext = editActionData.GetEditContext()) {
-    RefPtr<TextRangeArray> ranges = mComposition->GetRanges();
-    editContext->FireTextFormatUpdate(
-        ranges, mComposition->ClampedStartOffsetInTextNode());
+    RefPtr<TextRangeArray> ranges;
+    uint32_t offset = 0;
+    if (mComposition) {
+      ranges = mComposition->GetRanges();
+      offset = mComposition->ClampedStartOffsetInTextNode();
+    }
+    editContext->FireTextFormatUpdate(ranges, offset);
     if (NS_WARN_IF(Destroyed())) {
       return Err(NS_ERROR_EDITOR_DESTROYED);
     }
@@ -4180,13 +4212,13 @@ nsresult EditorBase::OnCompositionChange(
   // compositionend event, we don't need to notify editor observes of this
   // change even if it's preferred by the pref.
   // NOTE: We must notify after the auto batch will be gone.
-  if (!aCompositionChangeEvent.IsFollowedByCompositionEnd()) {
+  if (!aCompositionChangeEvent.IsFollowedByCompositionEnd() && mComposition) {
     // If we're a TextEditor, we'll be initialized with a new anonymous subtree,
     // which can be caused by reframing from a "input" event listener.  At that
     // time, we'll move composition from current text node to the new text node
     // with using mComposition's data.  Therefore, it's important that
     // mComposition already has the latest information here.
-    MOZ_ASSERT_IF(mComposition, mComposition->String() == data);
+    MOZ_ASSERT(mComposition->String() == data);
     NotifyEditorObservers(eNotifyEditorObserversOfEnd);
   }
   // NOTE: When the pref is enabled, the last `input` event which will be fired
@@ -5895,7 +5927,14 @@ nsresult EditorBase::InitializeSelection(
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
       "nsISelectionController::SetCaretReadOnly() failed, but ignored");
-  rvIgnored = selectionController->SetCaretEnabled(true);
+  const bool isCanvasEditContext =
+      selectionRootContent->HasFlag(ELEMENT_HAS_EDIT_CONTEXT) &&
+      selectionRootContent->IsHTMLElement(nsGkAtoms::canvas);
+  // <canvas>-based EditContext shouldn't enable the caret, even in
+  // caret browsing mode, since it's the web app's responsibility to
+  // render it, and the arrow keys should be interacting with the text
+  // rendered to the canvas.
+  rvIgnored = selectionController->SetCaretEnabled(!isCanvasEditContext);
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
       "nsISelectionController::SetCaretEnabled() failed, but ignored");
@@ -6516,7 +6555,7 @@ void EditorBase::AutoCaretBidiLevelManager::Init(
 
   // XXX Not sure whether this requires strong reference here.
   RefPtr<nsFrameSelection> frameSelection =
-      aEditorBase.SelectionRef().GetFrameSelection();
+      aEditorBase.GetEditableFrameSelection();
   if (NS_WARN_IF(!frameSelection)) {
     mFailed = true;
     return;
@@ -6556,7 +6595,7 @@ void EditorBase::AutoCaretBidiLevelManager::MaybeUpdateCaretBidiLevel(
     return;
   }
   RefPtr<nsFrameSelection> frameSelection =
-      aEditorBase.SelectionRef().GetFrameSelection();
+      aEditorBase.GetEditableFrameSelection();
   MOZ_ASSERT(frameSelection);
   frameSelection->SetCaretBidiLevelAndMaybeSchedulePaint(
       mNewCaretBidiLevel.value());
@@ -6573,7 +6612,7 @@ void EditorBase::UndefineCaretBidiLevel() const {
    * So we set the caret Bidi level to UNDEFINED here, and the caret code will
    * set it correctly later
    */
-  nsFrameSelection* frameSelection = SelectionRef().GetFrameSelection();
+  nsFrameSelection* frameSelection = GetEditableFrameSelection();
   if (frameSelection) {
     frameSelection->UndefineCaretBidiLevel();
   }
@@ -6671,7 +6710,9 @@ nsresult EditorBase::InsertTextAsAction(const nsAString& aStringToInsert,
 nsresult EditorBase::InsertTextAsSubAction(const nsAString& aStringToInsert,
                                            InsertTextFor aPurpose) {
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(mPlaceholderBatch);
+  // For EditContext, we don't need a placeholder batch since
+  // there is no undo/redo.
+  MOZ_ASSERT(mPlaceholderBatch || GetEditActionEditContext());
   MOZ_ASSERT(IsHTMLEditor() ||
              aStringToInsert.FindChar(nsCRT::CR) == kNotFound);
   MOZ_ASSERT_IF(aPurpose == InsertTextFor::CompositionStart ||
@@ -6927,6 +6968,13 @@ EditorBase::AutoEditActionDataSetter::SelectionLimitersAndCaretData() const {
     return LimitersAndCaretData{*frameSelection};
   }
   return {};
+}
+
+void EditorBase::AutoEditActionDataSetter::UpdateEditContext() {
+  MOZ_ASSERT(!mHasTriedToDispatchBeforeInputEvent,
+             "It's too late to update EditContext since this may have "
+             "already dispatched a beforeinput event");
+  mEditContext = mEditorBase.ComputeEditContext();
 }
 
 void EditorBase::AutoEditActionDataSetter::SetColorData(

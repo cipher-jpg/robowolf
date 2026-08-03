@@ -10,9 +10,9 @@
 #ifdef MOZ_LOGGING
 #  undef LOG
 #  undef LOGVERBOSE
+#  include "Units.h"
 #  include "mozilla/Logging.h"
 #  include "nsTArray.h"
-#  include "Units.h"
 extern mozilla::LazyLogModule gWidgetCompositorLog;
 #  define LOG(str, ...)                                     \
     MOZ_LOG(gWidgetCompositorLog, mozilla::LogLevel::Debug, \
@@ -304,7 +304,8 @@ UniquePtr<MozFramebuffer> SurfacePoolWayland::CreateFramebufferForTexture(
   // new depth buffer and store a weak pointer to the new depth buffer in
   // mDepthBuffers.
   UniquePtr<MozFramebuffer> fb = MozFramebuffer::CreateForBacking(
-      aGL, aSize, 0, aNeedsDepthBuffer, LOCAL_GL_TEXTURE_2D, aTexture);
+      aGL, aSize, 0, aNeedsDepthBuffer, aNeedsDepthBuffer, LOCAL_GL_TEXTURE_2D,
+      aTexture);
   if (fb && fb->GetDepthAndStencilBuffer()) {
     mDepthBuffers.AppendElement(
         DepthBufferEntry{aGL, aSize, fb->GetDepthAndStencilBuffer().get()});

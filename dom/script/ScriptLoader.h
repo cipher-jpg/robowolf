@@ -5,17 +5,17 @@
 #ifndef mozilla_dom_ScriptLoader_h
 #define mozilla_dom_ScriptLoader_h
 
-#include "ModuleLoader.h"
 #include "SharedScriptCache.h"
 #include "js/TypeDecls.h"
 #include "js/Utility.h"                     // JS::FreePolicy
 #include "js/experimental/CompileScript.h"  // JS::FrontendContext
 #include "js/loader/LoadedScript.h"
-#include "js/loader/ModuleLoaderBase.h"
 #include "js/loader/ScriptKind.h"
 #include "js/loader/ScriptLoadRequest.h"
 #include "js/loader/ScriptLoadRequestList.h"
+#include "js/loader/ScriptLoaderInterface.h"
 #include "mozilla/CORSMode.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/MaybeOneOf.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/dom/ScriptLoadContext.h"
@@ -489,7 +489,8 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
       RequestPriority aRequestPriority, const SRIMetadata& aIntegrity,
       ReferrerPolicy aReferrerPolicy,
       JS::loader::ParserMetadata aParserMetadata,
-      ScriptLoadRequestType aRequestType);
+      ScriptLoadRequestType aRequestType,
+      const nsAString* aMaybePreloadCharset);
 
   /**
    * Helper function to lookup the cache entry and associate it to the
@@ -499,7 +500,8 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
       ReferrerPolicy aReferrerPolicy, ScriptFetchOptions* aFetchOptions,
       nsIURI* aURI, ScriptLoadRequest* aRequest,
       nsIScriptElement* aElement = nullptr, const nsAString& aNonce = u""_ns,
-      ScriptLoadRequestType aRequestType = ScriptLoadRequestType::External);
+      ScriptLoadRequestType aRequestType = ScriptLoadRequestType::External,
+      const Encoding* aClassicScriptFallbackEncoding = nullptr);
 
   /**
    * Helper function to notify network observers for cached request.
@@ -610,6 +612,15 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   nsresult StartLoadInternal(ScriptLoadRequest* aRequest,
                              nsSecurityFlags securityFlags,
                              const Maybe<nsAutoString>& aCharsetForPreload);
+
+  /**
+   * Register a <link rel=modulepreload> request that opened no channel with the
+   * PreloadService, so that the element with the same URL coalesces onto it and
+   * gets its load/error event dispatched. A request that did open a channel is
+   * registered by StartLoadInternal instead, and its event is fired by
+   * ScriptLoadHandler once that channel stops.
+   */
+  void NotifyPreloadCoalescing(ModuleLoadRequest* aRequest);
 
   /**
    * Abort the current stream, and re-start with a new load request from scratch
@@ -745,9 +756,15 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
       JS::MutableHandle<JSScript*> aScript,
       JS::Handle<JSScript*> aDebuggerIntroductionScript, ErrorResult& aRv);
 
-  static nsCString& BytecodeMimeTypeFor(const ScriptLoadRequest* aRequest);
-  static nsCString& BytecodeMimeTypeFor(
-      const JS::loader::LoadedScript* aLoadedScript);
+  static void BytecodeMimeTypeFor(const JS::loader::LoadedScript* aLoadedScript,
+                                  nsAutoCString& aMIMEType);
+
+  // Return the encoding for the classic script, which is used by the
+  // ScriptLoadHandler::TrySetDecoder method when neither the BOM or the charset
+  // is provided in the response.
+  const Encoding* GetClassicScriptFallbackEncoding(
+      nsIScriptElement* aMaybeScriptElement,
+      const nsAString* aMaybePreloadCharset);
 
   // Queue the script load request for caching if we decided to cache it, or
   // cleanup the script load request fields otherwise.

@@ -77,6 +77,8 @@ sidebar-settings2 =
   .label = Settings
 sidebar-hide-tabs-and-sidebar =
   .label = Hide tabs and sidebar
+sidebar-open-tools-from-sidebar =
+  .label = Open tools from sidebar
 sidebar-show-on-the-right =
   .label = Move sidebar to the right
 sidebar-show-on-the-left =
@@ -139,6 +141,28 @@ sidebar-bookmarks-context-menu-delete-bookmark =
   .label = Delete Bookmark
 sidebar-bookmarks-context-menu-delete-separator =
   .label = Delete
+
+## Labels for sidebar open tabs context menu items
+
+# Label for the context menu item that closes the tab the user
+# right-clicked in the Open Tabs sidebar panel.
+sidebar-opentabs-context-close-tab =
+  .label = Close Tab
+
+## Labels for the open tabs panel options menu
+
+# Heading in the Open Tabs panel options menu for the group of
+# tab sorting options, which appear directly beneath this heading.
+sidebar-opentabs-sort-by-heading =
+  .label = Sort by
+
+# Sort option that lists tabs in the order they appear on the tab strip.
+sidebar-opentabs-sort-option-order =
+  .label = Tab order
+
+# Sort option that lists tabs by most recent activity, newest first.
+sidebar-opentabs-sort-option-recency =
+  .label = Recently active
 
 ## Labels for sidebar menu items.
 

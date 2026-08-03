@@ -53,13 +53,6 @@ class SessionHistoryInfo {
                      nsIPrincipal* aPartitionedPrincipalToInherit,
                      nsIPolicyContainer* aPolicyContainer);
 
-  void Reset(nsIURI* aURI, const nsID& aDocShellID, bool aDynamicCreation,
-             nsIPrincipal* aTriggeringPrincipal,
-             nsIPrincipal* aPrincipalToInherit,
-             nsIPrincipal* aPartitionedPrincipalToInherit,
-             nsIPolicyContainer* aPolicyContainer,
-             const nsACString& aContentType);
-
   bool operator==(const SessionHistoryInfo& aInfo) const {
     return false;  // FIXME
   }
@@ -119,6 +112,10 @@ class SessionHistoryInfo {
   void SetStateData(nsStructuredCloneContainer* aStateData) {
     mStateData = aStateData;
   }
+
+  const Maybe<nsString>& GetSrcdocData() const { return mSrcdocData; }
+
+  nsIURI* GetBaseURI() const { return mBaseURI; }
 
   void SetLoadReplace(bool aLoadReplace) { mLoadReplace = aLoadReplace; }
 

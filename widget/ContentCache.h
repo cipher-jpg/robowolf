@@ -7,17 +7,17 @@
 
 #include <stdint.h>
 
-#include "mozilla/widget/IMEData.h"
-#include "mozilla/ipc/IPCForwards.h"
+#include "Units.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ToString.h"
 #include "mozilla/WritingModes.h"
+#include "mozilla/ipc/IPCForwards.h"
+#include "mozilla/widget/IMEData.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "Units.h"
 
 class nsIWidget;
 
@@ -354,8 +354,10 @@ class ContentCacheInChild final : public ContentCache {
       const IMENotification::SelectionChangeDataBase& aSelectionChangeData);
 
  private:
-  bool QueryCharRect(nsIWidget* aWidget, uint32_t aOffset,
-                     LayoutDeviceIntRect& aCharRect) const;
+  // Query first character rect to use as a fallback if there are
+  // no selection ranges, etc.
+  bool QueryFirstCharFallbackRect(nsIWidget* aWidget,
+                                  LayoutDeviceIntRect& aCharRect) const;
   bool QueryCharRectArray(nsIWidget* aWidget, uint32_t aOffset,
                           uint32_t aLength, RectArray& aCharRectArray) const;
   bool CacheSelection(nsIWidget* aWidget,

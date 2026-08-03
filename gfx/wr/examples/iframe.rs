@@ -10,7 +10,7 @@ extern crate winit;
 #[path = "common/boilerplate.rs"]
 mod boilerplate;
 
-use crate::boilerplate::{Example, HandyDandyRectBuilder};
+use crate::boilerplate::{Example, HandyDandyRectBuilder, AU_PER_DEV_PX};
 use webrender::api::*;
 use webrender::render_api::*;
 use webrender::api::units::*;
@@ -38,7 +38,7 @@ impl Example for App {
         let sub_pipeline_id = PipelineId(pipeline_id.0, 42);
         let mut sub_builder = DisplayListBuilder::new(sub_pipeline_id);
         let mut space_and_clip = SpaceAndClipInfo::root_scroll(pipeline_id);
-        sub_builder.begin();
+        sub_builder.begin(AU_PER_DEV_PX);
 
         sub_builder.push_simple_stacking_context(
             space_and_clip.spatial_id,
@@ -69,7 +69,6 @@ impl Example for App {
                 is_2d_scale_translation: false,
                 should_snap: false,
                 paired_with_perspective: false,
-                is_offset_only: false,
             },
         );
 

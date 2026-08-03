@@ -885,6 +885,21 @@ def jxl(value):
 set_config("MOZ_JXL", jxl)
 set_define("MOZ_JXL", jxl)
 
+# Fontations font support
+# ==============================================================
+option("--enable-fontations", help="Enable Fontations for font handling")
+
+
+@depends("--enable-fontations")
+def fontations(value):
+    enabled = bool(value)
+    if enabled:
+        return True
+
+
+set_config("MOZ_FONTATIONS", fontations)
+set_define("MOZ_FONTATIONS", fontations)
+
 set_config("MOZ_SAMPLE_TYPE_FLOAT32", True)
 set_define("MOZ_SAMPLE_TYPE_FLOAT32", True)
 
@@ -1623,6 +1638,8 @@ with only_when(compile_environment & depends(target.os)(lambda os: os != "WINNT"
     set_define("HAVE_SYSIOCCOM_H", check_header("sys/ioccom.h"))
 
     set_config("HAVE_EXECINFO", check_header("execinfo.h"))
+
+    set_config("HAVE_SINGLE_THREADED_H", check_header("sys/single_threaded.h"))
 
 # Elfhack
 # ==============================================================
@@ -2700,10 +2717,10 @@ def nasm_asflags(target):
 set_config("NASM_ASFLAGS", nasm_asflags)
 
 
-# ANGLE OpenGL->D3D translator for WebGL
+# ANGLE renderer
 # ==============================================================
 
-with only_when(compile_environment & target_is_windows):
+with only_when(compile_environment & (target_is_windows | target_is_osx)):
     set_config("MOZ_ANGLE_RENDERER", True)
 
 with only_when(target_is_windows):

@@ -38,6 +38,8 @@ extern crate idna_glue;
 extern crate ipdl_utils;
 extern crate jog;
 extern crate jsrust_shared;
+#[cfg(feature = "fontations")]
+extern crate fontations_glue;
 #[cfg(feature = "jxl_decoder")]
 extern crate jxl_decoder;
 extern crate kvstore;
@@ -52,6 +54,7 @@ extern crate processtools;
 extern crate profiler_helper;
 extern crate rsdparsa_capi;
 extern crate signature_cache;
+extern crate sitecategories;
 extern crate static_prefs;
 extern crate storage;
 extern crate webrender_bindings;

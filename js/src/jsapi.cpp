@@ -547,11 +547,11 @@ JS_PUBLIC_API void* JS_GetCompartmentPrivate(JS::Compartment* compartment) {
 }
 
 JS_PUBLIC_API void JS_MarkCrossZoneId(JSContext* cx, jsid id) {
-  cx->markId(id);
+  cx->recordRefToId(id);
 }
 
 JS_PUBLIC_API void JS_MarkCrossZoneIdValue(JSContext* cx, const Value& value) {
-  cx->markAtomValue(value);
+  cx->recordRefToValue(value);
 }
 
 JS_PUBLIC_API void JS_SetZoneUserData(JS::Zone* zone, void* data) {
@@ -803,9 +803,16 @@ JS_PUBLIC_API void js::RemapRemoteWindowProxies(
     target.set(targetCompartmentProxy);
   }
 
+  gc::GCRuntime* gc = &cx->runtime()->gc;
   RootedField<JSObject*, 2> deadWrapper(roots);
   for (JSObject*& obj : otherProxies) {
     deadWrapper = obj;
+
+    if (!gc->relocateFinalizationObserverTarget(ObjectValue(*deadWrapper),
+                                                ObjectValue(*target))) {
+      oomUnsafe.crash("js::RemapRemoteWindowProxies");
+    }
+
     js::RemapDeadWrapper(cx, deadWrapper, target);
   }
 }
@@ -2761,12 +2768,16 @@ JS_PUBLIC_API JSString* JS_DecompileScript(JSContext* cx, HandleScript script) {
   if (fun) {
     return JS_DecompileFunction(cx, fun);
   }
-  bool haveSource;
-  if (!ScriptSource::loadSource(cx, script->scriptSource(), &haveSource)) {
+
+  bool loaded;
+  Maybe<ScriptSource::DataReader> reader;
+  if (!script->scriptSource()->tryLoadSource(cx, reader, &loaded)) {
     return nullptr;
   }
-  return haveSource ? JSScript::sourceData(cx, script)
-                    : NewStringCopyZ<CanGC>(cx, "[no source]");
+  MOZ_ASSERT_IF(loaded, (*reader).hasSourceText());
+  return loaded ? (*reader)->substring(cx, script->sourceStart(),
+                                       script->sourceEnd())
+                : NewStringCopyZ<CanGC>(cx, "[no source]");
 }
 
 JS_PUBLIC_API JSString* JS_DecompileFunction(JSContext* cx,
@@ -4594,6 +4605,11 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
     case JSJITCOMPILER_WASM_JIT_OPTIMIZING:
       JS::ContextOptionsRef(cx).setWasmIon(!!value);
       break;
+#ifdef NIGHTLY_BUILD
+    case JSJITCOMPILER_REGEXP_BUFFER_BOUNDARIES:
+      jit::JitOptions.js_regexp_buffer_boundaries = !!value;
+      break;
+#endif
 #ifdef DEBUG
     case JSJITCOMPILER_FULL_DEBUG_CHECKS:
       jit::JitOptions.fullDebugChecks = !!value;

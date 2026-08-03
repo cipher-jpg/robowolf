@@ -317,54 +317,50 @@ addAboutKbTask(async function testChange(tab) {
   await SpecialPowers.spawn(tab, [consts], async _consts => {
     await content.selected;
     is(content.input.value, "Invalid", "Input shows invalid");
-    content.selected = ContentTaskUtils.waitForEvent(
-      content.input.inputEl,
-      "select"
-    );
   });
-  info(`Pressing ${consts.unusedModifiersDisplay}`);
-  EventUtils.synthesizeKey(...consts.unusedModifiersArgs, window);
-  await SpecialPowers.spawn(tab, [consts], async _consts => {
-    await content.selected;
-    is(
-      content.input.value,
-      _consts.unusedModifiersDisplay,
-      "Input shows modifiers as they're pressed"
-    );
-    content.selected = ContentTaskUtils.waitForEvent(
-      content.input.inputEl,
-      "select"
-    );
-  });
-  info(`Pressing Shift+${consts.unusedKey}`);
-  EventUtils.synthesizeKey(consts.unusedKey, { shiftKey: true }, window);
-  await SpecialPowers.spawn(tab, [consts], async _consts => {
-    await content.selected;
-    is(content.input.value, "Invalid", "Input shows invalid");
-    content.selected = ContentTaskUtils.waitForEvent(
-      content.input.inputEl,
-      "select"
-    );
-  });
-  info(`Pressing ${consts.unusedModifiersDisplay}`);
-  EventUtils.synthesizeKey(...consts.unusedModifiersArgs, window);
-  await SpecialPowers.spawn(tab, [consts], async _consts => {
-    await content.selected;
-    is(
-      content.input.value,
-      _consts.unusedModifiersDisplay,
-      "Input shows modifiers as they're pressed"
-    );
-    content.selected = ContentTaskUtils.waitForEvent(
-      content.input.inputEl,
-      "select"
-    );
-  });
-  info("Pressing Backspace");
-  EventUtils.synthesizeKey("KEY_Backspace", {}, window);
-  await SpecialPowers.spawn(tab, [consts], async _consts => {
-    await content.selected;
-    is(content.input.value, "Invalid", "Input shows invalid");
+  // We can't test two invalid keys consecutively because the "invalid" text
+  // won't change, so we can't detect whether the key was correctly treated as
+  // invalid. So, this presses the unused modifiers first to clear the invalid
+  // state and confirm the modifiers are shown, then presses the key being
+  // tested and confirms it's treated as invalid.
+  async function checkInvalid(label, keyArgs) {
+    await SpecialPowers.spawn(tab, [], async () => {
+      content.selected = ContentTaskUtils.waitForEvent(
+        content.input.inputEl,
+        "select"
+      );
+    });
+    info(`Pressing ${consts.unusedModifiersDisplay}`);
+    EventUtils.synthesizeKey(...consts.unusedModifiersArgs, window);
+    await SpecialPowers.spawn(tab, [consts], async _consts => {
+      await content.selected;
+      is(
+        content.input.value,
+        _consts.unusedModifiersDisplay,
+        "Input shows modifiers as they're pressed"
+      );
+      content.selected = ContentTaskUtils.waitForEvent(
+        content.input.inputEl,
+        "select"
+      );
+    });
+    info(`Pressing ${label}`);
+    EventUtils.synthesizeKey(...keyArgs, window);
+    await SpecialPowers.spawn(tab, [consts], async _consts => {
+      await content.selected;
+      is(content.input.value, "Invalid", "Input shows invalid");
+    });
+  }
+  await checkInvalid(`Shift+${consts.unusedKey}`, [
+    consts.unusedKey,
+    { shiftKey: true },
+  ]);
+  await checkInvalid("Backspace", ["KEY_Backspace", {}]);
+  if (!isMac) {
+    await checkInvalid("F10", ["KEY_F10", {}]);
+  }
+  await checkInvalid("Enter", ["KEY_Enter", {}]);
+  await SpecialPowers.spawn(tab, [], async () => {
     content.focused = ContentTaskUtils.waitForEvent(content.change, "focus");
   });
   info(`Pressing ${consts.unusedDisplay}`);
@@ -1236,6 +1232,137 @@ addAboutKbTask(async function testKeyboardAccess(tab) {
     ok(
       !downloadsRow.contains(content.document.activeElement),
       "Focus has left the key_openDownloads row"
+    );
+  });
+});
+
+// Test a change which conflicts with an internal key.
+addAboutKbTask(async function testInternalConflictingChange(tab) {
+  await SpecialPowers.spawn(tab, [consts], async _consts => {
+    content.downloadsRow = content.document.querySelector(
+      '.key[data-id="key_openDownloads"]'
+    );
+    content.downloadsRow.closest(".category").wrappedJSObject.expanded = true;
+    await content.downloadsRow.closest(".category").wrappedJSObject
+      .updateComplete;
+    ok(
+      !content.downloadsRow.classList.contains("customized"),
+      "key_openDownloads is not customized"
+    );
+    content.pasteRow = content.document.querySelector(
+      '.key[data-id="key_paste"]'
+    );
+    ok(
+      !content.pasteRow.classList.contains("customized"),
+      "key_paste is not customized"
+    );
+    ok(
+      content.pasteRow.classList.contains("internal"),
+      "key_paste is internal"
+    );
+    ok(
+      ContentTaskUtils.isHidden(content.pasteRow.querySelector(".change")),
+      "key_paste Change button is hidden"
+    );
+    ok(
+      ContentTaskUtils.isHidden(content.pasteRow.querySelector(".clear")),
+      "key_paste Clear button is hidden"
+    );
+
+    info("Clicking Change for key_openDownloads");
+    const input = content.downloadsRow.querySelector(".newKey").wrappedJSObject;
+    let focused = ContentTaskUtils.waitForEvent(input, "focus");
+    const change = content.downloadsRow.querySelector(".change");
+    change.click();
+    await focused;
+    ok(true, "New key input got focus");
+    content.focused = ContentTaskUtils.waitForEvent(change, "focus");
+  });
+  info(`Pressing ${consts.pasteDisplay}, then clicking OK`);
+  let handled = PromptTestUtils.handleNextPrompt(
+    window,
+    { modalType: Services.prompt.MODAL_TYPE_CONTENT },
+    { buttonNumClick: 0 }
+  );
+  EventUtils.synthesizeKey("V", { accelKey: true }, window);
+  await handled;
+  await SpecialPowers.spawn(tab, [consts], async _consts => {
+    await content.focused;
+    ok(true, "Change button got focus");
+    ok(
+      !content.downloadsRow.classList.contains("customized"),
+      "key_openDownloads is not customized"
+    );
+    ok(
+      !content.pasteRow.classList.contains("customized"),
+      "key_paste is not customized"
+    );
+  });
+});
+
+// Test assigning a key with no default assignment, then resetting it.
+addAboutKbTask(async function testChangeAndResetUnassigned(tab) {
+  await SpecialPowers.spawn(tab, [consts], async _consts => {
+    content.dupTabRow = content.document.querySelector(
+      '.key[data-id="key_duplicateTab"]'
+    );
+    content.dupTabRow.closest(".category").wrappedJSObject.expanded = true;
+    await content.dupTabRow.closest(".category").wrappedJSObject.updateComplete;
+    ok(
+      !content.dupTabRow.classList.contains("customized"),
+      "key_duplicateTab is not customized"
+    );
+    ok(
+      !content.dupTabRow.classList.contains("assigned"),
+      "key_duplicateTab is not assigned"
+    );
+
+    info("Clicking Change for key_duplicateTab");
+    content.input = content.dupTabRow.querySelector(".newKey").wrappedJSObject;
+    let focused = ContentTaskUtils.waitForEvent(content.input, "focus");
+    content.change = content.dupTabRow.querySelector(".change");
+    content.change.click();
+    await focused;
+    ok(true, "New key input got focus");
+    content.focused = ContentTaskUtils.waitForEvent(content.change, "focus");
+  });
+  info(`Pressing ${consts.unusedDisplay}`);
+  EventUtils.synthesizeKey(consts.unusedKey, consts.unusedOptions, window);
+  await SpecialPowers.spawn(tab, [consts], async _consts => {
+    await content.focused;
+    ok(true, "Change button got focus");
+    ok(
+      content.dupTabRow.classList.contains("customized"),
+      "key_duplicateTab is customized"
+    );
+    ok(
+      content.dupTabRow.classList.contains("assigned"),
+      "key_duplicateTab is assigned"
+    );
+    is(
+      content.dupTabRow.querySelector(".currentShortcut").wrappedJSObject.value,
+      _consts.unusedDisplay,
+      "Key is the customized key"
+    );
+
+    info("Clicking Reset for key_duplicateTab");
+    const reset = content.dupTabRow.querySelector(".reset");
+    const updated = ContentTaskUtils.waitForEvent(
+      content,
+      "CustomKeysUpdate",
+      false,
+      null,
+      true
+    );
+    reset.click();
+    await updated;
+    ok(
+      !content.dupTabRow.classList.contains("customized"),
+      "key_duplicateTab is not customized"
+    );
+    ok(
+      !content.dupTabRow.classList.contains("assigned"),
+      "key_duplicateTab is not assigned"
     );
   });
 });

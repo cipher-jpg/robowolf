@@ -5,17 +5,19 @@
 #ifndef nsDragServiceGtk_h_
 #define nsDragServiceGtk_h_
 
-#include "mozilla/RefPtr.h"
 #include <gtk/gtk.h>
+
 #include "GRefPtr.h"
 #include "GUniquePtr.h"
+#include "mozilla/RefPtr.h"
+#include "nsDragSessionSource.h"
 
 namespace mozilla::widget {
 
 /**
  * X11 specific D&D routines
  */
-class nsDragSessionGtk : public nsDragSession {
+class nsDragSessionGtk : public nsDragSessionSource {
  public:
   void ReplyToDragMotion(GdkDragContext* aDragContext, guint aTime);
   void ReplyToDragMotion() override;

@@ -1228,7 +1228,8 @@ static bool IsFrameAfter(const nsIFrame* aFrame1, const nsIFrame* aFrame2) {
 // static
 int32_t nsLayoutUtils::DoCompareTreePosition(const nsIFrame* aFrame1,
                                              const nsIFrame* aFrame2,
-                                             const nsIFrame* aCommonAncestor) {
+                                             const nsIFrame* aCommonAncestor,
+                                             CompareTreePositionFlags aFlags) {
   MOZ_ASSERT(aFrame1, "aFrame1 must not be null");
   MOZ_ASSERT(aFrame2, "aFrame2 must not be null");
 
@@ -1236,14 +1237,15 @@ int32_t nsLayoutUtils::DoCompareTreePosition(const nsIFrame* aFrame1,
   const nsIFrame* nonCommonAncestor =
       FillAncestors(aFrame2, aCommonAncestor, &frame2Ancestors);
   return DoCompareTreePosition(aFrame1, aFrame2, frame2Ancestors,
-                               nonCommonAncestor ? aCommonAncestor : nullptr);
+                               nonCommonAncestor ? aCommonAncestor : nullptr,
+                               aFlags);
 }
 
 // static
 int32_t nsLayoutUtils::DoCompareTreePosition(
     const nsIFrame* aFrame1, const nsIFrame* aFrame2,
     const nsTArray<const nsIFrame*>& aFrame2Ancestors,
-    const nsIFrame* aCommonAncestor) {
+    const nsIFrame* aCommonAncestor, CompareTreePositionFlags aFlags) {
   MOZ_ASSERT(aFrame1, "aFrame1 must not be null");
   MOZ_ASSERT(aFrame2, "aFrame2 must not be null");
 
@@ -1261,8 +1263,8 @@ int32_t nsLayoutUtils::DoCompareTreePosition(
     // it is wrong. We need to recompute without aCommonAncestor,
     // but computing frame1Ancestors array again can be avoided by
     // swapping the order of the arguments.
-    const int32_t oppositeResult =
-        DoCompareTreePosition(aFrame2, aFrame1, frame1Ancestors, nullptr);
+    const int32_t oppositeResult = DoCompareTreePosition(
+        aFrame2, aFrame1, frame1Ancestors, nullptr, aFlags);
     return -oppositeResult;
   }
 
@@ -1297,7 +1299,14 @@ int32_t nsLayoutUtils::DoCompareTreePosition(
   if (IsFrameAfter(ancestor1, ancestor2)) {
     return 1;
   }
-  NS_WARNING("Frames were in different child lists???");
+  // Generally, we assume that callers of this function use two frames in the
+  // same tree, so it's worth a warning, unless the call sites can't provide
+  // that guarantee. Though, this guarantee may be harder to provide than we
+  // think - See Bug 928645.
+  NS_WARNING_ASSERTION(
+      aFlags &
+          CompareTreePositionFlags::FramesMayBeInDifferentOrIncompleteTrees,
+      "Frames were in different child lists?");
   return 0;
 }
 
@@ -1361,27 +1370,31 @@ ScrollableLayerGuid::ViewID nsLayoutUtils::ScrollIdForRootScrollFrame(
 // static
 ScrollContainerFrame* nsLayoutUtils::GetNearestScrollableFrameForDirection(
     nsIFrame* aFrame, ScrollDirections aDirections) {
-  NS_ASSERTION(
-      aFrame, "GetNearestScrollableFrameForDirection expects a non-null frame");
+  SideBits sides = SideBits::eNone;
+  if (aDirections.contains(ScrollDirection::eVertical)) {
+    sides |= SideBits::eTop | SideBits::eBottom;
+  }
+  if (aDirections.contains(ScrollDirection::eHorizontal)) {
+    sides |= SideBits::eLeft | SideBits::eRight;
+  }
+  return GetNearestScrollContainerFrameToScrollTowards(aFrame, sides);
+}
+
+ScrollContainerFrame*
+nsLayoutUtils::GetNearestScrollContainerFrameToScrollTowards(
+    nsIFrame* aFrame, SideBits aSideBits) {
+  NS_ASSERTION(aFrame,
+               "GetNearestScrollContainerFrameToScrollTowards expects a "
+               "non-null frame");
   // FIXME Bug 1714720 : This nearest scroll target is not going to work over
   // process boundaries, in such cases we need to hand over in APZ side.
   for (nsIFrame* f = aFrame; f;
        f = nsLayoutUtils::GetCrossDocParentFrameInProcess(f)) {
     ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(f);
-    if (scrollContainerFrame) {
-      ScrollDirections directions =
-          scrollContainerFrame
-              ->GetAvailableScrollingDirectionsForUserInputEvents();
-      if (aDirections.contains(ScrollDirection::eVertical)) {
-        if (directions.contains(ScrollDirection::eVertical)) {
-          return scrollContainerFrame;
-        }
-      }
-      if (aDirections.contains(ScrollDirection::eHorizontal)) {
-        if (directions.contains(ScrollDirection::eHorizontal)) {
-          return scrollContainerFrame;
-        }
-      }
+    if (scrollContainerFrame &&
+        scrollContainerFrame->SidesToScrollForUserInputEvents().Intersects(
+            aSideBits)) {
+      return scrollContainerFrame;
     }
   }
   return nullptr;
@@ -1486,6 +1499,36 @@ ScrollContainerFrame* nsLayoutUtils::GetNearestScrollContainerFrame(
   }
 
   return do_QueryFrame(found);
+}
+
+// static
+ViewID nsLayoutUtils::GetNearestScrollIdFor(nsIFrame* aSearchFrame) {
+  for (nsIFrame* f = aSearchFrame; f;) {
+    ScrollContainerFrame* scrollFrame =
+        // SCROLLABLE_ONLY_ASYNC_SCROLLABLE is intentionally omitted: this
+        // runs during frame construction, before an ancestor scroll container's
+        // scrolled child is attached, and WantAsyncScroll would deref it.
+        nsLayoutUtils::GetNearestScrollContainerFrame(
+            f, nsLayoutUtils::SCROLLABLE_ALWAYS_MATCH_ROOT |
+                   nsLayoutUtils::SCROLLABLE_FIXEDPOS_FINDS_ROOT);
+    if (!scrollFrame) {
+      break;
+    }
+    nsIFrame* scrolled = scrollFrame->GetScrolledFrame();
+    nsIContent* scrolledContent = scrolled ? scrolled->GetContent() : nullptr;
+
+    ViewID scrollId;
+    // We deliberately use FindIDFor (not FindOrCreateIDFor): if no ViewID has
+    // been assigned yet, APZ has no APZC either.
+    if (scrolledContent &&
+        nsLayoutUtils::FindIDFor(scrolledContent, &scrollId)) {
+      return scrollId;
+    }
+    // No ViewID on this one; resume the search from its parent so we pick up
+    // the next scroll container above it.
+    f = scrollFrame->GetParent();
+  }
+  return ScrollableLayerGuid::NULL_SCROLL_ID;
 }
 
 // static
@@ -3994,7 +4037,7 @@ bool nsLayoutUtils::HasAbsolutelyPositionedDescendants(const nsIFrame* aFrame) {
   return false;
 }
 
-nsBlockFrame* nsLayoutUtils::FindNearestBlockAncestor(nsIFrame* aFrame) {
+nsBlockFrame* nsLayoutUtils::FindNearestBlockAncestor(const nsIFrame* aFrame) {
   nsIFrame* nextAncestor;
   for (nextAncestor = aFrame->GetParent(); nextAncestor;
        nextAncestor = nextAncestor->GetParent()) {
@@ -5823,13 +5866,31 @@ bool nsLayoutUtils::GetLastLineBaseline(WritingMode aWM, const nsIFrame* aFrame,
     return false;
   }
 
-  for (nsBlockFrame::ConstReverseLineIterator line = block->LinesRBegin(),
-                                              line_end = block->LinesREnd();
-       line != line_end; ++line) {
-    if (line->IsBlock()) {
-      nsIFrame* kid = line->mFirstChild;
+  // If we are happen to contain the line clamp ellipsis, the last baseline
+  // search should skip lineboxes that are clamped away.
+  //
+  // Note the that we don't care about this for GetFirstLineBaseline. While it's
+  // technically viable for the first baseline search to reach the clamped line,
+  // as per spec [1], the clamp point exists between two line boxes that will
+  // have a baseline. Even if the line gets displaced by the ellipsis, it
+  // provides a strut. As a result, the last unclamped line will always have a
+  // baseline.
+  // [1]: https://drafts.csswg.org/css-overflow-4/#line-clamp-containers
+  const bool isLineClamped =
+      block->HasLineClampEllipsis() || block->HasLineClampEllipsisDescendant();
+  bool hitLineClampEllipsis = false;
+
+  for (const auto& line : Reversed(block->Lines())) {
+    hitLineClampEllipsis = hitLineClampEllipsis || line.HasLineClampEllipsis();
+    if (line.IsBlock()) {
+      if (isLineClamped && !hitLineClampEllipsis &&
+          !block->HasLineClampEllipsisDescendant()) {
+        // This is clamped away, skip.
+        continue;
+      }
+      nsIFrame* kid = line.mFirstChild;
       nscoord kidBaseline;
-      const nsSize& containerSize = line->mContainerSize;
+      const nsSize& containerSize = line.mContainerSize;
       if (GetLastLineBaseline(aWM, kid, &kidBaseline)) {
         // Ignore relative positioning for baseline calculations
         *aResult = kidBaseline +
@@ -5845,10 +5906,14 @@ bool nsLayoutUtils::GetLastLineBaseline(WritingMode aWM, const nsIFrame* aFrame,
         return true;
       }
     } else {
+      if (isLineClamped && !hitLineClampEllipsis) {
+        // This is clamped away, skip.
+        continue;
+      }
       // XXX Is this the right test?  We have some bogus empty lines
       // floating around, but IsEmpty is perhaps too weak.
-      if (line->BSize() != 0 || !line->IsEmpty()) {
-        *aResult = line->BStart() + line->GetLogicalAscent();
+      if (line.BSize() != 0 || !line.IsEmpty()) {
+        *aResult = line.BStart() + line.GetLogicalAscent();
         return true;
       }
     }
@@ -5891,7 +5956,7 @@ nscoord nsLayoutUtils::CalculateContentBEnd(WritingMode aWM, nsIFrame* aFrame) {
     FrameChildListIDs skip = {FrameChildListID::PushedAbsolute,
                               FrameChildListID::Overflow,
                               FrameChildListID::ExcessOverflowContainers,
-                              FrameChildListID::OverflowOutOfFlow};
+                              FrameChildListID::OverflowFloats};
     nsBlockFrame* blockFrame = do_QueryFrame(aFrame);
     if (blockFrame) {
       contentBEnd =

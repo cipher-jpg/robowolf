@@ -20,6 +20,7 @@ import org.mozilla.fenix.helpers.AppAndSystemHelper.assertExternalAppOpens
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertNativeAppOpens
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertYoutubeAppOpens
 import org.mozilla.fenix.helpers.AppAndSystemHelper.clickSystemHomeScreenShortcutAddButton
+import org.mozilla.fenix.helpers.Constants
 import org.mozilla.fenix.helpers.Constants.PackageName.GOOGLE_DOCS
 import org.mozilla.fenix.helpers.Constants.PackageName.PRINT_SPOOLER
 import org.mozilla.fenix.helpers.DataGenerationHelper.createCustomTabIntent
@@ -360,6 +361,11 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080113
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheAddToHomeScreenSubMenuOptionTest"],
+        bug = 2052183,
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyTheAddToShortcutsSubMenuOptionTest() {
@@ -385,6 +391,11 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080114
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheAddToHomeScreenSubMenuOptionTest"],
+        bug = 2051566,
+        since = "2026-06",
+    )
     @SmokeTest
     @Test
     fun verifyTheAddToHomeScreenSubMenuOptionTest() {
@@ -448,6 +459,11 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080118
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheSaveAsPDFSubMenuOptionTest"],
+        bug = 2053797,
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyTheSaveAsPDFSubMenuOptionTest() {
@@ -496,6 +512,11 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080128
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheShareButtonTest"],
+        bug = 2057218,
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyTheShareButtonTest() {
@@ -508,7 +529,7 @@ class MainMenuTest {
         }.clickShareButton {
             verifyShareTabLayout()
             verifySharingWithSelectedApp(
-                appName = "Gmail",
+                appName = Constants.GMAIL_APP_NAME,
                 content = testPage.url.toString(),
                 subject = testPage.title,
             )
@@ -516,6 +537,11 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080117
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheOpenInAppSubMenuOptionIsEnabledTest"],
+        bug = 2058136,
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyTheOpenInAppSubMenuOptionIsEnabledTest() {
@@ -564,6 +590,11 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080119
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyThePrintSubMenuOptionTest"],
+        bug = 2057199,
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyThePrintSubMenuOptionTest() {
@@ -706,6 +737,10 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080101
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.CustomTabsTest#verifyTheFindInPageMenuItemInACustomTabTest"],
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyTheFindInPageMenuItemInACustomTabTest() {
@@ -892,6 +927,7 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2937924
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=2053348")
     @Test
     fun verifyTheWhatIsBrokenErrorMessageTest() {
         val defaultWebPage = mockWebServer.getGenericAsset(1)
@@ -911,6 +947,7 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2937926
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=2053348")
     @Test
     fun verifyThatTheBrokenSiteFormSubmissionCanBeCanceledTest() {
         val defaultWebPage = mockWebServer.getGenericAsset(1)
@@ -931,6 +968,7 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2937927
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=2053348")
     @Test
     fun verifyTheBrokenSiteFormSubmissionWithOptionalFieldsTest() {
         val defaultWebPage = mockWebServer.getGenericAsset(1)
@@ -959,6 +997,7 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2937930
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=2053348")
     @Test
     fun verifyThatTheBrokenSiteFormInfoPersistsTest() {
         val defaultWebPage = mockWebServer.getGenericAsset(1)
@@ -983,6 +1022,7 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2937931
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=2053348")
     @Test
     fun verifyTheBrokenSiteFormIsEmptyWithoutSubmittingThePreviousOneTest() {
         val firstWebPage = mockWebServer.getGenericAsset(1)
@@ -1014,6 +1054,7 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2937932
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=2053348")
     @Test
     fun verifyThatTheBrokenSiteFormInfoIsErasedWhenKillingTheAppTest() {
         val defaultWebPage = mockWebServer.getGenericAsset(1)
@@ -1197,6 +1238,12 @@ class MainMenuTest {
         }
     }
 
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4245654
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheMainMenuBackButtonLongPressTest"],
+        bug = 2058469,
+        since = "2026-06",
+    )
     @SmokeTest
     @Test
     fun verifyTheMainMenuBackButtonLongPressTest() {
@@ -1247,6 +1294,12 @@ class MainMenuTest {
         }
     }
 
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4245662
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheMainMenuForwardButtonLongPressTest"],
+        bug = 2058469,
+        since = "2026-06",
+    )
     @SmokeTest
     @Test
     fun verifyTheMainMenuForwardButtonLongPressTest() {
@@ -1316,6 +1369,10 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080137
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheBookmarksMainMenuItemTest"],
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyTheBookmarksMainMenuItemTest() {
@@ -1362,6 +1419,10 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080096
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.CustomTabsTest#verifyTheMainMenuBackButtonFromCustomTabTest"],
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyTheMainMenuBackButtonFromCustomTabTest() {
@@ -1387,6 +1448,7 @@ class MainMenuTest {
         }
     }
 
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4245663
     @SmokeTest
     @Test
     fun verifyTheMainMenuBackButtonLongClickFromCustomTabTest() {
@@ -1416,6 +1478,10 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080097
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.CustomTabsTest#verifyTheMainMenuForwardButtonFromCustomTabTest"],
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyTheMainMenuForwardButtonFromCustomTabTest() {

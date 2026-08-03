@@ -126,6 +126,14 @@ void MacroAssembler::andPtr(Imm32 imm, Register src, Register dest) {
   ma_and(dest, src, imm);
 }
 
+void MacroAssembler::andPtr(Imm32 imm, const Address& dest) {
+  UseScratchRegisterScope temps(asMasm());
+  Register scratch = temps.Acquire();
+  loadPtr(dest, scratch);
+  andPtr(imm, scratch);
+  storePtr(scratch, dest);
+}
+
 void MacroAssembler::and64(Imm64 imm, Register64 dest) {
   UseScratchRegisterScope temps(asMasm());
   Register scratch = temps.Acquire();
@@ -2122,7 +2130,7 @@ void MacroAssembler::cmp32Move32(Condition cond, Register lhs, Imm32 rhs,
   UseScratchRegisterScope temps(asMasm());
   Register scratch = temps.Acquire();
   cmp32Set(cond, lhs, rhs, scratch);
-  moveIfNotZero(dest, src, scratch);
+  ma_cselnz(dest, src, dest, scratch, scratch);
 }
 
 void MacroAssembler::cmp32Move32(Condition cond, Register lhs, Register rhs,
@@ -2130,7 +2138,7 @@ void MacroAssembler::cmp32Move32(Condition cond, Register lhs, Register rhs,
   UseScratchRegisterScope temps(asMasm());
   Register scratch = temps.Acquire();
   cmp32Set(cond, lhs, rhs, scratch);
-  moveIfNotZero(dest, src, scratch);
+  ma_cselnz(dest, src, dest, scratch, scratch);
 }
 
 void MacroAssembler::cmp32Move32(Condition cond, Register lhs,
@@ -2148,7 +2156,7 @@ void MacroAssembler::cmp32MovePtr(Condition cond, Register lhs, Imm32 rhs,
   UseScratchRegisterScope temps(asMasm());
   Register scratch = temps.Acquire();
   cmp32Set(cond, lhs, rhs, scratch);
-  moveIfNotZero(dest, src, scratch);
+  ma_cselnz(dest, src, dest, scratch, scratch);
 }
 
 void MacroAssembler::cmpPtrMovePtr(Condition cond, Register lhs, Imm32 rhs,
@@ -2156,7 +2164,7 @@ void MacroAssembler::cmpPtrMovePtr(Condition cond, Register lhs, Imm32 rhs,
   UseScratchRegisterScope temps(asMasm());
   Register scratch = temps.Acquire();
   cmpPtrSet(cond, lhs, rhs, scratch);
-  moveIfNotZero(dest, src, scratch);
+  ma_cselnz(dest, src, dest, scratch, scratch);
 }
 
 void MacroAssembler::cmpPtrMovePtr(Condition cond, Register lhs, Register rhs,
@@ -2164,7 +2172,7 @@ void MacroAssembler::cmpPtrMovePtr(Condition cond, Register lhs, Register rhs,
   UseScratchRegisterScope temps(asMasm());
   Register scratch = temps.Acquire();
   cmpPtrSet(cond, lhs, rhs, scratch);
-  moveIfNotZero(dest, src, scratch);
+  ma_cselnz(dest, src, dest, scratch, scratch);
 }
 
 void MacroAssembler::cmpPtrMovePtr(Condition cond, Register lhs,

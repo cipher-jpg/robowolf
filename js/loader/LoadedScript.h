@@ -5,28 +5,28 @@
 #ifndef js_loader_LoadedScript_h
 #define js_loader_LoadedScript_h
 
-#include "js/AllocPolicy.h"
-#include "js/experimental/JSStencil.h"
-#include "js/Transcoding.h"
-
+#include "mozilla/dom/SRIMetadata.h"  // mozilla::dom::SRIMetadata
+#include "mozilla/Encoding.h"         // mozilla::Encoding
 #include "mozilla/Maybe.h"
 #include "mozilla/MaybeOneOf.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
+#include "mozilla/UniquePtr.h"  // mozilla::UniquePtr
+#include "mozilla/Utf8.h"       // mozilla::Utf8Unit
 #include "mozilla/Variant.h"
 #include "mozilla/Vector.h"
-#include "mozilla/UniquePtr.h"  // mozilla::UniquePtr
 
-#include "mozilla/dom/SRIMetadata.h"  // mozilla::dom::SRIMetadata
+#include "jsapi.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsICacheInfoChannel.h"  // nsICacheInfoChannel
-
-#include "jsapi.h"
 #include "ResolvedModuleSet.h"
-#include "ScriptKind.h"
 #include "ScriptFetchOptions.h"
+#include "ScriptKind.h"
+
+#include "js/AllocPolicy.h"
+#include "js/experimental/JSStencil.h"
+#include "js/Transcoding.h"
 
 class nsIURI;
 
@@ -134,7 +134,8 @@ class LoadedScript final : public nsISupports {
   ~LoadedScript() = default;
 
  public:
-  LoadedScript(ScriptKind aKind, nsIURI* aURI);
+  LoadedScript(ScriptKind aKind, nsIURI* aURI,
+               const mozilla::Encoding* aClassicScriptFallbackEncoding);
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
  public:
@@ -472,6 +473,11 @@ class LoadedScript final : public nsISupports {
   // one.
   bool IsSRIMetadataReusableBy(const mozilla::dom::SRIMetadata& aSRIMetadata);
 
+  const mozilla::Encoding* ClassicScriptFallbackEncoding() const {
+    MOZ_ASSERT(!IsModuleScript());
+    return mClassicScriptFallbackEncoding;
+  }
+
  public:
   // Fields.
 
@@ -583,6 +589,9 @@ class LoadedScript final : public nsISupports {
   // IsTextSource() or IsCachedStencil(), and it's cleared after saving to the
   // necko cache, and thus, this field is used only once.
   nsCOMPtr<nsICacheEntryWriteHandle> mCacheEntry;
+
+  // The hint charset for decoding classic script.
+  const mozilla::Encoding* mClassicScriptFallbackEncoding = nullptr;
 };
 
 // Provide accessors for any classes `Derived` which is providing the
@@ -683,6 +692,16 @@ class LoadedScriptDelegate {
   }
   bool TookLongInPreviousRuns() const {
     return GetLoadedScript()->TookLongInPreviousRuns();
+  }
+
+  const mozilla::Encoding* ClassicScriptFallbackEncoding() const {
+    return GetLoadedScript()->ClassicScriptFallbackEncoding();
+  }
+
+  const mozilla::Encoding* MaybeClassicScriptFallbackEncoding() const {
+    return GetLoadedScript()->IsModuleScript()
+               ? nullptr
+               : GetLoadedScript()->ClassicScriptFallbackEncoding();
   }
 };
 

@@ -19,6 +19,7 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.tabstray.LocalTabManagementFeatureHelper
 import org.mozilla.fenix.tabstray.TabManagementFeatureHelper
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
+import org.mozilla.fenix.tabstray.controller.NoOpTabInteractionHandler
 import org.mozilla.fenix.tabstray.data.TabsTrayItem
 import org.mozilla.fenix.tabstray.data.createTab
 import org.mozilla.fenix.tabstray.data.createTabGroup
@@ -36,6 +37,7 @@ class ExpandedTabGroupTest {
         override val tabGroupsEnabled: Boolean = true
         override val tabGroupsDragAndDropEnabled: Boolean = false
         override val shareTabGroupEnabled: Boolean = true
+        override val ungroupTabGroupEnabled: Boolean = true
         override val tabGroupsOnboardingEnabled: Boolean = false
         override val tabGroupsLiveReorderEnabled: Boolean = false
     }
@@ -48,11 +50,8 @@ class ExpandedTabGroupTest {
                     Surface {
                         ExpandedTabGroup(
                             group = fakeTabGroup(),
-                            onItemClick = {},
-                            onTabClose = {},
-                            onDeleteTabGroupClick = {},
-                            onEditTabGroupClick = {},
-                            onCloseTabGroupClick = {},
+                            actions = expandedTabGroupActions(),
+                            tabInteractionHandler = NoOpTabInteractionHandler,
                         )
                     }
                 }
@@ -61,6 +60,8 @@ class ExpandedTabGroupTest {
         composeTestRule.onNodeWithTag(TabsTrayTestTag.TAB_GROUP_BOTTOM_SHEET_ROOT)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(TabsTrayTestTag.BOTTOM_SHEET_SHARE_BUTTON)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TabsTrayTestTag.BOTTOM_SHEET_ADD_TAB_BUTTON)
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(TabsTrayTestTag.TAB_GROUP_THREE_DOT_BUTTON)
             .assertIsDisplayed()
@@ -73,16 +74,15 @@ class ExpandedTabGroupTest {
     @Test
     fun verifyMenuItems() {
         composeTestRule.setContent {
-            FirefoxTheme(theme = Theme.Light) {
-                Surface {
-                    ExpandedTabGroup(
-                        group = fakeTabGroup(),
-                        onItemClick = {},
-                        onTabClose = {},
-                        onDeleteTabGroupClick = {},
-                        onEditTabGroupClick = {},
-                        onCloseTabGroupClick = {},
-                    )
+            CompositionLocalProvider(LocalTabManagementFeatureHelper provides tabManagementFeatureHelper) {
+                FirefoxTheme(theme = Theme.Light) {
+                    Surface {
+                        ExpandedTabGroup(
+                            group = fakeTabGroup(),
+                            actions = expandedTabGroupActions(),
+                            tabInteractionHandler = NoOpTabInteractionHandler,
+                        )
+                    }
                 }
             }
         }
@@ -90,6 +90,7 @@ class ExpandedTabGroupTest {
             .performClick()
         composeTestRule.onNodeWithTag(TabsTrayTestTag.EDIT_TAB_GROUP).assertIsDisplayed()
         composeTestRule.onNodeWithTag(TabsTrayTestTag.CLOSE_TAB_GROUP).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TabsTrayTestTag.UNGROUP_TAB_GROUP).assertIsDisplayed()
         composeTestRule.onNodeWithTag(TabsTrayTestTag.DELETE_TAB_GROUP).assertIsDisplayed()
     }
 
@@ -104,15 +105,10 @@ class ExpandedTabGroupTest {
                     Surface {
                         ExpandedTabGroup(
                             group = fakeTabGroup(tabs = mutableListOf(tab)),
-                            onItemClick = {
-                                if (it == tab) {
-                                    itemClicked = true
-                                }
-                            },
-                            onTabClose = {},
-                            onDeleteTabGroupClick = {},
-                            onEditTabGroupClick = {},
-                            onCloseTabGroupClick = {},
+                            actions = expandedTabGroupActions(
+                                onItemClick = { if (it == tab) itemClicked = true },
+                            ),
+                            tabInteractionHandler = NoOpTabInteractionHandler,
                         )
                     }
                 }
@@ -136,15 +132,10 @@ class ExpandedTabGroupTest {
                     Surface {
                         ExpandedTabGroup(
                             group = fakeTabGroup(tabs = mutableListOf(tab)),
-                            onItemClick = {},
-                            onTabClose = {
-                                if (it == tab) {
-                                    itemClosed = true
-                                }
-                            },
-                            onDeleteTabGroupClick = {},
-                            onEditTabGroupClick = {},
-                            onCloseTabGroupClick = {},
+                            actions = expandedTabGroupActions(
+                                onTabClose = { if (it == tab) itemClosed = true },
+                            ),
+                            tabInteractionHandler = NoOpTabInteractionHandler,
                         )
                     }
                 }
@@ -168,13 +159,10 @@ class ExpandedTabGroupTest {
                     Surface {
                         ExpandedTabGroup(
                             group = group,
-                            onItemClick = {},
-                            onTabClose = {},
-                            onDeleteTabGroupClick = {
-                                deleteClicked = true
-                            },
-                            onEditTabGroupClick = {},
-                            onCloseTabGroupClick = {},
+                            actions = expandedTabGroupActions(
+                                onDeleteTabGroupClick = { deleteClicked = true },
+                            ),
+                            tabInteractionHandler = NoOpTabInteractionHandler,
                         )
                     }
                 }
@@ -199,13 +187,10 @@ class ExpandedTabGroupTest {
                     Surface {
                         ExpandedTabGroup(
                             group = fakeTabGroup(),
-                            onItemClick = {},
-                            onTabClose = {},
-                            onDeleteTabGroupClick = {},
-                            onEditTabGroupClick = {
-                                editClicked = true
-                            },
-                            onCloseTabGroupClick = {},
+                            actions = expandedTabGroupActions(
+                                onEditTabGroupClick = { editClicked = true },
+                            ),
+                            tabInteractionHandler = NoOpTabInteractionHandler,
                         )
                     }
                 }
@@ -230,11 +215,10 @@ class ExpandedTabGroupTest {
                     Surface {
                         ExpandedTabGroup(
                             group = fakeTabGroup(),
-                            onItemClick = {},
-                            onTabClose = {},
-                            onDeleteTabGroupClick = {},
-                            onEditTabGroupClick = {},
-                            onCloseTabGroupClick = { closeClicked = true },
+                            actions = expandedTabGroupActions(
+                                onCloseTabGroupClick = { closeClicked = true },
+                            ),
+                            tabInteractionHandler = NoOpTabInteractionHandler,
                         )
                     }
                 }
@@ -249,6 +233,32 @@ class ExpandedTabGroupTest {
         assertTrue(closeClicked)
     }
 
+    @Test
+    fun verifyAddNewTabClick() {
+        var addNewTabClicked = false
+
+        composeTestRule.setContent {
+            CompositionLocalProvider(LocalUnderTest provides true) {
+                FirefoxTheme(theme = Theme.Light) {
+                    Surface {
+                        ExpandedTabGroup(
+                            group = fakeTabGroup(),
+                            actions = expandedTabGroupActions(
+                                onAddNewTabClick = { addNewTabClicked = true },
+                            ),
+                            tabInteractionHandler = NoOpTabInteractionHandler,
+                        )
+                    }
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithTag(TabsTrayTestTag.BOTTOM_SHEET_ADD_TAB_BUTTON)
+            .performClick()
+
+        assertTrue(addNewTabClicked)
+    }
+
     private fun fakeTabGroup(
         tabs: MutableList<TabsTrayItem.Tab> = mutableListOf(),
     ): TabsTrayItem.TabGroup {
@@ -257,4 +267,20 @@ class ExpandedTabGroupTest {
             tabs = tabs,
         )
     }
+
+    private fun expandedTabGroupActions(
+        onItemClick: (TabsTrayItem) -> Unit = {},
+        onTabClose: (TabsTrayItem.Tab) -> Unit = {},
+        onDeleteTabGroupClick: () -> Unit = {},
+        onEditTabGroupClick: () -> Unit = {},
+        onCloseTabGroupClick: () -> Unit = {},
+        onAddNewTabClick: (() -> Unit)? = {},
+    ) = ExpandedTabGroupActions(
+        onItemClick = onItemClick,
+        onTabClose = onTabClose,
+        onDeleteTabGroupClick = onDeleteTabGroupClick,
+        onEditTabGroupClick = onEditTabGroupClick,
+        onCloseTabGroupClick = onCloseTabGroupClick,
+        onAddNewTabClick = onAddNewTabClick,
+    )
 }

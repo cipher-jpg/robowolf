@@ -16,6 +16,10 @@ menu-application-settings =
     .label = Settings…
 menu-application-set-as-default =
     .label = Set { -brand-shorter-name } as Default Browser
+# This menu item opens the referral page, where the user can invite others to
+# use the browser. "Share" here means recommending or referring the browser
+menu-application-referrals =
+    .label = Share { -brand-shorter-name }
 menu-application-services =
     .label = Services
 menu-application-hide-this =
@@ -220,8 +224,8 @@ menu-history-show-all-history =
     .label = Show All History
 menu-history-clear-recent-history =
     .label = Clear Recent History…
-menu-history-synced-tabs =
-    .label = Synced Tabs
+menu-history-remote-tabs-promo =
+    .label = Tabs From Other Devices
 menu-history-restore-last-session =
     .label = Restore Previous Session
 menu-history-hidden-tabs =
@@ -241,6 +245,8 @@ menu-bookmarks-menu =
     .accesskey = B
 menu-bookmarks-manage =
     .label = Manage Bookmarks
+menu-bookmarks-remote-tabs-promo =
+    .label = Sync Bookmarks to Mobile
 menu-bookmark-tab =
     .label = Bookmark Current Tab…
 menu-edit-bookmark =
@@ -367,4 +373,8 @@ menu-help-not-deceptive =
     .label = This Isn’t a Deceptive Site…
     .accesskey = D
 menu-report-broken-site =
-  .label = Report Broken Site
+    .label = Report Broken Site
+# This menu item opens the referral page, where the user can invite others to
+# use the browser. "Share" here means recommending or referring the browser
+menu-referrals =
+    .label = Share { -brand-shorter-name }

@@ -2364,6 +2364,24 @@ class Toolbox extends EventEmitter {
   }
 
   /**
+   * Launches the responsive mode with a specific width or height.
+   *
+   * @param  {object} options
+   *         Object with width or/and height properties.
+   */
+  async launchResponsiveMode(options = {}) {
+    const tab = this.commands.descriptorFront.localTab;
+    const win = tab.ownerDocument.defaultView;
+
+    await ResponsiveUIManager.openIfNeeded(win, tab, {
+      trigger: "debugger",
+    });
+    this.emit("responsive-mode-opened");
+
+    ResponsiveUIManager.getResponsiveUIForTab(tab).setViewportSize(options);
+  }
+
+  /**
    * The element picker button enables the ability to select a DOM node by clicking
    * it on the page.
    */
@@ -2452,30 +2470,6 @@ class Toolbox extends EventEmitter {
     await this.commands.threadConfigurationCommand.updateConfiguration(
       threadConfiguration
     );
-
-    // @backward-compat { version 153 } Fx 153 unified the two following pref into a unique one.
-    // Migrate the value from old profiles.
-    const requestBodyLimit = Services.prefs.getIntPref(
-      "devtools.netmonitor.requestBodyLimit",
-      1048576
-    );
-    const responseBodyLimit = Services.prefs.getIntPref(
-      "devtools.netmonitor.responseBodyLimit",
-      1048576
-    );
-    if (responseBodyLimit != 1048576) {
-      Services.prefs.setIntPref(
-        "devtools.netmonitor.bodyLimit",
-        responseBodyLimit
-      );
-    } else if (requestBodyLimit != 1048576) {
-      Services.prefs.setIntPref(
-        "devtools.netmonitor.bodyLimit",
-        requestBodyLimit
-      );
-    }
-    Services.prefs.clearUserPref("devtools.netmonitor.requestBodyLimit");
-    Services.prefs.clearUserPref("devtools.netmonitor.responseBodyLimit");
   }
 
   /**

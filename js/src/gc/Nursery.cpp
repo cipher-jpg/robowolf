@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gc/Nursery-inl.h"
-
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Sprintf.h"
@@ -37,6 +35,7 @@
 #include "gc/BufferAllocator-inl.h"
 #include "gc/Heap-inl.h"
 #include "gc/Marking-inl.h"
+#include "gc/Nursery-inl.h"
 #include "gc/StableCellHasher-inl.h"
 #include "gc/StoreBuffer-inl.h"
 #include "vm/GeckoProfiler-inl.h"
@@ -1648,8 +1647,12 @@ void js::Nursery::swapSpaces() {
 void js::Nursery::traceRoots(AutoGCSession& session, TenuringTracer& mover) {
   {
     // Suppress the sampling profiler to prevent it observing moved functions.
+    // Minor GC does not move JSScripts (they are tenured), so allow the
+    // sampler to keep reading tenured script data such as line/column via
+    // ProfilingStackFrame::script(); its JSFunction may be in the nursery and
+    // moving, so function() stays suppressed.
     AutoSuppressProfilerSampling suppressProfiler(
-        runtime()->mainContextFromOwnThread());
+        runtime()->mainContextFromOwnThread(), ProfilerScriptAccess::Allow);
 
     // Trace the store buffer, which must happen first.
 

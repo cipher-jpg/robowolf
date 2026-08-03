@@ -551,6 +551,14 @@
       } else if (draggedTab) {
         // Move the tabs into this window. To avoid multiple tab-switches in
         // the original window, the selected tab should be adopted last.
+        gBrowser.recordTabMetrics(
+          gBrowser.TabMetrics.METRIC_ACTION.ADOPT,
+          gBrowser.TabMetrics.userTriggeredContext(
+            gBrowser.TabMetrics.METRIC_SOURCE.DRAG_AND_DROP
+          ),
+          { tabCount: movingTabs.length }
+        );
+
         const dropIndex = this._getDropIndex(event);
         let newIndex = dropIndex;
         let selectedTab;
@@ -846,7 +854,22 @@
         winWidth /= screenCssToDesktopScale;
         winHeight /= screenCssToDesktopScale;
 
-        let props = { screenX: left, screenY: top, suppressanimation: 1 };
+        let props = {
+          screenX: left,
+          screenY: top,
+          suppressanimation: 1,
+          metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+            gBrowser.TabMetrics.METRIC_SOURCE.DRAG_AND_DROP
+          ),
+        };
+        if (window.fullScreen) {
+          // Detaching from a fullscreen window makes macOS adopt the new
+          // window into its own fullscreen space on its initial show, which
+          // can hang on a synchronous Dock transition (bug 2051071) and isn't
+          // what the user wants for a tab they're dragging to a location. This
+          // flag suppresses that.
+          props.suppressinitialfullscreen = 1;
+        }
         gBrowser.replaceTabsWithWindow(draggedTab, props);
       }
       event.stopPropagation();
@@ -1056,26 +1079,17 @@
         );
         return;
       }
-      const isNovaEnabled = Services.prefs.getBoolPref(
-        "browser.nova.enabled",
-        false
-      );
-
       this._tabbrowserTabs.style.setProperty(
         "--dragover-tab-group-color",
-        isNovaEnabled
-          ? `var(--tab-group-${groupColorCode})`
-          : `var(--tab-group-color-${groupColorCode})`
+        `var(--tab-group-${groupColorCode})`
       );
       this._tabbrowserTabs.style.setProperty(
         "--dragover-tab-group-color-invert",
-        isNovaEnabled
-          ? `var(--tab-group-${groupColorCode}-invert`
-          : `var(--tab-group-color-${groupColorCode}-invert)`
+        `var(--tab-group-${groupColorCode}-invert)`
       );
       this._tabbrowserTabs.style.setProperty(
         "--dragover-tab-group-color-pale",
-        `var(--tab-group-color-${groupColorCode}-pale)`
+        `var(--tab-group-${groupColorCode}-pale)`
       );
     }
 

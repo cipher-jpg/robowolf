@@ -37,7 +37,10 @@ object BrowserPageSelectors {
         strategy = SelectorStrategy.UIAUTOMATOR_WITH_DESCRIPTION_CONTAINS,
         value = getStringResource(R.string.content_description_menu),
         description = "Three Dot Menu",
-        groups = listOf("requiredForPage"),
+        // NOT an arrival anchor: the menu button lives on the top toolbar in the default layout but moves to
+        // the bottom navigation bar when shouldUseExpandedToolbar is on — so it's layout-dependent (gotcha B7).
+        // ENGINE_VIEW (the web content) is the layout-invariant "browser is loaded" signal for requiredForPage.
+        groups = listOf(),
     )
 
     val TAB_CRASH_REPORTER_IMAGE = Selector(
@@ -83,10 +86,31 @@ object BrowserPageSelectors {
         groups = listOf(),
     )
 
+    val TRANSLATION_SHEET = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR2_BY_RES,
+        value = "design_bottom_sheet",
+        description = "Translation bottom sheet",
+        groups = listOf("notTranslatedPageTranslationSheet"),
+    )
+
     val TRANSLATION_SHEET_TITLE = Selector(
         strategy = SelectorStrategy.COMPOSE_BY_TEXT,
         value = getStringResource(R.string.translations_bottom_sheet_title_first_time, argument = shortAppName),
-        description = "Translation bottom sheet translate button",
+        description = "Translation bottom sheet title",
+        groups = listOf("notTranslatedPageTranslationSheet"),
+    )
+
+    val TRANSLATION_SHEET_TRANSLATE_FROM = Selector(
+        strategy = SelectorStrategy.COMPOSE_BY_TEXT,
+        value = getStringResource(R.string.translations_bottom_sheet_translate_from),
+        description = "Translation bottom sheet translate from dropdown",
+        groups = listOf("notTranslatedPageTranslationSheet"),
+    )
+
+    val TRANSLATION_SHEET_TRANSLATE_TO = Selector(
+        strategy = SelectorStrategy.COMPOSE_BY_TEXT,
+        value = getStringResource(R.string.translations_bottom_sheet_translate_to),
+        description = "Translation bottom sheet translate to dropdown",
         groups = listOf("notTranslatedPageTranslationSheet"),
     )
 
@@ -97,6 +121,13 @@ object BrowserPageSelectors {
         groups = listOf("notTranslatedPageTranslationSheet"),
     )
 
+    val TRANSLATION_SHEET_NOT_NOW_BUTTON = Selector(
+        strategy = SelectorStrategy.COMPOSE_BY_TEXT,
+        value = getStringResource(R.string.translations_bottom_sheet_negative_button),
+        description = "Translation bottom sheet not now button",
+        groups = listOf("notTranslatedPageTranslationSheet"),
+    )
+
     val TRANSLATION_SHEET_SHOW_ORIGINAL_BUTTON = Selector(
         strategy = SelectorStrategy.COMPOSE_BY_TEXT,
         value = getStringResource(R.string.translations_bottom_sheet_negative_button_restore),
@@ -104,7 +135,99 @@ object BrowserPageSelectors {
         groups = listOf("translatedPageTranslationSheet"),
     )
 
+    val ADDED_TO_SHORTCUTS_SNACKBAR_TEXT = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
+        value = getStringResource(R.string.snackbar_added_to_shortcuts),
+        description = "Added to shortcuts snackbar text",
+        groups = listOf("addedToShortcutsSnackbar"),
+    )
+
+    // Web form submit button. The value is a raw web DOM id, NOT a Compose tag — but GeckoView exposes web
+    // element ids unprefixed in the accessibility tree, exactly like Compose's testTagsAsResourceId, so
+    // UIAUTOMATOR_WITH_COMPOSE_TAG's un-namespaced resourceId lookup is the mechanism that matches it.
+    val SUBMIT_LOGIN_BUTTON = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_COMPOSE_TAG,
+        value = "submit",
+        description = "Web form submit/login button",
+        groups = listOf(),
+    )
+
+    // Save-login prompt is an app View (package-prefixed res-id).
+    val SAVE_LOGIN_PROMPT = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_RES_ID,
+        value = "feature_prompt_login_fragment",
+        description = "Save-login prompt",
+        groups = listOf(),
+    )
+
+    // --- Address autofill on a web form (GeckoView content + the app's autofill prompt) ---
+
+    // Web DOM ids on the address form page. Not Compose tags — GeckoView exposes web element ids
+    // unprefixed in the accessibility tree, so UIAUTOMATOR_WITH_COMPOSE_TAG's un-namespaced resourceId
+    // lookup is what matches them (same mechanism as SUBMIT_LOGIN_BUTTON above).
+    val ADDRESS_STREET_WEB_FIELD = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_COMPOSE_TAG,
+        value = "streetAddress",
+        description = "Web address form: street address field",
+        groups = listOf(),
+    )
+
+    val ADDRESS_CITY_WEB_FIELD = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_COMPOSE_TAG,
+        value = "city",
+        description = "Web address form: city field",
+        groups = listOf(),
+    )
+
+    val ADDRESS_COUNTRY_WEB_FIELD = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_COMPOSE_TAG,
+        value = "country",
+        description = "Web address form: country field",
+        groups = listOf(),
+    )
+
+    // NOTE: the Android stylus-handwriting prompt that can cover this page is handled centrally via
+    // OverlayRegistry + BasePage.dismissKnownOverlaysIfPresent(), not with a per-page selector here.
+
+    // The "Select address" header of the autofill prompt (an app View, package-prefixed res-id).
+    val SELECT_ADDRESS_HEADER = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_RES_ID,
+        value = "select_address_header",
+        description = "Autofill prompt: 'Select address' header",
+        groups = listOf(),
+    )
+
+    // A saved-address suggestion row in the autofill prompt, keyed by the substring shown in its
+    // name/title (e.g. the street address). App View: package-prefixed res-id + textContains.
+    @Suppress("ktlint:standard:function-naming", "FunctionName")
+    fun ADDRESS_SUGGESTION(text: String = "") = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_RES_ID_CONTAINING_TEXT,
+        value = "address_name",
+        secondaryValue = text,
+        description = "Autofill suggestion containing '$text'",
+        groups = listOf(),
+    )
+
+    // Assertion helper: the web street-address field is populated with the expected value.
+    // Raw web DOM id + exact text.
+    @Suppress("ktlint:standard:function-naming", "FunctionName")
+    fun AUTOFILLED_STREET_ADDRESS(text: String = "") = Selector(
+        strategy = SelectorStrategy.UIAUTOMATOR_WITH_WEB_ID_AND_TEXT,
+        value = "streetAddress",
+        secondaryValue = text,
+        description = "Web address form: street address autofilled with '$text'",
+        groups = listOf(),
+    )
+
     val all = listOf(
+        SUBMIT_LOGIN_BUTTON,
+        SAVE_LOGIN_PROMPT,
+        ADDRESS_STREET_WEB_FIELD,
+        ADDRESS_CITY_WEB_FIELD,
+        ADDRESS_COUNTRY_WEB_FIELD,
+        SELECT_ADDRESS_HEADER,
+        ADDRESS_SUGGESTION(),
+        AUTOFILLED_STREET_ADDRESS(),
         ENGINE_VIEW,
         PAGE_CONTENT,
         SNACKBAR_EDIT_BUTTON,
@@ -115,8 +238,13 @@ object BrowserPageSelectors {
         TAB_CRASH_REPORTER_RESTORE_BUTTON,
         TAB_CRASH_REPORTER_CLOSE_BUTTON,
         PAGE_CONTENT(),
+        TRANSLATION_SHEET,
         TRANSLATION_SHEET_TITLE,
+        TRANSLATION_SHEET_TRANSLATE_FROM,
+        TRANSLATION_SHEET_TRANSLATE_TO,
         TRANSLATION_SHEET_TRANSLATE_BUTTON,
+        TRANSLATION_SHEET_NOT_NOW_BUTTON,
         TRANSLATION_SHEET_SHOW_ORIGINAL_BUTTON,
+        ADDED_TO_SHORTCUTS_SNACKBAR_TEXT,
     )
 }

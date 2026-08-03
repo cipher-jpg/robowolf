@@ -1305,6 +1305,7 @@ package org.mozilla.geckoview {
     method @NonNull @UiThread public SessionAccessibility getAccessibility();
     method @Nullable @UiThread public Autofill.Delegate getAutofillDelegate();
     method @NonNull @UiThread public Autofill.Session getAutofillSession();
+    method @HandlerThread @NonNull public GeckoResult<JSONObject> getBrokenSiteReport();
     method @UiThread public void getClientBounds(@NonNull RectF);
     method @UiThread public void getClientToScreenMatrix(@NonNull Matrix);
     method @UiThread public void getClientToSurfaceMatrix(@NonNull Matrix);
@@ -1359,26 +1360,27 @@ package org.mozilla.geckoview {
     method @AnyThread public void reload(int);
     method @AnyThread public void restoreState(@NonNull GeckoSession.SessionState);
     method @HandlerThread @NonNull public GeckoResult<InputStream> saveAsPdf();
+    method @HandlerThread @NonNull public GeckoResult<Void> sendGleanBrokenSiteReport(@Nullable JSONObject, @Nullable String, @NonNull String, @NonNull String, @NonNull Boolean, @NonNull Boolean);
     method @HandlerThread @NonNull public GeckoResult<Void> sendMoreWebCompatInfo(@NonNull JSONObject);
     method @AnyThread public void setActive(boolean);
     method @UiThread public void setAutofillDelegate(@Nullable Autofill.Delegate);
     method @UiThread public void setCompositorScrollDelegate(@Nullable GeckoSession.CompositorScrollDelegate);
-    method @AnyThread public void setContentBlockingDelegate(@Nullable ContentBlocking.Delegate);
+    method @UiThread public void setContentBlockingDelegate(@Nullable ContentBlocking.Delegate);
     method @UiThread public void setContentDelegate(@Nullable GeckoSession.ContentDelegate);
-    method @AnyThread public void setExperimentDelegate(@Nullable ExperimentDelegate);
+    method @UiThread public void setExperimentDelegate(@Nullable ExperimentDelegate);
     method @AnyThread public void setFocused(boolean);
-    method @AnyThread public void setHistoryDelegate(@Nullable GeckoSession.HistoryDelegate);
-    method @AnyThread public void setMediaDelegate(@Nullable GeckoSession.MediaDelegate);
-    method @AnyThread public void setMediaSessionDelegate(@Nullable MediaSession.Delegate);
+    method @UiThread public void setHistoryDelegate(@Nullable GeckoSession.HistoryDelegate);
+    method @UiThread public void setMediaDelegate(@Nullable GeckoSession.MediaDelegate);
+    method @UiThread public void setMediaSessionDelegate(@Nullable MediaSession.Delegate);
     method @UiThread public void setNavigationDelegate(@Nullable GeckoSession.NavigationDelegate);
     method @UiThread public void setPermissionDelegate(@Nullable GeckoSession.PermissionDelegate);
-    method @AnyThread public void setPrintDelegate(@Nullable GeckoSession.PrintDelegate);
+    method @UiThread public void setPrintDelegate(@Nullable GeckoSession.PrintDelegate);
     method @AnyThread public void setPriorityHint(int);
     method @UiThread public void setProgressDelegate(@Nullable GeckoSession.ProgressDelegate);
     method @AnyThread public void setPromptDelegate(@Nullable GeckoSession.PromptDelegate);
     method @UiThread public void setScrollDelegate(@Nullable GeckoSession.ScrollDelegate);
     method @UiThread public void setSelectionActionDelegate(@Nullable GeckoSession.SelectionActionDelegate);
-    method @AnyThread public void setTranslationsSessionDelegate(@Nullable TranslationsController.SessionTranslation.Delegate);
+    method @UiThread public void setTranslationsSessionDelegate(@Nullable TranslationsController.SessionTranslation.Delegate);
     method @AnyThread public void stop();
     method @UiThread protected void setShouldPinOnScreen(boolean);
     field public static final int APP_LINK_LAUNCH_TYPE_COLD = 1;
@@ -2043,13 +2045,13 @@ package org.mozilla.geckoview {
   }
 
   public class GeckoSession.ScrollPositionUpdate {
-    ctor public ScrollPositionUpdate();
+    ctor public ScrollPositionUpdate(float, float, float, int);
     field public static final int SOURCE_OTHER = 1;
     field public static final int SOURCE_USER_INTERACTION = 0;
-    field public float scrollX;
-    field public float scrollY;
-    field public int source;
-    field public float zoom;
+    field public final float scrollX;
+    field public final float scrollY;
+    field public final int source;
+    field public final float zoom;
   }
 
   @Retention(value=RetentionPolicy.SOURCE) public static interface GeckoSession.ScrollPositionUpdate.SourceType {
@@ -2292,6 +2294,7 @@ package org.mozilla.geckoview {
     method @Nullable @UiThread public IPProtectionController.AuthProvider getAuthProvider();
     method @HandlerThread @NonNull public GeckoResult<Void> getCountryList();
     method @Nullable @UiThread public IPProtectionController.Delegate getDelegate();
+    method @Nullable @UiThread public IPProtectionController.GpiProvider getGpiProvider();
     method @HandlerThread @NonNull public GeckoResult<IPProtectionController.ProxyState> getProxyState();
     method @HandlerThread @NonNull public GeckoResult<Integer> getServiceState();
     method @HandlerThread @NonNull public GeckoResult<Void> init();
@@ -2299,6 +2302,7 @@ package org.mozilla.geckoview {
     method @HandlerThread @NonNull public GeckoResult<Void> refreshUsage();
     method @UiThread public void setAuthProvider(@Nullable IPProtectionController.AuthProvider);
     method @UiThread public void setDelegate(@Nullable IPProtectionController.Delegate);
+    method @UiThread public void setGpiProvider(@Nullable IPProtectionController.GpiProvider);
     method @HandlerThread @NonNull public GeckoResult<Void> uninit();
     field public static final int SERVICE_STATE_OPTED_OUT = 3;
     field public static final int SERVICE_STATE_READY = 4;
@@ -2308,7 +2312,7 @@ package org.mozilla.geckoview {
   }
 
   public static interface IPProtectionController.AuthProvider {
-    method @NonNull @UiThread default public GeckoResult<String> getToken();
+    method @NonNull @UiThread default public GeckoResult<String> onTokenRequest();
   }
 
   public static class IPProtectionController.Country {
@@ -2328,6 +2332,11 @@ package org.mozilla.geckoview {
     ctor protected EnrollResult();
     field @Nullable public final String error;
     field public final boolean isEnrolledAndEntitled;
+  }
+
+  public static interface IPProtectionController.GpiProvider {
+    method @NonNull @UiThread default public GeckoResult<String> onTokenRequest();
+    method @NonNull @UiThread default public GeckoResult<Void> warmUp();
   }
 
   public static class IPProtectionController.IPProxyException extends RuntimeException {
@@ -2382,6 +2391,7 @@ package org.mozilla.geckoview {
     method public boolean isActive();
     method public void muteAudio(boolean);
     method public void nextTrack();
+    method public void notifySystemAudioFocusChange(int);
     method public void pause();
     method public void play();
     method public void previousTrack();
@@ -2390,6 +2400,9 @@ package org.mozilla.geckoview {
     method public void seekTo(double, boolean);
     method public void skipAd();
     method public void stop();
+    field public static final int SYSTEM_AUDIO_FOCUS_GAIN = 0;
+    field public static final int SYSTEM_AUDIO_FOCUS_PERMANENT_LOSS = 2;
+    field public static final int SYSTEM_AUDIO_FOCUS_TRANSIENT_LOSS = 1;
   }
 
   @UiThread public static interface MediaSession.Delegate {
@@ -2446,6 +2459,9 @@ package org.mozilla.geckoview {
     field public final double duration;
     field public final double playbackRate;
     field public final double position;
+  }
+
+  @Retention(value=RetentionPolicy.SOURCE) public static interface MediaSession.SystemAudioFocusChange {
   }
 
   public class OrientationController {

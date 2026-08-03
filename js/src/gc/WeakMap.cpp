@@ -2,21 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gc/WeakMap-inl.h"
-
 #include "gc/PublicIterators.h"
 #include "vm/JSObject.h"
 
 #include "gc/AtomMarking-inl.h"
 #include "gc/Marking-inl.h"
 #include "gc/StoreBuffer-inl.h"
+#include "gc/WeakMap-inl.h"
 
 using namespace js;
 using namespace js::gc;
 
 void js::gc::MarkSymbolForWeakMapReadBarrier(JS::Zone* zone, JS::Symbol* sym) {
   MOZ_ASSERT(zone && !zone->isAtomsZone());
-  zone->runtimeFromMainThread()->gc.atomMarking.inlinedMarkAtom(zone, sym);
+  zone->runtimeFromMainThread()->gc.atomReferences.inlinedRecordRef(zone, sym);
 }
 
 WeakMapBase::WeakMapBase(JSObject* memOf, Zone* zone)
@@ -118,8 +117,10 @@ bool WeakMapBase::addEphemeronEdgesForEntry(MarkColor mapColor,
     }
   }
 
-  if (value && !addEphemeronEdge(mapColor, key, value)) {
-    return false;
+  if (value || key->zone()->isAtomsZone()) {
+    if (!addEphemeronEdge(mapColor, key, value)) {
+      return false;
+    }
   }
 
   return true;

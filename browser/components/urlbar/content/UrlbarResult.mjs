@@ -20,7 +20,6 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   JsonSchemaValidator:
     "resource://gre/modules/components-utils/JsonSchemaValidator.sys.mjs",
-  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
@@ -45,7 +44,7 @@ export class UrlbarResult {
   /**
    * @typedef {{ [name: string]: any }} Payload
    *
-   * @typedef {typeof lazy.UrlbarUtils.HIGHLIGHT} HighlightType
+   * @typedef {typeof lazy.UrlbarShared.HIGHLIGHT} HighlightType
    * @typedef {Array<[number, number]>} HighlightIndexes e.g. [[index, length],,]
    * @typedef {Record<string, HighlightType | HighlightIndexes>} Highlights
    */
@@ -56,7 +55,7 @@ export class UrlbarResult {
    * @param {Values<typeof UrlbarShared.RESULT_SOURCE>} params.source
    * @param {UrlbarAutofillData} [params.autofill]
    * @param {number} [params.exposureTelemetry]
-   * @param {Values<typeof lazy.UrlbarUtils.RESULT_GROUP>} [params.group]
+   * @param {Values<typeof UrlbarShared.RESULT_GROUP>} [params.group]
    * @param {boolean} [params.heuristic]
    * @param {boolean} [params.hideRowLabel]
    * @param {boolean} [params.isBestMatch]
@@ -73,12 +72,16 @@ export class UrlbarResult {
    * @param {Payload} [params.payload]
    * @param {Highlights} [params.highlights]
    * @param {boolean} [params.testForceNewContent] Used for test only.
+   * @param {boolean} [params.skipPayloadValidation]
+   *   Skips payload schema validation. Set by {@link UrlbarResult.fromWire} when
+   *   reconstructing a result that was already validated before serialization;
+   *   the wire payload can carry internal fields added after validation.
    */
   constructor({
     type,
     source,
     autofill,
-    exposureTelemetry = lazy.UrlbarUtils.EXPOSURE_TELEMETRY.NONE,
+    exposureTelemetry = UrlbarShared.EXPOSURE_TELEMETRY.NONE,
     group,
     heuristic = false,
     hideRowLabel = false,
@@ -96,6 +99,7 @@ export class UrlbarResult {
     payload,
     highlights = null,
     testForceNewContent,
+    skipPayloadValidation = false,
   }) {
     // Type describes the payload and visualization that should be used for
     // this result.
@@ -125,7 +129,9 @@ export class UrlbarResult {
       this.#highlights = Object.freeze(highlights);
     }
 
-    this.#payload = this.#validatePayload(payload);
+    this.#payload = skipPayloadValidation
+      ? payload
+      : this.#validatePayload(payload);
 
     this.#autofill = autofill;
     this.#exposureTelemetry = exposureTelemetry;
@@ -158,6 +164,33 @@ export class UrlbarResult {
    *   updated by UrlbarView when new result sets are displayed.
    */
   rowIndex = undefined;
+
+  /**
+   * @type {number}
+   *   A stable id assigned once when the result is finalized by
+   *   UrlbarProvidersManager. Unlike rowIndex it never changes and is
+   *   independent of the results' order, so it matches this result to its
+   *   context entry and view row across the actor boundary.
+   */
+  id = undefined;
+
+  /**
+   * A dynamic result's view template, computed eagerly when the result is
+   * finalized so the view can read it synchronously without asking the
+   * provider (which, on the actor message path, lives in another process).
+   * Undefined for non-dynamic results.
+   *
+   * @type {object|undefined}
+   */
+  viewTemplate = undefined;
+
+  /**
+   * The result menu commands the result's provider offers, computed eagerly
+   * alongside `viewTemplate`. Undefined if the provider offers none.
+   *
+   * @type {?UrlbarResultCommand[]|undefined}
+   */
+  commands = undefined;
 
   get type() {
     return this.#type;
@@ -222,7 +255,7 @@ export class UrlbarResult {
   /**
    * The type of the UrlbarProvider providing the result.
    *
-   * @type {?Values<typeof lazy.UrlbarUtils.PROVIDER_TYPE>}
+   * @type {?Values<typeof UrlbarShared.PROVIDER_TYPE>}
    */
   get providerType() {
     return this.#providerType;
@@ -302,7 +335,7 @@ export class UrlbarResult {
    *   Whether the result should be hidden.
    */
   get isHiddenExposure() {
-    return this.exposureTelemetry == lazy.UrlbarUtils.EXPOSURE_TELEMETRY.HIDDEN;
+    return this.exposureTelemetry == UrlbarShared.EXPOSURE_TELEMETRY.HIDDEN;
   }
 
   /**
@@ -329,7 +362,7 @@ export class UrlbarResult {
       if (
         options.isURL == cached.options.isURL &&
         (options.tokens == undefined ||
-          lazy.ObjectUtils.deepEqual(options.tokens, cached.options.tokens))
+          UrlbarShared.deepEqual(options.tokens, cached.options.tokens))
       ) {
         return this.#displayValuesCache.get(payloadName);
       }
@@ -348,7 +381,7 @@ export class UrlbarResult {
       // always be shown because otherwise the result's row in the view will
       // look a little strange, so show the URL's domain as the title. Not all
       // valid URLs have a domain, so fall back to the full URL.
-      highlightType = lazy.UrlbarUtils.HIGHLIGHT.TYPED;
+      highlightType = UrlbarShared.HIGHLIGHT.TYPED;
       try {
         // This will throw if `this.payload.url` isn't a valid URL. If the URL
         // is valid but doesn't have a domain, it won't throw and
@@ -367,7 +400,7 @@ export class UrlbarResult {
     }
 
     if (typeof value == "string") {
-      value = value.substring(0, lazy.UrlbarUtils.MAX_TEXT_LENGTH);
+      value = value.substring(0, UrlbarShared.MAX_TEXT_LENGTH);
     }
 
     if (Array.isArray(this.#highlights?.[payloadName])) {
@@ -405,6 +438,11 @@ export class UrlbarResult {
   /**
    * Returns the given payload if it's valid or throws an error if it's not.
    * The schemas in UrlbarUtils.RESULT_PAYLOAD_SCHEMA are used for validation.
+   *
+   * This must only validate the payload, never transform it or add/remove
+   * properties: the constructor's skipPayloadValidation option bypasses this
+   * method entirely, so any such change would make skipPayloadValidation
+   * consumers (e.g. fromWire) diverge from validated results.
    *
    * @param {object} payload The payload object.
    * @returns {object} `payload` if it's valid.
@@ -449,9 +487,9 @@ export class UrlbarResult {
 
   /**
    * Serializes this result to a plain, structured-cloneable object for sending
-   * across the Urlbar actor boundary. The data lives in private fields that a
-   * bare structuredClone() would drop, so capture it explicitly. `rowIndex` is
-   * the only public own property.
+   * across the Urlbar actor boundary. Most data lives in private fields that a
+   * bare structuredClone() would drop, so capture it explicitly; `id`,
+   * `rowIndex`, `viewTemplate`, and `commands` are the public own properties.
    *
    * @returns {object} The wire representation; reconstruct with fromWire().
    */
@@ -476,9 +514,13 @@ export class UrlbarResult {
       rowLabel: this.#rowLabel,
       showFeedbackMenu: this.#showFeedbackMenu,
       suggestedIndex: this.#suggestedIndex,
+      testForceNewContent: this.#testForceNewContent,
       payload: this.#payload,
       highlights: this.#highlights,
+      id: this.id,
       rowIndex: this.rowIndex,
+      viewTemplate: this.viewTemplate,
+      commands: this.commands,
     };
   }
 
@@ -490,10 +532,14 @@ export class UrlbarResult {
    * @returns {UrlbarResult} The reconstructed result.
    */
   static fromWire(wire) {
-    let result = new UrlbarResult(wire);
-    // providerType and rowIndex aren't constructor parameters, so re-apply them.
+    let result = new UrlbarResult({ ...wire, skipPayloadValidation: true });
+    // providerType, id and rowIndex aren't constructor parameters, so re-apply
+    // them.
     result.providerType = wire.providerType;
+    result.id = wire.id;
     result.rowIndex = wire.rowIndex;
+    result.viewTemplate = wire.viewTemplate;
+    result.commands = wire.commands;
     return result;
   }
 
@@ -520,4 +566,15 @@ export class UrlbarResult {
   #highlights;
   #displayValuesCache;
   #testForceNewContent;
+}
+
+// In chrome window globals, we re-export the UrlbarResult from the system
+// global. Otherwise, UrlbarResults created in a window global but cached in
+// the system global would leak the window.
+if (typeof ChromeUtils != "undefined" && typeof window != "undefined") {
+  // @ts-ignore
+  // eslint-disable-next-line no-class-assign
+  ({ UrlbarResult } = ChromeUtils.importESModule(
+    "chrome://browser/content/urlbar/UrlbarResult.mjs"
+  ));
 }

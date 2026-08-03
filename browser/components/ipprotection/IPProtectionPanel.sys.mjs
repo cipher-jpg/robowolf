@@ -36,6 +36,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
 });
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
@@ -45,6 +46,7 @@ import {
   LINKS,
   SIGNIN_DATA,
 } from "chrome://browser/content/ipprotection/ipprotection-constants.mjs";
+import { getSitePrincipal } from "chrome://browser/content/ipprotection/ipprotection-utils.mjs";
 
 const BANDWIDTH_THRESHOLD_PREF = "browser.ipProtection.bandwidthThreshold";
 const BANDWIDTH_WARNING_DISMISSED_PREF =
@@ -114,7 +116,6 @@ export class IPProtectionPanel {
       IPProtectionPanel.CUSTOM_ELEMENTS_SCRIPT,
       {
         target: window,
-        async: true,
       }
     );
     hasCustomElements.add(window);
@@ -128,7 +129,7 @@ export class IPProtectionPanel {
    *  The location country code
    * @property {Array<{code: string, available: boolean}>} locationsList
    *  Countries available as egress locations, from IPProtectionServerlist.
-   * @property {"generic-error" | "network-error" | ""} error
+   * @property {"generic-error" | "network-error" | "vpn-unavailable" | ""} error
    *  The error type as a string if an error occurred, or empty string if there are no errors.
    * @property {boolean} hasUpgraded
    *  True if a Mozilla VPN subscription is linked to the user's Mozilla account.
@@ -148,6 +149,8 @@ export class IPProtectionPanel {
    *  True if the VPN service is in the process of connecting, else false.
    * @property {boolean} showLocationButtonBadge
    *  True if the "new" badge on the location selection button should be visible.
+   * @property {boolean} isPremium
+   * True if the current device has Firefox set as the default browser or the user has a Mozilla VPN subscription and/or unlimited bandwidth
    */
 
   /**
@@ -357,6 +360,19 @@ export class IPProtectionPanel {
     );
   }
 
+  get isDefaultBrowser() {
+    let isDefaultBrowser = lazy.ShellService.isDefaultBrowser();
+    return isDefaultBrowser;
+  }
+
+  get isPremium() {
+    let isPremium =
+      !this.#getBandwidthUsage() ||
+      lazy.IPProtectionService.authProvider.hasUpgraded ||
+      this.isDefaultBrowser;
+    return isPremium;
+  }
+
   /**
    * Creates an instance of IPProtectionPanel for a specific browser window.
    *
@@ -395,6 +411,7 @@ export class IPProtectionPanel {
         LOCATION_BADGE_DISMISSED_PREF,
         false
       ),
+      isPremium: this.isPremium,
     };
 
     // The progress listener to listen for page navigations.
@@ -493,21 +510,34 @@ export class IPProtectionPanel {
     const win = this.#window.get();
     const inPrivateBrowsing =
       !!win && lazy.PrivateBrowsingUtils.isWindowPrivate(win);
+
+    let country = this.state.location;
+    if (!this.isPremium && country) {
+      const location = lazy.IPProtectionServerlist.getLocation(country);
+      if (location?.country.locked) {
+        country = undefined;
+      }
+    }
+
     const { error } = await lazy.IPPProxyManager.start(
       true,
       inPrivateBrowsing,
-      this.state.location
+      country
     );
     if (error && error !== lazy.ERRORS.CANCELED) {
-      const errorMessage =
-        error == lazy.ERRORS.NETWORK
-          ? lazy.ERRORS.NETWORK
-          : lazy.ERRORS.GENERIC;
+      const errorMessage = this.#errorMessage(error);
       this.setState({
         error: errorMessage,
       });
       this.toolbarButton?.updateState(null, { error: errorMessage });
     }
+  }
+
+  #errorMessage(error) {
+    if ([lazy.ERRORS.NETWORK, lazy.ERRORS.VPN_UNAVAILABLE].includes(error)) {
+      return error;
+    }
+    return lazy.ERRORS.GENERIC;
   }
 
   async #stopProxy() {
@@ -566,7 +596,11 @@ export class IPProtectionPanel {
       });
     }
 
+    // Only check default browser on panel open if not premium to limit calls to the Shell Service
+    const isPremium = this.state.isPremium ? true : this.isPremium;
+
     this.setState({
+      isPremium,
       isSiteExceptionsEnabled: this.isExceptionsFeatureEnabled,
       bandwidthWarning: this.#shouldShowBandwidthWarning(),
     });
@@ -987,6 +1021,10 @@ export class IPProtectionPanel {
   }
 
   #addPrefObserver() {
+    Services.prefs.addObserver(
+      UPGRADE_NOT_AVAILABLE_PREF,
+      this.handlePrefChange
+    );
     Services.prefs.addObserver(EGRESS_LOCATION_PREF, this.handlePrefChange);
     Services.prefs.addObserver(
       BANDWIDTH_WARNING_DISMISSED_PREF,
@@ -995,6 +1033,10 @@ export class IPProtectionPanel {
   }
 
   #removePrefObserver() {
+    Services.prefs.removeObserver(
+      UPGRADE_NOT_AVAILABLE_PREF,
+      this.handlePrefChange
+    );
     Services.prefs.removeObserver(EGRESS_LOCATION_PREF, this.handlePrefChange);
     Services.prefs.removeObserver(
       BANDWIDTH_WARNING_DISMISSED_PREF,
@@ -1003,20 +1045,30 @@ export class IPProtectionPanel {
   }
 
   #handlePrefChange(_subject, _topic, data) {
-    if (data === EGRESS_LOCATION_PREF) {
-      const value = Services.prefs.getStringPref(EGRESS_LOCATION_PREF, "");
-      this.setState({
-        location: value || null,
-      });
-    } else if (data === BANDWIDTH_WARNING_DISMISSED_PREF) {
-      if (!this.#shouldShowBandwidthWarning()) {
-        this.setState({ bandwidthWarning: false });
-      }
+    switch (data) {
+      case EGRESS_LOCATION_PREF:
+        this.setState({
+          location:
+            Services.prefs.getStringPref(EGRESS_LOCATION_PREF, "") || null,
+        });
+        return;
+      case BANDWIDTH_WARNING_DISMISSED_PREF:
+        if (!this.#shouldShowBandwidthWarning()) {
+          this.setState({ bandwidthWarning: false });
+        }
+        return;
+      case UPGRADE_NOT_AVAILABLE_PREF:
+        this.setState({
+          upgradeNotAvailable: Services.prefs.getBoolPref(
+            UPGRADE_NOT_AVAILABLE_PREF,
+            false
+          ),
+        });
     }
   }
 
   /**
-   * Gets siteData by reading the current content principal.
+   * Gets siteData by reading the current URL bar's URI.
    *
    * @returns {object|null}
    *  An object with data relevant to a site (eg. isExclusion),
@@ -1026,7 +1078,7 @@ export class IPProtectionPanel {
    */
 
   #getSiteData() {
-    const principal = this.gBrowser?.contentPrincipal;
+    const principal = getSitePrincipal(this.gBrowser);
     if (!principal || !lazy.IPPExceptionsManager.canManage(principal)) {
       return null;
     }
@@ -1140,13 +1192,13 @@ export class IPProtectionPanel {
       });
     } else if (event.type == "IPProtection:UserEnableVPNForSite") {
       const win = event.target.documentGlobal;
-      const principal = win?.gBrowser.contentPrincipal;
+      const principal = getSitePrincipal(win?.gBrowser);
 
       lazy.IPPExceptionsManager.setExclusion(principal, false);
       Glean.ipprotection.exclusionToggled.record({ excluded: false });
     } else if (event.type == "IPProtection:UserDisableVPNForSite") {
       const win = event.target.documentGlobal;
-      const principal = win?.gBrowser.contentPrincipal;
+      const principal = getSitePrincipal(win?.gBrowser);
 
       lazy.IPPExceptionsManager.setExclusion(principal, true);
       Glean.ipprotection.exclusionToggled.record({ excluded: true });

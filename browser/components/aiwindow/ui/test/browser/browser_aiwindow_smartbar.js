@@ -159,6 +159,9 @@ add_task(async function test_smartbar_explicit_navigate_action() {
 
   await typeInSmartbar(browser, testURL);
   await selectExplicitSmartbarAction(browser, "navigate");
+  // Picking an action locks the button but does not submit.
+  await waitForSmartbarAction(browser, "navigate");
+  await submitSmartbar(browser);
 
   await loaded;
   Assert.equal(
@@ -176,18 +179,27 @@ add_task(async function test_smartbar_explicit_search_action() {
 
   const searchQuery = "tell me about cats";
 
-  await stubLoadURL(browser, { captureURL: true });
+  await stubOpenSERP(browser);
   await typeInSmartbar(browser, searchQuery);
   await selectExplicitSmartbarAction(browser, "search");
+  // Picking an action locks the button but does not submit.
+  await waitForSmartbarAction(browser, "search");
+  const beforeSubmit = await getStubLoadURLResult(browser);
+  Assert.ok(
+    !beforeSubmit.called,
+    "Selecting an action should not submit on its own"
+  );
+  await submitSmartbar(browser);
 
-  const searchResult = await getStubLoadURLResult(browser);
+  const searchResult = await getStubOpenSERPResult(browser);
   Assert.ok(
     searchResult.called,
-    "_loadURL should get called for explicit search action"
+    "controller.openSERP should get called for explicit search action"
   );
-  Assert.ok(
-    searchResult.url.includes("cats"),
-    `Search URL should contain the query: ${searchResult.url}`
+  Assert.equal(
+    searchResult.terms,
+    searchQuery,
+    "Search terms should match the query"
   );
 
   await BrowserTestUtils.closeWindow(win);

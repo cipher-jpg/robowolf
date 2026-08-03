@@ -21,31 +21,31 @@
 #include "mozilla/layers/NativeLayerWayland.h"
 
 #include <dlfcn.h>
-#include <utility>
-#include <algorithm>
 
-#include "gfxUtils.h"
-#include "nsGtkUtils.h"
-#include "GLContextProvider.h"
+#include <algorithm>
+#include <utility>
+
 #include "GLBlitHelper.h"
+#include "GLContextProvider.h"
+#include "ScopedGLHelpers.h"
+#include "gfxUtils.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/SurfacePoolWayland.h"
-#include "mozilla/StaticPrefs_widget.h"
-#include "mozilla/webrender/RenderThread.h"
 #include "mozilla/webrender/RenderDMABUFTextureHost.h"
+#include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/WaylandSurface.h"
-#include "mozilla/StaticPrefs_widget.h"
-#include "ScopedGLHelpers.h"
+#include "nsGtkUtils.h"
 
 #ifdef MOZ_LOGGING
 #  undef LOG
 #  undef LOGVERBOSE
 #  undef LOG_VSYNC
+#  include "Units.h"
 #  include "mozilla/Logging.h"
 #  include "nsTArray.h"
-#  include "Units.h"
 extern mozilla::LazyLogModule gWidgetCompositorLog;
 extern mozilla::LazyLogModule gWidgetVsync;
 #  define LOG(str, ...)                                     \
@@ -1591,7 +1591,7 @@ void NativeLayerRootSnapshotterWayland::UpdateSnapshot(
 
   if (!mSnapshot || mSnapshot->Size() != aSize) {
     mSnapshot = nullptr;
-    auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false);
+    auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false, false);
     if (!fb) {
       return;
     }
@@ -1626,7 +1626,7 @@ already_AddRefed<profiler_screenshots::DownscaleTarget>
 NativeLayerRootSnapshotterWayland::CreateDownscaleTarget(
     const gfx::IntSize& aSize) {
   LOG("NativeLayerRootSnapshotterWayland::CreateDownscaleTarget()");
-  auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false);
+  auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false, false);
   if (!fb) {
     return nullptr;
   }

@@ -21,6 +21,74 @@ const isMSIX =
 const MESSAGES = () => [
   {
     weight: 100,
+    id: "FEATURE_CALLOUT_REFERRAL_TEST",
+    template: "feature_callout",
+    description: "Test referral code generation from a message",
+    content: {
+      id: "FEATURE_CALLOUT_REFERRAL_TEST",
+      template: "multistage",
+      backdrop: "transparent",
+      transitions: false,
+      disableHistoryUpdates: true,
+      metrics: "block",
+      screens: [
+        {
+          id: "FEATURE_CALLOUT_REFERRAL_TEST",
+          anchors: [
+            {
+              selector: "#PanelUI-menu-button",
+              panel_position: {
+                anchor_attachment: "bottomcenter",
+                callout_attachment: "topright",
+              },
+            },
+          ],
+          content: {
+            position: "callout",
+            title: {
+              raw: "This callout will link to about:referrals",
+              marginInline: "0 42px",
+            },
+            above_button_content: [
+              {
+                type: "text",
+                text: [
+                  "Click ",
+                  {
+                    raw: "here",
+                    link_key: "here",
+                  },
+                  " to generate a referral code.",
+                ],
+                textAlign: "start",
+                fontSize: "0.8125em",
+                marginBlock: "0",
+              },
+            ],
+            here: {
+              action: {
+                type: "GET_REFERRAL_CODE",
+                data: {
+                  entrypoint: "test",
+                  where: "tab",
+                },
+              },
+            },
+            dismiss_button: {
+              action: {
+                dismiss: true,
+              },
+            },
+          },
+        },
+      ],
+    },
+    targeting: "providerCohorts.panel_local_testing == 'SHOW_TEST'",
+    groups: [],
+    provider: "panel_local_testing",
+  },
+  {
+    weight: 100,
     id: "FEATURE_CALLOUT_EMBEDDED_LINKS_TEST",
     template: "feature_callout",
     description: "Test embedded links in above_button_content paragraphs",
@@ -1997,85 +2065,6 @@ const MESSAGES = () => [
     trigger: { id: "defaultBrowserCheck" },
   },
   {
-    id: "PB_FOCUS_PROMO",
-    groups: ["panel-test-provider"],
-    template: "spotlight",
-    content: {
-      template: "multistage",
-      backdrop: "transparent",
-      screens: [
-        {
-          id: "PBM_FIREFOX_FOCUS",
-          order: 0,
-          content: {
-            logo: {
-              imageURL: "chrome://browser/content/assets/focus-logo.svg",
-              height: "48px",
-            },
-            title: {
-              string_id: "spotlight-focus-promo-title",
-            },
-            subtitle: {
-              string_id: "spotlight-focus-promo-subtitle",
-            },
-            dismiss_button: {
-              action: {
-                dismiss: true,
-              },
-            },
-            ios: {
-              action: {
-                data: {
-                  args: "https://app.adjust.com/167k4ih?campaign=firefox-desktop&adgroup=pb&creative=focus-omc172&redirect=https%3A%2F%2Fapps.apple.com%2Fus%2Fapp%2Ffirefox-focus-privacy-browser%2Fid1055677337",
-                  where: "tabshifted",
-                },
-                type: "OPEN_URL",
-                navigate: true,
-              },
-            },
-            android: {
-              action: {
-                data: {
-                  args: "https://app.adjust.com/167k4ih?campaign=firefox-desktop&adgroup=pb&creative=focus-omc172&redirect=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dorg.mozilla.focus",
-                  where: "tabshifted",
-                },
-                type: "OPEN_URL",
-                navigate: true,
-              },
-            },
-            email_link: {
-              action: {
-                data: {
-                  args: "https://mozilla.org",
-                  where: "tabshifted",
-                },
-                type: "OPEN_URL",
-                navigate: true,
-              },
-            },
-            tiles: {
-              type: "mobile_downloads",
-              data: {
-                QR_code: {
-                  image_url:
-                    "chrome://browser/content/assets/focus-qr-code.svg",
-                  alt_text: {
-                    string_id: "spotlight-focus-promo-qr-code",
-                  },
-                },
-                email: {
-                  link_text: "Email yourself a link",
-                },
-                marketplace_buttons: ["ios", "android"],
-              },
-            },
-          },
-        },
-      ],
-    },
-    trigger: { id: "defaultBrowserCheck" },
-  },
-  {
     id: "PB_NEWTAB_VPN_PROMO",
     template: "pb_newtab",
     content: {
@@ -3032,6 +3021,89 @@ const MESSAGES = () => [
     groups: ["cfr"],
   },
   {
+    id: "TEST_ASROUTER_NEWTAB_MESSAGE_POLL_DEFAULT",
+    template: "newtab_message",
+    content: {
+      messageType: "ASRouterNewTabMessage",
+      // eslint-disable-next-line mozilla/no-newtab-refs-outside-newtab
+      imageSrc: "chrome://newtab/content/data/content/assets/kit-in-circle.svg",
+      heading: "Make Firefox your own",
+      body: "Set Firefox as your default browser and pin it so it's always a click away.",
+      hideDismissButton: false,
+      // Declarative variants: each entry's `targeting` is re-evaluated against
+      // the live ASRouter environment (the "uncached" attributes read live
+      // shell state), and the first match's content overlays the base content.
+      // A `final` entry stops the re-evaluation poll once reached. Here, each
+      // state drops whichever step is already satisfied, so only the still-
+      // relevant button(s) show: both when neither is done (base content), only
+      // "Pin to taskbar" once we're the default, only "Set as default" once
+      // we're pinned, and the completed state once both are true.
+      states: [
+        {
+          // Already the default but not pinned: drop the "Set as default" step
+          // and only ask to pin.
+          targeting: "isDefaultBrowserUncached && doesAppNeedPinUncached",
+          content: {
+            primaryButton: null,
+          },
+        },
+        {
+          // Already pinned but not the default: drop the "Pin to taskbar" step
+          // and only ask to set as default.
+          targeting: "!isDefaultBrowserUncached && !doesAppNeedPinUncached",
+          content: {
+            secondaryButton: null,
+          },
+        },
+        {
+          // Default and pinned: everything's done. Show the completed state
+          // and stop polling.
+          targeting: "isDefaultBrowserUncached && !doesAppNeedPinUncached",
+          final: true,
+          content: {
+            heading: "You're all set",
+            body: "Firefox is now your default browser and pinned. Thanks!",
+            // No `type`, so this renders in the primary style.
+            primaryButton: {
+              label: "Go to settings to try it out!",
+              action: {
+                type: "OPEN_ABOUT_PAGE",
+                data: { args: "settings#browserIcon", where: "tab" },
+              },
+            },
+            secondaryButton: null,
+          },
+        },
+      ],
+      // The base content (neither step done) shows both steps, rendered non-
+      // primary (`type: "default"`) since neither is the single call-to-action.
+      // The states above swap in narrower content as each step is satisfied.
+      primaryButton: {
+        label: "Set as default",
+        type: "default",
+        action: {
+          type: "SET_DEFAULT_BROWSER",
+        },
+      },
+      secondaryButton: {
+        label: "Pin to taskbar",
+        type: "default",
+        action: {
+          type: "PIN_FIREFOX_TO_TASKBAR",
+        },
+      },
+      position: "ABOVE_TOPSITES",
+    },
+    frequency: {
+      lifetime: 3,
+    },
+    trigger: {
+      id: "newtabMessageCheck",
+    },
+    targeting: "true",
+    groups: ["cfr"],
+  },
+  {
     id: "TEST_ASROUTER_MULTISTAGE_MESSAGE",
     template: "newtab_message",
     groups: ["cfr"],
@@ -3758,6 +3830,81 @@ const MESSAGES = () => [
       id: "newtabMessageCheck",
     },
   },
+  // TEST_NOVA_MULTISTAGE_SPLIT exercises the OMC-owned embedded multi-stage
+  // (spotlight) New Tab surface for the Nova design-token audit. Force it on via
+  // about:asrouter while Nova is enabled to check token, spacing, and layout
+  // rendering. This surface is bundled / multi-stage, so notify HNT of changes.
+  {
+    id: "TEST_NOVA_MULTISTAGE_SPLIT",
+    template: "newtab_message",
+    groups: [],
+    content: {
+      messageType: "ASRouterMultistageMessage",
+      id: "TEST_NOVA_MULTISTAGE_SPLIT",
+      transitions: false,
+      backdrop: "transparent",
+      screens: [
+        {
+          id: "NOVA_SPLIT_SCREEN_1",
+          content: {
+            position: "split",
+            screen_style: { height: "500px" },
+            hero_text: {
+              title: {
+                raw: "Nova multistage, split layout",
+                fontSize: "24px",
+              },
+              subtitle: {
+                raw: "First of two screens. Verifies the steps indicator and split hero area under Nova.",
+              },
+            },
+            title: {
+              raw: "Screen one",
+            },
+            subtitle: {
+              raw: "Check spacing and contrast of the content column.",
+            },
+            primary_button: {
+              label: { raw: "Next" },
+              action: { navigate: true },
+            },
+          },
+        },
+        {
+          id: "NOVA_SPLIT_SCREEN_2",
+          content: {
+            position: "split",
+            screen_style: { height: "500px" },
+            hero_text: {
+              title: {
+                raw: "Almost done",
+                fontSize: "24px",
+              },
+            },
+            title: {
+              raw: "Screen two",
+            },
+            subtitle: {
+              raw: "Final screen, confirm the primary and secondary button styling under Nova.",
+            },
+            primary_button: {
+              label: { raw: "Finish" },
+              action: { dismiss: true },
+            },
+            secondary_button: {
+              label: { raw: "Not now" },
+              // navigate on the last screen falls through to AWFinish (dismiss);
+              // this matches the pattern shipping split-screen messages use.
+              action: { navigate: true },
+            },
+          },
+        },
+      ],
+    },
+    trigger: {
+      id: "newtabMessageCheck",
+    },
+  },
   {
     id: "UNIVERSAL_INFOBAR_WITH_EMBEDDED_LINKS",
     content: {
@@ -4137,6 +4284,7 @@ const MESSAGES = () => [
             hero_text: {
               title: {
                 raw: "Follow the World Cup in Firefox",
+                fontSize: "24px",
               },
               subtitle: {
                 raw: "One click launches your most used sites in a streamlined window with all of Firefox’s protections.",
@@ -4150,8 +4298,10 @@ const MESSAGES = () => [
               type: "pinnable_sites",
               title: {
                 raw: "Select to add to your taskbar",
+                fontSize: "18px",
               },
               pinButtonLabel: { raw: "Add" },
+              alwaysShowPinButton: true,
               data: [
                 {
                   id: "fifa-plus",
@@ -4197,6 +4347,7 @@ const MESSAGES = () => [
             },
             primary_button: {
               label: { raw: "Done" },
+              disabled: "hasPinnedSite",
               action: { dismiss: true },
             },
             dismiss_button: {
@@ -4212,6 +4363,70 @@ const MESSAGES = () => [
       lifetime: 100,
     },
     targeting: "true",
+  },
+  // For manually testing the splitViewUsed trigger. See the "trigger" field.
+  {
+    id: "SPLIT_VIEW_SMART_WINDOW_CALLOUT",
+    template: "feature_callout",
+    groups: [],
+    provider: "panel_local_testing",
+    content: {
+      id: "SPLIT_VIEW_SMART_WINDOW_CALLOUT",
+      template: "multistage",
+      backdrop: "transparent",
+      transitions: false,
+      screens: [
+        {
+          id: "SPLIT_VIEW_SMART_WINDOW_CALLOUT",
+          anchors: [
+            {
+              selector: "#split-view-button",
+              panel_position: {
+                anchor_attachment: "bottomcenter",
+                callout_attachment: "topright",
+              },
+            },
+          ],
+          content: {
+            position: "callout",
+            padding: 16,
+            width: "330px",
+            title: "Working across multiple tabs?",
+            subtitle: "Try Smart Window to compare or reason across them.",
+            primary_button: {
+              label: "Try Smart Window",
+              action: {
+                type: "MULTI_ACTION",
+                dismiss: true,
+                data: {
+                  actions: [
+                    {
+                      type: "OPEN_ABOUT_PAGE",
+                      data: {
+                        args: "newtab",
+                        where: "tab",
+                      },
+                    },
+                    { type: "FXA_AIWINDOW_SIGNIN_FLOW" },
+                  ],
+                },
+              },
+            },
+            dismiss_button: { action: { dismiss: true } },
+          },
+        },
+      ],
+    },
+    // Example of message targeting on the trigger's splitViewCreateCount
+    // context, to exclude users who are creating a Split View for the first
+    // time.
+    targeting: "splitViewCreateCount > 1",
+    trigger: {
+      id: "splitViewUsed",
+    },
+    frequency: {
+      lifetime: 2,
+    },
   },
 ];
 

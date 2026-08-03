@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "debugger/Debugger-inl.h"
-
 #include "mozilla/Attributes.h"        // for MOZ_STACK_CLASS, MOZ_RAII
 #include "mozilla/DebugOnly.h"         // for DebugOnly
 #include "mozilla/DoublyLinkedList.h"  // for DoublyLinkedList<>::Iterator
@@ -32,6 +30,8 @@
 #include "debugger/DebuggerMemory.h"  // for DebuggerMemory
 #include "debugger/DebugScript.h"     // for DebugScript
 #include "debugger/Environment.h"     // for DebuggerEnvironment
+
+#include "debugger/Debugger-inl.h"
 #ifdef MOZ_EXECUTION_TRACING
 #  include "debugger/ExecutionTracer.h"  // for ExecutionTracer::onEnterFrame, ExecutionTracer::onLeaveFrame
 #endif
@@ -90,7 +90,7 @@
 #include "vm/GlobalObject.h"          // for GlobalObject
 #include "vm/Interpreter.h"           // for Call, ReportIsNotFunction
 #include "vm/Iteration.h"             // for CreateIterResultObject
-#include "vm/JSAtomUtils.h"  // for Atomize, AtomizeUTF8Chars, AtomIsMarked, AtomToId, ClassName
+#include "vm/JSAtomUtils.h"  // for Atomize, AtomizeUTF8Chars, ZoneHasRef, AtomToId, ClassName
 #include "vm/JSContext.h"         // for JSContext
 #include "vm/JSFunction.h"        // for JSFunction
 #include "vm/JSObject.h"          // for JSObject, RequireObject,
@@ -198,7 +198,7 @@ ArrayObject* js::GetFunctionParameterNamesArray(JSContext* cx,
       if (JSAtom* atom = fi.name()) {
         // Skip any internal, non-identifier names, like for example ".args".
         if (IsIdentifier(atom)) {
-          cx->markAtom(atom);
+          cx->recordRef(atom);
           names[i].setString(atom);
         }
       }
@@ -966,6 +966,8 @@ bool DebugAPI::slowPathOnResumeFrame(JSContext* cx, AbstractFramePtr frame) {
   // frame is observable.
   FrameIter iter(cx);
   MOZ_ASSERT(iter.abstractFramePtr() == frame);
+  jsbytecode* pc = iter.pc();
+  MOZ_ASSERT(JSOp(*pc) == JSOp::AfterYield);
   {
     JS::AutoAssertNoGC nogc;
     for (Realm::DebuggerVectorEntry& entry :
@@ -988,7 +990,23 @@ bool DebugAPI::slowPathOnResumeFrame(JSContext* cx, AbstractFramePtr frame) {
 
   terminateDebuggerFramesGuard.release();
 
-  return slowPathOnEnterFrame(cx, frame);
+  if (!slowPathOnEnterFrame(cx, frame)) {
+    return false;
+  }
+
+  // Handle breakpoints/stepping for the JSOp::AfterYield op.
+  if (DebugAPI::stepModeEnabled(frame.script())) {
+    if (!DebugAPI::onSingleStep(cx)) {
+      return false;
+    }
+  }
+  if (DebugAPI::hasBreakpointsAt(frame.script(), pc)) {
+    if (!DebugAPI::onTrap(cx)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /* static */
@@ -2378,7 +2396,7 @@ bool Debugger::fireNativeCall(JSContext* cx, const CallArgs& args,
       reasonAtom = cx->names().set;
       break;
   }
-  MOZ_ASSERT(AtomIsMarked(cx->zone(), reasonAtom));
+  MOZ_ASSERT(ZoneHasRef(cx->zone(), reasonAtom));
 
   RootedValue reasonval(cx, StringValue(reasonAtom));
 
@@ -2803,8 +2821,7 @@ bool DebugAPI::onSingleStep(JSContext* cx) {
         // it had better be suspended.
         MOZ_ASSERT(genObj.isSuspended());
 
-        if (genObj.callee().hasBaseScript() &&
-            genObj.callee().baseScript() == trappingScript &&
+        if (genObj.script() == trappingScript &&
             !frameObj.getReservedSlot(DebuggerFrame::ONSTEP_HANDLER_SLOT)
                  .isUndefined()) {
           suspendedStepperCount++;
@@ -3071,7 +3088,7 @@ bool Debugger::appendAllocationSite(JSContext* cx, HandleObject obj,
 }
 
 bool Debugger::firePromiseHook(JSContext* cx, Hook hook, HandleObject promise) {
-  MOZ_ASSERT(hook == OnNewPromise || hook == OnPromiseSettled);
+  MOZ_ASSERT(hook == OnNewPromise);
 
   RootedObject hookObj(cx, getHook(hook));
   MOZ_ASSERT(hookObj);
@@ -3099,13 +3116,7 @@ bool Debugger::firePromiseHook(JSContext* cx, Hook hook, HandleObject promise) {
 /* static */
 void Debugger::slowPathPromiseHook(JSContext* cx, Hook hook,
                                    Handle<PromiseObject*> promise) {
-  MOZ_ASSERT(hook == OnNewPromise || hook == OnPromiseSettled);
-
-  if (hook == OnPromiseSettled) {
-    // We should be in the right compartment, but for simplicity always enter
-    // the promise's realm below.
-    cx->check(promise);
-  }
+  MOZ_ASSERT(hook == OnNewPromise);
 
   AutoRealm ar(cx, promise);
 
@@ -3117,15 +3128,18 @@ void Debugger::slowPathPromiseHook(JSContext* cx, Hook hook,
 }
 
 /* static */
-void DebugAPI::slowPathOnNewPromise(JSContext* cx,
+bool DebugAPI::slowPathOnNewPromise(JSContext* cx,
                                     Handle<PromiseObject*> promise) {
-  Debugger::slowPathPromiseHook(cx, Debugger::OnNewPromise, promise);
-}
+  auto prevState = promise->state();
 
-/* static */
-void DebugAPI::slowPathOnPromiseSettled(JSContext* cx,
-                                        Handle<PromiseObject*> promise) {
-  Debugger::slowPathPromiseHook(cx, Debugger::OnPromiseSettled, promise);
+  Debugger::slowPathPromiseHook(cx, Debugger::OnNewPromise, promise);
+
+  if (promise->state() != prevState) {
+    JS_ReportErrorASCII(cx, "Debugger hook violates the promise invariant");
+    return false;
+  }
+
+  return true;
 }
 
 /*** Debugger code invalidation for observing execution *********************/
@@ -3983,7 +3997,13 @@ void DebugAPI::traceWasmContFrame(JSTracer* tracer, JSObject* src,
   for (Realm::DebuggerVectorEntry& entry :
        instance->realm()->getDebuggers(nogc)) {
     Debugger* dbg = entry.dbg.unbarrieredGet();
-    auto p = dbg->frames.lookup(fp);
+    // readonlyThreadsafeLookup returns the same result as lookup(); it only
+    // omits lookup()'s single-threaded ReentrancyGuard. We need that here
+    // because parallel marking threads may run this concurrently, which is
+    // safe: nothing mutates `frames` during marking. Every mutator runs on the
+    // main thread, which is paused for parallel marking, and the sole GC-phase
+    // mutator (DebugAPI::sweepAll) runs only after marking.
+    auto p = dbg->frames.readonlyThreadsafeLookup(fp);
     if (!p) {
       continue;
     }
@@ -4329,8 +4349,6 @@ struct MOZ_STACK_CLASS Debugger::CallData {
   bool setOnNewGlobalObject();
   bool getOnNewPromise();
   bool setOnNewPromise();
-  bool getOnPromiseSettled();
-  bool setOnPromiseSettled();
   bool getUncaughtExceptionHook();
   bool setUncaughtExceptionHook();
   bool getAllowUnobservedWasm();
@@ -4502,14 +4520,6 @@ bool Debugger::CallData::getOnNewPromise() {
 
 bool Debugger::CallData::setOnNewPromise() {
   return setHookImpl(cx, args, *dbg, OnNewPromise);
-}
-
-bool Debugger::CallData::getOnPromiseSettled() {
-  return getHookImpl(cx, args, *dbg, OnPromiseSettled);
-}
-
-bool Debugger::CallData::setOnPromiseSettled() {
-  return setHookImpl(cx, args, *dbg, OnPromiseSettled);
 }
 
 bool Debugger::CallData::getOnEnterFrame() {
@@ -6640,7 +6650,7 @@ bool Debugger::CallData::findSourceURLs() {
         // in another zone and the atom must be marked when we create a
         // reference in this zone.
         MOZ_ASSERT(v.isString() && v.toString()->isAtom());
-        cx->markAtomValue(v);
+        cx->recordRefToValue(v);
 
         if (!NewbornArrayPush(cx, result, v)) {
           return false;
@@ -6945,7 +6955,6 @@ const JSPropertySpec Debugger::properties[] = {
                   setOnExceptionUnwind),
     JS_DEBUG_PSGS("onNewScript", getOnNewScript, setOnNewScript),
     JS_DEBUG_PSGS("onNewPromise", getOnNewPromise, setOnNewPromise),
-    JS_DEBUG_PSGS("onPromiseSettled", getOnPromiseSettled, setOnPromiseSettled),
     JS_DEBUG_PSGS("onEnterFrame", getOnEnterFrame, setOnEnterFrame),
     JS_DEBUG_PSGS("onNativeCall", getOnNativeCall, setOnNativeCall),
     JS_DEBUG_PSGS("shouldAvoidSideEffects", getShouldAvoidSideEffects,
@@ -7386,7 +7395,7 @@ extern JS_PUBLIC_API bool JS_DefineDebuggerObject(JSContext* cx,
                                                   HandleObject obj) {
   Rooted<NativeObject*> debugCtor(cx), debugProto(cx), frameProto(cx),
       scriptProto(cx), sourceProto(cx), objectProto(cx), envProto(cx),
-      memoryProto(cx);
+      memoryProto(cx), privateNameProto(cx);
   RootedObject debuggeeWouldRunProto(cx);
   RootedValue debuggeeWouldRunCtor(cx);
   Handle<GlobalObject*> global = obj.as<GlobalObject>();
@@ -7431,6 +7440,11 @@ extern JS_PUBLIC_API bool JS_DefineDebuggerObject(JSContext* cx,
     return false;
   }
 
+  privateNameProto = DebuggerPrivateName::initClass(cx, global, debugCtor);
+  if (!privateNameProto) {
+    return false;
+  }
+
   debuggeeWouldRunProto = GlobalObject::getOrCreateCustomErrorPrototype(
       cx, global, JSEXN_DEBUGGEEWOULDRUN);
   if (!debuggeeWouldRunProto) {
@@ -7457,6 +7471,8 @@ extern JS_PUBLIC_API bool JS_DefineDebuggerObject(JSContext* cx,
                               ObjectValue(*envProto));
   debugProto->setReservedSlot(Debugger::JSSLOT_DEBUG_MEMORY_PROTO,
                               ObjectValue(*memoryProto));
+  debugProto->setReservedSlot(Debugger::JSSLOT_DEBUG_PRIVATE_NAME_PROTO,
+                              ObjectValue(*privateNameProto));
   return true;
 }
 

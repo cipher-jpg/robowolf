@@ -21,8 +21,8 @@
  */
 
 /**
- * pdfjsVersion = 6.1.239
- * pdfjsBuild = 0cc1718b0
+ * pdfjsVersion = 6.2.146
+ * pdfjsBuild = d0779c411
  */
 
 ;// ./src/scripting_api/constants.js
@@ -159,15 +159,14 @@ const FieldType = {
   time: 4
 };
 function createActionsMap(actions) {
-  return new Map(actions ? Object.entries(actions) : null);
+  return actions instanceof Map ? actions : new Map(actions ? Object.entries(actions) : null);
 }
 function getFieldType(actions) {
   let format = actions.get("Format");
   if (!format) {
     return FieldType.none;
   }
-  format = format[0];
-  format = format.trim();
+  format = format[0].trim();
   if (format.startsWith("AFNumber_")) {
     return FieldType.number;
   }
@@ -443,10 +442,7 @@ class Field extends PDFObject {
     this.value = data.value || "";
   }
   get currentValueIndices() {
-    if (!this._isChoice) {
-      return 0;
-    }
-    return this._currentValueIndices;
+    return !this._isChoice ? 0 : this._currentValueIndices;
   }
   set currentValueIndices(indices) {
     if (!this._isChoice) {
@@ -629,28 +625,18 @@ class Field extends PDFObject {
     }
   }
   buttonGetCaption(nFace = 0) {
-    if (this._buttonCaption) {
-      return this._buttonCaption[nFace];
-    }
-    return "";
+    return this._buttonCaption ? this._buttonCaption[nFace] : "";
   }
   buttonGetIcon(nFace = 0) {
-    if (this._buttonIcon) {
-      return this._buttonIcon[nFace];
-    }
-    return null;
+    return this._buttonIcon ? this._buttonIcon[nFace] : null;
   }
   buttonImportIcon(cPath = null, nPave = 0) {}
   buttonSetCaption(cCaption, nFace = 0) {
-    if (!this._buttonCaption) {
-      this._buttonCaption = ["", "", ""];
-    }
+    this._buttonCaption ??= ["", "", ""];
     this._buttonCaption[nFace] = cCaption;
   }
   buttonSetIcon(oIcon, nFace = 0) {
-    if (!this._buttonIcon) {
-      this._buttonIcon = [null, null, null];
-    }
+    this._buttonIcon ??= [null, null, null];
     this._buttonIcon[nFace] = oIcon;
   }
   checkThisBox(nWidget, bCheckIt = true) {}
@@ -937,16 +923,10 @@ class CheckboxField extends RadioButtonField {
     return state ? super._getExportValue(state) : "Off";
   }
   isBoxChecked(nWidget) {
-    if (this._value === "Off") {
-      return false;
-    }
-    return super.isBoxChecked(nWidget);
+    return this._value === "Off" ? false : super.isBoxChecked(nWidget);
   }
   isDefaultChecked(nWidget) {
-    if (this.defaultValue === "Off") {
-      return this._value === "Off";
-    }
-    return super.isDefaultChecked(nWidget);
+    return this.defaultValue === "Off" ? this._value === "Off" : super.isDefaultChecked(nWidget);
   }
   checkThisBox(nWidget, bCheckIt = true) {
     if (nWidget < 0 || nWidget >= this._radioIds.length) {
@@ -988,10 +968,7 @@ class AForm {
     return isNaN(date) ? null : new Date(date);
   }
   AFMergeChange(event = globalThis.event) {
-    if (event.willCommit) {
-      return event.value.toString();
-    }
-    return this._app._eventDispatcher.mergeChange(event);
+    return event.willCommit ? event.value.toString() : this._app._eventDispatcher.mergeChange(event);
   }
   AFParseDateEx(cString, cOrder) {
     return this._parseDate(cOrder, cString);
@@ -1028,10 +1005,7 @@ class AForm {
     return number;
   }
   AFMakeArrayFromList(string) {
-    if (typeof string === "string") {
-      return string.split(/, ?/g);
-    }
-    return string;
+    return typeof string === "string" ? string.split(/, ?/g) : string;
   }
   AFNumber_Format(nDec, sepStyle, negStyle, currStyle, strCurrency, bCurrencyPrepend) {
     const event = globalThis.event;
@@ -1408,10 +1382,7 @@ class AForm {
     return this._emailRegex.test(str);
   }
   AFExactMatch(rePatterns, str) {
-    if (rePatterns instanceof RegExp) {
-      return str.match(rePatterns)?.[0] === str || 0;
-    }
-    return rePatterns.findIndex(re => str.match(re)?.[0] === str) + 1;
+    return rePatterns instanceof RegExp ? str.match(rePatterns)?.[0] === str || 0 : rePatterns.findIndex(re => str.match(re)?.[0] === str) + 1;
   }
 }
 
@@ -1464,7 +1435,7 @@ class EventDispatcher {
   }
   userActivation() {
     this._document.obj._userActivation = true;
-    this._externalCall("setTimeout", [USERACTIVATION_CALLBACKID, USERACTIVATION_MAXTIME_VALIDITY]);
+    this._externalCall("setTimeout", [(/* inlined export .USERACTIVATION_CALLBACKID */0), (/* inlined export .USERACTIVATION_MAXTIME_VALIDITY */5000)]);
   }
   dispatch(baseEvent) {
     const id = baseEvent.id;
@@ -1806,7 +1777,7 @@ class App extends PDFObject {
     this._timeoutIds = new WeakMap();
     this._timeoutIdsRegistry = new FinalizationRegistry(this._cleanTimeout.bind(this));
     this._timeoutCallbackIds = new Map();
-    this._timeoutCallbackId = USERACTIVATION_CALLBACKID + 1;
+    this._timeoutCallbackId = (/* inlined export .USERACTIVATION_CALLBACKID */0) + 1;
     this._globalEval = data.globalEval;
     this._externalCall = data.externalCall;
   }
@@ -1826,7 +1797,7 @@ class App extends PDFObject {
     interval
   }) {
     const documentObj = this._document.obj;
-    if (callbackId === USERACTIVATION_CALLBACKID) {
+    if (callbackId === (/* inlined export .USERACTIVATION_CALLBACKID */0)) {
       documentObj._userActivation = false;
       return;
     }
@@ -2062,13 +2033,13 @@ class App extends PDFObject {
     this.toolbar = value;
   }
   get viewerType() {
-    return VIEWER_TYPE;
+    return (/* inlined export .VIEWER_TYPE */"PDF.js");
   }
   set viewerType(_) {
     throw new Error("app.viewerType is read-only");
   }
   get viewerVariation() {
-    return VIEWER_VARIATION;
+    return (/* inlined export .VIEWER_VARIATION */"Full");
   }
   set viewerVariation(_) {
     throw new Error("app.viewerVariation is read-only");
@@ -2504,9 +2475,7 @@ class Doc extends PDFObject {
   _dispatchPageEvent(name, actions, pageNumber) {
     if (name === "PageOpen") {
       this.#pageActions ??= new Map();
-      if (!this.#pageActions.has(pageNumber)) {
-        this.#pageActions.set(pageNumber, createActionsMap(actions));
-      }
+      this.#pageActions.getOrInsertComputed(pageNumber, () => createActionsMap(actions));
       this._pageNum = pageNumber - 1;
     }
     for (const acts of [this.#pageActions, this.#otherPageActions]) {
@@ -3261,11 +3230,9 @@ class ProxyHandler {
     return undefined;
   }
   set(obj, prop, value) {
-    if (obj._kidIds) {
-      obj._kidIds.forEach(id => {
-        obj._appObjects[id].wrapped[prop] = value;
-      });
-    }
+    obj._kidIds?.forEach(id => {
+      obj._appObjects[id].wrapped[prop] = value;
+    });
     if (typeof prop === "string" && !prop.startsWith("_") && prop in obj) {
       const old = obj[prop];
       obj[prop] = value;
@@ -3398,9 +3365,7 @@ class Util extends PDFObject {
         }
       }
       cFlags = flags;
-      if (nWidth) {
-        nWidth = parseInt(nWidth);
-      }
+      nWidth &&= parseInt(nWidth);
       let intPart = Math.trunc(arg);
       if (cConvChar === "x") {
         let hex = Math.abs(intPart).toString(16).toUpperCase();
@@ -3412,9 +3377,7 @@ class Util extends PDFObject {
         }
         return hex;
       }
-      if (nPrecision) {
-        nPrecision = parseInt(nPrecision.substring(1));
-      }
+      nPrecision &&= parseInt(nPrecision.substring(1));
       nDecSep = nDecSep ? nDecSep.substring(1) : "0";
       const separators = {
         0: [",", "."],
@@ -3514,10 +3477,7 @@ class Util extends PDFObject {
     };
     const patterns = /(mmmm|mmm|mm|m|dddd|ddd|dd|d|yyyy|yy|HH|H|hh|h|MM|M|ss|s|tt|t|\\.)/g;
     return cFormat.replaceAll(patterns, function (match, pattern) {
-      if (pattern in handlers) {
-        return handlers[pattern](data);
-      }
-      return pattern.charCodeAt(1);
+      return pattern in handlers ? handlers[pattern](data) : pattern.charCodeAt(1);
     });
   }
   printx(cFormat, cSource) {
@@ -3829,7 +3789,7 @@ class Util extends PDFObject {
           action
         } = handlers[patternElement];
         actions.push(action);
-        return pattern;
+        return pattern.includes(",") ? `(?=${pattern})\\${actions.length}` : pattern;
       });
       this._scandCache.set(cFormat, [re, actions]);
     }

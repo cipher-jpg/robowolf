@@ -188,14 +188,15 @@ export class SidebarBookmarks extends SidebarPage {
   }
 
   #collectNodesFromList(list, nodes) {
-    for (const item of list.tabItems) {
+    for (const [index, item] of list.tabItems.entries()) {
       const isFolder = Array.isArray(item.children);
       if (isFolder) {
-        this.#collectNodesFromFolder(item, list, nodes);
+        this.#collectNodesFromFolder(item, index, list, nodes);
       } else {
         nodes.push({
           list,
           item,
+          index,
           type: item.url ? "row" : "separator",
           get domNode() {
             return list.shadowRoot.querySelector(
@@ -207,12 +208,13 @@ export class SidebarBookmarks extends SidebarPage {
     }
   }
 
-  #collectNodesFromFolder(folder, list, nodes) {
+  #collectNodesFromFolder(folder, index, list, nodes) {
     const isExpanded = this.#expandedFolderGuids.has(folder.guid);
     if (folder.children.length) {
       nodes.push({
         list,
         item: folder,
+        index,
         type: "folder",
         get domNode() {
           return list.shadowRoot.querySelector(
@@ -230,6 +232,7 @@ export class SidebarBookmarks extends SidebarPage {
       nodes.push({
         list,
         item: folder,
+        index,
         type: "empty-folder",
         get domNode() {
           return list.shadowRoot.querySelector(
@@ -919,51 +922,78 @@ export class SidebarBookmarks extends SidebarPage {
     await lazy.PlacesTransactions.SortByName(this.triggerNode.guid).transact();
   }
 
-  async #cutBookmarks(bookmarks) {
+  #cutBookmarks(bookmarks) {
     this.#copyBookmarksToClipboard(bookmarks, "cut");
-    await lazy.PlacesTransactions.Remove({
-      guids: bookmarks.map(b => b.guid),
-    }).transact();
   }
 
   #copyBookmarks(bookmarks) {
     this.#copyBookmarksToClipboard(bookmarks, "copy");
   }
 
+  /**
+   * Builds and passes text/x-moz-place, text/x-moz-url and text/plain flavors
+   * to the clipboard based on selected bookmark nodes and their data.
+   *
+   * Flavors:
+   * - text/x-moz-place: comma-separated JSON objects, one per bookmark
+   * - text/x-moz-url: bookmark URL + newline + title, one per bookmark
+   * - text/plain: bookmark URL as raw text, one per bookmark
+   *
+   * @param {Array} bookmarks array of sidebar-bookmark-row nodes
+   * @param {"copy"|"cut"} action type of action taken (cut or copy)
+   */
   #copyBookmarksToClipboard(bookmarks, action) {
-    const data = bookmarks
-      .map(item => {
-        if (item.isSeparator) {
-          return JSON.stringify({
-            type: lazy.PlacesUtils.TYPE_X_MOZ_PLACE_SEPARATOR,
-          });
-        }
-        if (item.isFolder) {
-          if (lazy.PlacesUtils.isRootItem(item.guid)) {
-            return JSON.stringify(
-              lazy.PlacesUtils.bookmarks.createVirtualLinkToRoot(item)
-            );
-          }
-          return JSON.stringify({
-            type: lazy.PlacesUtils.TYPE_X_MOZ_PLACE_CONTAINER,
-            itemGuid: item.guid,
-            instanceId: lazy.PlacesUtils.instanceId,
-            title: item.title,
-          });
+    const xMozPlaceEntries = bookmarks.map(item => {
+      if (item.isSeparator) {
+        return JSON.stringify({
+          type: lazy.PlacesUtils.TYPE_X_MOZ_PLACE_SEPARATOR,
+        });
+      }
+      if (item.isFolder) {
+        if (lazy.PlacesUtils.isRootItem(item.guid)) {
+          return JSON.stringify(
+            lazy.PlacesUtils.bookmarks.createVirtualLinkToRoot(item)
+          );
         }
         return JSON.stringify({
-          type: lazy.PlacesUtils.TYPE_X_MOZ_PLACE,
+          type: lazy.PlacesUtils.TYPE_X_MOZ_PLACE_CONTAINER,
           itemGuid: item.guid,
           instanceId: lazy.PlacesUtils.instanceId,
           title: item.title,
-          uri: item.url,
         });
-      })
+      }
+      return JSON.stringify({
+        type: lazy.PlacesUtils.TYPE_X_MOZ_PLACE,
+        itemGuid: item.guid,
+        instanceId: lazy.PlacesUtils.instanceId,
+        title: item.title,
+        uri: item.url,
+      });
+    });
+
+    const xMozPlaceFlavor = xMozPlaceEntries.join(",");
+
+    const uriItems = bookmarks.filter(item => item.url);
+    const xMozUrlFlavor = uriItems
+      .map(item => `${item.url}${lazy.PlacesUtils.endl}${item.title ?? ""}`)
       .join(lazy.PlacesUtils.endl);
-    this.#setClipboard(data, action);
+    const plainTextFlavor = uriItems
+      .map(item => item.url)
+      .join(lazy.PlacesUtils.endl);
+
+    const flavors = new Map([
+      [lazy.PlacesUtils.TYPE_X_MOZ_PLACE, xMozPlaceFlavor],
+    ]);
+
+    if (uriItems.length) {
+      flavors.set(lazy.PlacesUtils.TYPE_X_MOZ_URL, xMozUrlFlavor);
+      flavors.set(lazy.PlacesUtils.TYPE_PLAINTEXT, plainTextFlavor);
+    }
+
+    this.#setClipboard(flavors, action);
   }
 
-  #setClipboard(data, action) {
+  #setClipboard(flavors, action) {
     const xferable = Cc["@mozilla.org/widget/transferable;1"].createInstance(
       Ci.nsITransferable
     );
@@ -975,11 +1005,10 @@ export class SidebarBookmarks extends SidebarPage {
       s.data = str;
       return s;
     }
-    xferable.addDataFlavor(lazy.PlacesUtils.TYPE_X_MOZ_PLACE);
-    xferable.setTransferData(
-      lazy.PlacesUtils.TYPE_X_MOZ_PLACE,
-      toISupports(data)
-    );
+    for (const [type, data] of flavors) {
+      xferable.addDataFlavor(type);
+      xferable.setTransferData(type, toISupports(data));
+    }
     xferable.addDataFlavor(lazy.PlacesUtils.TYPE_X_MOZ_PLACE_ACTION);
     xferable.setTransferData(
       lazy.PlacesUtils.TYPE_X_MOZ_PLACE_ACTION,
@@ -1062,11 +1091,19 @@ export class SidebarBookmarks extends SidebarPage {
     if (!validNodes.length) {
       return;
     }
-    const insertionPoint = {
-      guid: fetchInfo.parentGuid,
-      isTag: false,
-      getIndex: async () => fetchInfo.index + 1,
-    };
+    // When the target is a folder, paste inside it and append at the end.
+    // Otherwise, paste as a sibling right after the target bookmark.
+    const insertionPoint = this.triggerNode.isFolder
+      ? {
+          guid: this.triggerNode.guid,
+          isTag: false,
+          getIndex: async () => lazy.PlacesUtils.bookmarks.DEFAULT_INDEX,
+        }
+      : {
+          guid: fetchInfo.parentGuid,
+          isTag: false,
+          getIndex: async () => fetchInfo.index + 1,
+        };
     await lazy.PlacesUIUtils.handleTransferItems(
       validNodes,
       insertionPoint,
@@ -1098,6 +1135,7 @@ export class SidebarBookmarks extends SidebarPage {
     if (this.searchQuery) {
       Glean.browserUiInteraction.sidebarBookmarks.search.add(1);
     }
+    this.treeView.resetActiveNode();
   }
 
   #searchBookmarks(node, query) {
@@ -1481,7 +1519,7 @@ export class SidebarBookmarks extends SidebarPage {
                 @fxview-tab-list-primary-action=${this.onPrimaryAction}
                 @fxview-tab-list-secondary-action=${this.onSecondaryAction}
                 @fxview-tab-list-middleclick-action=${this.onPrimaryAction}
-                @bookmark-folder-toggle=${this.#onFolderToggle}
+                @folder-toggle=${this.#onFolderToggle}
                 @bookmark-folder-middleclick=${({ detail }) =>
                   this.#openBookmarks([detail])}
               ></sidebar-bookmark-list>`

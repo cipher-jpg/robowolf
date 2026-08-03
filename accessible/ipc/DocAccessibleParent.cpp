@@ -2,28 +2,31 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "DocAccessibleParent.h"
+
 #include "ARIAMap.h"
 #include "CacheConstants.h"
 #include "CachedTableAccessible.h"
-#include "DocAccessibleParent.h"
 #ifdef MOZ_ENABLE_SKIA_PDF
 #  include "mozilla/a11y/PdfStructTreeBuilder.h"
 #endif
-#include "mozilla/a11y/Platform.h"
+#include "Relation.h"
+#include "RootAccessible.h"
+#include "TextRange.h"
 #include "mozilla/Components.h"  // for mozilla::components
+#include "mozilla/PerfStats.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/StaticPrefs_accessibility.h"
+#include "mozilla/a11y/Platform.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
-#include "mozilla/PerfStats.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "nsAccessibilityService.h"
-#include "xpcAccessibleDocument.h"
-#include "xpcAccEvents.h"
+#include "mozilla/dom/ContentParent.h"
 #include "nsAccUtils.h"
+#include "nsAccessibilityService.h"
 #include "nsIIOService.h"
-#include "TextRange.h"
-#include "Relation.h"
-#include "RootAccessible.h"
+#include "xpcAccEvents.h"
+#include "xpcAccessibleDocument.h"
 
 #if defined(XP_WIN)
 #  include "Compatibility.h"
@@ -128,6 +131,10 @@ void DocAccessibleParent::SetBrowsingContext(
   mBrowsingContext = aBrowsingContext;
 }
 
+dom::BrowserParent* DocAccessibleParent::Manager() const {
+  return static_cast<dom::BrowserParent*>(PDocAccessibleParent::Manager());
+}
+
 mozilla::ipc::IPCResult DocAccessibleParent::ProcessShowEvent(
     nsTArray<AccessibleData>&& aNewTree, const bool& aEventSuppressed,
     const bool& aComplete, const bool& aFromUser) {
@@ -188,6 +195,16 @@ mozilla::ipc::IPCResult DocAccessibleParent::ProcessShowEvent(
       // This is the first Accessible, which is the root of the shown subtree.
       root = child;
       rootParent = parent;
+      if (!aComplete) {
+        // This is the first message for a show event split across multiple
+        // messages. Save the show target for subsequent messages and return.
+        mPendingShowChild = accData.ID();
+        mPendingShowParent = accData.ParentID();
+        mPendingShowIndex = accData.IndexInParent();
+        if (!rootParent->IsDoc() && !rootParent->RemoteParent()) {
+          return IPC_FAIL(this, "Attempt to split show with detached root");
+        }
+      }
     }
     // If this show event has been split across multiple messages and this is
     // not the last message, don't attach the shown root to the tree yet.
@@ -202,21 +219,11 @@ mozilla::ipc::IPCResult DocAccessibleParent::ProcessShowEvent(
 
   MOZ_ASSERT(CheckDocTree());
 
-  if (!aComplete && !mPendingShowChild) {
-    // This is the first message for a show event split across multiple
-    // messages. Save the show target for subsequent messages and return.
-    const auto& accData = aNewTree[0];
-    mPendingShowChild = accData.ID();
-    mPendingShowParent = accData.ParentID();
-    mPendingShowIndex = accData.IndexInParent();
-    return IPC_OK();
-  }
   if (!aComplete) {
     // This show event has been split into multiple messages, but this is
-    // neither the first nor the last message. There's nothing more to do here.
+    // not the last message. There's nothing more to do here.
     return IPC_OK();
   }
-  MOZ_ASSERT(aComplete);
   if (mPendingShowChild) {
     // This is the last message for a show event split across multiple
     // messages. Retrieve the saved show target, attach it to the tree and fire
@@ -288,6 +295,8 @@ RemoteAccessible* DocAccessibleParent::CreateAcc(
           "Attempt to move RemoteAccessible which has a pending parent");
       return nullptr;
     }
+    MOZ_RELEASE_ASSERT(newProxy->ChildCount() == 0 || newProxy->IsOuterDoc(),
+                       "Reused RemoteAccessible unexpectedly has children!");
     return newProxy;
   }
 
@@ -341,6 +350,15 @@ bool DocAccessibleParent::AttachChild(RemoteAccessible* aParent,
     return false;
   }
 
+  if (!aParent->IsDoc() && !aParent->RemoteParent() &&
+      aParent->ID() != mPendingShowChild) {
+    MOZ_ASSERT_UNREACHABLE("Attempt to attach child to a detached parent!");
+    return false;
+  }
+
+  MOZ_RELEASE_ASSERT(!mPendingShowChild || aChild->ID() != mPendingShowParent,
+                     "Attempt to attach the pending show's parent as a child!");
+
   if (aParent == aChild) {
     MOZ_ASSERT_UNREACHABLE("Attempt to make an accessible its own child!");
     return false;
@@ -349,7 +367,7 @@ bool DocAccessibleParent::AttachChild(RemoteAccessible* aParent,
   aParent->AddChildAt(aIndex, aChild);
   aChild->SetParent(aParent);
   // ProxyCreated might have already been called if aChild is being moved.
-  if (!aChild->GetWrapper()) {
+  if (!aChild->GetWrapper() && !IsPrintDoc()) {
     ProxyCreated(aChild);
   }
   if (aChild->IsTableRow() || aChild->IsTableCell()) {
@@ -387,7 +405,12 @@ void DocAccessibleParent::ShutdownOrPrepareForMove(RemoteAccessible* aAcc) {
     // Even if some children are kept, those will be re-attached when we handle
     // the show event. For now, clear all of them by moving them to a temporary.
     auto children{std::move(aAcc->mChildren)};
-    for (RemoteAccessible* child : children) {
+    for (RefPtr<RemoteAccessible>& childRef : children) {
+      RemoteAccessible* child = childRef.get();
+      // Drop our reference before recursing so that if child is being
+      // removed, the refcount assertion in its Shutdown() reflects only
+      // mDoc's reference.
+      childRef = nullptr;
       if (child == aAcc) {
         MOZ_ASSERT_UNREACHABLE(
             "Somehow an accessible got added as a child of itself!");
@@ -595,6 +618,10 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvCaretMoveEvent(
   if (!proxy) {
     NS_ERROR("unknown caret move event target!");
     return IPC_OK();
+  }
+
+  if (aOffset < -1) {
+    return IPC_FAIL(this, "Invalid caret offset");
   }
 
   mCaretId = aID;
@@ -1050,7 +1077,7 @@ ipc::IPCResult DocAccessibleParent::AddChildDoc(DocAccessibleParent* aChildDoc,
   outerDoc->SetChildDoc(aChildDoc);
   mChildDocs.AppendElement(aChildDoc->mActorID);
 
-  if (aCreating) {
+  if (aCreating && !aChildDoc->IsPrintDoc()) {
     ProxyCreated(aChildDoc);
   }
 
@@ -1102,7 +1129,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvShutdown() {
   ACQUIRE_ANDROID_LOCK
   Destroy();
 
-  auto mgr = static_cast<dom::BrowserParent*>(Manager());
+  auto mgr = Manager();
   if (!mgr->IsDestroyed()) {
     if (!PDocAccessibleParent::Send__delete__(this)) {
       return IPC_FAIL_NO_REASON(mgr);
@@ -1156,12 +1183,15 @@ void DocAccessibleParent::Destroy() {
     RemoteAccessible* acc = iter.Get()->mProxy;
     MOZ_ASSERT(acc != this);
     if (acc->IsTable()) {
-      // Prevents the invalidation code from trying to walk up the tree.
-      acc->SetParent(nullptr);
       CachedTableAccessible::Invalidate(acc);
     }
     ProxyDestroyed(acc);
-    // mAccessibles owns acc, so removing it deletes acc.
+    // acc and its parent/children hold strong references to each other, so
+    // clear acc's children to break that cycle. Once every node in this loop
+    // has done the same and had its mAccessibles entry removed below, no
+    // references remain and every node is destroyed.
+    acc->mChildren.Clear();
+    acc->mDoc = nullptr;
     iter.Remove();
   }
 
@@ -1278,7 +1308,7 @@ void DocAccessibleParent::MaybeInitWindowEmulation() {
     rect.MoveToX(rootRect.X() - rect.X());
     rect.MoveToY(rect.Y() - rootRect.Y());
 
-    auto browserParent = static_cast<dom::BrowserParent*>(Manager());
+    auto browserParent = Manager();
     isActive = browserParent->GetDocShellIsActive();
   }
 
@@ -1536,7 +1566,9 @@ DocAccessibleParent::CollectReports(nsIHandleReportCallback* aHandleReport,
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS(DocAccessibleParent, nsIMemoryReporter);
+NS_IMPL_QUERY_INTERFACE(DocAccessibleParent, nsIMemoryReporter)
+NS_IMPL_ADDREF_INHERITED(DocAccessibleParent, RemoteAccessible)
+NS_IMPL_RELEASE_INHERITED(DocAccessibleParent, RemoteAccessible)
 
 #ifdef MOZ_ENABLE_SKIA_PDF
 mozilla::ipc::IPCResult DocAccessibleParent::RecvPrinting() {
@@ -1546,6 +1578,47 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvPrinting() {
   return IPC_OK();
 }
 #endif
+
+DocAccessibleParent::AllowConstruction
+DocAccessibleParent::ShouldAllowConstruction() const {
+  if (IsPrintDoc()) {
+#ifdef MOZ_ENABLE_SKIA_PDF
+    if (!StaticPrefs::accessibility_tagged_pdf_output_enabled()) {
+      return AllowConstruction::Disallow;
+    }
+    // We need the accessibility tree to generate a tagged PDF. We can do this
+    // even if the accessibility service isn't running in the parent process.
+    // However, we can only be generating a PDF if there's a PRemotePrintJob
+    // actor in the BrowserParent ancestry.
+    auto* bp = static_cast<dom::BrowserParent*>(Manager());
+    while (bp) {
+      if (!bp->Manager()->ManagedPRemotePrintJobParent().IsEmpty()) {
+        return AllowConstruction::Allow;
+      }
+      dom::BrowserBridgeParent* bridge = bp->GetBrowserBridgeParent();
+      if (!bridge) {
+        break;
+      }
+      bp = bridge->Manager();
+    }
+#endif  // MOZ_ENABLE_SKIA_PDF
+    return AllowConstruction::Disallow;
+  }
+  // For non-print documents, only allow construction if the accessibility
+  // service is running here in the parent process.
+  if (GetAccService()) {
+    return AllowConstruction::Allow;
+  }
+  // If accessibility is activated and then quickly deactivated, there might
+  // already be PDocAccessible messages in flight. To deal with this, check if
+  // accessibility was ever activated in the associated content process. If it
+  // was, we don't treat the construction as an error, but we mark the actor as
+  // shut down and ignore it.
+  if (Manager()->Manager()->WasA11yEverActivated()) {
+    return AllowConstruction::AllowButIgnore;
+  }
+  return AllowConstruction::Disallow;
+}
 
 }  // namespace a11y
 }  // namespace mozilla

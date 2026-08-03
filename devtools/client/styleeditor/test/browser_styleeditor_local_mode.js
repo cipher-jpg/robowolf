@@ -31,17 +31,41 @@ add_task(async function () {
   await ui.selectStyleSheet(editor.styleSheet);
   const styleEditor = await editor.getSourceEditor();
   const text = styleEditor.sourceEditor.getText();
-  const expectedText = await (
+  const originalContent = await (
     await fetch(TEST_BASE_HTTPS + "simple.css")
   ).text();
-  is(text, expectedText, "style inspector content is correct");
-});
+  is(text, originalContent, "style inspector content is correct");
 
-function getSupportsFile(path) {
-  const cr = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(
-    Ci.nsIChromeRegistry
+  info(
+    "Change the stylesheet text and see if we can save changes to the local file"
   );
-  const uri = Services.io.newURI(CHROME_URL_ROOT + path);
-  const fileurl = cr.convertChromeURL(uri);
-  return fileurl.QueryInterface(Ci.nsIFileURL);
-}
+  let dirty = editor.sourceEditor.once("dirty-change");
+  const newContent = "* { color: green }";
+  editor.sourceEditor.setText(newContent);
+  await dirty;
+
+  let onSaved = editor.once("property-change");
+  editor.summary.querySelector(".stylesheet-saveButton").click();
+  await onSaved;
+
+  let updatedFileContent = await (
+    await fetch(TEST_BASE_HTTPS + "simple.css", { cache: "no-store" })
+  ).text();
+  is(updatedFileContent, newContent);
+
+  info(
+    "Revert back to original text content to avoid introducing changes in local repo"
+  );
+  dirty = editor.sourceEditor.once("dirty-change");
+  editor.sourceEditor.setText(originalContent);
+  await dirty;
+
+  onSaved = editor.once("property-change");
+  editor.summary.querySelector(".stylesheet-saveButton").click();
+  await onSaved;
+
+  updatedFileContent = await (
+    await fetch(TEST_BASE_HTTPS + "simple.css")
+  ).text();
+  is(updatedFileContent, originalContent);
+});

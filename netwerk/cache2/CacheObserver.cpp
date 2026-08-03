@@ -4,22 +4,25 @@
 
 #include "CacheObserver.h"
 
+#include <math.h>
+#include <time.h>
+
+#include <numbers>
+
 #include "CacheCrypto.h"
-#include "CacheStorageService.h"
 #include "CacheFileIOManager.h"
 #include "CacheIndex.h"
+#include "CacheStorageService.h"
 #include "LoadContextInfo.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/Services.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/net/NeckoCommon.h"
 #include "nsICacheStorage.h"
 #include "nsIObserverService.h"
-#include "mozilla/Services.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/TimeStamp.h"
-#include "nsServiceManagerUtils.h"
-#include "mozilla/net/NeckoCommon.h"
-#include "prsystem.h"
-#include <time.h>
-#include <math.h>
 #include "nsIUserIdleService.h"
+#include "nsServiceManagerUtils.h"
+#include "prsystem.h"
 
 namespace mozilla::net {
 
@@ -117,7 +120,7 @@ uint32_t CacheObserver::MemoryCacheCapacity() {
     }
     uint64_t kbytes = bytes >> 10;
     double kBytesD = double(kbytes);
-    double x = log(kBytesD) / log(2.0) - 14;
+    double x = log(kBytesD) / std::numbers::ln2 - 14;
 
     int32_t capacity = 0;
     if (x > 0) {

@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.action.ContentAction
@@ -58,7 +59,6 @@ import mozilla.components.compose.browser.toolbar.store.BrowserToolbarState
 import mozilla.components.compose.browser.toolbar.store.ProgressBarConfig
 import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
 import mozilla.components.concept.engine.EngineSession.LoadUrlFlags
-import mozilla.components.concept.engine.cookiehandling.CookieBannersStorage
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.concept.engine.permission.SitePermissionsStorage
 import mozilla.components.concept.engine.prompt.ShareData
@@ -139,11 +139,11 @@ import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.navigateSafe
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.settings.ShortcutType
-import org.mozilla.fenix.settings.quicksettings.protections.cookiebanners.getCookieBannerUIMode
 import org.mozilla.fenix.summarization.SummarizationNavigator
 import org.mozilla.fenix.summarization.onboarding.SummarizationFeatureDiscoveryConfiguration
 import org.mozilla.fenix.tabstray.ext.isActiveDownload
 import org.mozilla.fenix.tabstray.redux.state.Page
+import org.mozilla.fenix.translations.TranslationsEnabledSettings
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.Stories.hasUrlOfAHomeScreenStory
 import org.mozilla.fenix.utils.Stories.hasUrlOfAStoriesScreenStory
@@ -212,7 +212,6 @@ internal object BrowserToolbarTestTags {
  * @param browserStore [BrowserStore] to sync from.
  * @param ipProtectionStore [IPProtectionStore] to observe IP protection proxy status.
  * @param permissionsStorage [SitePermissionsStorage] to find currently selected tab site permissions.
- * @param cookieBannersStorage [CookieBannersStorage] to get the current status of cookie banner ui mode.
  * @param bookmarksStorage [BookmarksStorage] to read and write bookmark data related to the current site.
  * @param trackingProtectionUseCases [TrackingProtectionUseCases] allowing to query tracking protection data
  * of the current tab.
@@ -224,6 +223,7 @@ internal object BrowserToolbarTestTags {
  * @param publicSuffixList [PublicSuffixList] used to obtain the base domain of the current site.
  * @param settings [Settings] for accessing user preferences.
  * @param summarizationFeatureSettings Web content summarization settings.
+ * @param translationsFeatureSettings Web content translations availability status.
  * @param navController [NavController] to use for navigating to other in-app destinations.
  * @param summarizationNavigator [SummarizationNavigator] used to navigate to the summarization screen.
  * @param browsingModeManager [BrowsingModeManager] for querying the current browsing mode.
@@ -242,7 +242,6 @@ class BrowserToolbarMiddleware(
     private val browserStore: BrowserStore,
     private val ipProtectionStore: IPProtectionStore,
     private val permissionsStorage: SitePermissionsStorage,
-    private val cookieBannersStorage: CookieBannersStorage,
     private val bookmarksStorage: BookmarksStorage,
     private val trackingProtectionUseCases: TrackingProtectionUseCases,
     private val useCases: UseCases,
@@ -253,6 +252,7 @@ class BrowserToolbarMiddleware(
     private val publicSuffixList: PublicSuffixList,
     private val settings: Settings,
     private val summarizationFeatureSettings: SummarizationFeatureDiscoveryConfiguration,
+    private val translationsFeatureSettings: TranslationsEnabledSettings,
     private val navController: NavController,
     private val summarizationNavigator: SummarizationNavigator,
     private val browsingModeManager: BrowsingModeManager,
@@ -295,6 +295,7 @@ class BrowserToolbarMiddleware(
                 observeSelectedTabBookmarkedUpdates(store)
                 observeReaderModeUpdates(store)
                 observePageTranslationsUpdates(store)
+                observeTranslationsFeatureAvailabilityUpdates(store)
                 observePageRefreshUpdates(store)
                 observePageTrackingProtectionUpdates(store)
                 observePageSecurityUpdates(store)
@@ -669,15 +670,9 @@ class BrowserToolbarMiddleware(
             scope.launch(Dispatchers.Main) {
                 trackingProtectionUseCases.containsException(tab.id) { hasTrackingProtectionException ->
                     scope.launch {
-                        val cookieBannerUIMode = cookieBannersStorage.getCookieBannerUIMode(
-                            tab = tab,
-                            isFeatureEnabledInPrivateMode = settings.shouldUseCookieBannerPrivateMode,
-                            publicSuffixList = publicSuffixList,
-                        )
-
                         val isTrackingProtectionEnabled =
                             tab.trackingProtection.enabled && !hasTrackingProtectionException
-                        val directions = if (settings.enableUnifiedTrustPanel) {
+                        val directions =
                             BrowserFragmentDirections.actionBrowserFragmentToTrustPanelFragment(
                                 sessionId = tab.id,
                                 url = tab.content.url,
@@ -688,23 +683,7 @@ class BrowserToolbarMiddleware(
                                 certificate = tab.content.securityInfo.certificate,
                                 permissionHighlights = tab.content.permissionHighlights,
                                 isTrackingProtectionEnabled = isTrackingProtectionEnabled,
-                                cookieBannerUIMode = cookieBannerUIMode,
                             )
-                        } else {
-                            BrowserFragmentDirections.actionBrowserFragmentToQuickSettingsSheetDialogFragment(
-                                sessionId = tab.id,
-                                url = tab.content.url,
-                                title = tab.content.title,
-                                isLocalPdf = tab.content.url.isContentUrl(),
-                                isSecured = tab.content.securityInfo.isSecure,
-                                sitePermissions = sitePermissions,
-                                gravity = settings.toolbarPosition.androidGravity,
-                                certificateName = tab.content.securityInfo.issuer,
-                                permissionHighlights = tab.content.permissionHighlights,
-                                isTrackingProtectionEnabled = isTrackingProtectionEnabled,
-                                cookieBannerUIMode = cookieBannerUIMode,
-                            )
-                        }
                         navController.nav(
                             R.id.browserFragment,
                             directions,
@@ -846,7 +825,7 @@ class BrowserToolbarMiddleware(
         val isTallWindow = isTallScreen()
         val shouldUseExpandedToolbar = settings.shouldUseExpandedToolbar
         val primarySlotAction = ShortcutType.fromValue(settings.toolbarExpandedShortcutKey)
-            ?.toToolbarAction() ?: getBookmarkAction()
+            ?.toToolbarAction(false) ?: getBookmarkAction()
 
         return listOf(
             ToolbarActionConfig(primarySlotAction) { shouldUseExpandedToolbar && isTallWindow && !isWideWindow },
@@ -913,7 +892,8 @@ class BrowserToolbarMiddleware(
                 private = browsingMode.isPrivate,
             )
         } else {
-            val focusOnAddressBar = !settings.enableHomepageSearchBar
+            val focusOnAddressBar =
+                !settings.enableHomepageSearchBar && !settings.enableHomepageTrendingRecentSearch
 
             browsingModeManager.mode = browsingMode
             navController.navigate(
@@ -984,6 +964,21 @@ class BrowserToolbarMiddleware(
                 .collect {
                     updateStartPageActions(store)
                 }
+        }
+    }
+
+    private fun observeTranslationsFeatureAvailabilityUpdates(store: Store<BrowserToolbarState, BrowserToolbarAction>) {
+        browserStore.observeWhileActive {
+            distinctUntilChangedBy { it.translationEngine.isEngineSupported }
+            .collect {
+                updateEndBrowserActions(store)
+                updateNavigationActions(store)
+            }
+        }
+        scope.launch {
+            translationsFeatureSettings.isEnabled.collect {
+                updateEndBrowserActions(store)
+            }
         }
     }
 
@@ -1389,9 +1384,10 @@ class BrowserToolbarMiddleware(
                 highlighted = highlighted,
                 onClick = onClick,
                 testTag = testTag,
-            ).also {
-                ipProtectionStore.dispatch(IPProtectionAction.ProxyActiveShown)
-            }
+                onAnimationStarted = {
+                    ipProtectionStore.dispatch(IPProtectionAction.ProxyActiveShown)
+                },
+            )
         } else {
             ActionButtonRes(
                 drawableResId = drawableResId,
@@ -1416,12 +1412,27 @@ class BrowserToolbarMiddleware(
         return if (isBookmarked) ToolbarAction.EditBookmark else ToolbarAction.Bookmark
     }
 
+    /**
+     * Map the shortcut option to a button to show in the toolbar or the navigation bar.
+     *
+     * @param forToolbar `true` if the button will be used for the toolbar
+     * and `false` if it will be used for the navigation bar.
+     */
     @VisibleForTesting
-    internal suspend fun ShortcutType.toToolbarAction() = when (this) {
+    internal suspend fun ShortcutType.toToolbarAction(
+        forToolbar: Boolean = true,
+    ) = when (this) {
         ShortcutType.NEW_TAB -> ToolbarAction.NewTab
         ShortcutType.SHARE -> ToolbarAction.Share
         ShortcutType.BOOKMARK -> getBookmarkAction()
-        ShortcutType.TRANSLATE -> ToolbarAction.Translate
+        ShortcutType.TRANSLATE -> when (isTranslationsFeatureAvailable()) {
+            true -> ToolbarAction.Translate
+            else -> when (forToolbar) {
+                // The first available options in settings.
+                true -> ToolbarAction.NewTab
+                else -> getBookmarkAction()
+            }
+        }
         ShortcutType.HOMEPAGE -> ToolbarAction.Homepage
         ShortcutType.BACK -> ToolbarAction.Back
         ShortcutType.SUMMARIZE -> when {
@@ -1431,5 +1442,12 @@ class BrowserToolbarMiddleware(
             else -> ToolbarAction.NewTab
         }
         ShortcutType.NONE -> null
+    }
+
+    private suspend fun isTranslationsFeatureAvailable(): Boolean {
+        val isTranslationEngineSupported = browserStore.state.translationEngine.isEngineSupported ?: false
+        return isTranslationEngineSupported &&
+            FxNimbus.features.translations.value().mainFlowToolbarEnabled &&
+            translationsFeatureSettings.isEnabled.first()
     }
 }

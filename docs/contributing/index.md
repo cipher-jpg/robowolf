@@ -9,6 +9,7 @@ development process and source code documentation.
 
 contribution_quickref
 stack_quickref
+phabricator_vs_github
 pocket-guide-shipping-firefox
 editor
 reviews
@@ -16,9 +17,16 @@ levelling-up
 how_to_submit_a_patch
 data-collection
 data-review
-jujutsu
 searchfox
 ai-coding
+```
+
+```{toctree}
+:caption: Version control
+:maxdepth: 1
+
+jujutsu
+git-tricks
 ```
 
 ```{toctree}
@@ -31,10 +39,9 @@ reviewer_checklist
 
 ```{toctree}
 :caption: Debugging
-:glob: true
 :maxdepth: 1
 
-debugging/*
+debugging/index
 ```
 
 ```{toctree}

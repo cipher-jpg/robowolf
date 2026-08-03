@@ -1476,6 +1476,11 @@ bool ValidatePrincipalCouldPotentiallyBeLoadedBy(
   nsAutoCString originScheme;
   MOZ_ALWAYS_SUCCEEDS(net_ExtractURLScheme(originNoSuffix, originScheme));
 
+  // We never load a chrome:// principal within a content process.
+  if (originScheme == "chrome"_ns) {
+    return false;
+  }
+
   // We can load a `resource://` URI in any process. This usually comes up due
   // to pdf.js and the JSON viewer. See bug 1686200.
   if (originScheme == "resource"_ns) {
@@ -1556,10 +1561,21 @@ bool ValidatePrincipalCouldPotentiallyBeLoadedBy(
   nsDependentCSubstring typePrefix(aRemoteType, 0, equalIdx);
   nsDependentCSubstring typeOrigin(aRemoteType, equalIdx + 1);
 
-  // Only validate webIsolated and webServiceWorker remote types for now. This
-  // should be expanded in the future.
+  // Only validate webIsolated, webCOOP+COEP and webServiceWorker remote types
+  // for now. This should be expanded in the future.
   if (typePrefix != FISSION_WEB_REMOTE_TYPE &&
+      typePrefix != WITH_COOP_COEP_REMOTE_TYPE &&
       typePrefix != SERVICEWORKER_REMOTE_TYPE) {
+    return true;
+  }
+
+  // COOP+COEP processes might have cross-site iframes without remote subframes.
+  //
+  // HACK: Unfortunately, we can't easily check useRemoteSubframes here, but we
+  // shouldn't be loading any webCOOP+COEP windows without useRemoteSubframes if
+  // Fission is enabled.
+  if (typePrefix == WITH_COOP_COEP_REMOTE_TYPE &&
+      !mozilla::FissionAutostart()) {
     return true;
   }
 

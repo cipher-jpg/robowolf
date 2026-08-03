@@ -230,7 +230,7 @@ class IPProtectionControllerTest : BaseSessionTest() {
     private class StubAuthProvider(
         private val token: GeckoResult<String> = GeckoResult.fromValue("stub-token"),
     ) : IPProtectionController.AuthProvider {
-        override fun getToken(): GeckoResult<String> = token
+        override fun onTokenRequest(): GeckoResult<String> = token
     }
 
     @Test
@@ -552,6 +552,40 @@ class IPProtectionControllerTest : BaseSessionTest() {
         )
     }
 
+    @Test
+    fun activateWhileActiveSwitchesSelectedServer() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf("toolkit.ipProtection.android.authProvider" to "test"),
+        )
+        sessionRule.setupIPPAuthProvider(JSONObject().put("signedIn", false))
+        sessionRule.waitForResult(ipProtectionController.init())
+        sessionRule.simulateIPPSignIn(true)
+
+        // Activate with no country: the recommended (REC) anycast server.
+        sessionRule.waitForResult(ipProtectionController.activate())
+        assertThat(
+            "starts on the recommended server",
+            sessionRule.getIPPProxyInfo()?.getString("host"),
+            equalTo("rec.example.com"),
+        )
+
+        // Activate again with an explicit country to switch the connection.
+        sessionRule.waitForResult(ipProtectionController.activate(true, false, "US"))
+        assertThat(
+            "switched to the US server",
+            sessionRule.getIPPProxyInfo()?.getString("host"),
+            equalTo("us.example.com"),
+        )
+
+        // Activate again with no country to switch back to the recommended server.
+        sessionRule.waitForResult(ipProtectionController.activate(true, false, null))
+        assertThat(
+            "back on the recommended server",
+            sessionRule.getIPPProxyInfo()?.getString("host"),
+            equalTo("rec.example.com"),
+        )
+    }
+
     companion object {
         private const val SERVER_LIST_JSON =
             """[{"name":"United States","code":"US","cities":[{"name":"Test City",""" +
@@ -568,5 +602,120 @@ class IPProtectionControllerTest : BaseSessionTest() {
             """[{"name":"France","code":"FR","cities":[{"name":"Paris",""" +
                 """"code":"PA","servers":[{"hostname":"fr1.example.com","port":443,""" +
                 """"quarantined":false}]}]}]"""
+    }
+
+    private class StubGpiProvider(
+        private val warmUpResult: GeckoResult<Void> = GeckoResult.fromValue(null),
+        private val tokenResult: GeckoResult<String> = GeckoResult.fromValue("stub-gpi-token"),
+    ) : IPProtectionController.GpiProvider {
+        override fun warmUp(): GeckoResult<Void> = warmUpResult
+        override fun onTokenRequest(): GeckoResult<String> = tokenResult
+    }
+
+    @Test
+    fun setGpiProviderRoundTrips() {
+        val provider = StubGpiProvider()
+        ipProtectionController.setGpiProvider(provider)
+        assertThat(ipProtectionController.gpiProvider, equalTo<IPProtectionController.GpiProvider>(provider))
+        ipProtectionController.setGpiProvider(null)
+        assertThat(ipProtectionController.gpiProvider, nullValue())
+    }
+
+    @Test
+    fun gpiWarmUpEventIsRoutedToGpiProvider() {
+        val warmUpCompleted = GeckoResult<Boolean>()
+        val listener = BundleEventListener { _, _, callback ->
+            warmUpCompleted.complete(true)
+            callback?.sendSuccess(null)
+        }
+        EventDispatcher.getInstance()
+            .registerUiThreadListener(listener, "GeckoView:IPProtection:GPI:WarmUpCompleted")
+        try {
+            ipProtectionController.setGpiProvider(StubGpiProvider())
+            EventDispatcher.getInstance().dispatch("GeckoView:IPProtection:GPI:WarmUp", null)
+            assertThat(sessionRule.waitForResult(warmUpCompleted), equalTo(true))
+        } finally {
+            EventDispatcher.getInstance()
+                .unregisterUiThreadListener(listener, "GeckoView:IPProtection:GPI:WarmUpCompleted")
+        }
+    }
+
+    @Test
+    fun gpiWarmUpFailureDispatchesWarmUpFailed() {
+        val warmUpFailed = GeckoResult<Boolean>()
+        val listener = BundleEventListener { _, _, callback ->
+            warmUpFailed.complete(true)
+            callback?.sendSuccess(null)
+        }
+        EventDispatcher.getInstance()
+            .registerUiThreadListener(listener, "GeckoView:IPProtection:GPI:WarmUpFailed")
+        try {
+            ipProtectionController.setGpiProvider(
+                StubGpiProvider(warmUpResult = GeckoResult.fromException(RuntimeException("warm-up failed"))),
+            )
+            EventDispatcher.getInstance().dispatch("GeckoView:IPProtection:GPI:WarmUp", null)
+            assertThat(sessionRule.waitForResult(warmUpFailed), equalTo(true))
+        } finally {
+            EventDispatcher.getInstance()
+                .unregisterUiThreadListener(listener, "GeckoView:IPProtection:GPI:WarmUpFailed")
+        }
+    }
+
+    @Test
+    fun gpiWarmUpWithNoProviderIsSilentlyDropped() {
+        ipProtectionController.setGpiProvider(null)
+        // Should not crash when no provider is set.
+        EventDispatcher.getInstance().dispatch("GeckoView:IPProtection:GPI:WarmUp", null)
+    }
+
+    @Test
+    fun requestTokenEventIsRoutedToGpiProvider() {
+        ipProtectionController.setGpiProvider(
+            StubGpiProvider(tokenResult = GeckoResult.fromValue("secret-gpi-token")),
+        )
+        val response = sessionRule.waitForResult(
+            EventDispatcher.getInstance().queryBundle("GeckoView:IPProtection:GPI:RequestToken"),
+        )
+        assertThat(response.getString("token"), equalTo("secret-gpi-token"))
+    }
+
+    @Test
+    fun requestTokenEventWithoutProviderReturnsError() {
+        ipProtectionController.setGpiProvider(null)
+        assertRequestTokenError("no-gpi-provider")
+    }
+
+    @Test
+    fun requestTokenEventWithRejectedTokenReturnsError() {
+        ipProtectionController.setGpiProvider(
+            StubGpiProvider(tokenResult = GeckoResult.fromException(RuntimeException("no-gpi-token"))),
+        )
+        assertRequestTokenError("no-gpi-token")
+    }
+
+    @Test
+    fun requestTokenEventWithNullTokenStringReturnsError() {
+        ipProtectionController.setGpiProvider(
+            StubGpiProvider(tokenResult = GeckoResult.fromValue(null)),
+        )
+        assertRequestTokenError("no-gpi-token")
+    }
+
+    @Test
+    fun requestTokenEventWithEmptyTokenStringReturnsError() {
+        ipProtectionController.setGpiProvider(
+            StubGpiProvider(tokenResult = GeckoResult.fromValue("")),
+        )
+        assertRequestTokenError("no-gpi-token")
+    }
+
+    private fun assertRequestTokenError(expected: String) {
+        val thrown = assertThrows(RuntimeException::class.java) {
+            sessionRule.waitForResult(
+                EventDispatcher.getInstance().queryBundle("GeckoView:IPProtection:GPI:RequestToken"),
+            )
+        }
+        val cause = thrown.cause as EventDispatcher.QueryException
+        assertThat(cause.data.toString(), equalTo(expected))
     }
 }

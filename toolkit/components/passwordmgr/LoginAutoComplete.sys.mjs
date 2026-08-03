@@ -158,6 +158,7 @@ class LoginAutocompleteItem extends AutocompleteItem {
           : login.displayOrigin,
       secondaryAction: {
         type: "edit",
+        label: getLocalizedString("autocompleteEditLogin"),
         fillMessageName: "PasswordManager:OpenPreferences",
         fillMessageData: { loginGuid: login.guid, entryPoint: "Autocomplete" },
       },
@@ -392,8 +393,10 @@ export class LoginAutoCompleteResult {
         );
       }
 
-      // Suggest importing logins if there are none found.
-      if (!logins.length && importableBrowsers) {
+      // Suggest importing logins. The importable descriptor is only populated
+      // when there are no saved logins for the origin, so no further check
+      // against the (display-filtered) matching logins is needed here.
+      if (importableBrowsers) {
         this.#rows.push(
           ...importableBrowsers.map(
             browserId =>

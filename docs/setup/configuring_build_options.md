@@ -143,34 +143,30 @@ build. Firefox is the default.
 
 Choose one of the following options to add to your `mozconfig` file:
 
-Browser (Firefox)
+**Browser (Firefox)** (the default):
 
-: ```
-  ac_add_options --enable-project=browser
-  ```
+```
+ac_add_options --enable-project=browser
+```
 
-  :::{note}
-  This is the default
-  :::
+**Mail (Thunderbird)**:
 
-Mail (Thunderbird)
+```
+ac_add_options --enable-project=comm/mail
+```
 
-: ```
-  ac_add_options --enable-project=comm/mail
-  ```
+**Mozilla Suite (SeaMonkey)**:
 
-Mozilla Suite (SeaMonkey)
+```
+ac_add_options --enable-project=suite
+```
 
-: ```
-  ac_add_options --enable-project=suite
-  ```
+**Calendar (Lightning Extension, uses Thunderbird)**:
 
-Calendar (Lightning Extension, uses Thunderbird)
-
-: ```
-  ac_add_options --enable-project=comm/mail
-  ac_add_options --enable-calendar
-  ```
+```
+ac_add_options --enable-project=comm/mail
+ac_add_options --enable-calendar
+```
 
 ## Selecting build options
 
@@ -292,9 +288,13 @@ with Debug Symbols <building-with-debug-symbols>`.
   test the different ifdef behaviors. To do a full beta simulation see
   [Sheriffing/How To/Beta simulations](https://wiki.mozilla.org/Sheriffing/How_To/Beta_simulations).
 
-- `early-beta`
-- `late-beta`
+- `beta`
 - `release`
+
+`early-beta` and `late-beta` are deprecated aliases of `beta`, accepted only
+transitionally so that existing mozconfigs keep working. The distinct early and
+late beta periods are being phased out, so both do exactly what `beta` does.
+Update your mozconfig to `--as-milestone=beta`; the aliases will be removed.
 
 ### Tests
 

@@ -1252,7 +1252,9 @@ pub mod list_style {
             use list_style_type::SpecifiedValue as ListStyleType;
 
             let mut writer = SequenceWriter::new(dest, " ");
-            if *self.list_style_position != ListStylePosition::Outside {
+            if *self.list_style_position != ListStylePosition::Outside
+                || self.list_style_type.is_name(&atom!("outside"))
+            {
                 writer.item(self.list_style_position)?;
             }
             if *self.list_style_image != ListStyleImage::None {
@@ -1760,12 +1762,7 @@ pub mod position_try {
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Longhands, ParseError<'i>> {
-        let order =
-            if static_prefs::pref!("layout.css.anchor-positioning.position-try-order.enabled") {
-                input.try_parse(PositionTryOrder::parse).ok()
-            } else {
-                None
-            };
+        let order = input.try_parse(PositionTryOrder::parse).ok();
         let fallbacks = PositionTryFallbacks::parse(context, input)?;
         Ok(expanded! {
             position_try_order: order.unwrap_or(PositionTryOrder::normal()),
@@ -1778,11 +1775,9 @@ pub mod position_try {
         where
             W: fmt::Write,
         {
-            if let Some(o) = self.position_try_order {
-                if *o != PositionTryOrder::Normal {
-                    o.to_css(dest)?;
-                    dest.write_char(' ')?;
-                }
+            if !self.position_try_order.is_normal() {
+                self.position_try_order.to_css(dest)?;
+                dest.write_char(' ')?;
             }
             self.position_try_fallbacks.to_css(dest)
         }
@@ -2697,21 +2692,17 @@ pub mod font {
                 CheckSystemResult::None => {},
             }
 
-            if let Some(v) = self.font_optical_sizing {
-                if v != &font_optical_sizing::get_initial_specified_value() {
-                    return Ok(());
-                }
+            if self.font_optical_sizing != &font_optical_sizing::get_initial_specified_value() {
+                return Ok(());
             }
-            if let Some(v) = self.font_variation_settings {
-                if v != &font_variation_settings::get_initial_specified_value() {
-                    return Ok(());
-                }
+            if self.font_variation_settings
+                != &font_variation_settings::get_initial_specified_value()
+            {
+                return Ok(());
             }
             #[cfg(feature = "gecko")]
-            if let Some(v) = self.font_variant_emoji {
-                if v != &font_variant_emoji::get_initial_specified_value() {
-                    return Ok(());
-                }
+            if self.font_variant_emoji != &font_variant_emoji::get_initial_specified_value() {
+                return Ok(());
             }
 
             if self.font_kerning != &font_kerning::get_initial_specified_value() {
@@ -2988,13 +2979,7 @@ pub mod font_variant {
             count_normal!(font_variant_east_asian);
             count_normal!(font_variant_position);
             #[cfg(feature = "gecko")]
-            if let Some(value) = self.font_variant_emoji {
-                if value == &font_variant_emoji::get_initial_specified_value() {
-                    nb_normals += 1;
-                }
-            } else {
-                nb_normals += 1;
-            }
+            count_normal!(font_variant_emoji);
 
             if nb_normals == TOTAL_SUBPROPS {
                 return dest.write_str("normal");
@@ -3026,9 +3011,7 @@ pub mod font_variant {
             write!(font_variant_east_asian);
             write!(font_variant_position);
             #[cfg(feature = "gecko")]
-            if let Some(v) = self.font_variant_emoji {
-                write!(v, font_variant_emoji);
-            }
+            write!(font_variant_emoji);
             Ok(())
         }
     }

@@ -462,6 +462,24 @@ class TabsTrayTelemetryMiddlewareTest {
     }
 
     @Test
+    fun `WHEN NewTabGroupFabClicked is dispatched THEN the tab group creation mode fab metric is reported`() {
+        assertNull(Metrics.tabGroupCreationMode["fab"].testGetValue())
+
+        store.dispatch(TabGroupAction.NewTabGroupFabClicked)
+
+        assertEquals(1, Metrics.tabGroupCreationMode["fab"].testGetValue())
+    }
+
+    @Test
+    fun `WHEN NewTabGroupMenuClicked is dispatched THEN the tab group creation mode menu metric is reported`() {
+        assertNull(Metrics.tabGroupCreationMode["menu"].testGetValue())
+
+        store.dispatch(TabGroupAction.NewTabGroupMenuClicked)
+
+        assertEquals(1, Metrics.tabGroupCreationMode["menu"].testGetValue())
+    }
+
+    @Test
     fun `GIVEN a target tab WHEN DragAndDropTwoTabs is dispatched THEN the drag_and_drop metric is reported if both are tabs`() {
         assertNull(Metrics.tabGroupCreationMode["drag_and_drop"].testGetValue())
 

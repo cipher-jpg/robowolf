@@ -7,12 +7,14 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ContentDOMReference: "resource://gre/modules/ContentDOMReference.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
-  KEYBOARD_CONTROLS: "resource://gre/modules/PictureInPictureControls.sys.mjs",
+  KEYBOARD_CONTROLS:
+    "moz-src:///toolkit/components/pictureinpicture/PictureInPictureControls.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   Rect: "resource://gre/modules/Geometry.sys.mjs",
-  TOGGLE_POLICIES: "resource://gre/modules/PictureInPictureControls.sys.mjs",
+  TOGGLE_POLICIES:
+    "moz-src:///toolkit/components/pictureinpicture/PictureInPictureControls.sys.mjs",
   TOGGLE_POLICY_STRINGS:
-    "resource://gre/modules/PictureInPictureControls.sys.mjs",
+    "moz-src:///toolkit/components/pictureinpicture/PictureInPictureControls.sys.mjs",
 });
 
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
@@ -3049,7 +3051,10 @@ class PictureInPictureChildVideoWrapper {
     });
 
     try {
-      Services.scriptloader.loadSubScript(wrapperScriptUrl, sandbox);
+      Services.scriptloader.loadSubScriptWithOptions(wrapperScriptUrl, {
+        target: sandbox,
+        allowUnsafeURL: true,
+      });
     } catch (e) {
       Cu.nukeSandbox(sandbox);
       lazy.logConsole.error(

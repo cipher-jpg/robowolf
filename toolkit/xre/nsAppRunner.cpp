@@ -4887,7 +4887,8 @@ enum struct ShouldNotProcessUpdatesReason {
   DevToolsLaunching,
   NotAnUpdatingTask,
   OtherInstanceRunning,
-  FirstStartup
+  FirstStartup,
+  DisabledByEnvironment
 };
 
 const char* ShouldNotProcessUpdatesReasonAsString(
@@ -4899,6 +4900,8 @@ const char* ShouldNotProcessUpdatesReasonAsString(
       return "NotAnUpdatingTask";
     case ShouldNotProcessUpdatesReason::OtherInstanceRunning:
       return "OtherInstanceRunning";
+    case ShouldNotProcessUpdatesReason::DisabledByEnvironment:
+      return "DisabledByEnvironment";
     default:
       MOZ_CRASH("impossible value for ShouldNotProcessUpdatesReason");
   }
@@ -4912,6 +4915,13 @@ Maybe<ShouldNotProcessUpdatesReason> ShouldNotProcessUpdates(
   if (ARG_FOUND == CheckArgExists("first-startup")) {
     NS_WARNING("ShouldNotProcessUpdates(): FirstStartup");
     return Some(ShouldNotProcessUpdatesReason::FirstStartup);
+  }
+
+  // Bug 2055849: Don't process updates if MOZ_DISABLE_UPDATE_PROCESSING is set.
+  // Set by default when using https://github.com/mozilla/firefox-devtools-mcp.
+  if (EnvHasValue("MOZ_DISABLE_UPDATE_PROCESSING")) {
+    NS_WARNING("ShouldNotProcessUpdates(): DisabledByEnvironment");
+    return Some(ShouldNotProcessUpdatesReason::DisabledByEnvironment);
   }
 
   // Do not process updates if we're launching devtools, as evidenced by
@@ -5181,6 +5191,19 @@ int XREMain::XRE_mainStartup(bool* aExitFlag,
       if (!disableWaylandProxy && XRE_IsParentProcess() && waylandEnabled) {
         auto* proxyLog = getenv("WAYLAND_PROXY_LOG");
         WaylandProxy::SetVerbose(proxyLog && *proxyLog);
+
+#    ifdef NIGHTLY_BUILD
+        bool captureProtocolErrors = true;
+#    else
+        bool captureProtocolErrors = false;
+#    endif
+        // MOZ_WAYLAND_PROTOCOL_ERROR_DETAILS=0 turns capture off on Nightly;
+        // any other non-empty value turns it on elsewhere.
+        if (auto* errorDetails = getenv("MOZ_WAYLAND_PROTOCOL_ERROR_DETAILS")) {
+          captureProtocolErrors = *errorDetails && *errorDetails != '0';
+        }
+        WaylandProxy::SetCaptureProtocolErrors(captureProtocolErrors);
+
         WaylandProxy::SetThreadStartCallback(
             [] { PROFILER_REGISTER_THREAD("WaylandProxy"); });
         WaylandProxy::SetThreadStopCallback(
@@ -5739,7 +5762,8 @@ int XREMain::XRE_mainStartup(bool* aExitFlag,
   bool startupCacheValid = true;
 
   if (!cachesOK || !versionOK) {
-    QuotaManager::InvalidateQuotaCache();
+    QuotaManager::InvalidateQuotaCache(
+        QuotaManager::CacheInvalidationLevel::Soft);
 
     startupCacheValid = RemoveComponentRegistries(mProfD, mProfLD, false);
 
@@ -6198,19 +6222,12 @@ nsresult XREMain::XRE_mainRun() {
         tempArgv[i] = strdup(gArgv[i]);
       }
       CommandLineServiceMac::SetupMacCommandLine(gArgc, tempArgv, false);
-
-      // All startup URLs have been consumed by SetupMacCommandLine. From this
-      // point, any URLs received via Apple Events (application:openURLs:) will
-      // be handled immediately by nsICommandLineRunner instead of being
-      // buffered. See bug 2036237.
-      StartupURLCollectionComplete();
-
       rv = cmdLine->Init(gArgc, tempArgv, workingDir,
                          nsICommandLine::STATE_INITIAL_LAUNCH);
       free(tempArgv);
       NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
-#  ifdef MOZILLA_OFFICIAL
+#  if defined(MOZILLA_OFFICIAL) || defined(DMG_INSTALL_HELPER_DEBUG)
       // Check if we're running from a DMG or an app translocated location and
       // allow the user to install to the Applications directory.
       if (MacRunFromDmgUtils::MaybeInstallAndRelaunch()) {
@@ -6768,7 +6785,11 @@ bool XRE_UseNativeEventProcessing() {
     case GeckoProcessType_GMPlugin:
       return mozilla::gmp::GMPProcessChild::UseNativeEventProcessing();
     case GeckoProcessType_Content:
+#if defined(XP_DARWIN)
+      return false;
+#else
       return StaticPrefs::dom_ipc_useNativeEventProcessing_content();
+#endif  // defined (XP_DARWIN)
     default:
       return true;
   }

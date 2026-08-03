@@ -40,6 +40,7 @@ sys.path.append(
 WEBEXT_METRICS_PATH = Path("browser", "extensions", "newtab", "webext-glue", "metrics")
 sys.path.append(str(WEBEXT_METRICS_PATH.absolute()))
 import glean_utils
+from gen_runtime_metrics import get_new_metrics, get_new_pings
 from run_glean_parser import parse_with_options
 
 FIREFOX_L10N_REPO = "https://github.com/mozilla-l10n/firefox-l10n.git"
@@ -99,6 +100,10 @@ def run_mach(command_context, cmd, **kwargs):
     )
 
 
+def mach_argv(command_context):
+    return [sys.executable, os.path.join(command_context.topsrcdir, "mach")]
+
+
 @SubCommand(
     "newtab",
     "watch",
@@ -109,13 +114,13 @@ def watch(command_context):
 
     try:
         p1 = subprocess.Popen([
-            "./mach",
+            *mach_argv(command_context),
             "npm",
             "run",
             "watchmc",
             "--prefix=browser/extensions/newtab",
         ])
-        p2 = subprocess.Popen(["./mach", "watch"])
+        p2 = subprocess.Popen([*mach_argv(command_context), "watch"])
         processes.extend([p1, p2])
         print("Watching subprocesses started. Press Ctrl-C to terminate them.")
 
@@ -683,7 +688,6 @@ def process_yaml_file(main_yaml, compare_yaml, yaml_type: YamlType, temp_dir_pat
     # Remove $tags if present to avoid invalid tag lint error
     if "$tags" in new_yaml:
         del new_yaml["$tags"]
-    new_yaml["no_lint"] = ["COMMON_PREFIX"]
 
     yaml_content = yaml.dump(new_yaml, sort_keys=False)
     print(yaml_content)
@@ -694,60 +698,6 @@ def process_yaml_file(main_yaml, compare_yaml, yaml_type: YamlType, temp_dir_pat
         f.write(yaml_content)
 
     return file_path
-
-
-def get_new_metrics(main_yaml, compare_yaml):
-    """Compare main and comparison YAML files to find new metrics.
-
-    This function compares the metrics defined in the main branch against those in the comparison branch
-    (beta or release) and returns only the metrics that are new in the main branch.
-
-    Args:
-        main_yaml: The YAML content from the main branch containing metric definitions
-        compare_yaml: The YAML content from the comparison branch (beta/release) containing metric definitions
-
-    Returns:
-        dict: A dictionary containing only the metrics that are new in the main branch
-    """
-    new_metrics_yaml = {}
-    for category in main_yaml:
-        if category.startswith("$"):
-            new_metrics_yaml[category] = main_yaml[category]
-            continue
-        if category not in compare_yaml:
-            new_metrics_yaml[category] = main_yaml[category]
-            continue
-        new_metrics = {}
-        for metric in main_yaml[category]:
-            if metric not in compare_yaml[category]:
-                new_metrics[metric] = main_yaml[category][metric]
-        if new_metrics:
-            new_metrics_yaml[category] = new_metrics
-    return new_metrics_yaml
-
-
-def get_new_pings(main_yaml, compare_yaml):
-    """Compare main and comparison YAML files to find new pings.
-
-    This function compares the pings defined in the main branch against those in the comparison branch
-    (beta or release) and returns only the pings that are new in the main branch.
-
-    Args:
-        main_yaml: The YAML content from the main branch containing ping definitions
-        compare_yaml: The YAML content from the comparison branch (beta/release) containing ping definitions
-
-    Returns:
-        dict: A dictionary containing only the pings that are new in the main branch
-    """
-    new_pings_yaml = {}
-    for ping in main_yaml:
-        if ping.startswith("$"):
-            new_pings_yaml[ping] = main_yaml[ping]
-            continue
-        if ping not in compare_yaml:
-            new_pings_yaml[ping] = main_yaml[ping]
-            continue
-    return new_pings_yaml
 
 
 def check_existing_metrics(main_yaml, compare_yaml):
@@ -823,8 +773,8 @@ def check_existing_metrics(main_yaml, compare_yaml):
     "newtab",
     "trainhop-recipe",
     description="""Generates the appropriate trainhop recipe for the Nimbus
-newtabTrainhopAddon feature, given a Taskcluster shipping task group URL from
-ship-it""",
+newtabTrainhopAddonDeployment feature, given a Taskcluster shipping task group
+URL from ship-it""",
 )
 @CommandArgument(
     "taskcluster_group_url", help="The shipping Taskcluster task group URL from ship-it"
@@ -999,7 +949,7 @@ def bundle(command_context):
 
     try:
         proc = subprocess.Popen([
-            "./mach",
+            *mach_argv(command_context),
             "npm",
             "run",
             "bundle",
@@ -1043,7 +993,7 @@ def install(command_context):
 
     try:
         proc = subprocess.Popen([
-            "./mach",
+            *mach_argv(command_context),
             "npm",
             "install",
             "--prefix=browser/extensions/newtab",

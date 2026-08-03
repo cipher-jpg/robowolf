@@ -23,6 +23,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -31,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.fragment.app.Fragment
@@ -55,6 +57,8 @@ import mozilla.components.feature.accounts.push.CloseTabsUseCases
 import mozilla.components.feature.downloads.ui.DownloadCancelDialogFragment
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.storeProvider
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
+import mozilla.components.support.ktx.android.view.setNavigationBarTheme
+import mozilla.components.support.ktx.android.view.setStatusBarTheme
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.GleanMetrics.PrivateBrowsingLocked
@@ -83,6 +87,7 @@ import org.mozilla.fenix.tabgroups.CloseLastTabAndDeleteTabGroupConfirmationDial
 import org.mozilla.fenix.tabgroups.DeleteTabGroupConfirmationDialog
 import org.mozilla.fenix.tabgroups.EditTabGroup
 import org.mozilla.fenix.tabgroups.ExpandedTabGroup
+import org.mozilla.fenix.tabgroups.ExpandedTabGroupActions
 import org.mozilla.fenix.tabstray.InactiveTabsBinding
 import org.mozilla.fenix.tabstray.PbmLockStatusBinding
 import org.mozilla.fenix.tabstray.TabManagerCfrController
@@ -269,6 +274,8 @@ class TabManagementFragment : Fragment() {
             }
 
             FirefoxTheme(theme = TabManagerThemeProvider(selectedPage = state.selectedPage).provideTheme()) {
+                val statusBarColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                val navigationBarColor = MaterialTheme.colorScheme.surface
                 val transitionColor = MaterialTheme.colorScheme.surfaceContainer
 
                 val tabTrayVisibilityState = remember {
@@ -305,6 +312,20 @@ class TabManagementFragment : Fragment() {
                             performTabClick(tab = it)
                         }
                     }
+                }
+
+                // The TabManagementFragment theme changes independently of browsing mode, so we have
+                // opted out of StatusBarColorManager and must manually manage our system bar colors.
+                // Note that when edge-to-edge is enabled, these helpers are still needed to update the
+                // icon/text color via isAppearanceLightStatusBars, and when edge-to-edge is disabled
+                // they also set the bar background colors.
+                // Note: We prefer DisposableEffect over LaunchedEffect here because it is synchronous
+                // and avoids a flicker where statusbar and toolbar don't match.
+                DisposableEffect(statusBarColor, navigationBarColor) {
+                    val window = activity?.window
+                    window?.setStatusBarTheme(statusBarColor.toArgb())
+                    window?.setNavigationBarTheme(navigationBarColor.toArgb())
+                    onDispose { }
                 }
 
                 AnimatedVisibility(
@@ -457,8 +478,7 @@ class TabManagementFragment : Fragment() {
                                 val expandedGroup by tabsTrayStore.observeTabGroup(tabGroup = args.group)
                                     .collectAsState(initial = args.group)
 
-                                ExpandedTabGroup(
-                                    group = expandedGroup,
+                                val expandedGroupActions = ExpandedTabGroupActions(
                                     onItemClick = {
                                         when (it) {
                                             is TabsTrayItem.Tab -> handleTabClick(it)
@@ -484,6 +504,27 @@ class TabManagementFragment : Fragment() {
                                             action = TabGroupAction.CloseTabGroupClicked(group = expandedGroup),
                                         )
                                     },
+                                    onAddNewTabClick = if (tabsTrayStore.state.config.homepageAsNewTabEnabled) {
+                                        {
+                                            val newTabId = requireComponents.useCases.fenixBrowserUseCases
+                                                .addNewHomepageTab(private = false)
+                                            tabsTrayStore.dispatch(
+                                                TabGroupAction.TabAddedToGroup(
+                                                    tabId = newTabId,
+                                                    groupId = expandedGroup.id,
+                                                ),
+                                            )
+                                            tabManagerController.handleNavigateToHome()
+                                        }
+                                    } else {
+                                        null
+                                    },
+                                )
+
+                                ExpandedTabGroup(
+                                    group = expandedGroup,
+                                    actions = expandedGroupActions,
+                                    tabInteractionHandler = tabInteractionHandler,
                                 )
                             }
 
@@ -581,7 +622,10 @@ class TabManagementFragment : Fragment() {
         return storeProvider.get { restoredState ->
             TabsTrayStore(
                 initialState = restoredState?.copy(
-                    config = restoredState.config.copy(displayTabsInGrid = settings.gridTabView),
+                    config = restoredState.config.copy(
+                        displayTabsInGrid = settings.gridTabView,
+                        homepageAsNewTabEnabled = settings.enableHomepageAsNewTab,
+                    ),
                 ) ?: createInitialState(args, settings),
                 middlewares = listOf(
                     TabsTrayTelemetryMiddleware(requireComponents.nimbus.events),
@@ -594,6 +638,7 @@ class TabManagementFragment : Fragment() {
                         tabGroupRepository = requireComponents.core.tabGroupRepository,
                         removeTabsUseCase = requireComponents.useCases.tabsUseCases.removeTabs,
                         moveTabsUseCase = requireComponents.useCases.tabsUseCases.moveTabs,
+                        fenixBrowserUseCases = requireComponents.useCases.fenixBrowserUseCases,
                         mainScope = lifecycleScope,
                     ),
                     TabManagerUiStateStorageMiddleware(
@@ -642,10 +687,12 @@ class TabManagementFragment : Fragment() {
                 tabGroupsDragAndDropEnabled = settings.tabGroupsDragAndDropEnabled,
                 tabGroupsLiveReorderEnabled = settings.tabGroupsLiveReorderEnabled,
                 tabGroupsOnboardingEnabled = settings.tabGroupsOnboardingEnabled,
+                homepageAsNewTabEnabled = settings.enableHomepageAsNewTab,
                 displayTabsInGrid = settings.gridTabView,
                 isInDebugMode = Config.channel.isDebug || requireComponents.settings.showSecretDebugMenuThisSession,
                 showTabAutoCloseBanner = settings.shouldShowAutoCloseTabsBanner &&
                     settings.canShowCfr && settings.cfrPopupsEnabled,
+                collectionsEnabled = settings.collections,
             ),
         )
     }

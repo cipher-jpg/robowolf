@@ -19,6 +19,10 @@ const { AppConstants } = ChromeUtils.importESModule(
 );
 
 import { FeatureCalloutMessages } from "resource:///modules/asrouter/FeatureCalloutMessages.sys.mjs";
+import {
+  WIN_OS_PIN_PROMPT_ENABLED,
+  FXA_NOT_SIGNED_IN,
+} from "resource:///modules/asrouter/MessagingTargetingConstants.sys.mjs";
 
 const lazy = {};
 
@@ -61,6 +65,77 @@ const isMSIX =
   Services.sysinfo.getProperty("hasWinPackageId", false);
 
 const BASE_MESSAGES = () => [
+  {
+    id: "LOGIN_STATUS_ADVISORY",
+    template: "feature_callout",
+    groups: ["cfr"],
+    skip_in_tests: "don't show in tests",
+    content: {
+      id: "LOGIN_STATUS_ADVISORY",
+      template: "multistage",
+      backdrop: "transparent",
+      transitions: false,
+      disableHistoryUpdates: true,
+      screens: [
+        {
+          id: "LOGIN_STATUS_ADVISORY_A",
+          anchors: [
+            {
+              selector: "#fxa-toolbar-menu-button",
+              panel_position: {
+                anchor_attachment: "bottomcenter",
+                callout_attachment: "topright",
+                panel_position_string: "bottomcenter topright",
+              },
+              no_open_on_anchor: true,
+              arrow_width: "19.79899",
+            },
+          ],
+          content: {
+            position: "callout",
+            width: "fit-content",
+            padding: "0",
+            autohide: true,
+            title: {
+              string_id: "login-status-advisory-title",
+              marginInline: "16px",
+              marginBlock: "10px",
+              fontWeight: "normal",
+              fontSize: "0.6875em",
+              lineHeight: "1",
+              letterSpacing: "0",
+            },
+            page_event_listeners: [
+              {
+                params: {
+                  type: "tourend",
+                  options: {
+                    once: true,
+                  },
+                },
+                action: {
+                  dismiss: true,
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
+    targeting: `source == 'startup' && previousSessionEnd && !willShowDefaultPrompt && !activeNotifications && ${FXA_NOT_SIGNED_IN} && (currentDate|date - profileAgeCreated|date) / 86400000 >= 7`,
+    frequency: {
+      custom: [
+        {
+          cap: 1,
+          period: 604800000,
+        },
+      ],
+      lifetime: 3,
+    },
+    trigger: {
+      id: "defaultBrowserCheck",
+    },
+  },
   {
     id: "MENU_MESSAGE_DEFAULT_CTA_ILLUSTRATION_LAYOUT",
     template: "menu_message",
@@ -258,7 +333,7 @@ const BASE_MESSAGES = () => [
       id: "openURL",
       patterns: ["https://accounts.firefox.com/?*service=smartwindow*"],
     },
-    targeting: `localeLanguageCode == 'en' && region in ['CA', 'US'] && !('termsofuse.bypassNotification'|preferenceValue) && ('termsofuse.acceptedVersion'|preferenceValue < 4) && ('browser.smartwindow.enabled'|preferenceValue)`,
+    targeting: `!('termsofuse.bypassNotification'|preferenceValue) && ('termsofuse.acceptedVersion'|preferenceValue < 4) && ('browser.smartwindow.enabled'|preferenceValue)`,
     content: {
       template: "multistage",
       id: "AI_WINDOW_TOU_EXISTING_USERS_MODAL",
@@ -1660,297 +1735,6 @@ const BASE_MESSAGES = () => [
     },
   },
   {
-    id: "PB_NEWTAB_FOCUS_PROMO",
-    type: "default",
-    template: "pb_newtab",
-    groups: ["pbNewtab"],
-    content: {
-      promoEnabled: true,
-      promoType: "FOCUS",
-      promoHeader: "fluent:about-private-browsing-focus-promo-header-c",
-      promoImageLarge: "chrome://browser/content/assets/focus-promo.png",
-      promoLinkText: "fluent:about-private-browsing-focus-promo-cta",
-      promoLinkType: "button",
-      promoSectionStyle: "below-search",
-      promoTitle: "fluent:about-private-browsing-focus-promo-text-c",
-      promoTitleEnabled: true,
-      promoButton: {
-        action: {
-          type: "SHOW_SPOTLIGHT",
-          data: {
-            content: {
-              id: "FOCUS_PROMO",
-              template: "multistage",
-              modal: "tab",
-              backdrop: "transparent",
-              screens: [
-                {
-                  id: "DEFAULT_MODAL_UI",
-                  content: {
-                    logo: {
-                      imageURL:
-                        "chrome://browser/content/assets/focus-logo.svg",
-                      height: "48px",
-                    },
-                    title: {
-                      string_id: "spotlight-focus-promo-title",
-                    },
-                    subtitle: {
-                      string_id: "spotlight-focus-promo-subtitle",
-                    },
-                    dismiss_button: {
-                      action: {
-                        navigate: true,
-                      },
-                    },
-                    ios: {
-                      action: {
-                        data: {
-                          args: "https://app.adjust.com/167k4ih?campaign=firefox-desktop&adgroup=pb&creative=focus-omc172&redirect=https%3A%2F%2Fapps.apple.com%2Fus%2Fapp%2Ffirefox-focus-privacy-browser%2Fid1055677337",
-                          where: "tabshifted",
-                        },
-                        type: "OPEN_URL",
-                        navigate: true,
-                      },
-                    },
-                    android: {
-                      action: {
-                        data: {
-                          args: "https://app.adjust.com/167k4ih?campaign=firefox-desktop&adgroup=pb&creative=focus-omc172&redirect=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dorg.mozilla.focus",
-                          where: "tabshifted",
-                        },
-                        type: "OPEN_URL",
-                        navigate: true,
-                      },
-                    },
-                    tiles: {
-                      type: "mobile_downloads",
-                      data: {
-                        QR_code: {
-                          image_url:
-                            "chrome://browser/content/assets/focus-qr-code.svg",
-                          alt_text: {
-                            string_id: "spotlight-focus-promo-qr-code",
-                          },
-                        },
-                        marketplace_buttons: ["ios", "android"],
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-          },
-        },
-      },
-    },
-    priority: 2,
-    frequency: {
-      custom: [
-        {
-          cap: 3,
-          period: 604800000, // Max 3 per week
-        },
-      ],
-      lifetime: 12,
-    },
-    // Exclude the next 2 messages: 1) Klar for en 2) Klar for de
-    targeting:
-      "!(region in [ 'DE', 'AT', 'CH'] && localeLanguageCode == 'en') && localeLanguageCode != 'de'",
-  },
-  {
-    id: "PB_NEWTAB_KLAR_PROMO",
-    type: "default",
-    template: "pb_newtab",
-    groups: ["pbNewtab"],
-    content: {
-      promoEnabled: true,
-      promoType: "FOCUS",
-      promoHeader: "fluent:about-private-browsing-focus-promo-header-c",
-      promoImageLarge: "chrome://browser/content/assets/focus-promo.png",
-      promoLinkText: "Download Firefox Klar",
-      promoLinkType: "button",
-      promoSectionStyle: "below-search",
-      promoTitle:
-        "Firefox Klar clears your history every time while blocking ads and trackers.",
-      promoTitleEnabled: true,
-      promoButton: {
-        action: {
-          type: "SHOW_SPOTLIGHT",
-          data: {
-            content: {
-              id: "KLAR_PROMO",
-              template: "multistage",
-              modal: "tab",
-              backdrop: "transparent",
-              screens: [
-                {
-                  id: "DEFAULT_MODAL_UI",
-                  order: 0,
-                  content: {
-                    logo: {
-                      imageURL:
-                        "chrome://browser/content/assets/focus-logo.svg",
-                      height: "48px",
-                    },
-                    title: "Get Firefox Klar",
-                    subtitle: {
-                      string_id: "spotlight-focus-promo-subtitle",
-                    },
-                    dismiss_button: {
-                      action: {
-                        navigate: true,
-                      },
-                    },
-                    ios: {
-                      action: {
-                        data: {
-                          args: "https://app.adjust.com/a8bxj8j?campaign=firefox-desktop&adgroup=pb&creative=focus-omc172&redirect=https%3A%2F%2Fapps.apple.com%2Fde%2Fapp%2Fklar-by-firefox%2Fid1073435754",
-                          where: "tabshifted",
-                        },
-                        type: "OPEN_URL",
-                        navigate: true,
-                      },
-                    },
-                    android: {
-                      action: {
-                        data: {
-                          args: "https://app.adjust.com/a8bxj8j?campaign=firefox-desktop&adgroup=pb&creative=focus-omc172&redirect=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dorg.mozilla.klar",
-                          where: "tabshifted",
-                        },
-                        type: "OPEN_URL",
-                        navigate: true,
-                      },
-                    },
-                    tiles: {
-                      type: "mobile_downloads",
-                      data: {
-                        QR_code: {
-                          image_url:
-                            "chrome://browser/content/assets/klar-qr-code.svg",
-                          alt_text: "Scan the QR code to get Firefox Klar",
-                        },
-                        marketplace_buttons: ["ios", "android"],
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-          },
-        },
-      },
-    },
-    priority: 2,
-    frequency: {
-      custom: [
-        {
-          cap: 3,
-          period: 604800000, // Max 3 per week
-        },
-      ],
-      lifetime: 12,
-    },
-    targeting: "region in [ 'DE', 'AT', 'CH'] && localeLanguageCode == 'en'",
-  },
-  {
-    id: "PB_NEWTAB_KLAR_PROMO_DE",
-    type: "default",
-    template: "pb_newtab",
-    groups: ["pbNewtab"],
-    content: {
-      promoEnabled: true,
-      promoType: "FOCUS",
-      promoHeader: "fluent:about-private-browsing-focus-promo-header-c",
-      promoImageLarge: "chrome://browser/content/assets/focus-promo.png",
-      promoLinkText: "fluent:about-private-browsing-focus-promo-cta",
-      promoLinkType: "button",
-      promoSectionStyle: "below-search",
-      promoTitle: "fluent:about-private-browsing-focus-promo-text-c",
-      promoTitleEnabled: true,
-      promoButton: {
-        action: {
-          type: "SHOW_SPOTLIGHT",
-          data: {
-            content: {
-              id: "FOCUS_PROMO",
-              template: "multistage",
-              modal: "tab",
-              backdrop: "transparent",
-              screens: [
-                {
-                  id: "DEFAULT_MODAL_UI",
-                  content: {
-                    logo: {
-                      imageURL:
-                        "chrome://browser/content/assets/focus-logo.svg",
-                      height: "48px",
-                    },
-                    title: {
-                      string_id: "spotlight-focus-promo-title",
-                    },
-                    subtitle: {
-                      string_id: "spotlight-focus-promo-subtitle",
-                    },
-                    dismiss_button: {
-                      action: {
-                        navigate: true,
-                      },
-                    },
-                    ios: {
-                      action: {
-                        data: {
-                          args: "https://app.adjust.com/a8bxj8j?campaign=firefox-desktop&adgroup=pb&creative=focus-omc172&redirect=https%3A%2F%2Fapps.apple.com%2Fde%2Fapp%2Fklar-by-firefox%2Fid1073435754",
-                          where: "tabshifted",
-                        },
-                        type: "OPEN_URL",
-                        navigate: true,
-                      },
-                    },
-                    android: {
-                      action: {
-                        data: {
-                          args: "https://app.adjust.com/a8bxj8j?campaign=firefox-desktop&adgroup=pb&creative=focus-omc172&redirect=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dorg.mozilla.klar",
-                          where: "tabshifted",
-                        },
-                        type: "OPEN_URL",
-                        navigate: true,
-                      },
-                    },
-                    tiles: {
-                      type: "mobile_downloads",
-                      data: {
-                        QR_code: {
-                          image_url:
-                            "chrome://browser/content/assets/klar-qr-code.svg",
-                          alt_text: {
-                            string_id: "spotlight-focus-promo-qr-code",
-                          },
-                        },
-                        marketplace_buttons: ["ios", "android"],
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-          },
-        },
-      },
-    },
-    priority: 2,
-    frequency: {
-      custom: [
-        {
-          cap: 3,
-          period: 604800000, // Max 3 per week
-        },
-      ],
-      lifetime: 12,
-    },
-    targeting: "localeLanguageCode == 'de'",
-  },
-  {
     id: "PB_NEWTAB_PIN_PROMO",
     template: "pb_newtab",
     type: "default",
@@ -2520,6 +2304,25 @@ const BASE_MESSAGES = () => [
     },
   },
   {
+    // Silently pins for users Windows will itself ask to consent to pin via
+    // an OS-level prompt, in lieu of the AW_EASY_SETUP pin checkbox.
+    id: "PIN_FIREFOX_TASKBAR_WIN_OS_PROMPT",
+    template: "action_only",
+    skip_in_tests: "it silently triggers a real OS-level pin request",
+    content: {
+      action: {
+        type: "PIN_FIREFOX_TO_TASKBAR",
+      },
+    },
+    targeting: `!('browser.bypassAutoTriggerActions' | preferenceValue) && source == 'startup' && !previousSessionEnd && doesAppNeedPin && ${WIN_OS_PIN_PROMPT_ENABLED} && (unhandledCampaignAction != 'PIN_FIREFOX_TO_TASKBAR') && (unhandledCampaignAction != 'PIN_AND_DEFAULT')`,
+    trigger: {
+      id: "defaultBrowserCheck",
+    },
+    frequency: {
+      lifetime: 1,
+    },
+  },
+  {
     id: "SET_DEFAULT_BROWSER_GUIDANCE_NOTIFICATION_WIN10",
     template: "toast_notification",
     content: {
@@ -2839,6 +2642,7 @@ const BASE_MESSAGES = () => [
                   action: {
                     type: "MULTI_ACTION",
                     dismiss: true,
+                    sendDismissTelemetry: true,
                     data: {
                       actions: [
                         {
@@ -2883,6 +2687,30 @@ const BASE_MESSAGES = () => [
                   id: "remove_checklist",
                 },
               ],
+            },
+            remove_checklist_button: {
+              label: { string_id: "onboarding-checklist-remove-2" },
+              source_id: "remove_checklist_button",
+              action: {
+                type: "MULTI_ACTION",
+                dismiss: true,
+                data: {
+                  actions: [
+                    {
+                      type: "BLOCK_MESSAGE",
+                      data: {
+                        id: "FINISH_SETUP_CHECKLIST",
+                      },
+                    },
+                    {
+                      type: "DESTROY_UIWIDGET",
+                      data: {
+                        widget_id: "fxms-bmb-button",
+                      },
+                    },
+                  ],
+                },
+              },
             },
           },
         },
@@ -3165,7 +2993,7 @@ const BASE_MESSAGES = () => [
                   id: "chat-log-preview",
                   content: "",
                   style: {
-                    backgroundColor: "#F9F9FB",
+                    backgroundColor: "var(--background-color-box)",
                     maxHeight: "130px",
                   },
                 },
@@ -3311,7 +3139,7 @@ const BASE_MESSAGES = () => [
                   id: "chat-log-preview",
                   content: "",
                   style: {
-                    backgroundColor: "#F9F9FB",
+                    backgroundColor: "var(--background-color-box)",
                     maxHeight: "130px",
                   },
                 },
@@ -3598,6 +3426,39 @@ export const OnboardingMessageProvider = {
 
   getPreonboardingMessages() {
     return PREONBOARDING_MESSAGES();
+  },
+
+  /**
+   * Fill in Nimbus `preonboarding` feature variables from the default
+   * preonboarding message when preonboarding is the unconfigured default
+   * (`enabled === null`) or enabled without screens. Supplied values win,
+   * except nulls and empty arrays, which fall back to the default message's
+   * values. Explicitly disabled (`enabled === false`) variables are returned
+   * unchanged.
+   *
+   * @param {object} variables Nimbus `preonboarding` feature variables.
+   * @return {object} the variables, merged over the default message if needed.
+   */
+  getPreonboardingVariablesWithDefaults(variables) {
+    if (
+      variables.enabled !== null &&
+      !(variables.enabled && !variables.screens?.length)
+    ) {
+      return variables;
+    }
+
+    const preonboardingMessage = this.getPreonboardingMessages().find(
+      m => m.id === "NEW_USER_TOU_ONBOARDING"
+    );
+    return {
+      ...preonboardingMessage,
+      ...Object.fromEntries(
+        Object.entries(variables).filter(
+          ([_, value]) =>
+            value !== null && !(Array.isArray(value) && !value.length)
+        )
+      ),
+    };
   },
 
   // If the user has restored from a backup, mutate the restore from backup message to appear once per backup by using the restoration timestamp as the unique message id

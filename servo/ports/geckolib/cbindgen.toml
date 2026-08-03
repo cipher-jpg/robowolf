@@ -236,6 +236,7 @@ include = [
   "LineClamp",
   "WordBreak",
   "Contain",
+  "MarginTrim",
   "ContainerType",
   "ContainerName",
   "ContentVisibility",
@@ -1353,6 +1354,11 @@ renaming_overrides_prefixing = true
   inline static StyleNumericType Flex();
 
   inline int32_t Exponent(StyleNumericBaseType aBaseType) const;
+
+  inline bool MatchesLength() const;
+  inline bool MatchesAngle() const;
+  inline bool MatchesLengthPercentage() const;
+  inline bool MatchesNumber() const;
 
   inline bool operator==(const StyleNumericType& aOther) const;
 """

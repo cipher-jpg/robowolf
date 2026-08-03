@@ -61,6 +61,10 @@ namespace gfx {
 class SourceSurface;
 }  // namespace gfx
 
+namespace layers {
+struct KeyboardScrollAction;
+}  // namespace layers
+
 namespace dom {
 
 class CanonicalBrowsingContext;
@@ -419,6 +423,9 @@ class BrowserParent final : public PBrowserParent,
       const AxisScrollParams& aHorizontal, const ScrollFlags& aScrollFlags,
       const int32_t& aAppUnitsPerDevPixel);
 
+  mozilla::ipc::IPCResult RecvScrollForKeyboard(
+      const mozilla::layers::KeyboardScrollAction& aAction);
+
   already_AddRefed<PColorPickerParent> AllocPColorPickerParent(
       const MaybeDiscarded<BrowsingContext>& aBrowsingContext,
       const nsString& aTitle, const nsString& aInitialColor,
@@ -431,12 +438,13 @@ class BrowserParent final : public PBrowserParent,
 #ifdef ACCESSIBILITY
   PDocAccessibleParent* AllocPDocAccessibleParent(
       PDocAccessibleParent*, const uint64_t&,
-      const MaybeDiscardedBrowsingContext&);
+      const MaybeDiscardedBrowsingContext&, const bool&);
   bool DeallocPDocAccessibleParent(PDocAccessibleParent*);
   virtual mozilla::ipc::IPCResult RecvPDocAccessibleConstructor(
       PDocAccessibleParent* aDoc, PDocAccessibleParent* aParentDoc,
       const uint64_t& aParentID,
-      const MaybeDiscardedBrowsingContext& aBrowsingContext) override;
+      const MaybeDiscardedBrowsingContext& aBrowsingContext,
+      const bool& aIsPrintDoc) override;
 #endif
 
   already_AddRefed<PSessionStoreParent> AllocPSessionStoreParent();

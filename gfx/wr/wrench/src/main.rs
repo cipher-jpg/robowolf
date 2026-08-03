@@ -11,6 +11,13 @@ extern crate serde;
 #[macro_use]
 extern crate tracy_rs;
 
+/// App units per device pixel that wrench declares for its display lists.
+/// WebRender normalizes items by their accumulated external scroll offset in whole
+/// app units on this grid, so declaring the same value Gecko uses at dpr 1.0 means
+/// wrench exercises the same arithmetic rather than a bypass. Yaml coordinates are
+/// therefore quantized to 1/60 px (bug 2059570).
+pub const AU_PER_DEV_PX: f32 = 60.0;
+
 mod angle;
 mod blob;
 #[cfg(target_os = "windows")]
@@ -672,6 +679,7 @@ struct WrenchApp {
     verbose: bool,
     no_scissor: bool,
     no_batch_global: bool,
+    color_target_init: bool,
     precache: bool,
     dump_shader_source: Option<String>,
     profiler_ui: Option<String>,
@@ -789,6 +797,11 @@ impl ApplicationHandler for WrenchApp {
         println!("OpenGL version {}, {}", gl.get_string(gl::VERSION), gl.get_string(gl::RENDERER));
         println!("hidpi factor: {}", window.hidpi_factor());
 
+        let init_target_dbg = self.color_target_init || matches!(
+            self.subcommand.as_str(),
+            "reftest"
+        );
+
         let needs_frame_notifier = matches!(
             self.subcommand.as_str(),
             "perf" | "reftest" | "png" | "rawtest" | "test_invalidation"
@@ -818,6 +831,7 @@ impl ApplicationHandler for WrenchApp {
             self.verbose,
             self.no_scissor,
             self.no_batch_global,
+            init_target_dbg,
             self.precache,
             self.dump_shader_source.clone(),
             notifier,
@@ -1162,6 +1176,7 @@ fn build_app(args: clap::ArgMatches, proxy: Option<EventLoopProxy<()>>) -> Wrenc
     let verbose = args.is_present("verbose");
     let no_scissor = args.is_present("no_scissor");
     let no_batch_global = args.is_present("no_batch");
+    let color_target_init = args.is_present("color_target_init");
     let precache = args.is_present("precache");
     let profiler_ui = args.value_of("profiler_ui").map(String::from);
 
@@ -1257,7 +1272,7 @@ fn build_app(args: clap::ArgMatches, proxy: Option<EventLoopProxy<()>>) -> Wrenc
     WrenchApp {
         size, vsync, angle, software, using_compositor, gl_request, headless,
         res_path, use_optimized_shaders, rebuild, no_subpixel_aa, verbose,
-        no_scissor, no_batch_global, precache, dump_shader_source, profiler_ui,
+        no_scissor, no_batch_global, color_target_init, precache, dump_shader_source, profiler_ui,
         subcommand, reftest_specific, reftest_fuzz,
         thing_to_build, show_no_block, show_no_batch,
         png_reader, png_surface, png_output_path,
@@ -1343,6 +1358,11 @@ fn run_headless(args: clap::ArgMatches) -> i32 {
         sw_ctx,
     };
 
+    let init_target_dbg = app.color_target_init || matches!(
+        app.subcommand.as_str(),
+        "reftest"
+    );
+
     let needs_frame_notifier = matches!(
         app.subcommand.as_str(),
         "perf" | "reftest" | "png" | "rawtest" | "test_invalidation"
@@ -1366,6 +1386,7 @@ fn run_headless(args: clap::ArgMatches) -> i32 {
         app.verbose,
         app.no_scissor,
         app.no_batch_global,
+        init_target_dbg,
         app.precache,
         app.dump_shader_source.clone(),
         notifier,

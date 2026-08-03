@@ -51,8 +51,8 @@ class ServoStyleSet;
 
 /**
  * Some invariants:
- * -- The overflow out-of-flows list contains the out-of-
- * flow frames whose placeholders are in the overflow list.
+ * -- The overflow floats list contains the float frames
+ * whose placeholders are in the overflow list.
  * -- A given piece of content has at most one placeholder
  * frame in a block's normal child list.
  * -- While a block is being reflowed, and from then until
@@ -580,6 +580,11 @@ class nsBlockFrame : public nsContainerFrame {
    * For text-wrap:balance, we iteratively try reflowing with adjusted inline
    * size to find the "best" result (the tightest size that can be applied
    * without increasing the total line count of the block).
+   *
+   * For text-box-trim, if requested by the previous trial of the frame,
+   * we perform a single retry in order to correctly apply trim-end at a
+   * fragment boundary.
+   *
    * This record is used to manage the state of these "trial reflows", and
    * return results from the final trial.
    */
@@ -607,6 +612,15 @@ class nsBlockFrame : public nsContainerFrame {
           mEffectiveContentBoxBSize(aEffectiveContentBoxBSize),
           mNeedFloatManager(aNeedFloatManager) {}
 
+    // Re-initialize state that the reflow loop will compute.
+    void Reset() {
+      mOcBounds.Clear();
+      mFcBounds.Clear();
+      mBlockEndEdgeOfChildren = 0;
+      mContainerWidth = 0;
+      mUsedOverflowWrap = false;
+    }
+
     // Adjust the inset amount, and reset state for a new trial.
     void ResetForBalance(nscoord aInsetDelta) {
       // Tells the reflow-lines loop we must consider all lines "dirty" (as we
@@ -614,20 +628,22 @@ class nsBlockFrame : public nsContainerFrame {
       mBalancing = true;
       // Adjust inset to apply.
       mInset += aInsetDelta;
-      // Re-initialize state that the reflow loop will compute.
-      mOcBounds.Clear();
-      mFcBounds.Clear();
-      mBlockEndEdgeOfChildren = 0;
-      mContainerWidth = 0;
-      mUsedOverflowWrap = false;
+      Reset();
     }
   };
 
   /**
    * Internal helper for Reflow(); may be called repeatedly during a single
-   * Reflow() in order to implement text-wrap:balance.
-   * This method applies aTrialState.mInset during line-breaking to reduce
-   * the effective available inline-size (without affecting alignment).
+   * Reflow() in order to implement text-wrap:balance and text-box-trim on
+   * fragmented boxes.
+   *
+   * For text-wrap: balance, this method applies aTrialState.mInset during
+   * line-breaking to reduce the effective available inline-size (without
+   * affecting alignment).
+   *
+   * For text-box-trim, this method performs an additional trial if
+   * requested by the frame if it requires trimming on the block end side
+   * of the current fragment of the frame.
    */
   nsReflowStatus TrialReflow(nsPresContext* aPresContext,
                              ReflowOutput& aMetrics,
@@ -699,7 +715,8 @@ class nsBlockFrame : public nsContainerFrame {
    * @return false iff this block does not have a float on any child list.
    * This function is O(1).
    */
-  bool MaybeHasFloats() const;
+  bool HasAnyFloats() const;
+
   /**
    * This indicates that exactly one line in this block has the
    * LineClampEllipsis flag set, and that such a line must be found
@@ -818,7 +835,7 @@ class nsBlockFrame : public nsContainerFrame {
 
   void CollectFloats(nsIFrame* aFrame, nsFrameList& aList,
                      bool aCollectFromSiblings) {
-    if (MaybeHasFloats()) {
+    if (HasAnyFloats()) {
       DoCollectFloats(aFrame, aList, aCollectFromSiblings);
     }
   }
@@ -1029,34 +1046,36 @@ class nsBlockFrame : public nsContainerFrame {
   void DestroyOverflowLines();
 
   /**
-   * This class is useful for efficiently modifying the out of flow
-   * overflow list. It gives the client direct writable access to
-   * the frame list temporarily but ensures that property is only
-   * written back if absolutely necessary.
+   * This class is useful for efficiently modifying the overflow floats list. It
+   * gives the client direct writable access to the frame list temporarily but
+   * ensures that property is only written back if absolutely necessary.
    */
-  struct nsAutoOOFFrameList {
+  struct AutoOverflowFloatsList {
     nsFrameList mList;
 
-    explicit nsAutoOOFFrameList(nsBlockFrame* aBlock)
-        : mPropValue(aBlock->GetOverflowOutOfFlows()), mBlock(aBlock) {
+    explicit AutoOverflowFloatsList(nsBlockFrame* aBlock)
+        : mPropValue(aBlock->GetOverflowFloats()), mBlock(aBlock) {
       if (mPropValue) {
         mList = std::move(*mPropValue);
       }
     }
-    ~nsAutoOOFFrameList() {
-      mBlock->SetOverflowOutOfFlows(std::move(mList), mPropValue);
+    ~AutoOverflowFloatsList() {
+      mBlock->SetOverflowFloats(std::move(mList), mPropValue);
     }
 
    protected:
     nsFrameList* const mPropValue;
     nsBlockFrame* const mBlock;
   };
-  friend struct nsAutoOOFFrameList;
+  friend struct AutoOverflowFloatsList;
 
-  nsFrameList* GetOverflowOutOfFlows() const;
+  // Return true if this frame has overflow floats.
+  bool HasOverflowFloats() const;
+
+  nsFrameList* GetOverflowFloats() const;
 
   // This takes ownership of the frames in aList.
-  void SetOverflowOutOfFlows(nsFrameList&& aList, nsFrameList* aPropValue);
+  void SetOverflowFloats(nsFrameList&& aList, nsFrameList* aPropValue);
 
   // Return the ::marker frame or nullptr if we don't have one.
   nsIFrame* GetMarker() const {

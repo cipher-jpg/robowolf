@@ -236,6 +236,8 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
 
   MOZ_CAN_RUN_SCRIPT void FocusCandidate(Element*, bool aClearUpFocus);
 
+  Element* FindShadowPseudo(mozilla::PseudoStyleType aType) const;
+
   void SetNonce(const nsAString& aNonce) {
     SetProperty(nsGkAtoms::nonce, new nsString(aNonce),
                 nsINode::DeleteProperty<nsString>, /* aTransfer = */ true);
@@ -715,22 +717,28 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
 
   static bool LegacyTouchAPIEnabled(JSContext* aCx, JSObject* aObj);
 
+  // The common set of:
   // https://html.spec.whatwg.org/#dom-window-nameditem-filter
+  // https://html.spec.whatwg.org/#dom-document-nameditem-filter
   static inline bool CanHaveName(nsAtom* aTag) {
     return aTag == nsGkAtoms::img || aTag == nsGkAtoms::form ||
-           aTag == nsGkAtoms::embed || aTag == nsGkAtoms::object;
+           aTag == nsGkAtoms::embed || aTag == nsGkAtoms::object ||
+           aTag == nsGkAtoms::iframe;
   }
   static inline bool ShouldExposeNameAsWindowProperty(Element* aElement) {
-    return aElement->IsHTMLElement() &&
-           CanHaveName(aElement->NodeInfo()->NameAtom());
+    if (!aElement->IsHTMLElement()) {
+      return false;
+    }
+    auto* nodeName = aElement->NodeInfo()->NameAtom();
+    return CanHaveName(nodeName) && nodeName != nsGkAtoms::iframe;
   }
   // https://html.spec.whatwg.org/#dom-document-nameditem-filter
   static inline bool ShouldExposeIdAsHTMLDocumentProperty(Element* aElement) {
     if (!aElement->HasID() || aElement->IsInNativeAnonymousSubtree()) {
       return false;
     }
-    // XXX Not all objects is exposed per spec, but other browsers doesn't check
-    // if object is exposed, either.
+    // XXX Not all objects should be exposed per spec, but other browsers don't
+    // check if object is exposed, either.
     if (aElement->IsHTMLElement(nsGkAtoms::object)) {
       return true;
     }
@@ -744,11 +752,10 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     if (!aElement->HasName() || aElement->IsInNativeAnonymousSubtree()) {
       return false;
     }
-    // XXX Not all embeds/objects are exposed per spec, but other browser
-    // doesn't check if embeds/objects are exposed.
-    return aElement->IsAnyOfHTMLElements(nsGkAtoms::embed, nsGkAtoms::form,
-                                         nsGkAtoms::iframe, nsGkAtoms::img,
-                                         nsGkAtoms::object);
+    // XXX Not all embeds/objects should be exposed per spec, but other browsers
+    // don't check if embeds/objects are exposed.
+    return aElement->IsHTMLElement() &&
+           CanHaveName(aElement->NodeInfo()->NameAtom());
   }
 
   virtual inline void ResultForDialogSubmit(nsAString& aResult) {

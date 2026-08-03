@@ -363,7 +363,23 @@ export const tokensTable = {
       value: "var(--color-accent-attention)",
       name: "--button-badge-background-color",
     },
+    { value: "transparent", name: "--button-split-separator-background-color" },
     { value: "var(--background-color-box)", name: "--card-background-color" },
+    {
+      value: {
+        default: "initial",
+        forcedColors: "var(--button-background-color)",
+      },
+      name: "--card-header-background-color",
+    },
+    {
+      value: "var(--button-background-color-hover)",
+      name: "--card-header-background-color-hover",
+    },
+    {
+      value: "var(--button-background-color-active)",
+      name: "--card-header-background-color-active",
+    },
     {
       value: "var(--button-background-color)",
       name: "--checkbox-background-color",
@@ -440,6 +456,7 @@ export const tokensTable = {
       value: "var(--background-color-dimmed-further)",
       name: "--panel-background-color-dimmed-further",
     },
+    { value: "var(--background-color-box)", name: "--popup-background-color" },
     {
       value: {
         light: "white",
@@ -726,6 +743,10 @@ export const tokensTable = {
       name: "--toggle-dot-background-color-on-pressed",
     },
     {
+      value: "var(--background-color-box)",
+      name: "--panel-list-background-color",
+    },
+    {
       value: "var(--button-background-color-menu)",
       name: "--box-button-background-color",
     },
@@ -758,11 +779,17 @@ export const tokensTable = {
       name: "--tab-background-color-selected",
     },
     {
+      value: "var(--toolbar-field-background-color)",
+      name: "--urlbar-background-color",
+    },
+    {
+      value: "var(--toolbar-field-background-color-focus)",
+      name: "--urlbar-background-color-focus",
+    },
+    {
       value: {
-        nativeTheme:
-          "light-dark(var(--button-background-color-hover), color-mix(in srgb, currentColor 16%, transparent))",
-        default:
-          "light-dark(var(--button-background-color-hover), color-mix(in srgb, currentColor 16%, transparent))",
+        nativeTheme: "var(--button-background-color)",
+        default: "var(--button-background-color)",
         browserTheme: {
           light: "white",
           dark: "rgb(66, 65, 77)",
@@ -817,6 +844,15 @@ export const tokensTable = {
         },
       },
       name: "--urlbarview-background-color-selected",
+    },
+    {
+      value:
+        "color-mix(in srgb, var(--urlbarview-background-color-hover) 50%, transparent)",
+      name: "--urlbarview-action-button-background-color",
+    },
+    {
+      value: "var(--urlbarview-background-color-hover)",
+      name: "--urlbarview-action-button-background-color-hover",
     },
   ],
   "border-color": [
@@ -1091,6 +1127,28 @@ export const tokensTable = {
       name: "--card-border-color",
     },
     {
+      value: {
+        default: "transparent",
+        forcedColors: "var(--button-border-color)",
+        prefersContrast: "var(--button-border-color)",
+      },
+      name: "--card-header-border-color",
+    },
+    {
+      value: {
+        default: "transparent",
+        forcedColors: "var(--button-border-color-hover)",
+      },
+      name: "--card-header-border-color-hover",
+    },
+    {
+      value: {
+        default: "transparent",
+        forcedColors: "var(--button-border-color-active)",
+      },
+      name: "--card-header-border-color-active",
+    },
+    {
       value: "var(--border-color-interactive)",
       name: "--checkbox-border-color",
     },
@@ -1152,6 +1210,23 @@ export const tokensTable = {
         default: "light-dark(rgb(240, 240, 244), rgb(82, 82, 94))",
       },
       name: "--panel-border-color",
+    },
+    {
+      value: {
+        light: "rgb(240, 240, 244)",
+        dark: "rgb(82, 82, 94)",
+        nativeTheme: "var(--border-color-deemphasized)",
+        platform: {
+          default: "var(--border-color-deemphasized)",
+          browserTheme: {
+            light: "rgb(240, 240, 244)",
+            dark: "rgb(82, 82, 94)",
+            default: "light-dark(rgb(240, 240, 244), rgb(82, 82, 94))",
+          },
+        },
+        default: "light-dark(rgb(240, 240, 244), rgb(82, 82, 94))",
+      },
+      name: "--popup-border-color",
     },
     {
       value: {
@@ -1247,7 +1322,17 @@ export const tokensTable = {
       value: "var(--button-border-color-disabled)",
       name: "--select-border-color-disabled",
     },
-    { value: "var(--border-color-interactive)", name: "--toggle-border-color" },
+    {
+      value: {
+        light: "var(--color-gray-70)",
+        dark: "var(--border-color-interactive)",
+        prefersContrast: "var(--border-color-interactive)",
+        forcedColors: "var(--border-color-interactive)",
+        default:
+          "light-dark(var(--color-gray-70), var(--border-color-interactive))",
+      },
+      name: "--toggle-border-color",
+    },
     {
       value: {
         default: "var(--toggle-border-color)",
@@ -1266,6 +1351,10 @@ export const tokensTable = {
       value: "var(--border-color-interactive)",
       name: "--visual-picker-item-border-color",
     },
+    {
+      value: "var(--border-color-deemphasized)",
+      name: "--panel-list-border-color",
+    },
     { value: "var(--border-color)", name: "--box-border-color" },
   ],
   "border-radius": [
@@ -1276,16 +1365,29 @@ export const tokensTable = {
     { value: "16px", name: "--border-radius-large" },
     { value: "var(--border-radius-medium)", name: "--button-border-radius" },
     { value: "var(--border-radius-large)", name: "--card-border-radius" },
+    {
+      value: "var(--border-radius-medium)",
+      name: "--card-border-radius-compact",
+    },
+    {
+      value: "var(--border-radius-medium)",
+      name: "--card-cover-image-border-radius",
+    },
     { value: "var(--border-radius-small)", name: "--checkbox-border-radius" },
     {
       value: "var(--border-radius-medium)",
       name: "--input-text-border-radius",
     },
     {
+      value: "var(--input-text-border-radius)",
+      name: "--input-search-border-radius",
+    },
+    {
       value: "var(--border-radius-small)",
       name: "--panel-menuitem-border-radius",
     },
     { value: "var(--border-radius-medium)", name: "--panel-border-radius" },
+    { value: "var(--border-radius-medium)", name: "--popup-border-radius" },
     {
       value: "var(--button-border-radius)",
       name: "--toolbarbutton-border-radius",
@@ -1327,6 +1429,8 @@ export const tokensTable = {
       value: "var(--border-radius-medium)",
       name: "--visual-picker-item-border-radius",
     },
+    { value: "0", name: "--panel-item-button-border-radius" },
+    { value: "var(--panel-border-radius)", name: "--panel-list-border-radius" },
     { value: "var(--border-radius-medium)", name: "--box-border-radius" },
     {
       value: "calc(var(--box-border-radius) - var(--box-border-width))",
@@ -1344,6 +1448,7 @@ export const tokensTable = {
   ],
   "border-width": [
     { value: "1px", name: "--border-width" },
+    { value: "var(--border-width)", name: "--button-border-width-split" },
     { value: "var(--border-width)", name: "--card-border-width" },
     { value: "1px", name: "--badge-border-width" },
     { value: "var(--border-width)", name: "--message-bar-border-width" },
@@ -1416,7 +1521,8 @@ export const tokensTable = {
       name: "--panel-box-shadow",
     },
     { value: "var(--box-shadow-level-3)", name: "--popup-box-shadow" },
-    { value: "var(--box-shadow-level-1)", name: "--tab-selected-box-shadow" },
+    { value: "var(--popup-box-shadow)", name: "--panel-list-box-shadow" },
+    { value: "var(--box-shadow-level-1)", name: "--tab-box-shadow-selected" },
   ],
   color: [
     { value: "#fbfbfe", name: "--color-gray-0" },
@@ -1813,6 +1919,8 @@ export const tokensTable = {
     { value: "var(--font-size-large)", name: "--font-size-heading-medium" },
     { value: "var(--font-size-root)", name: "--button-font-size" },
     { value: "var(--font-size-small)", name: "--button-font-size-small" },
+    { value: "var(--font-size-root)", name: "--card-font-size" },
+    { value: "var(--font-size-small)", name: "--card-font-size-compact" },
     { value: "10px", name: "--toolbarbutton-badge-font-size" },
     { value: "var(--button-font-size)", name: "--select-font-size" },
     { value: "var(--select-font-size)", name: "--select-font-size-small" },
@@ -1823,6 +1931,7 @@ export const tokensTable = {
     { value: 700, name: "--font-weight-bold" },
     { value: "var(--font-weight-semibold)", name: "--font-weight-heading" },
     { value: "var(--font-weight-semibold)", name: "--button-font-weight" },
+    { value: "var(--font-weight-semibold)", name: "--badge-font-weight" },
     { value: "var(--button-font-weight)", name: "--select-font-weight" },
     { value: "var(--font-weight)", name: "--select-option-font-weight" },
   ],
@@ -1858,6 +1967,7 @@ export const tokensTable = {
       value: "var(--button-min-height-large)",
       name: "--button-size-icon-large",
     },
+    { value: "160px", name: "--card-cover-image-height-default" },
     { value: "var(--size-item-small)", name: "--checkbox-size" },
     { value: "var(--size-item-small)", name: "--input-height" },
     { value: "var(--button-min-height)", name: "--input-text-min-height" },
@@ -1903,6 +2013,8 @@ export const tokensTable = {
       value: "var(--dimension-40)",
       name: "--tab-pinned-expanded-background-width",
     },
+    { value: "var(--icon-size)", name: "--urlbarview-favicon-size" },
+    { value: "var(--size-item-large)", name: "--urlbarview-row-min-height" },
   ],
   space: [
     { value: "var(--dimension-relative-0125)", name: "--space-xxsmall" },
@@ -1912,6 +2024,7 @@ export const tokensTable = {
     { value: "var(--dimension-relative-100)", name: "--space-large" },
     { value: "var(--dimension-relative-150)", name: "--space-xlarge" },
     { value: "var(--dimension-relative-200)", name: "--space-xxlarge" },
+    { value: "var(--space-xxsmall)", name: "--button-gap-split" },
     {
       value: "var(--button-padding-block) var(--button-padding-inline)",
       name: "--button-padding",
@@ -1926,8 +2039,15 @@ export const tokensTable = {
       name: "--button-padding-inline-small",
     },
     { value: 0, name: "--button-padding-icon" },
+    { value: "var(--space-small)", name: "--card-cover-image-padding" },
+    {
+      value: "var(--space-xsmall)",
+      name: "--card-cover-image-padding-compact",
+    },
     { value: "var(--space-large)", name: "--card-padding" },
+    { value: "var(--space-small)", name: "--card-padding-compact" },
     { value: "var(--card-padding)", name: "--card-gap" },
+    { value: "var(--space-small)", name: "--card-gap-compact" },
     { value: "var(--space-small)", name: "--card-gap-article" },
     { value: "var(--space-small)", name: "--checkbox-margin-inline" },
     { value: "4px", name: "--info-bar-margin-block-start" },
@@ -1952,6 +2072,13 @@ export const tokensTable = {
     { value: "4px", name: "--panel-box-shadow-margin" },
     { value: "16px", name: "--panel-padding" },
     { value: "4px", name: "--panel-padding-block" },
+    {
+      value:
+        "var(--panel-separator-padding-block) var(--panel-separator-padding-inline)",
+      name: "--panel-separator-padding",
+    },
+    { value: "4px", name: "--panel-separator-padding-block" },
+    { value: "8px", name: "--panel-separator-padding-inline" },
     { value: "8px", name: "--toolbar-padding-inline" },
     { value: "2px", name: "--toolbarbutton-badge-padding-inline" },
     { value: "1px", name: "--toolbarbutton-badge-padding-block-end" },
@@ -2036,8 +2163,19 @@ export const tokensTable = {
     { value: "var(--space-large)", name: "--select-space-inline-small" },
     { value: "1px", name: "--toggle-dot-margin" },
     { value: "calc(-1 * var(--dimension-2))", name: "--toggle-inset" },
+    { value: "4px", name: "--panel-item-badge-inset-block-start" },
+    { value: "24px", name: "--panel-item-badge-inset-inline-start" },
+    { value: "0", name: "--panel-item-button-margin" },
+    {
+      value: "var(--space-xsmall) var(--space-small)",
+      name: "--panel-item-button-padding",
+    },
+    {
+      value: "var(--space-xxlarge)",
+      name: "--panel-item-button-padding-inline-start",
+    },
     { value: "var(--space-large)", name: "--box-padding" },
-    { value: "var(--dimension-4)", name: "--tab-block-margin" },
+    { value: "var(--dimension-4)", name: "--tab-margin-block" },
     { value: "6px", name: "--tab-close-button-padding" },
     { value: "5.5px", name: "--tab-icon-end-margin" },
     { value: "var(--dimension-8)", name: "--tab-inline-padding" },
@@ -2055,6 +2193,7 @@ export const tokensTable = {
     { value: "var(--space-medium)", name: "--tab-vertical-inline-padding" },
     { value: "5px", name: "--urlbar-margin-inline" },
     { value: "4px", name: "--urlbar-padding-block" },
+    { value: "var(--space-small)", name: "--urlbarview-row-padding-block" },
   ],
   "text-color": [
     {
@@ -2357,6 +2496,15 @@ export const tokensTable = {
       value: "var(--button-text-color-ghost-active)",
       name: "--button-text-color-toolbar-selected",
     },
+    { value: "var(--button-text-color)", name: "--card-header-text-color" },
+    {
+      value: "var(--button-text-color-hover)",
+      name: "--card-header-text-color-hover",
+    },
+    {
+      value: "var(--button-text-color-active)",
+      name: "--card-header-text-color-active",
+    },
     {
       value: {
         nativeTheme: "FieldText",
@@ -2609,6 +2757,7 @@ export const tokensTable = {
       value: "var(--button-text-color-disabled)",
       name: "--select-text-color-disabled",
     },
+    { value: "var(--text-color)", name: "--panel-list-text-color" },
     { value: "var(--button-text-color-menu)", name: "--box-button-text-color" },
     {
       value: "var(--button-text-color-menu-hover)",
@@ -2638,6 +2787,17 @@ export const tokensTable = {
         },
       },
       name: "--urlbarview-text-color-action",
+    },
+    {
+      value: {
+        nativeTheme: "color-mix(in srgb, currentColor 73%, transparent)",
+        default: "color-mix(in srgb, currentColor 73%, transparent)",
+        forcedColors: "currentColor",
+        browserTheme: {
+          default: "color-mix(in srgb, currentColor 73%, transparent)",
+        },
+      },
+      name: "--urlbarview-text-color-secondary",
     },
     {
       value: {
@@ -2682,6 +2842,10 @@ export const tokensTable = {
   ],
   uncategorized: [
     { value: "center", name: "--button-content-alignment" },
+    { value: "cover", name: "--card-cover-image-object-fit-default" },
+    { value: "center", name: "--card-cover-image-object-position-default" },
+    { value: "var(--button-min-height-small)", name: "--small" },
+    { value: "var(--button-padding-block)", name: "--block" },
     {
       value: {
         nativeTheme: "var(--toolbar-text-color)",
@@ -3224,6 +3388,7 @@ export const tokensTable = {
     { value: "var(--dimension-20)", name: "--icon-size-medium" },
     { value: "var(--dimension-24)", name: "--icon-size-large" },
     { value: "var(--dimension-32)", name: "--icon-size-xlarge" },
+    { value: "var(--size-item-xlarge)", name: "--icon-size-xxlarge" },
     { value: "var(--icon-size-xsmall)", name: "--input-text-icon-size" },
     { value: "var(--icon-size-xsmall)", name: "--breadcrumb-icon-size" },
     { value: "var(--icon-size)", name: "--message-bar-icon-size" },
@@ -4018,10 +4183,12 @@ export const variableLookupTable = {
   "button-border-color-toolbar-selected":
     "var(--button-border-color-ghost-active)",
   "button-border-radius": "var(--border-radius-medium)",
+  "button-border-width-split": "var(--border-width)",
   "button-content-alignment": "center",
   "button-font-size": "var(--font-size-root)",
   "button-font-size-small": "var(--font-size-small)",
   "button-font-weight": "var(--font-weight-semibold)",
+  "button-gap-split": "var(--space-xxsmall)",
   "button-icon-fill": "currentColor",
   "button-icon-stroke": "var(--button-icon-fill)",
   "button-min-height": "var(--size-item-large)",
@@ -4039,6 +4206,7 @@ export const variableLookupTable = {
   "button-size-icon": "var(--button-min-height)",
   "button-size-icon-small": "var(--button-min-height-small)",
   "button-size-icon-large": "var(--button-min-height-large)",
+  "button-split-separator-background-color": "transparent",
   "button-text-color": {
     forcedColors: "ButtonText",
     brand: {
@@ -4201,12 +4369,46 @@ export const variableLookupTable = {
       "light-dark(color-mix(in srgb, currentColor 10%, transparent), color-mix(in srgb, currentColor 6%, transparent))",
   },
   "card-border-radius": "var(--border-radius-large)",
+  "card-border-radius-compact": "var(--border-radius-medium)",
   "card-box-shadow": "var(--box-shadow-level-2)",
   "card-box-shadow-hover": "var(--box-shadow-level-4)",
+  "card-cover-image-border-radius": "var(--border-radius-medium)",
+  "card-cover-image-height-default": "160px",
+  "card-cover-image-padding": "var(--space-small)",
+  "card-cover-image-padding-compact": "var(--space-xsmall)",
+  "card-cover-image-object-fit-default": "cover",
+  "card-cover-image-object-position-default": "center",
   "card-focus-outline": "var(--focus-outline)",
+  "card-font-size": "var(--font-size-root)",
+  "card-font-size-compact": "var(--font-size-small)",
   "card-padding": "var(--space-large)",
+  "card-padding-compact": "var(--space-small)",
   "card-gap": "var(--card-padding)",
+  "card-gap-compact": "var(--space-small)",
   "card-gap-article": "var(--space-small)",
+  "card-header-background-color": {
+    default: "initial",
+    forcedColors: "var(--button-background-color)",
+  },
+  "card-header-background-color-hover": "var(--button-background-color-hover)",
+  "card-header-background-color-active":
+    "var(--button-background-color-active)",
+  "card-header-border-color": {
+    default: "transparent",
+    forcedColors: "var(--button-border-color)",
+    prefersContrast: "var(--button-border-color)",
+  },
+  "card-header-border-color-hover": {
+    default: "transparent",
+    forcedColors: "var(--button-border-color-hover)",
+  },
+  "card-header-border-color-active": {
+    default: "transparent",
+    forcedColors: "var(--button-border-color-active)",
+  },
+  "card-header-text-color": "var(--button-text-color)",
+  "card-header-text-color-hover": "var(--button-text-color-hover)",
+  "card-header-text-color-active": "var(--button-text-color-active)",
   "checkbox-background-color": "var(--button-background-color)",
   "checkbox-background-color-hover": "var(--button-background-color-hover)",
   "checkbox-background-color-active": "var(--button-background-color-active)",
@@ -4267,6 +4469,7 @@ export const variableLookupTable = {
   "icon-size-medium": "var(--dimension-20)",
   "icon-size-large": "var(--dimension-24)",
   "icon-size-xlarge": "var(--dimension-32)",
+  "icon-size-xxlarge": "var(--size-item-xlarge)",
   "info-bar-border-color": {
     light: "var(--color-violet-desaturated-20)",
     dark: "var(--color-gray-60)",
@@ -4327,6 +4530,7 @@ export const variableLookupTable = {
   "input-text-icon-size": "var(--icon-size-xsmall)",
   "input-text-min-height": "var(--button-min-height)",
   "input-text-opacity-disabled": "var(--button-opacity-disabled)",
+  "input-search-border-radius": "var(--input-text-border-radius)",
   "input-width": "var(--size-item-small)",
   "link-color": {
     forcedColors: "LinkText",
@@ -4410,6 +4614,15 @@ export const variableLookupTable = {
   "panel-box-shadow-margin": "4px",
   "panel-padding": "16px",
   "panel-padding-block": "4px",
+  "panel-separator-color": {
+    default: "color-mix(in srgb, currentColor 25%, transparent)",
+    prefersContrast: "currentColor",
+    forcedColors: "var(--border-color)",
+  },
+  "panel-separator-padding":
+    "var(--panel-separator-padding-block) var(--panel-separator-padding-inline)",
+  "panel-separator-padding-block": "4px",
+  "panel-separator-padding-inline": "8px",
   "panel-text-color": {
     light: "var(--color-black)",
     dark: "rgb(251, 251, 254)",
@@ -4426,11 +4639,22 @@ export const variableLookupTable = {
     default: "light-dark(var(--color-black), rgb(251, 251, 254))",
   },
   "panel-width": "initial",
-  "panel-separator-color": {
-    default: "color-mix(in srgb, currentColor 25%, transparent)",
-    prefersContrast: "currentColor",
-    forcedColors: "var(--border-color)",
+  "popup-background-color": "var(--background-color-box)",
+  "popup-border-color": {
+    light: "rgb(240, 240, 244)",
+    dark: "rgb(82, 82, 94)",
+    nativeTheme: "var(--border-color-deemphasized)",
+    platform: {
+      default: "var(--border-color-deemphasized)",
+      browserTheme: {
+        light: "rgb(240, 240, 244)",
+        dark: "rgb(82, 82, 94)",
+        default: "light-dark(rgb(240, 240, 244), rgb(82, 82, 94))",
+      },
+    },
+    default: "light-dark(rgb(240, 240, 244), rgb(82, 82, 94))",
   },
+  "popup-border-radius": "var(--border-radius-medium)",
   "popup-box-shadow": "var(--box-shadow-level-3)",
   "sidebar-background-color": {
     light: "white",
@@ -4742,6 +4966,7 @@ export const variableLookupTable = {
   },
   "badge-border-radius": "var(--border-radius-small)",
   "badge-border-width": "1px",
+  "badge-font-weight": "var(--font-weight-semibold)",
   "badge-padding-block": "0",
   "badge-padding-inline": "var(--space-xsmall)",
   "badge-text-color": {
@@ -4887,6 +5112,8 @@ export const variableLookupTable = {
   "segmented-control-border-radius":
     "calc(var(--button-border-radius) + var(--focus-outline-width) + var(--focus-outline-offset) + var(--border-width))",
   "segmented-control-padding": "var(--space-xsmall)",
+  small: "var(--button-min-height-small)",
+  block: "var(--button-padding-block)",
   "select-background-color": "var(--button-background-color)",
   "select-background-color-hover": "var(--button-background-color-hover)",
   "select-background-color-disabled": "var(--button-background-color-disabled)",
@@ -4917,7 +5144,14 @@ export const variableLookupTable = {
   "toggle-background-color-pressed-hover": "var(--color-accent-primary-hover)",
   "toggle-background-color-pressed-active":
     "var(--color-accent-primary-active)",
-  "toggle-border-color": "var(--border-color-interactive)",
+  "toggle-border-color": {
+    light: "var(--color-gray-70)",
+    dark: "var(--border-color-interactive)",
+    prefersContrast: "var(--border-color-interactive)",
+    forcedColors: "var(--border-color-interactive)",
+    default:
+      "light-dark(var(--color-gray-70), var(--border-color-interactive))",
+  },
   "toggle-border-color-hover": {
     default: "var(--toggle-border-color)",
     forcedColors: "var(--border-color-interactive-hover)",
@@ -4958,6 +5192,17 @@ export const variableLookupTable = {
   "visual-picker-item-border-radius": "var(--border-radius-medium)",
   "visual-picker-item-border-width": "var(--border-width)",
   "visual-picker-item-border-width-checked": "calc(var(--border-width) * 3)",
+  "panel-item-badge-inset-block-start": "4px",
+  "panel-item-badge-inset-inline-start": "24px",
+  "panel-item-button-border-radius": "0",
+  "panel-item-button-margin": "0",
+  "panel-item-button-padding": "var(--space-xsmall) var(--space-small)",
+  "panel-item-button-padding-inline-start": "var(--space-xxlarge)",
+  "panel-list-background-color": "var(--background-color-box)",
+  "panel-list-border-color": "var(--border-color-deemphasized)",
+  "panel-list-border-radius": "var(--panel-border-radius)",
+  "panel-list-box-shadow": "var(--popup-box-shadow)",
+  "panel-list-text-color": "var(--text-color)",
   "box-border": "var(--box-border-width) solid var(--box-border-color)",
   "box-border-width": "var(--border-width)",
   "box-border-color": "var(--border-color)",
@@ -4979,8 +5224,9 @@ export const variableLookupTable = {
   "box-icon-fill": "var(--icon-color)",
   "box-icon-stroke": "var(--box-icon-fill)",
   "box-padding": "var(--space-large)",
-  "tab-block-margin": "var(--dimension-4)",
+  "tab-margin-block": "var(--dimension-4)",
   "tab-border-radius": "var(--toolbarbutton-border-radius)",
+  "tab-box-shadow-selected": "var(--box-shadow-level-1)",
   "tab-attention-dot-color": "var(--color-accent-attention)",
   "tab-close-button-padding": "6px",
   "tab-hover-outline-color": {
@@ -5023,7 +5269,6 @@ export const variableLookupTable = {
       default: "light-dark(rgb(21, 20, 26), var(--color-white))",
     },
   },
-  "tab-selected-box-shadow": "var(--box-shadow-level-1)",
   "tab-vertical-block-margin": "var(--dimension-2)",
   "tab-vertical-inline-padding": "var(--space-medium)",
   "tab-group-blue": {
@@ -5257,12 +5502,13 @@ export const variableLookupTable = {
     nativeTheme: "solid",
     browserTheme: { default: "none" },
   },
+  "urlbar-background-color": "var(--toolbar-field-background-color)",
+  "urlbar-background-color-focus":
+    "var(--toolbar-field-background-color-focus)",
   "urlbar-border-radius": "var(--button-border-radius)",
   "urlbar-box-background-color": {
-    nativeTheme:
-      "light-dark(var(--button-background-color-hover), color-mix(in srgb, currentColor 16%, transparent))",
-    default:
-      "light-dark(var(--button-background-color-hover), color-mix(in srgb, currentColor 16%, transparent))",
+    nativeTheme: "var(--button-background-color)",
+    default: "var(--button-background-color)",
     browserTheme: {
       light: "white",
       dark: "rgb(66, 65, 77)",
@@ -5321,6 +5567,13 @@ export const variableLookupTable = {
       default: "light-dark(rgb(240, 240, 244), rgb(82, 82, 94))",
     },
   },
+  "urlbarview-action-button-background-color":
+    "color-mix(in srgb, var(--urlbarview-background-color-hover) 50%, transparent)",
+  "urlbarview-action-button-background-color-hover":
+    "var(--urlbarview-background-color-hover)",
+  "urlbarview-favicon-size": "var(--icon-size)",
+  "urlbarview-row-min-height": "var(--size-item-large)",
+  "urlbarview-row-padding-block": "var(--space-small)",
   "urlbarview-text-color-action": {
     nativeTheme: "LinkText",
     default: "LinkText",
@@ -5328,6 +5581,14 @@ export const variableLookupTable = {
       light: "rgb(91, 91, 102)",
       dark: "rgb(191, 191, 201)",
       default: "light-dark(rgb(91, 91, 102), rgb(191, 191, 201))",
+    },
+  },
+  "urlbarview-text-color-secondary": {
+    nativeTheme: "color-mix(in srgb, currentColor 73%, transparent)",
+    default: "color-mix(in srgb, currentColor 73%, transparent)",
+    forcedColors: "currentColor",
+    browserTheme: {
+      default: "color-mix(in srgb, currentColor 73%, transparent)",
     },
   },
   "urlbarview-text-color-selected": {

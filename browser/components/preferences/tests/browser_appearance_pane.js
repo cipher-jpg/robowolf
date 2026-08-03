@@ -119,6 +119,22 @@ add_task(async function test_related_settings_tabs_browsing_link_navigates() {
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
+// Mirrors isAutoTouchModeAvailable() in appearance.mjs: the auto-touch-mode
+// checkbox is only offered on Linux (GTK) and Windows 10, so the checkbox stays
+// hidden everywhere else regardless of the selected density.
+function autoTouchModeAvailable() {
+  if (AppConstants.MOZ_WIDGET_GTK) {
+    return true;
+  }
+  if (AppConstants.platform != "win") {
+    return false;
+  }
+  const { WindowsVersionInfo } = ChromeUtils.importESModule(
+    "resource://gre/modules/components-utils/WindowsVersionInfo.sys.mjs"
+  );
+  return WindowsVersionInfo.get({ throwOnError: false }).buildNumber < 22000;
+}
+
 async function withWindowDensityPane(callback) {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.nova.enabled", true]],
@@ -146,6 +162,30 @@ async function withWindowDensityPane(callback) {
     BrowserTestUtils.removeTab(tab);
     await SpecialPowers.popPrefEnv();
   }
+}
+
+// Click a Window Density radio option in the pane the way a user would. The
+// radio group re-renders asynchronously when browser.uidensity changes, so
+// wait for it to settle (DOM value caught up to the setting model) before
+// clicking to avoid operating on a stale, detached radio element.
+async function selectDensityOption(control, value) {
+  await control.updateComplete;
+  await TestUtils.waitForCondition(
+    () => control.controlEl?.value === control.setting.value,
+    `density radio group settled before selecting "${value}"`
+  );
+  let radio = [...control.controlEl.querySelectorAll("moz-radio")].find(
+    r => r.value == value
+  );
+  ok(radio?.inputEl, `moz-radio option for "${value}" exists`);
+  // Click the radio's input directly. Coordinate-based clicking is unreliable
+  // for the "standard" option, whose nested auto-touch checkbox shifts the
+  // moz-radio's center off the radio input.
+  radio.inputEl.click();
+  await TestUtils.waitForCondition(
+    () => control.setting.value == value,
+    `uiDensity setting reflects "${value}" after clicking`
+  );
 }
 
 add_task(async function test_window_density_group_visible_with_nova() {
@@ -198,20 +238,7 @@ add_task(async function test_window_density_radio_updates_pref() {
     let control = getSettingControl("uiDensity", win);
     await control.updateComplete;
 
-    // The setting writes the pref synchronously when the radio group changes,
-    // so we assert on the pref directly rather than waiting for a "change"
-    // event (which doesn't fire for the auto<->standard case, where the
-    // underlying int stays 0).
-    async function selectOption(value) {
-      await control.updateComplete;
-      let radioGroup = control.controlEl;
-      let radio = [...radioGroup.querySelectorAll("moz-radio")].find(
-        r => r.value == value
-      );
-      ok(radio, `moz-radio option for "${value}" exists`);
-      radioGroup.value = value;
-      radioGroup.dispatchEvent(new Event("change", { bubbles: true }));
-    }
+    let selectOption = value => selectDensityOption(control, value);
 
     await selectOption("compact");
     is(
@@ -243,6 +270,120 @@ add_task(async function test_window_density_radio_updates_pref() {
       !Services.prefs.prefHasUserValue("browser.uidensity"),
       "Selecting automatic clears the browser.uidensity user value"
     );
+  });
+});
+
+// Picking an explicit density in about:preferences must leave the user's
+// browser.touchmode.auto choice untouched, even when the density is currently
+// overridden (e.g. forced to touch by tablet mode). gUIDensity.getCurrentDensity
+// already respects an explicit compact/touch value over the auto-touch pref, and
+// the auto-touch pref is the standard density's own opt-in, so selecting a
+// density should never rewrite it.
+add_task(
+  async function test_window_density_preserves_auto_touch_on_explicit_choice() {
+    await withWindowDensityPane(async ({ win }) => {
+      let control = getSettingControl("uiDensity", win);
+      await control.updateComplete;
+
+      let gUIDensity = win.browsingContext.topChromeWindow.gUIDensity;
+      let originalGetCurrentDensity = gUIDensity.getCurrentDensity;
+      // Simulate tablet mode's touch override without needing a real tablet, so
+      // that any re-introduced clear-on-override logic would trigger here.
+      gUIDensity.getCurrentDensity = () => ({
+        mode: gUIDensity.MODE_TOUCH,
+        overridden: true,
+      });
+      registerCleanupFunction(() => {
+        gUIDensity.getCurrentDensity = originalGetCurrentDensity;
+        Services.prefs.clearUserPref("browser.touchmode.auto");
+        Services.prefs.clearUserPref("browser.uidensity");
+      });
+
+      let selectOption = value => selectDensityOption(control, value);
+
+      Services.prefs.setBoolPref("browser.touchmode.auto", true);
+      await selectOption("compact");
+      is(
+        Services.prefs.getIntPref("browser.uidensity"),
+        1,
+        "Selecting compact sets browser.uidensity to 1"
+      );
+      ok(
+        Services.prefs.getBoolPref("browser.touchmode.auto"),
+        "Selecting compact leaves browser.touchmode.auto untouched"
+      );
+
+      await selectOption("touch");
+      ok(
+        Services.prefs.getBoolPref("browser.touchmode.auto"),
+        "Selecting touch leaves browser.touchmode.auto untouched"
+      );
+
+      await selectOption("standard");
+      ok(
+        Services.prefs.getBoolPref("browser.touchmode.auto"),
+        "Selecting standard leaves browser.touchmode.auto untouched"
+      );
+    });
+  }
+);
+
+// The "Use touch spacing for tablet mode" checkbox is nested under the Standard
+// density option and should only be shown while that option is selected (and
+// only where auto-touch is available on the platform). The auto/standard
+// boundary is the tricky transition: browser.uidensity's int stays 0 across it
+// (it is sticky), so the uiDensity Setting's own change event is suppressed
+// there. Visibility still updates because selecting a radio toggles
+// parentDisabled on the nested checkbox, re-running its visible() check.
+add_task(async function test_window_density_auto_touch_checkbox_visibility() {
+  await withWindowDensityPane(async ({ win }) => {
+    let control = getSettingControl("uiDensity", win);
+    await control.updateComplete;
+
+    let available = autoTouchModeAvailable();
+    let selectOption = value => selectDensityOption(control, value);
+
+    async function assertCheckboxVisibility(standardSelected, desc) {
+      let checkbox = getSettingControl("uiDensityAutoTouchMode", win);
+      ok(checkbox, `auto-touch checkbox setting-control exists (${desc})`);
+      // The checkbox is only shown when Standard is selected and the platform
+      // can apply touch density automatically.
+      let expectVisible = standardSelected && available;
+      await TestUtils.waitForCondition(
+        () => checkbox.hidden === !expectVisible,
+        `auto-touch checkbox ${expectVisible ? "shown" : "hidden"}: ${desc}`
+      );
+      if (expectVisible) {
+        is_element_visible(checkbox, desc);
+      } else {
+        is_element_hidden(checkbox, desc);
+      }
+    }
+
+    // Baseline from a cleanly-rendered non-standard state.
+    await selectOption("compact");
+    await assertCheckboxVisibility(false, "compact hides the checkbox");
+
+    // compact -> standard changes the int (1 -> 0), so the Setting's own change
+    // event drives the update here.
+    await selectOption("standard");
+    await assertCheckboxVisibility(true, "standard shows the checkbox");
+
+    // standard -> auto leaves the int at 0, so the Setting's change event is
+    // suppressed; the update is driven by the radio's parentDisabled toggle.
+    await selectOption("auto");
+    await assertCheckboxVisibility(false, "automatic hides the checkbox");
+
+    // auto -> standard, again with the int fixed at 0: the critical boundary
+    // where only the parentDisabled toggle re-runs visible().
+    await selectOption("standard");
+    await assertCheckboxVisibility(
+      true,
+      "standard shows the checkbox across the auto boundary"
+    );
+
+    await selectOption("touch");
+    await assertCheckboxVisibility(false, "touch hides the checkbox");
   });
 });
 

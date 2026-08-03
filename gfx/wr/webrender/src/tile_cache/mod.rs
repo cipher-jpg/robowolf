@@ -28,11 +28,11 @@ use crate::invalidation::vert_buffer::{CornersCache, VertRange};
 use crate::invalidation::compare::{PrimitiveDependency, ImageDependency};
 use crate::invalidation::compare::PrimitiveComparisonKey;
 use crate::invalidation::compare::{OpacityBindingInfo, ColorBindingInfo};
-use crate::picture::{SurfaceTextureDescriptor, PictureCompositeMode, SurfaceIndex, clamp};
+use crate::picture::{SurfaceTextureDescriptor, clamp};
+use crate::picture_composite_mode::PictureCompositeMode;
 use crate::picture::{get_relative_scale_offset, PictureInstance};
 use crate::picture::MAX_COMPOSITOR_SURFACES_SIZE;
-use crate::prim_store::{PrimitiveInstance, PrimitiveKind, PrimitiveScratchBuffer, PictureIndex};
-use crate::prim_store::PrimitiveInstanceIndex;
+use crate::prim_store::{ClipSnap, PrimitiveInstance, PrimitiveKind, PrimitiveScratchBuffer, PictureIndex};
 use crate::print_tree::{PrintTreePrinter, PrintTree};
 use crate::{profiler, render_backend::DataStores};
 use crate::profiler::TransactionProfile;
@@ -41,9 +41,9 @@ use crate::resource_cache::{ResourceCache, ImageRequest};
 use crate::scene_building::SliceFlags;
 use crate::space::{SpaceMapper, SpaceSnapper};
 use crate::spatial_tree::{SpatialNodeIndex, SpatialTree};
-use crate::surface::{SubpixelMode, SurfaceInfo};
+use crate::surface::{SubpixelMode, SurfaceIndex, SurfaceInfo};
 use crate::util::{ScaleOffset, MatrixHelpers, MaxRect};
-use crate::visibility::{FrameVisibilityContext, FrameVisibilityState, DrawState, PrimitiveVisibilityFlags};
+use crate::visibility::{FrameVisibilityContext, FrameVisibilityState, DrawState, PrimitiveDrawIndex, PrimitiveVisibilityFlags};
 use euclid::approxeq::ApproxEq;
 use euclid::Box2D;
 use peek_poke::{PeekPoke, ensure_red_zone};
@@ -1087,11 +1087,22 @@ impl TileCacheInstance {
 
             let mut clip_snapper = SpaceSnapper::new(surface, frame_context.spatial_tree);
 
+            // The tile cache's shared clip is never a text run: it snaps its
+            // chain to nearest when it carries a real clip root, otherwise it
+            // leaves it exact (matching the device-space sentinel behavior).
+            let clip_snap = if frame_state.clip_tree.get_leaf(shared_clip_leaf_id).prim_clip_root
+                != ClipNodeId::INVALID {
+                ClipSnap::Nearest
+            } else {
+                ClipSnap::Exact
+            };
+
             frame_state.clip_store.set_active_clips(
                 self.spatial_node_index,
                 map_local_to_picture.ref_spatial_node_index,
                 surface.visibility_spatial_node_index,
                 &mut clip_snapper,
+                clip_snap,
                 shared_clip_leaf_id,
                 frame_context.spatial_tree,
                 &frame_state.data_stores.clip,
@@ -1130,7 +1141,7 @@ impl TileCacheInstance {
                             .get_instance_from_range(&clip_chain.clips_range, i);
                         let clip_node = &frame_state.data_stores.clip[clip_instance.handle];
 
-                        if let ClipItemKind::RoundedRectangle { radius, mode } = clip_node.item.kind {
+                        if let ClipItemKind::RoundedRectangle { radius, inset: _, mode } = clip_node.item.kind {
                             assert_eq!(mode, ClipMode::Clip);
 
                             let radius = clamped_radius(&radius, clip_instance.clip_rect.size());
@@ -1677,7 +1688,7 @@ impl TileCacheInstance {
 
     fn setup_compositor_surfaces_yuv(
         &mut self,
-        prim_instance_index: PrimitiveInstanceIndex,
+        draw_index: PrimitiveDrawIndex,
         sub_slice_index: usize,
         prim_info: &mut PrimitiveDependencyInfo,
         flags: PrimitiveFlags,
@@ -1713,7 +1724,7 @@ impl TileCacheInstance {
         }
 
         self.setup_compositor_surfaces_impl(
-            prim_instance_index,
+            draw_index,
             sub_slice_index,
             prim_info,
             flags,
@@ -1741,7 +1752,7 @@ impl TileCacheInstance {
 
     fn setup_compositor_surfaces_rgb(
         &mut self,
-        prim_instance_index: PrimitiveInstanceIndex,
+        draw_index: PrimitiveDrawIndex,
         sub_slice_index: usize,
         prim_info: &mut PrimitiveDependencyInfo,
         flags: PrimitiveFlags,
@@ -1779,7 +1790,7 @@ impl TileCacheInstance {
         );
 
         self.setup_compositor_surfaces_impl(
-            prim_instance_index,
+            draw_index,
             sub_slice_index,
             prim_info,
             flags,
@@ -1806,7 +1817,7 @@ impl TileCacheInstance {
     // and the non-compositor path should be used to draw it instead.
     fn setup_compositor_surfaces_impl(
         &mut self,
-        prim_instance_index: PrimitiveInstanceIndex,
+        draw_index: PrimitiveDrawIndex,
         sub_slice_index: usize,
         prim_info: &mut PrimitiveDependencyInfo,
         flags: PrimitiveFlags,
@@ -2080,7 +2091,7 @@ impl TileCacheInstance {
             native_surface_id,
             update_params,
             external_image_id,
-            prim_instance_index,
+            draw_index,
         };
 
         // If the surface is opaque, we can draw it an an underlay (which avoids
@@ -2179,7 +2190,7 @@ impl TileCacheInstance {
     /// Update the dependencies for each tile for a given primitive instance.
     pub fn update_prim_dependencies(
         &mut self,
-        prim_instance_index: PrimitiveInstanceIndex,
+        draw_index: PrimitiveDrawIndex,
         prim_instance: &mut PrimitiveInstance,
         prim_spatial_node_index: SpatialNodeIndex,
         local_prim_rect: LayoutRect,
@@ -2199,9 +2210,9 @@ impl TileCacheInstance {
         use SurfacePromotionFailure::*;
 
         // This primitive exists on the last element on the current surface stack.
-        profile_scope!("update_prim_dependencies");
+        tracy_rs::profile_scope!("update_prim_dependencies");
         let prim_surface_index = surface_stack.last().unwrap().1;
-        let prim_clip_chain = scratch.frame.draws[prim_instance_index.0 as usize].clip_chain;
+        let prim_clip_chain = scratch.frame.draw(draw_index).clip_chain;
         let prim_clip_chain = &prim_clip_chain;
 
         // If the primitive is directly drawn onto this picture cache surface, then
@@ -2409,7 +2420,7 @@ impl TileCacheInstance {
 
                     if let Ok(kind) = promotion_result {
                         promotion_result = self.setup_compositor_surfaces_rgb(
-                            prim_instance_index,
+                            draw_index,
                             sub_slice_index,
                             &mut prim_info,
                             image_key.common.flags,
@@ -2435,9 +2446,8 @@ impl TileCacheInstance {
                     }
                 }
 
-                let draw_idx = prim_instance_index.0 as usize;
-                if let Ok(kind) = promotion_result {
-                    scratch.frame.draws[draw_idx].compositor_surface_kind = kind;
+                    if let Ok(kind) = promotion_result {
+                    scratch.frame.draw_mut(draw_index).compositor_surface_kind = kind;
 
                     if kind == CompositorSurfaceKind::Overlay {
                         profile.inc(profiler::COMPOSITOR_SURFACE_OVERLAYS);
@@ -2448,7 +2458,7 @@ impl TileCacheInstance {
                 } else {
                     // In Err case, we handle as a blit, and proceed.
                     self.report_promotion_failure(promotion_result, pic_coverage_rect, false);
-                    scratch.frame.draws[draw_idx].compositor_surface_kind = CompositorSurfaceKind::Blit;
+                    scratch.frame.draw_mut(draw_index).compositor_surface_kind = CompositorSurfaceKind::Blit;
                 }
 
                 if image_key.common.flags.contains(PrimitiveFlags::PREFER_COMPOSITOR_SURFACE) {
@@ -2507,7 +2517,7 @@ impl TileCacheInstance {
                                 break;
                             }
                         }
-                   }
+                    }
 
                     // TODO(gw): When we support RGBA images for external surfaces, we also
                     //           need to check if opaque (YUV images are implicitly opaque).
@@ -2529,7 +2539,7 @@ impl TileCacheInstance {
                         }
 
                         promotion_result = self.setup_compositor_surfaces_yuv(
-                            prim_instance_index,
+                            draw_index,
                             sub_slice_index,
                             &mut prim_info,
                             prim_data.common.flags,
@@ -2557,9 +2567,8 @@ impl TileCacheInstance {
                 // Store on the YUV primitive instance whether this is a promoted surface.
                 // This is used by the batching code to determine whether to draw the
                 // image to the content tiles, or just a transparent z-write.
-                let draw_idx = prim_instance_index.0 as usize;
-                if let Ok(kind) = promotion_result {
-                    scratch.frame.draws[draw_idx].compositor_surface_kind = kind;
+                    if let Ok(kind) = promotion_result {
+                    scratch.frame.draw_mut(draw_index).compositor_surface_kind = kind;
                     if kind == CompositorSurfaceKind::Overlay {
                         profile.inc(profiler::COMPOSITOR_SURFACE_OVERLAYS);
                         return DrawState::Culled;
@@ -2569,7 +2578,7 @@ impl TileCacheInstance {
                 } else {
                     // In Err case, we handle as a blit, and proceed.
                     self.report_promotion_failure(promotion_result, pic_coverage_rect, false);
-                    scratch.frame.draws[draw_idx].compositor_surface_kind = CompositorSurfaceKind::Blit;
+                    scratch.frame.draw_mut(draw_index).compositor_surface_kind = CompositorSurfaceKind::Blit;
                     if prim_data.common.flags.contains(PrimitiveFlags::PREFER_COMPOSITOR_SURFACE) {
                         profile.inc(profiler::COMPOSITOR_SURFACE_BLITS);
                     }
@@ -2577,7 +2586,7 @@ impl TileCacheInstance {
 
                 // Underlay with SliceFlags::IS_ATOMIC adds extra invalidation.
                 // It is for handling cases where underlay is disabled later.
-                let kind = scratch.frame.draws[draw_idx].compositor_surface_kind;
+                let kind = scratch.frame.draw(draw_index).compositor_surface_kind;
                 if kind == CompositorSurfaceKind::Blit ||
                     kind == CompositorSurfaceKind::Underlay &&
                     self.slice_flags.contains(SliceFlags::IS_ATOMIC) {
@@ -2677,9 +2686,20 @@ impl TileCacheInstance {
             }
             PrimitiveKind::LineDecoration { .. } |
             PrimitiveKind::NormalBorder { .. } |
-            PrimitiveKind::BoxShadow { .. } |
-            PrimitiveKind::TextRun { .. } => {
+            PrimitiveKind::BoxShadow { .. } => {
                 // These don't contribute dependencies
+            }
+            PrimitiveKind::TextRun { .. } => {
+                // A text run under an animated transform is rasterized in local
+                // space (see TextRunTemplate::get_raster_space_for_prim, bug
+                // 2053638). Record that as a dependency so the tile invalidates
+                // when the animation ends and the text returns to the crisp
+                // device path - the raster-space flip alone changes neither
+                // prim_uid nor the vert corners, so nothing else would catch it
+                // (bug 2056306).
+                prim_info.raster_space_animating = frame_context.spatial_tree
+                    .get_spatial_node(prim_spatial_node_index)
+                    .is_ancestor_or_self_animating;
             }
         };
 
@@ -3049,12 +3069,33 @@ impl TileCacheInstance {
             if !cancel_underlays.is_empty() {
                 for desc in cancel_underlays {
                     // Change underlay to blit.
+                    let draw = scratch.frame.draw_mut(desc.draw_index);
                     debug_assert!(matches!(
-                        prim_instances[desc.prim_instance_index.0 as usize].kind,
+                        prim_instances[draw.prim_instance_index.0 as usize].kind,
                         PrimitiveKind::YuvImage { .. }
                     ));
-                    scratch.frame.draws[desc.prim_instance_index.0 as usize].compositor_surface_kind =
-                        CompositorSurfaceKind::Blit;
+                    draw.compositor_surface_kind = CompositorSurfaceKind::Blit;
+
+                    let (p0, p1) = self.get_tile_coords_for_rect(&desc.local_rect);
+
+                    for sub_slice in &mut self.sub_slices {
+                        for y in p0.y .. p1.y {
+                            for x in p0.x .. p1.x {
+                                let key = TileOffset::new(x, y);
+
+                                let tile = sub_slice
+                                    .tiles
+                                    .get_mut(&key)
+                                    .expect("bug: no tile for cancelled underlay");
+
+                                tile.invalidate(
+                                    Some(desc.local_rect),
+                                    InvalidationReason::CancelUnderlay,
+                                );
+
+                            }
+                        }
+                    }
                 }
 
                 let mut underlays: Vec<ExternalSurfaceDescriptor> = underlays

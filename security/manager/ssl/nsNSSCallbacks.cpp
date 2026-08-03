@@ -5,8 +5,9 @@
 
 #include "nsNSSCallbacks.h"
 
-#include "NSSSocketControl.h"
 #include "EnabledSignatureSchemes.h"
+#include "NSSSocketControl.h"
+#include "SSLTokensCache.h"
 #include "ScopedNSSTypes.h"
 #include "SharedCertVerifier.h"
 #include "mozilla/Assertions.h"
@@ -21,6 +22,7 @@
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/glean/SecurityManagerSslMetrics.h"
+#include "mozpkix/pkixtypes.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
@@ -29,8 +31,8 @@
 #include "nsIObserverService.h"
 #include "nsIPrompt.h"
 #include "nsIProtocolProxyService.h"
-#include "nsISupportsPriority.h"
 #include "nsIStreamLoader.h"
+#include "nsISupportsPriority.h"
 #include "nsIUploadChannel.h"
 #include "nsIWebProgressListener.h"
 #include "nsIWindowWatcher.h"
@@ -42,10 +44,8 @@
 #include "nsNetUtil.h"
 #include "nsProxyRelease.h"
 #include "nsStringStream.h"
-#include "mozpkix/pkixtypes.h"
 #include "ssl.h"
 #include "sslproto.h"
-#include "SSLTokensCache.h"
 
 using namespace mozilla;
 using namespace mozilla::pkix;
@@ -802,6 +802,9 @@ nsCString getKeaGroupName(uint32_t aKeaGroup) {
     case ssl_grp_kem_secp384r1mlkem1024:
       groupName = "secp384r1mlkem1024"_ns;
       break;
+    case ssl_grp_kem_mlkem1024:
+      groupName = "mlkem1024"_ns;
+      break;
     case ssl_grp_ffdhe_2048:
       groupName = "FF 2048"_ns;
       break;
@@ -893,7 +896,8 @@ static void PreliminaryHandshakeDone(PRFileDesc* fd) {
     } else {
       socketControl->SetNegotiatedNPN(nullptr, 0);
     }
-    mozilla::glean::ssl::npn_type.AccumulateSingleSample(state);
+    glean::tls::npn_type.EnumGet(static_cast<glean::tls::NpnTypeLabel>(state))
+        .Add();
   } else {
     socketControl->SetNegotiatedNPN(nullptr, 0);
   }
@@ -970,8 +974,10 @@ SECStatus CanFalseStartCallback(PRFileDesc* fd, void* client_data,
   // to the same protocol we previously saw for the server, after the
   // first successful connection to the server.
 
-  glean::ssl::reasons_for_not_false_starting.AccumulateSingleSample(
-      reasonsForNotFalseStarting);
+  glean::tls::reasons_for_not_false_starting
+      .EnumGet(static_cast<glean::tls::ReasonsForNotFalseStartingLabel>(
+          reasonsForNotFalseStarting))
+      .Add();
 
   if (reasonsForNotFalseStarting == 0) {
     *canFalseStart = PR_TRUE;
@@ -982,44 +988,6 @@ SECStatus CanFalseStartCallback(PRFileDesc* fd, void* client_data,
   }
 
   return SECSuccess;
-}
-
-static unsigned int NonECCKeySize(uint32_t bits) {
-  return bits < 512      ? 1
-         : bits == 512   ? 2
-         : bits < 768    ? 3
-         : bits == 768   ? 4
-         : bits < 1024   ? 5
-         : bits == 1024  ? 6
-         : bits < 1280   ? 7
-         : bits == 1280  ? 8
-         : bits < 1536   ? 9
-         : bits == 1536  ? 10
-         : bits < 2048   ? 11
-         : bits == 2048  ? 12
-         : bits < 3072   ? 13
-         : bits == 3072  ? 14
-         : bits < 4096   ? 15
-         : bits == 4096  ? 16
-         : bits < 8192   ? 17
-         : bits == 8192  ? 18
-         : bits < 16384  ? 19
-         : bits == 16384 ? 20
-                         : 0;
-}
-
-// XXX: This attempts to map a bit count to an ECC named curve identifier. In
-// the vast majority of situations, we only have the Suite B curves available.
-// In that case, this mapping works fine. If we were to have more curves
-// available, the mapping would be ambiguous since there could be multiple
-// named curves for a given size (e.g. secp256k1 vs. secp256r1). We punt on
-// that for now. See also NSS bug 323674.
-static unsigned int ECCCurve(uint32_t bits) {
-  return bits == 255   ? 29  // Curve25519
-         : bits == 256 ? 23  // P-256
-         : bits == 384 ? 24  // P-384
-         : bits == 521 ? 25  // P-521
-                       : 0;  // Unknown
 }
 
 static void AccumulateCipherSuite(const SSLChannelInfo& channelInfo) {
@@ -1099,6 +1067,75 @@ static void AccumulateCipherSuite(const SSLChannelInfo& channelInfo) {
   glean::tls::cipher_suite.AccumulateSingleSample(value);
 }
 
+const nsLiteralCString KeyExchangeAlgorithmNameFromType(SSLKEAType keaType) {
+  switch (keaType) {
+    case ssl_kea_rsa:
+      return "rsa"_ns;
+      break;
+    case ssl_kea_dh:
+      return "dh"_ns;
+      break;
+    case ssl_kea_dh_psk:
+      return "dh_psk"_ns;
+      break;
+    case ssl_kea_ecdh:
+      return "ecdh"_ns;
+      break;
+    case ssl_kea_ecdh_psk:
+      return "ecdh_psk"_ns;
+      break;
+    case ssl_kea_ecdh_hybrid:
+      return "ecdh_hybrid"_ns;
+      break;
+    case ssl_kea_ecdh_hybrid_psk:
+      return "ecdh_hybrid_psk"_ns;
+      break;
+    case ssl_kea_kem:
+      return "kem"_ns;
+      break;
+    case ssl_kea_kem_psk:
+      return "kem_psk"_ns;
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("unhandled key exchange algorithm");
+      return "__other__"_ns;
+      break;
+  }
+}
+
+const nsLiteralCString ECNameFromNamedGroup(SSLNamedGroup namedGroup) {
+  switch (namedGroup) {
+    case ssl_grp_ec_secp256r1:
+      return "p256"_ns;
+    case ssl_grp_ec_secp384r1:
+      return "p384"_ns;
+    case ssl_grp_ec_secp521r1:
+      return "p521"_ns;
+    case ssl_grp_ec_curve25519:
+      return "curve25519"_ns;
+    default:
+      MOZ_ASSERT_UNREACHABLE("unhandled or invalid group");
+      return "__other__"_ns;
+  }
+}
+
+const nsLiteralCString ECNameFromSignatureScheme(
+    SSLSignatureScheme signatureScheme) {
+  switch (signatureScheme) {
+    case ssl_sig_ecdsa_secp256r1_sha256:
+      return "p256"_ns;
+    case ssl_sig_ecdsa_secp384r1_sha384:
+      return "p384"_ns;
+    case ssl_sig_ecdsa_secp521r1_sha512:
+      return "p521"_ns;
+    case ssl_sig_ed25519:
+      return "curve25519"_ns;
+    default:
+      MOZ_ASSERT_UNREACHABLE("unhandled or invalid signature scheme");
+      return "__other__"_ns;
+  }
+}
+
 void HandshakeCallback(PRFileDesc* fd, void* client_data) {
   // Do the bookkeeping that needs to be done after the
   // server's ServerHello...ServerHelloDone have been processed, but that
@@ -1128,7 +1165,9 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
   // 1=tls1, 2=tls1.1, 3=tls1.2, 4=tls1.3
   unsigned int versionEnum = channelInfo.protocolVersion & 0xFF;
   MOZ_ASSERT(versionEnum > 0);
-  glean::ssl_handshake::version.AccumulateSingleSample(versionEnum);
+  glean::tls_handshake::version
+      .EnumGet(static_cast<glean::tls_handshake::VersionLabel>(versionEnum - 1))
+      .Add();
 
   SSLCipherSuiteInfo cipherInfo;
   rv = SSL_GetCipherSuiteInfo(channelInfo.cipherSuite, &cipherInfo,
@@ -1137,55 +1176,30 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
   if (rv != SECSuccess) {
     return;
   }
-  // keyExchange null=0, rsa=1, dh=2, fortezza=3, ecdh=4, ecdh_hybrid=8
-  if (infoObject->IsFullHandshake()) {
-    glean::ssl::key_exchange_algorithm_full.AccumulateSingleSample(
-        channelInfo.keaType);
-  } else {
-    glean::ssl::key_exchange_algorithm_resumed.AccumulateSingleSample(
-        channelInfo.keaType);
-  }
+
+  glean::tls::key_exchange_algorithm
+      .Get(infoObject->IsFullHandshake() ? "full"_ns : "resumed"_ns,
+           KeyExchangeAlgorithmNameFromType(channelInfo.keaType))
+      .Add();
 
   if (infoObject->IsFullHandshake()) {
-    switch (channelInfo.keaType) {
-      case ssl_kea_rsa:
-        glean::ssl::kea_rsa_key_size_full.AccumulateSingleSample(
-            NonECCKeySize(channelInfo.keaKeyBits));
-        break;
-      case ssl_kea_dh:
-        glean::ssl::kea_dhe_key_size_full.AccumulateSingleSample(
-            NonECCKeySize(channelInfo.keaKeyBits));
-        break;
-      case ssl_kea_ecdh:
-        glean::ssl::kea_ecdhe_curve_full.AccumulateSingleSample(
-            ECCCurve(channelInfo.keaKeyBits));
-        break;
-      case ssl_kea_ecdh_hybrid:
-        break;
-      default:
-        MOZ_CRASH("impossible KEA");
-        break;
+    if (channelInfo.keaType == ssl_kea_ecdh) {
+      glean::tls::kea_ecdhe_curve
+          .Get(ECNameFromNamedGroup(channelInfo.keaGroup))
+          .Add();
     }
 
-    glean::ssl::auth_algorithm_full.AccumulateSingleSample(
-        channelInfo.authType);
+    glean::tls::auth_algorithm
+        .EnumGet(
+            static_cast<glean::tls::AuthAlgorithmLabel>(channelInfo.authType))
+        .Add();
 
     // RSA key exchange doesn't use a signature for auth.
-    if (channelInfo.keaType != ssl_kea_rsa) {
-      switch (channelInfo.authType) {
-        case ssl_auth_rsa:
-        case ssl_auth_rsa_sign:
-          glean::ssl::auth_rsa_key_size_full.AccumulateSingleSample(
-              NonECCKeySize(channelInfo.authKeyBits));
-          break;
-        case ssl_auth_ecdsa:
-          glean::ssl::auth_ecdsa_curve_full.AccumulateSingleSample(
-              ECCCurve(channelInfo.authKeyBits));
-          break;
-        default:
-          MOZ_CRASH("impossible auth algorithm");
-          break;
-      }
+    if (channelInfo.keaType != ssl_kea_rsa &&
+        channelInfo.authType == ssl_auth_ecdsa) {
+      glean::tls::auth_ecdsa_curve
+          .Get(ECNameFromSignatureScheme(channelInfo.signatureScheme))
+          .Add();
     }
   }
 

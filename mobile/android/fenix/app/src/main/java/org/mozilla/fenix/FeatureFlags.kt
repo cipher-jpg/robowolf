@@ -38,6 +38,7 @@ object FeatureFlags {
     /**
      * Enables Firefox Labs.
      */
+<<<<<<< HEAD
     const val FIREFOX_LABS = false
 
     /**
@@ -146,4 +147,7 @@ object FeatureFlags {
      * are not affected.
      */
     const val ROBOWOLF_HARDEN_PRIVACY_DEFAULTS = true
+=======
+    const val FIREFOX_LABS = true
+>>>>>>> upstream/main
 }

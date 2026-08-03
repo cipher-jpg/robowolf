@@ -104,20 +104,15 @@ export const GeckoViewIPProtection = {
             lazy.IPProtectionActivator.setAuthProvider(
               lazy.IPPAndroidAuthProvider
             );
-            lazy.IPProtectionActivator.addHelpers(
-              lazy.IPPAndroidAuthProvider.helpers
-            );
           } else if (providerName === "test") {
             lazy.IPProtectionActivator.setAuthProvider(
               lazy.IPPDummyAuthProvider
             );
-            lazy.IPProtectionActivator.addHelpers(
-              lazy.IPPDummyAuthProvider.helpers
-            );
           } else {
             lazy.IPProtectionActivator.setAuthProvider(lazy.IPPGpiAuthProvider);
-            lazy.IPProtectionActivator.addHelpers(
-              lazy.IPPGpiAuthProvider.helpers
+            lazy.IPProtectionActivator.setFallbackAuthProvider(
+              lazy.IPPAndroidAuthProvider,
+              () => Services.prefs.setCharPref(AUTH_PROVIDER_PREF, "fxa")
             );
           }
           lazy.IPProtectionActivator.init();
@@ -185,6 +180,20 @@ export const GeckoViewIPProtection = {
         break;
       }
       case "GeckoView:IPProtection:Activate": {
+        // When the proxy is already active, an Activate request is treated as a
+        // request to switch the connection to the given country.
+        if (lazy.IPPProxyManager.state === "active") {
+          const { switched, error } =
+            lazy.IPPProxyManager.switch(aData?.country) ?? {};
+          if (error) {
+            aCallback.onError(error);
+          } else if (switched) {
+            aCallback.onSuccess();
+          } else {
+            aCallback.onError("generic-error");
+          }
+          break;
+        }
         lazy.IPPProxyManager.start(
           aData?.userAction ?? true,
           aData?.inPrivateBrowsing ?? false,

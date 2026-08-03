@@ -3,25 +3,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMultiMixedConv.h"
-#include "nsIHttpChannel.h"
-#include "nsIThreadRetargetableStreamListener.h"
-#include "nsNetCID.h"
-#include "nsMimeTypes.h"
-#include "nsIStringStream.h"
-#include "nsCRT.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsURLHelper.h"
-#include "nsIStreamConverterService.h"
-#include "nsContentSecurityManager.h"
-#include "nsHttp.h"
-#include "nsNetUtil.h"
-#include "nsIURI.h"
-#include "nsHttpHeaderArray.h"
+
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Components.h"
-#include "mozilla/Tokenizer.h"
-#include "nsComponentManagerUtils.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/Tokenizer.h"
+#include "nsCRT.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentSecurityManager.h"
+#include "nsHttp.h"
+#include "nsHttpHeaderArray.h"
+#include "nsIHttpChannel.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsIStreamConverterService.h"
+#include "nsIStringStream.h"
+#include "nsIThreadRetargetableStreamListener.h"
+#include "nsIURI.h"
+#include "nsMimeTypes.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsURLHelper.h"
 
 using namespace mozilla;
 
@@ -484,13 +485,13 @@ nsMultiMixedConv::OnStartRequest(nsIRequest* request) {
     nsCString csp;
     rv = httpChannel->GetResponseHeader("content-security-policy"_ns, csp);
     if (NS_SUCCEEDED(rv)) {
-      mRootContentSecurityPolicy = csp;
+      mRootContentSecurityPolicy = std::move(csp);
     }
     nsCString contentDisposition;
     rv = httpChannel->GetResponseHeader("content-disposition"_ns,
                                         contentDisposition);
     if (NS_SUCCEEDED(rv)) {
-      mRootContentDisposition = contentDisposition;
+      mRootContentDisposition = std::move(contentDisposition);
     }
   } else {
     // try asking the channel directly

@@ -24,15 +24,6 @@ about-private-browsing-get-privacy = Get privacy protections everywhere you brow
 about-private-browsing-hide-activity-1 = Hide browsing activity and location with { -mozilla-vpn-brand-name }. One click creates a secure connection, even on public Wi-Fi.
 about-private-browsing-prominent-cta = Stay private with { -mozilla-vpn-brand-name }
 
-about-private-browsing-focus-promo-cta = Download { -focus-brand-name }
-about-private-browsing-focus-promo-header = { -focus-brand-name }: Private browsing on-the-go
-about-private-browsing-focus-promo-text = Our dedicated private browsing mobile app clears your history and cookies every time.
-
-## The following strings will be used for experiments in Fx99 and Fx100
-
-about-private-browsing-focus-promo-header-c = Next-level privacy on mobile
-about-private-browsing-focus-promo-text-c = { -focus-brand-name } clears your history every time while blocking ads and trackers.
-
 # This string is the title for the banner for search engine selection
 # in a private window.
 # Variables:
@@ -77,6 +68,6 @@ about-private-browsing-felt-privacy-v1-info-link = Who might be able to see my a
 # are not being recorded. If there is not a comparable phrase in the locale,
 # fall back to "Your browsing will be deleted"
 about-private-browsing-nova-info-header = You’re off the record
-about-private-browsing-nova-info-subheader = We’ll erase every search and sign-in when you close this window. { -brand-short-name }’s built-in protections are on here too, like blocking trackers.
+about-private-browsing-nova-info-subheader2 = We’ll erase every search and sign-in when you close all your Private Windows. { -brand-short-name }’s built-in protections are on here too, like blocking trackers.
 about-private-browsing-nova-info-body = Closing all your private windows deletes your cookies, history and site data.
 about-private-browsing-nova-info-link = Who might still be able to see my activity?

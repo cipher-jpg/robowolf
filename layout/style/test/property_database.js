@@ -5654,12 +5654,15 @@ var gCSSProperties = {
       "font-feature-settings",
       "font-language-override",
       "font-kerning",
+      "font-optical-sizing",
       "font-variant-alternates",
       "font-variant-caps",
       "font-variant-east-asian",
+      "font-variant-emoji",
       "font-variant-ligatures",
       "font-variant-numeric",
       "font-variant-position",
+      "font-variation-settings",
     ],
     initial_values: [
       gInitialFontFamilyIsSansSerif ? "medium sans-serif" : "medium serif",
@@ -5798,6 +5801,31 @@ var gCSSProperties = {
     initial_values: ["normal"],
     other_values: ["'ENG'", "'TRK'", '"TRK"', "'N\\'Ko'"],
     invalid_values: ["TRK", "ja"],
+  },
+  "font-optical-sizing": {
+    domProp: "fontOpticalSizing",
+    inherited: true,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
+    applies_to_placeholder: true,
+    applies_to_marker: true,
+    applies_to_cue: true,
+    initial_values: ["auto"],
+    other_values: ["none"],
+    invalid_values: ["on"],
+  },
+  "font-palette": {
+    domProp: "fontPalette",
+    inherited: true,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
+    applies_to_marker: true,
+    applies_to_placeholder: true,
+    initial_values: ["normal"],
+    other_values: ["light", "dark", "--custom"],
+    invalid_values: ["custom"],
   },
   "font-size": {
     domProp: "fontSize",
@@ -6043,6 +6071,7 @@ var gCSSProperties = {
       "font-variant-alternates",
       "font-variant-caps",
       "font-variant-east-asian",
+      "font-variant-emoji",
       "font-variant-ligatures",
       "font-variant-numeric",
       "font-variant-position",
@@ -6162,6 +6191,25 @@ var gCSSProperties = {
       "full-width proportional-width",
       "ruby simplified ruby",
       "jis78 ruby simplified",
+    ],
+  },
+  "font-variant-emoji": {
+    domProp: "fontVariantEmoji",
+    inherited: true,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
+    applies_to_marker: true,
+    applies_to_placeholder: true,
+    applies_to_cue: true,
+    initial_values: ["normal"],
+    other_values: ["text", "emoji", "unicode"],
+    invalid_values: [
+      "none",
+      "auto",
+      "text emoji",
+      "auto text",
+      "normal, unicode",
     ],
   },
   "font-variant-ligatures": {
@@ -6285,6 +6333,44 @@ var gCSSProperties = {
       "1000",
     ],
     invalid_values: ["0", "1001", "calc(10%)"],
+  },
+  "font-variation-settings": {
+    domProp: "fontVariationSettings",
+    inherited: true,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
+    applies_to_placeholder: true,
+    applies_to_marker: true,
+    applies_to_cue: true,
+    initial_values: ["normal"],
+    other_values: [
+      "'wdth' 0",
+      "'wdth' -.1",
+      '"wdth" 1',
+      "'wdth' 2, 'wght' 3",
+      '"XXXX" 0',
+      "'vert' calc(2.5)",
+    ],
+    invalid_values: [
+      "wdth",
+      "wdth 1", // unquoted tags
+      "'wdth'",
+      "'wdth' 'wght'",
+      "'wdth', 'wght'", // missing values
+      "'' 1",
+      "'wid' 1",
+      "'width' 1", // incorrect tag lengths
+      "'wd\th' 1", // non-graphic character in tag
+      "'wdth' 1 'wght' 2", // missing comma between pairs
+      "'wdth' 1,", // trailing comma
+      "'wdth' 1 , , 'wght' 2", // extra comma
+      "'wdth', 1", // comma within pair
+    ],
+    unbalanced_values: [
+      "'wdth\" 1",
+      "\"wdth' 1", // mismatched quotes
+    ],
   },
   height: {
     domProp: "height",
@@ -6619,7 +6705,7 @@ var gCSSProperties = {
       "margin-bottom",
       "margin-left",
     ],
-    initial_values: ["0", "0px 0 0em", "0% 0px 0em 0pt"],
+    initial_values: ["0", "0px 0 0em"],
     other_values: [
       "3px 0",
       "2em 4px 2pt",
@@ -7288,12 +7374,7 @@ var gCSSProperties = {
       "padding-bottom",
       "padding-left",
     ],
-    initial_values: [
-      "0",
-      "0px 0 0em",
-      "0% 0px 0em 0pt",
-      "calc(0px) calc(0em) calc(-2px) calc(-1%)",
-    ],
+    initial_values: ["0", "0px 0 0em"],
     other_values: ["3px 0", "2em 4px 2pt", "1em 2em 3px 4px"],
     invalid_values: ["1px calc(nonsense)", "1px red", "-1px"],
     unbalanced_values: ["1px calc("],
@@ -8835,7 +8916,6 @@ var gCSSProperties = {
     type: CSS_TYPE_TRUE_SHORTHAND,
     applies_to_first_letter: true,
     applies_to_first_line: true,
-    applies_to_placeholder: true,
     subproperties: ["alignment-baseline", "baseline-shift", "baseline-source"],
     initial_values: ["baseline"],
     other_values: [
@@ -8868,7 +8948,6 @@ var gCSSProperties = {
     type: CSS_TYPE_LONGHAND,
     applies_to_first_letter: true,
     applies_to_first_line: true,
-    applies_to_placeholder: true,
     initial_values: ["baseline"],
     other_values: [
       "text-bottom",
@@ -8888,7 +8967,6 @@ var gCSSProperties = {
     type: CSS_TYPE_LONGHAND,
     applies_to_first_letter: true,
     applies_to_first_line: true,
-    applies_to_placeholder: true,
     initial_values: ["0"],
     other_values: [
       "sub",
@@ -8916,7 +8994,6 @@ var gCSSProperties = {
     type: CSS_TYPE_LONGHAND,
     applies_to_first_letter: true,
     applies_to_first_line: true,
-    applies_to_placeholder: true,
     initial_values: ["auto"],
     other_values: ["first", "last"],
     invalid_values: [],
@@ -12102,20 +12179,6 @@ var gCSSProperties = {
 // Get the computed value for a property.  For shorthands, return the
 // computed values of all the subproperties, delimited by " ; ".
 function get_computed_value(cs, property) {
-  var info = gCSSProperties[property];
-  if (
-    info.type == CSS_TYPE_TRUE_SHORTHAND ||
-    info.type == CSS_TYPE_LEGACY_SHORTHAND ||
-    (info.type == CSS_TYPE_SHORTHAND_AND_LONGHAND &&
-      (property == "text-decoration" || property == "mask"))
-  ) {
-    var results = [];
-    for (var idx in info.subproperties) {
-      var subprop = info.subproperties[idx];
-      results.push(get_computed_value(cs, subprop));
-    }
-    return results.join(" ; ");
-  }
   return cs.getPropertyValue(property);
 }
 
@@ -12421,103 +12484,6 @@ gCSSProperties["text-justify"] = {
   other_values: ["none", "inter-word", "inter-character", "distribute"],
   invalid_values: [],
 };
-
-if (IsCSSPropertyPrefEnabled("layout.css.font-variations.enabled")) {
-  gCSSProperties["font-variation-settings"] = {
-    domProp: "fontVariationSettings",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
-    applies_to_placeholder: true,
-    applies_to_marker: true,
-    applies_to_cue: true,
-    initial_values: ["normal"],
-    other_values: [
-      "'wdth' 0",
-      "'wdth' -.1",
-      '"wdth" 1',
-      "'wdth' 2, 'wght' 3",
-      '"XXXX" 0',
-    ],
-    invalid_values: [
-      "wdth",
-      "wdth 1", // unquoted tags
-      "'wdth'",
-      "'wdth' 'wght'",
-      "'wdth', 'wght'", // missing values
-      "'' 1",
-      "'wid' 1",
-      "'width' 1", // incorrect tag lengths
-      "'wd\th' 1", // non-graphic character in tag
-      "'wdth' 1 'wght' 2", // missing comma between pairs
-      "'wdth' 1,", // trailing comma
-      "'wdth' 1 , , 'wght' 2", // extra comma
-      "'wdth', 1", // comma within pair
-    ],
-    unbalanced_values: [
-      "'wdth\" 1",
-      "\"wdth' 1", // mismatched quotes
-    ],
-  };
-  gCSSProperties["font"].subproperties.push("font-variation-settings");
-  gCSSProperties["font-optical-sizing"] = {
-    domProp: "fontOpticalSizing",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
-    applies_to_placeholder: true,
-    applies_to_marker: true,
-    applies_to_cue: true,
-    initial_values: ["auto"],
-    other_values: ["none"],
-    invalid_values: ["on"],
-  };
-  gCSSProperties["font"].subproperties.push("font-optical-sizing");
-  gCSSProperties["font-variation-settings"].other_values.push(
-    "'vert' calc(2.5)"
-  );
-}
-
-if (IsCSSPropertyPrefEnabled("layout.css.font-palette.enabled")) {
-  gCSSProperties["font-palette"] = {
-    domProp: "fontPalette",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
-    applies_to_marker: true,
-    applies_to_placeholder: true,
-    initial_values: ["normal"],
-    other_values: ["light", "dark", "--custom"],
-    invalid_values: ["custom"],
-  };
-}
-
-if (IsCSSPropertyPrefEnabled("layout.css.font-variant-emoji.enabled")) {
-  gCSSProperties["font"].subproperties.push("font-variant-emoji");
-  gCSSProperties["font-variant"].subproperties.push("font-variant-emoji");
-  gCSSProperties["font-variant-emoji"] = {
-    domProp: "fontVariantEmoji",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
-    applies_to_marker: true,
-    applies_to_placeholder: true,
-    applies_to_cue: true,
-    initial_values: ["normal"],
-    other_values: ["text", "emoji", "unicode"],
-    invalid_values: [
-      "none",
-      "auto",
-      "text emoji",
-      "auto text",
-      "normal, unicode",
-    ],
-  };
-}
 
 var isGridTemplateMasonryValueEnabled = IsCSSPropertyPrefEnabled(
   "layout.css.grid-template-masonry-value.enabled"
@@ -13561,24 +13527,19 @@ if (IsCSSPropertyPrefEnabled("layout.css.anchor-positioning.enabled")) {
     invalid_values: ["foo", "none none", "span-y-start self-block-end"],
   };
 
-  const tryOrderEnabled = IsCSSPropertyPrefEnabled(
-    "layout.css.anchor-positioning.position-try-order.enabled"
-  );
-  if (tryOrderEnabled) {
-    gCSSProperties["position-try-order"] = {
-      domProp: "positionTryOrder",
-      inherited: false,
-      type: CSS_TYPE_LONGHAND,
-      initial_values: ["normal"],
-      other_values: [
-        "most-width",
-        "most-height",
-        "most-block-size",
-        "most-inline-size",
-      ],
-      invalid_values: ["auto", "none", "foo"],
-    };
-  }
+  gCSSProperties["position-try-order"] = {
+    domProp: "positionTryOrder",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["normal"],
+    other_values: [
+      "most-width",
+      "most-height",
+      "most-block-size",
+      "most-inline-size",
+    ],
+    invalid_values: ["auto", "none", "foo"],
+  };
 
   gCSSProperties["position-visibility"] = {
     domProp: "positionVisibility",
@@ -13598,7 +13559,7 @@ if (IsCSSPropertyPrefEnabled("layout.css.anchor-positioning.enabled")) {
     domProp: "positionTry",
     inherited: false,
     type: CSS_TYPE_TRUE_SHORTHAND,
-    subproperties: ["position-try-fallbacks"],
+    subproperties: ["position-try-order", "position-try-fallbacks"],
     initial_values: ["none"],
     other_values: [
       "--foo",
@@ -13613,6 +13574,54 @@ if (IsCSSPropertyPrefEnabled("layout.css.anchor-positioning.enabled")) {
       "span-all self-block-end",
       "end span-start",
       "center span-all",
+      "most-width --foo",
+      "most-width flip-block",
+      "most-width flip-inline",
+      "most-width flip-x",
+      "most-width flip-y",
+      "most-width flip-start",
+      "most-width left",
+      "most-width span-y-start",
+      "most-width span-block-start inline-end",
+      "most-width span-all self-block-end",
+      "most-width end span-start",
+      "most-width center span-all",
+      "most-height --foo",
+      "most-height flip-block",
+      "most-height flip-inline",
+      "most-height flip-x",
+      "most-height flip-y",
+      "most-height flip-start",
+      "most-height left",
+      "most-height span-y-start",
+      "most-height span-block-start inline-end",
+      "most-height span-all self-block-end",
+      "most-height end span-start",
+      "most-height center span-all",
+      "most-block-size --foo",
+      "most-block-size flip-block",
+      "most-block-size flip-inline",
+      "most-block-size flip-x",
+      "most-block-size flip-y",
+      "most-block-size flip-start",
+      "most-block-size left",
+      "most-block-size span-y-start",
+      "most-block-size span-block-start inline-end",
+      "most-block-size span-all self-block-end",
+      "most-block-size end span-start",
+      "most-block-size center span-all",
+      "most-inline-size --foo",
+      "most-inline-size flip-block",
+      "most-inline-size flip-inline",
+      "most-inline-size flip-x",
+      "most-inline-size flip-y",
+      "most-inline-size flip-start",
+      "most-inline-size left",
+      "most-inline-size span-y-start",
+      "most-inline-size span-block-start inline-end",
+      "most-inline-size span-all self-block-end",
+      "most-inline-size end span-start",
+      "most-inline-size center span-all",
     ],
     invalid_values: [
       "foo",
@@ -13620,63 +13629,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.anchor-positioning.enabled")) {
       "--foo span-y-start self-block-end",
     ],
   };
-  if (tryOrderEnabled) {
-    gCSSProperties["position-try"].subproperties.push("position-try-order");
-  }
-  const positionTryValuesWithOrder = [
-    "most-width --foo",
-    "most-width flip-block",
-    "most-width flip-inline",
-    "most-width flip-x",
-    "most-width flip-y",
-    "most-width flip-start",
-    "most-width left",
-    "most-width span-y-start",
-    "most-width span-block-start inline-end",
-    "most-width span-all self-block-end",
-    "most-width end span-start",
-    "most-width center span-all",
-    "most-height --foo",
-    "most-height flip-block",
-    "most-height flip-inline",
-    "most-height flip-x",
-    "most-height flip-y",
-    "most-height flip-start",
-    "most-height left",
-    "most-height span-y-start",
-    "most-height span-block-start inline-end",
-    "most-height span-all self-block-end",
-    "most-height end span-start",
-    "most-height center span-all",
-    "most-block-size --foo",
-    "most-block-size flip-block",
-    "most-block-size flip-inline",
-    "most-block-size flip-x",
-    "most-block-size flip-y",
-    "most-block-size flip-start",
-    "most-block-size left",
-    "most-block-size span-y-start",
-    "most-block-size span-block-start inline-end",
-    "most-block-size span-all self-block-end",
-    "most-block-size end span-start",
-    "most-block-size center span-all",
-    "most-inline-size --foo",
-    "most-inline-size flip-block",
-    "most-inline-size flip-inline",
-    "most-inline-size flip-x",
-    "most-inline-size flip-y",
-    "most-inline-size flip-start",
-    "most-inline-size left",
-    "most-inline-size span-y-start",
-    "most-inline-size span-block-start inline-end",
-    "most-inline-size span-all self-block-end",
-    "most-inline-size end span-start",
-    "most-inline-size center span-all",
-  ];
-  (tryOrderEnabled
-    ? gCSSProperties["position-try"].other_values
-    : gCSSProperties["position-try"].invalid_values
-  ).push(...positionTryValuesWithOrder);
 }
 
 if (IsCSSPropertyPrefEnabled("layout.css.scroll-state.enabled")) {

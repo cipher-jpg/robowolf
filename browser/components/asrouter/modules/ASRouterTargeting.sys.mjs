@@ -53,6 +53,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AboutNewTabResourceMapping:
     "resource:///modules/AboutNewTabResourceMapping.sys.mjs",
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
   AppProvidedConfigEngine:
     "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
@@ -988,6 +990,9 @@ const TargetingGetters = {
 
     return false;
   },
+  get hasActiveAIWindow() {
+    return !!lazy.AIWindow?.hasActiveAIWindows?.();
+  },
   get hasAccessedFxAPanel() {
     return lazy.hasAccessedFxAPanel;
   },
@@ -1178,6 +1183,16 @@ const TargetingGetters = {
       return false;
     }
     return lazy.WindowsLaunchOnLogin.getLaunchOnLoginEnabled();
+  },
+
+  // Whether launch on login could be enabled, i.e. it isn't overridden by
+  // Windows Settings or enterprise policy. Used to avoid offering launch on
+  // login to users for whom enabling it would silently no-op.
+  get launchOnLoginAllowedByPolicy() {
+    if (AppConstants.platform !== "win") {
+      return false;
+    }
+    return lazy.WindowsLaunchOnLogin.getLaunchOnLoginApproved();
   },
 
   get isMSIX() {
@@ -1639,6 +1654,32 @@ const TargetingGetters = {
       }
       const mostRecent = Math.max(...crashes.map(c => c.date));
       return Math.floor((Date.now() - mostRecent) / (24 * 60 * 60 * 1000));
+    });
+  },
+
+  /**
+   * The number of crashes the user has experienced in the last 24 hours, as
+   * recorded in the dump files corresponding to submitted crashes.
+   *
+   * @returns {Promise<number>}
+   */
+  get crashCountInLastDay() {
+    return QueryCache.getters.crashData.get().then(crashes => {
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+      return crashes.filter(c => c.date >= cutoff).length;
+    });
+  },
+
+  /**
+   * The number of crashes the user has experienced in the last 7 days, as
+   * recorded in the dump files corresponding to submitted crashes.
+   *
+   * @returns {Promise<number>}
+   */
+  get crashCountInLastWeek() {
+    return QueryCache.getters.crashData.get().then(crashes => {
+      const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      return crashes.filter(c => c.date >= cutoff).length;
     });
   },
 

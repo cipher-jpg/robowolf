@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.semantics
@@ -70,6 +71,8 @@ import mozilla.components.compose.base.theme.AcornCorners
 import mozilla.components.compose.base.theme.layout.AcornLayout
 import mozilla.components.support.utils.ext.isLandscape
 import mozilla.components.ui.colors.NovaColors
+import org.mozilla.fenix.R
+import org.mozilla.fenix.tabstray.LocalTabManagementFeatureHelper
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
 import org.mozilla.fenix.tabstray.browser.compose.TabItemInteractionState
 import org.mozilla.fenix.tabstray.data.TabsTrayItem
@@ -133,7 +136,7 @@ val tablistItemThumbnailBorder: BorderStroke
     @Composable
     @ReadOnlyComposable
     get() = BorderStroke(
-        width = AcornLayout.AcornBorder.thin,
+        width = AcornLayout.AcornBorder.default,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
     )
 
@@ -147,13 +150,6 @@ data class TabListShapeInfo(
     val borderShape: Shape,
     val clipTabToFit: Boolean,
 )
-
-//region placeholder strings
-private const val PLACEHOLDER_EDIT = "Edit"
-private const val PLACEHOLDER_CLOSE = "Close"
-private const val PLACEHOLDER_DELETE = "Delete"
-private const val PLACEHOLDER_THREE_DOT_MENU_CONTENT_DESCRIPTION = "More options"
-//endregion
 
 /**
  * @param isSelected: Whether the tab is selected in multiselect mode
@@ -230,24 +226,29 @@ val gridItemAspectRatio: Float
  * Renders the three dot button and its menu items for [TabsTrayItem.TabGroup] views.
  * @param modifier: The Modifier parameter
  * @param includeCloseOption: Whether to include the "Close" dropdown item in the menu item list.
+ * @param includeUngroupOption: Whether this surface wants the "Ungroup" dropdown item. The item is only
+ * shown when [TabManagementFeatureHelper.ungroupTabGroupEnabled] is also true.
  * @param onDeleteTabGroupClick Invoked when the user clicks on delete tab group.
  * @param onEditTabGroupClick Invoked when the user clicks to edit the selected tab group.
  * @param onCloseTabGroupClick Invoked when the user clicks to close the tab group.
+ * @param onUngroupTabGroupClick Invoked when the user clicks to ungroup the tab group.
  */
 @Composable
 fun TabGroupMenuButton(
     modifier: Modifier = Modifier,
     includeCloseOption: Boolean = false,
+    includeUngroupOption: Boolean = false,
     onDeleteTabGroupClick: () -> Unit,
     onEditTabGroupClick: () -> Unit,
     onCloseTabGroupClick: () -> Unit,
+    onUngroupTabGroupClick: () -> Unit,
 ) {
     var showDropdownMenu by remember { mutableStateOf(false) }
     IconButton(
         onClick = {
             showDropdownMenu = true
         },
-        contentDescription = PLACEHOLDER_THREE_DOT_MENU_CONTENT_DESCRIPTION,
+        contentDescription = stringResource(R.string.tab_group_three_dot_button_content_description),
         modifier = modifier
             .testTag(TabsTrayTestTag.TAB_GROUP_THREE_DOT_BUTTON),
         colors = IconButtonDefaults.iconButtonColors(
@@ -267,6 +268,9 @@ fun TabGroupMenuButton(
                 closeTabGroup = onCloseTabGroupClick,
                 deleteTabGroup = onDeleteTabGroupClick,
                 includeCloseOption = includeCloseOption,
+                includeUngroupOption = includeUngroupOption &&
+                    LocalTabManagementFeatureHelper.current.ungroupTabGroupEnabled,
+                ungroupTabGroup = onUngroupTabGroupClick,
             ),
         )
     }
@@ -298,35 +302,49 @@ fun ListItemDismissButton(
     }
 }
 
+@Composable
 private fun generateTabGroupMenuItems(
     includeCloseOption: Boolean = false,
+    includeUngroupOption: Boolean = false,
     editTabGroup: () -> Unit,
     closeTabGroup: () -> Unit,
     deleteTabGroup: () -> Unit,
+    ungroupTabGroup: () -> Unit,
 ): List<MenuItem> {
     val editItem = MenuItem.IconItem(
-        text = Text.String(PLACEHOLDER_EDIT),
+        text = Text.Resource(R.string.tab_group_three_dot_menu_edit),
         drawableRes = iconsR.drawable.mozac_ic_edit_24,
         testTag = TabsTrayTestTag.EDIT_TAB_GROUP,
         onClick = editTabGroup,
     )
     val closeItem = MenuItem.IconItem(
-        text = Text.String(PLACEHOLDER_CLOSE),
+        text = Text.Resource(R.string.tab_group_three_dot_menu_close),
         drawableRes = iconsR.drawable.mozac_ic_tab_group_close_24,
         testTag = TabsTrayTestTag.CLOSE_TAB_GROUP,
         onClick = closeTabGroup,
     )
+    val ungroupItem = MenuItem.IconItem(
+        text = Text.Resource(R.string.tab_group_three_dot_menu_ungroup),
+        drawableRes = iconsR.drawable.mozac_ic_tab_ungroup_24,
+        testTag = TabsTrayTestTag.UNGROUP_TAB_GROUP,
+        onClick = ungroupTabGroup,
+    )
     val deleteItem = MenuItem.IconItem(
-        text = Text.String(PLACEHOLDER_DELETE),
+        text = Text.Resource(R.string.tab_group_three_dot_menu_delete),
         drawableRes = iconsR.drawable.mozac_ic_delete_24,
         testTag = TabsTrayTestTag.DELETE_TAB_GROUP,
         onClick = deleteTabGroup,
         level = MenuItem.FixedItem.Level.Critical,
     )
-    return if (includeCloseOption) {
-        listOf(editItem, closeItem, deleteItem)
-    } else {
-        listOf(editItem, deleteItem)
+    return buildList {
+        add(editItem)
+        if (includeCloseOption) {
+            add(closeItem)
+        }
+        if (includeUngroupOption) {
+            add(ungroupItem)
+        }
+        add(deleteItem)
     }
 }
 
@@ -358,7 +376,7 @@ fun tabItemConditionalBorder(selectionState: TabsTrayItemSelectionState): Border
 @Composable
 @ReadOnlyComposable
 fun tabItemBorderFocused(): BorderStroke {
-    return BorderStroke(width = FirefoxTheme.layout.border.thick, brush = FirefoxTheme.gradients.tabOutline.brush)
+    return BorderStroke(width = FirefoxTheme.layout.border.heaviest, brush = FirefoxTheme.gradients.tabOutline.brush)
 }
 
 /**
@@ -637,7 +655,7 @@ private fun Modifier.tabItemInteractionAnimation(
 ): Modifier {
     val backdropColor = MaterialTheme.colorScheme.secondaryContainer
     val backdropBorder = MaterialTheme.colorScheme.tertiary
-    val borderSize = FirefoxTheme.layout.border.thick
+    val borderSize = FirefoxTheme.layout.border.heaviest
     return this
         .thenConditional(
             Modifier.drawBehind(

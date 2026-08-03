@@ -239,6 +239,7 @@ impl Wrench {
         verbose: bool,
         no_scissor: bool,
         no_batch: bool,
+        color_target_init: bool,
         precache_shaders: bool,
         dump_shader_source: Option<String>,
         notifier: Option<Box<dyn RenderNotifier>>,
@@ -249,6 +250,7 @@ impl Wrench {
         let mut debug_flags = DebugFlags::ECHO_DRIVER_MESSAGES;
         debug_flags.set(DebugFlags::DISABLE_BATCHING, no_batch);
         debug_flags.set(DebugFlags::MISSING_SNAPSHOT_PINK, true);
+        debug_flags.set(DebugFlags::COLOR_TARGET_INIT, color_target_init);
         let callbacks = Arc::new(Mutex::new(blob::BlobCallbacks::new()));
 
         let precache_flags = if precache_shaders {
@@ -572,6 +574,7 @@ impl Wrench {
         frame_number: &mut u32,
         display_lists: Vec<DisplayList>,
         scroll_offsets: &HashMap<ExternalScrollId, Vec<SampledScrollOffset>>,
+        transform_properties: &[PropertyValue<LayoutTransform>],
     ) {
         let mut txn = Transaction::new();
         let mut present = false;
@@ -590,6 +593,10 @@ impl Wrench {
             if display_list.send_transaction {
                 for (id, offsets) in scroll_offsets {
                     txn.set_scroll_offsets(*id, offsets.clone());
+                }
+
+                if !transform_properties.is_empty() {
+                    txn.append_dynamic_transform_properties(transform_properties.to_vec());
                 }
 
                 let tracked = false;

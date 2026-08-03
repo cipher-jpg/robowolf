@@ -3,17 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-import {
-  MODEL_FEATURES,
-  renderPrompt,
-} from "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs";
+import { MODEL_FEATURES } from "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs";
 
 import {
   constructRelevantMemoriesContextMessage,
-  constructRealTimeInfoInjectionMessage,
   replaceUrlsWithTokens,
   resolveMentionUrls,
-  sanitizeUntrustedContent,
   stripUnresolvedUrlTokens,
 } from "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs";
 
@@ -33,7 +28,17 @@ import {
 import { EventEmitter } from "resource://gre/modules/EventEmitter.sys.mjs";
 import { Conversation } from "moz-src:///browser/components/aiwindow/models/Conversation.sys.mjs";
 import { consumeStreamChunk } from "moz-src:///browser/components/aiwindow/models/TokenStreamParser.sys.mjs";
-import { SecurityProperties } from "moz-src:///browser/components/aiwindow/models/SecurityProperties.sys.mjs";
+
+/** @typedef {import("moz-src:///browser/components/aiwindow/models/SearchBrowsingHistory.sys.mjs").HistoryRow} HistoryRow */
+
+/**
+ * A pooled history result: the subset of `HistoryRow` fields the
+ * `search_browsing_history` tool projects into the pool (Tools.sys.mjs) minus
+ * `relevanceScore`, plus a localized `timestamp` and the resolved `image` and
+ * `hasFavicon` asset fields.
+ *
+ * @typedef {Omit<HistoryRow, "relevanceScore"> & { timestamp?: string, image?: (string|null), hasFavicon?: boolean }} PooledHistoryResult
+ */
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -42,6 +47,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/ui/modules/ChatStore.sys.mjs",
   MemoriesManager:
     "moz-src:///browser/components/aiwindow/models/memories/MemoriesManager.sys.mjs",
+  buildBrowserContextPrompt:
+    "moz-src:///browser/components/aiwindow/models/PromptLoader.sys.mjs",
   loadPrompt:
     "moz-src:///browser/components/aiwindow/models/PromptLoader.sys.mjs",
   ToolUI: "moz-src:///browser/components/aiwindow/ui/modules/ToolUI.sys.mjs",
@@ -94,8 +101,6 @@ export class ChatConversation extends Conversation {
   pageUrl;
   pageMeta;
   status;
-  /** @type {SecurityProperties} */
-  securityProperties;
   activeBranchTipMessageId;
 
   #emitter = new EventEmitter();
@@ -163,53 +168,26 @@ export class ChatConversation extends Conversation {
   #baseTokenCounts = new Map();
 
   /**
-   * Language models can generate arbitrary URLs. If a conversation has been exposed
-   * to untrusted content (such as from summarizing a webpage) then it can be prompt
-   * injected to display arbitrary URLs. Language models can also invent plausible URLs
-   * for a conversation that do not exist.
-   *
-   * To mitigate these issues we collect all URLs that have been seen in a conversation
-   * so that we can decide how to show them to users in a safe way. If a URL has not
-   * been seen before, then it's untrusted in different circumstances.
-   *
-   * Initialized from the constructor params (restored from DB) or as an empty Set.
-   *
-   * @type {Set<string>}
-   */
-  seenUrls;
-
-  /**
-   * URLs found in SERP contents from run_search that we are willing to
-   * fetch via a anonymous request even when the conversation has
-   * been exposed to both private and untrusted content.
-   *
-   * Initialized from the constructor params (restored from DB) or as an empty Set.
-   *
-   * @type {Set<string>}
-   */
-  serpUrlsForAnonymousFetch;
-
-  /**
    * Conversation-level pool of history results keyed by URL, accumulated across
    * every `search_browsing_history` invocation in this conversation. A message
    * snapshots this pool when it completes (see `receiveResponse`), so any
    * assistant message that lists previously-searched URLs renders a history
    * grid — even when the model answered a follow-up from prior results without
-   * re-invoking the tool. Not persisted to the database.
+   * re-invoking the tool. The pool itself is not persisted; instead each
+   * message persists its own snapshot, and the pool is rehydrated from those
+   * snapshots when the conversation is constructed from the database.
    *
    * @type {Map<string, object>}
    */
   #historyResultsPool = new Map();
 
   /**
-   * Dispatcher that forwards the history results pool to the
-   * content page. Injected by the owner (ai-window). Called from
-   * `addHistoryResults` during tool execution; actor delivers
-   * the pool to content before the follow-up answer streams.
+   * Last browser-context string written; injectRealTimeContext skips
+   * rewriting an identical one so the prompt-cache prefix stays stable.
    *
-   * @type {?function(object): void}
+   * @type {string|null}
    */
-  #historyResultsDispatcher = null;
+  #lastBrowserContext = null;
 
   /**
    * @param {object} params
@@ -237,18 +215,25 @@ export class ChatConversation extends Conversation {
       seenUrls,
       serpUrlsForAnonymousFetch,
       memoriesToggled = null,
+      securityProperties = null,
     } = params;
 
-    super({ id, createdDate, updatedDate, messages, feature: "chat" });
+    super({
+      id,
+      createdDate,
+      updatedDate,
+      messages,
+      seenUrls,
+      serpUrlsForAnonymousFetch,
+      feature: "chat",
+      securityProperties,
+    });
 
     this.title = title;
     this.description = description;
     this.pageUrl = pageUrl;
     this.pageMeta = pageMeta;
-    this.seenUrls = seenUrls ? new Set(seenUrls) : new Set();
-    this.serpUrlsForAnonymousFetch = serpUrlsForAnonymousFetch
-      ? new Set(serpUrlsForAnonymousFetch)
-      : new Set();
+    this.rehydrateHistoryResultsPool();
     this.memoriesToggled = memoriesToggled;
 
     // transient: tracks the URL the current starter prompts were generated
@@ -267,15 +252,6 @@ export class ChatConversation extends Conversation {
 
     // NOTE: Destructuring params.status causes a linter error
     this.status = params.status || CONVERSATION_STATUS.ACTIVE;
-    if (params.securityProperties instanceof SecurityProperties) {
-      this.securityProperties = params.securityProperties;
-    } else if (params.securityProperties != null) {
-      this.securityProperties = SecurityProperties.fromJSON(
-        params.securityProperties
-      );
-    } else {
-      this.securityProperties = new SecurityProperties();
-    }
 
     // Seed the branch-tip cache so restored-from-DB conversations have it
     // set before the first turn.
@@ -397,33 +373,44 @@ export class ChatConversation extends Conversation {
    */
   async receiveResponse(stream) {
     const currentMessage = this.#getCurrentAssistantResponse();
+    if (!currentMessage) {
+      return {
+        pendingToolCalls: [],
+        fullResponseText: "",
+        usage: null,
+      };
+    }
 
-    if (currentMessage?.content?.body) {
+    if (currentMessage.content?.body) {
       currentMessage.content.body += "\n\n";
+    }
+
+    // Set the browsing history snapshot on the message before streaming so its
+    // list is recognized while streaming and swapped to a grid on completion.
+    if (this.#historyResultsPool.size) {
+      currentMessage.historyResults = this.getHistoryResultsSnapshot();
     }
 
     const result = await super.receiveResponse(stream, currentMessage);
 
     if (result.currentMessage?.content?.body) {
-      this.emit("chat-conversation:message-update", result.currentMessage);
+      // Expand URL tokens and remove any hallucinated ones.
+      if (this.urlToToken.size) {
+        result.currentMessage.content.body = stripUnresolvedUrlTokens(
+          result.currentMessage.content.body
+        );
+      }
+
+      this.emit("chat-conversation:message-update", currentMessage);
     }
 
-    if (currentMessage?.memoriesApplied?.length) {
+    if (currentMessage.memoriesApplied.length) {
       currentMessage.memoriesApplied =
         await lazy.MemoriesManager.getMemoriesByID(
           new Set(currentMessage.memoriesApplied)
         );
 
       this.emit("chat-conversation:message-update", currentMessage);
-    }
-
-    // Expand URL tokens and remove any hallucinated ones.
-    if (this.urlToToken.size && currentMessage?.content?.body) {
-      let body = stripUnresolvedUrlTokens(currentMessage.content.body);
-      if (body !== currentMessage.content.body) {
-        currentMessage.content.body = body;
-        this.emit("chat-conversation:message-update", currentMessage);
-      }
     }
 
     await lazy.ChatStore.updateConversation(this);
@@ -480,26 +467,6 @@ export class ChatConversation extends Conversation {
 
   _createMessage(args) {
     return new ChatMessage({ ...args, convId: this.id });
-  }
-
-  /**
-   * Gets any URL mentioned in the conversation. These URLs have heightened security
-   * permissions as they have been explicitly added to the conversation by the user.
-   *
-   * @returns {Set<string>}
-   */
-  getAllMentionURLs() {
-    /** @type {Set<string>} */
-    const mentionUrls = new Set();
-    for (const message of this.messages) {
-      const { contextMentions } = message.content;
-      if (contextMentions) {
-        for (const { url } of contextMentions) {
-          mentionUrls.add(url);
-        }
-      }
-    }
-    return mentionUrls;
   }
 
   /**
@@ -598,8 +565,8 @@ export class ChatConversation extends Conversation {
         continue;
       }
 
-      const operationId = td.properties?.confirmedData?.operationId;
-      if (!operationId) {
+      const confirmedData = td.properties?.confirmedData;
+      if (!confirmedData?.operationIds?.length) {
         continue;
       }
 
@@ -667,49 +634,24 @@ export class ChatConversation extends Conversation {
   }
 
   /**
-   * Add a system message to the conversation
-   *
-   * @param {string} type - The assistant message type: text|injected_memories|injected_real_time_info
-   * @param {string} contentBody - The system message object to be saved as JSON
-   * @param {string} [version] - Prompt version for SYSTEM_PROMPT_TYPE.TEXT messages
-   * @returns {ChatMessage} The newly created system message
-   */
-  addSystemMessage(type, contentBody, version) {
-    const content = { type, body: contentBody, ...(version && { version }) };
-
-    return this.addMessage(
-      MESSAGE_ROLE.SYSTEM,
-      content,
-      this.currentTurnIndex()
-    );
-  }
-
-  /**
-   * Idempotent upsert of the chat system prompt at index 0. Writes the
-   * rendered body and the RS-record version onto the system message's
-   * `content`.
+   * Upserts the chat system prompt at index 0, always rewriting body and
+   * version so a fresh build (today's timestamp, latest RS content) wins.
    *
    * @param {object} [opts]
-   * @param {string} [opts.modelChoiceIdOverride]
+   * @param {string} [opts.model] - Model to assemble the prompt for; defaults
+   *   to the conversation engine's model.
    */
   async loadSystemPrompt(opts = {}) {
     const { prompt: body, version } = await lazy.loadPrompt(
       MODEL_FEATURES.CHAT,
-      opts
+      { ...opts, model: opts.model ?? this.engine?.model }
     );
 
-    const existing = this.messages.find(
-      message =>
-        message.role === MESSAGE_ROLE.SYSTEM &&
-        message.content?.type === SYSTEM_PROMPT_TYPE.TEXT
-    );
-    if (existing) {
-      existing.content.body = body;
-      existing.content.version = version;
-      return existing;
-    }
-
-    return this.addSystemMessage(SYSTEM_PROMPT_TYPE.TEXT, body, version);
+    return this.setSystemMessage({
+      type: SYSTEM_PROMPT_TYPE.TEXT,
+      body,
+      ...(version && { version }),
+    });
   }
 
   /**
@@ -804,8 +746,8 @@ export class ChatConversation extends Conversation {
   }
 
   /**
-   * Fetch real-time browser/tab data, render the prompt, mutate
-   * `userMessage.content.userContext.realTimeContext` in place.
+   * Fetch browser/tab + mentions context and write it onto
+   * `userMessage.content.userContext.realTimeContext`.
    *
    * SECURITY: current-tab info is private, so it raises setPrivateData() when
    * hasTabInfo is true. Context mentions inject only a URL and sanitized
@@ -817,49 +759,24 @@ export class ChatConversation extends Conversation {
    * @param {Function} [opts.getRealTimeMapping]
    */
   async injectRealTimeContext(userMessage, opts = {}) {
-    const {
-      contextMentions,
-      getRealTimeMapping = constructRealTimeInfoInjectionMessage,
-    } = opts;
-    const realTimeInfoMapping = await getRealTimeMapping(contextMentions);
-    if (!realTimeInfoMapping) {
+    const { contextMentions, getRealTimeMapping } = opts;
+    const realTimePrompt = await lazy.buildBrowserContextPrompt(
+      this.engine?.model,
+      {
+        ...(getRealTimeMapping && { getRealTimeMapping }),
+        contextMentions,
+        securityProperties: this.securityProperties,
+      }
+    );
+    if (!realTimePrompt || !userMessage?.content) {
       return;
     }
-    let { prompt: realTimePromptRaw } = await lazy.loadPrompt(
-      MODEL_FEATURES.REAL_TIME_CONTEXT_DATE
-    );
-    if (realTimeInfoMapping.hasTabInfo) {
-      this.securityProperties.setPrivateData();
-      const { prompt: realTimeTabPromptRaw } = await lazy.loadPrompt(
-        MODEL_FEATURES.REAL_TIME_CONTEXT_TAB
-      );
-      realTimePromptRaw += realTimeTabPromptRaw;
-    } else {
-      delete realTimeInfoMapping.url;
-      delete realTimeInfoMapping.title;
-      delete realTimeInfoMapping.description;
+    if (realTimePrompt === this.#lastBrowserContext) {
+      return;
     }
-    delete realTimeInfoMapping.hasTabInfo;
-
-    if (contextMentions?.length) {
-      const contextUrls = contextMentions
-        .map(
-          mention =>
-            `- URL: ${mention.url}\n  Title: ${sanitizeUntrustedContent(mention.label)}`
-        )
-        .join("\n");
-      realTimeInfoMapping.contextUrls = contextUrls;
-      const { prompt: contextMentionsPrompt } = await lazy.loadPrompt(
-        MODEL_FEATURES.REAL_TIME_CONTEXT_MENTIONS
-      );
-      realTimePromptRaw += contextMentionsPrompt;
-    }
-
-    const realTimePrompt = renderPrompt(realTimePromptRaw, realTimeInfoMapping);
-    if (realTimePrompt && userMessage?.content) {
-      userMessage.content.userContext ??= {};
-      userMessage.content.userContext.realTimeContext = realTimePrompt;
-    }
+    userMessage.content.userContext ??= {};
+    userMessage.content.userContext.realTimeContext = realTimePrompt;
+    this.#lastBrowserContext = realTimePrompt;
   }
 
   /**
@@ -1034,21 +951,8 @@ export class ChatConversation extends Conversation {
    * @param {Iterable<string>} urls
    */
   addSeenUrls(urls) {
-    for (const url of urls) {
-      this.seenUrls.add(url);
-    }
+    super.addSeenUrls(urls);
     this.emit("chat-conversation:seen-urls-updated", this.seenUrls);
-  }
-
-  /**
-   * Add an iterable of URLs to the serpUrlsForAnonymousFetch ledger
-   *
-   * @param {Iterable<string>} urls
-   */
-  addSerpUrlsForAnonymousFetch(urls) {
-    for (const url of urls) {
-      this.serpUrlsForAnonymousFetch.add(url);
-    }
   }
 
   /**
@@ -1193,7 +1097,7 @@ export class ChatConversation extends Conversation {
    * triggered the search and any later message reusing those results
    * can both render a grid.
    *
-   * @param {Iterable<object>} records - Per-URL records from search_browsing_history.
+   * @param {Iterable<PooledHistoryResult>} records - Per-URL records from search_browsing_history.
    */
   addHistoryResults(records) {
     for (const record of records) {
@@ -1203,36 +1107,46 @@ export class ChatConversation extends Conversation {
       );
       this.#historyResultsPool.set(record.url, record);
     }
-
-    // Deliver to the content page. This runs during tool
-    // execution, so it's dispatched before the assistant's follow-up answer
-    // streams, content side should have the pool
-    // before it renders the list. Tool execution should not block content
-    // process side.
-    this.#historyResultsDispatcher?.({
-      records: [...this.#historyResultsPool.values()],
-    });
-  }
-
-  /**
-   * Register the dispatcher used to forward history results to the content
-   * page. See {@link ChatConversation#addHistoryResults}.
-   *
-   * @param {?function(object): void} dispatcher
-   */
-  setHistoryResultsDispatcher(dispatcher) {
-    this.#historyResultsDispatcher = dispatcher;
   }
 
   /**
    * A snapshot of the accumulated history results pool, as a records array.
-   * Attached to a message when it completes so the content page can render the
-   * history grid deterministically — independent of the streaming-time
-   * dispatch, whose delivery races the message lifecycle.
+   * Set on the active assistant message in `receiveResponse` so the content
+   * page can render the history grid.
    *
-   * @returns {object[]}
+   * @returns {PooledHistoryResult[]}
    */
   getHistoryResultsSnapshot() {
     return [...this.#historyResultsPool.values()];
+  }
+
+  /**
+   * Apply resolved page assets (thumbnail image URI and favicon availability)
+   * onto the pooled history records by URL, so snapshots dispatched afterward
+   * already include them.
+   *
+   * @param {Array<{url: string, image: ?string, hasFavicon: boolean}>} assets
+   */
+  applyHistoryAssets(assets) {
+    for (const { url, image, hasFavicon } of assets) {
+      const record = this.#historyResultsPool.get(url);
+      if (record) {
+        record.image = image;
+        record.hasFavicon = hasFavicon;
+      }
+    }
+  }
+
+  /**
+   * Rehydrate the history results pool from each message's persisted snapshot so
+   * follow-ups that reference prior URLs still render a grid after reload. Safe
+   * to call after messages are attached post-construction (e.g. DB load).
+   */
+  rehydrateHistoryResultsPool() {
+    for (const message of this.messages) {
+      for (const record of message.historyResults) {
+        this.#historyResultsPool.set(record.url, record);
+      }
+    }
   }
 }

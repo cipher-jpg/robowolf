@@ -5,7 +5,9 @@
 package org.mozilla.fenix.tabstray.redux.middleware
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import junit.framework.TestCase.assertEquals
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +32,7 @@ import mozilla.components.support.utils.FakeDateTimeProvider
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
 import org.mozilla.fenix.tabgroups.fakes.FakeTabGroupRepository
 import org.mozilla.fenix.tabgroups.storage.data.TabGroup
 import org.mozilla.fenix.tabgroups.storage.data.TabGroupData
@@ -516,6 +519,7 @@ class TabStorageMiddlewareTest {
             tabGroupRepository = createRepository(),
             removeTabsUseCase = mockk(relaxed = true),
             moveTabsUseCase = mockk(relaxed = true),
+            fenixBrowserUseCases = mockk(relaxed = true),
         )
         val actualTheme = with(middleware) {
             expectedTabGroupTheme.name.toTabGroupTheme()
@@ -534,6 +538,7 @@ class TabStorageMiddlewareTest {
             tabGroupRepository = createRepository(),
             removeTabsUseCase = mockk(relaxed = true),
             moveTabsUseCase = mockk(relaxed = true),
+            fenixBrowserUseCases = mockk(relaxed = true),
         )
         val actualTheme = with(middleware) {
             "Rainbow123".toTabGroupTheme()
@@ -655,10 +660,11 @@ class TabStorageMiddlewareTest {
         }
 
     @Test
-    fun `WHEN save is clicked with no existing tab group id or selected tabs THEN add new tab group`() = runTest {
+    fun `WHEN save is clicked for a non-starter new group with no selected tabs THEN an empty group is created without a homepage tab`() = runTest {
         val repository = createRepository()
         val expectedTitle = "Group 1"
         val expectedTheme = TabGroupTheme.Red
+        val fenixBrowserUseCases = mockk<FenixBrowserUseCases>(relaxed = true)
         val store = createStore(
             initialState = TabsTrayState(
                 tabGroupState = TabsTrayState.TabGroupState(
@@ -666,23 +672,21 @@ class TabStorageMiddlewareTest {
                         name = expectedTitle,
                         tabGroupId = null,
                         theme = expectedTheme,
+                        isStarterTabGroup = false,
                     ),
                 ),
             ),
             tabGroupRepository = repository,
+            fenixBrowserUseCases = fenixBrowserUseCases,
             dateTimeProvider = fakeDateTimeProvider,
         )
-
-        assertTrue(repository.tabGroupDataFlow.first().tabGroups.isEmpty())
-        assertTrue(repository.tabGroupDataFlow.first().tabGroupAssignments.isEmpty())
 
         store.dispatch(TabGroupAction.SaveClicked)
 
         runCurrent()
         advanceUntilIdle()
 
-        assertEquals(1, repository.tabGroupDataFlow.first().tabGroups.size)
-        val storedGroup = repository.tabGroupDataFlow.first().tabGroups.first()
+        val storedGroup = repository.tabGroupDataFlow.first().tabGroups.single()
         assertEquals(
             TabGroup(
                 id = storedGroup.id,
@@ -693,7 +697,55 @@ class TabStorageMiddlewareTest {
             storedGroup,
         )
         assertTrue(repository.tabGroupDataFlow.first().tabGroupAssignments.isEmpty())
+        verify(exactly = 0) { fenixBrowserUseCases.addNewHomepageTab(any(), any(), any()) }
     }
+
+    @Test
+    fun `WHEN save is clicked for a starter tab group THEN a lazy homepage tab is added and the group opens expanded`() =
+        runTest {
+            val repository = createRepository()
+            val newTabId = "new-tab-id"
+            val expectedTitle = "Group 1"
+            val expectedTheme = TabGroupTheme.Red
+            val fenixBrowserUseCases = mockk<FenixBrowserUseCases>(relaxed = true)
+            every {
+                fenixBrowserUseCases.addNewHomepageTab(private = false, startLoading = false, selectTab = false)
+            } returns newTabId
+            val store = createStore(
+                initialState = TabsTrayState(
+                    tabGroupState = TabsTrayState.TabGroupState(
+                        formState = TabGroupFormState(
+                            name = expectedTitle,
+                            tabGroupId = null,
+                            theme = expectedTheme,
+                            isStarterTabGroup = true,
+                        ),
+                    ),
+                ),
+                tabGroupRepository = repository,
+                fenixBrowserUseCases = fenixBrowserUseCases,
+            )
+
+            store.dispatch(TabGroupAction.SaveClicked)
+
+            runCurrent()
+            advanceUntilIdle()
+
+            verify {
+                fenixBrowserUseCases.addNewHomepageTab(private = false, startLoading = false, selectTab = false)
+            }
+
+            val storedGroup = repository.tabGroupDataFlow.first().tabGroups.first()
+            assertEquals(expectedTitle, storedGroup.title)
+            assertEquals(
+                mapOf(newTabId to storedGroup.id),
+                repository.tabGroupDataFlow.first().tabGroupAssignments,
+            )
+
+            assertEquals(Page.NormalTabs, store.state.selectedPage)
+            val expanded = store.state.backStack.last() as ExpandedTabGroup
+            assertEquals(storedGroup.id, expanded.group.id)
+        }
 
     @Test
     fun `WHEN save is clicked with existing tab group id THEN update existing tab group`() = runTest {
@@ -2903,6 +2955,7 @@ class TabStorageMiddlewareTest {
         tabGroupRepository: TabGroupRepository = createRepository(),
         removeTabsUseCase: RemoveTabsUseCase = TabsUseCases(store = BrowserStore()).removeTabs,
         moveTabsUseCase: MoveTabsUseCase = TabsUseCases(store = BrowserStore()).moveTabs,
+        fenixBrowserUseCases: FenixBrowserUseCases = mockk(relaxed = true),
         dateTimeProvider: DateTimeProvider = fakeDateTimeProvider,
     ) = TabsTrayStore(
         initialState = initialState,
@@ -2914,6 +2967,7 @@ class TabStorageMiddlewareTest {
                 tabGroupRepository = tabGroupRepository,
                 removeTabsUseCase = removeTabsUseCase,
                 moveTabsUseCase = moveTabsUseCase,
+                fenixBrowserUseCases = fenixBrowserUseCases,
                 dateTimeProvider = dateTimeProvider,
                 scope = backgroundScope,
                 mainScope = backgroundScope,
