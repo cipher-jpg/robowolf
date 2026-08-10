@@ -4,16 +4,15 @@
 
 #include "DocumentLoadListener.h"
 
-#include "imgLoader.h"
 #include "NeckoCommon.h"
-#include "nsLoadGroup.h"
+#include "imgLoader.h"
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/AppShutdown.h"
+#include "mozilla/Components.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/DynamicFpiNavigationHeuristic.h"
-#include "mozilla/Components.h"
+#include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/LoadInfo.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ResultVariant.h"
@@ -21,58 +20,62 @@
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_security.h"
+#include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ChildProcessChannelListener.h"
 #include "mozilla/dom/ClientChannelHelper.h"
 #include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/ParentProcessChannelHandle.h"
 #include "mozilla/dom/ContentProcessManager.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/ParentProcessChannelHandle.h"
+#include "mozilla/dom/PrefetchLog.h"
 #include "mozilla/dom/ProcessIsolation.h"
+#include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/RemoteWebProgressRequest.h"
 #include "mozilla/dom/SessionHistoryEntry.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/ipc/IdType.h"
+#include "mozilla/dom/nsHTTPSOnlyUtils.h"
+#include "mozilla/intl/Localization.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "mozilla/net/ChannelClassifierUtils.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/HttpChannelParent.h"
+#include "mozilla/net/PrefetchCookieCopier.h"
 #include "mozilla/net/RedirectChannelRegistrar.h"
-#include "nsContentSecurityUtils.h"
 #include "nsContentSecurityManager.h"
+#include "nsContentSecurityUtils.h"
+#include "nsDOMNavigationTiming.h"
+#include "nsDSURIContentListener.h"
+#include "nsDocLoader.h"  // for FormatStatusMessage
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
 #include "nsDocShellLoadTypes.h"
-#include "nsDOMNavigationTiming.h"
-#include "nsDSURIContentListener.h"
-#include "nsObjectLoadingContent.h"
-#include "nsOpenWindowInfo.h"
 #include "nsExternalHelperAppService.h"
 #include "nsHttpChannel.h"
 #include "nsIBrowser.h"
+#include "nsICachingChannel.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsINetworkInterceptController.h"
 #include "nsIStreamConverterService.h"
 #include "nsIViewSourceChannel.h"
-#include "nsImportModule.h"
 #include "nsIXULRuntime.h"
+#include "nsImportModule.h"
+#include "nsLoadGroup.h"
 #include "nsMimeTypes.h"
+#include "nsObjectLoadingContent.h"
+#include "nsOpenWindowInfo.h"
 #include "nsQueryObject.h"
 #include "nsRedirectHistoryEntry.h"
+#include "nsSHistory.h"
 #include "nsSandboxFlags.h"
 #include "nsScriptSecurityManager.h"
-#include "nsSHistory.h"
 #include "nsStringStream.h"
 #include "nsURILoader.h"
 #include "nsWebNavigationInfo.h"
-#include "mozilla/dom/BrowserParent.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/nsHTTPSOnlyUtils.h"
-#include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/dom/RemoteWebProgressRequest.h"
-#include "mozilla/net/ChannelClassifierUtils.h"
-#include "mozilla/ExtensionPolicyService.h"
-#include "mozilla/intl/Localization.h"
-#include "nsDocLoader.h"  // for FormatStatusMessage
 
 #ifdef ANDROID
 #  include "mozilla/widget/nsWindow.h"
@@ -543,9 +546,9 @@ void DocumentLoadListener::AddURIVisit(nsIChannel* aChannel,
          nsILoadInfo::HTTPS_ONLY_UPGRADED_LISTENER_NOT_REGISTERED |
          nsILoadInfo::HTTPS_ONLY_UPGRADED_LISTENER_REGISTERED)));
 
-  nsDocShell::InternalAddURIVisit(uri, previousURI, previousFlags,
-                                  responseStatus, browsingContext, widget,
-                                  mLoadStateLoadType, wasUpgraded);
+  nsDocShell::InternalAddURIVisit(
+      uri, previousURI, previousFlags, responseStatus, browsingContext, widget,
+      mLoadStateLoadType, wasUpgraded, net::ChannelIsPost(aChannel));
 }
 
 CanonicalBrowsingContext* DocumentLoadListener::GetLoadingBrowsingContext()
@@ -566,6 +569,61 @@ CanonicalBrowsingContext* DocumentLoadListener::GetTopBrowsingContext() const {
 
 WindowGlobalParent* DocumentLoadListener::GetParentWindowContext() const {
   return mParentWindowContext;
+}
+
+void DocumentLoadListener::TryActivateFromPrefetch(nsIURI* aURI) {
+  // Approximates "create navigation params from a prefetch record" by
+  // reusing the prefetch's HTTP cache entry instead of literally
+  // reconstructing navigation params from record's stored response (the
+  // spec's redirect-chain/COOP/policy-container bookkeeping is left to the
+  // normal channel machinery, since M1 only supports same-origin prefetch).
+  // Spec:
+  // https://wicg.github.io/nav-speculation/prefetch.html#create-navigation-params-from-a-prefetch-record
+  MOZ_ASSERT(mIsDocumentLoad);
+
+  // Open() is the only place a navigation channel gets created (OpenDocument,
+  // OpenObject, and OpenInParent, including LoadInParent and
+  // SpeculativeLoadInParent, all funnel into it), so this is the only call
+  // site TryActivateFromPrefetch needs.
+  auto* documentContext = GetDocumentBrowsingContext();
+  if (!documentContext) {
+    return;
+  }
+
+  // source WGP = the document that currently occupies the BC being navigated.
+  // For browser-initiated navigation (address bar), this is null.
+  auto* sourceWGP = documentContext->GetCurrentWindowGlobal();
+  if (!sourceWGP) {
+    return;
+  }
+
+  dom::PrefetchRecordParent* rec = sourceWGP->FindMatchingPrefetchRecord(aURI);
+  if (!rec) {
+    return;
+  }
+
+  LOG_SPECRULES(
+      ("DocumentLoadListener::TryActivateFromPrefetch: [%p] found rec=%p "
+       "for url=%s",
+       this, rec, aURI->GetSpecOrDefault().get()));
+
+  // "Copy prefetch cookies": copy cookies from the isolated partition to the
+  // destination partition.
+  // Spec:
+  // https://wicg.github.io/nav-speculation/prefetch.html#copy-prefetch-cookies
+  // No-op for same-origin (M1): isolated key == document partition.
+  net::CopyPrefetchCookies(
+      rec->IsolatedPartitionKey(),
+      sourceWGP->DocumentPrincipal()->OriginAttributesRef());
+
+  if (mTiming) {
+    mTiming->SetWasActivatedFromNavigationalPrefetch();
+  }
+
+  LOG_SPECRULES(
+      ("DocumentLoadListener::TryActivateFromPrefetch: [%p] activated from "
+       "prefetch cache for rec=%p",
+       this, rec));
 }
 
 bool CheckRecursiveLoad(CanonicalBrowsingContext* aLoadingContext,
@@ -661,6 +719,9 @@ static Result<SessionHistoryEntry*, const char*> ValidateHistoryLoad(
   if (!uriEq(snapshot->GetURI(), aLoadState->URI())) {
     return Err("URI");
   }
+  if (!uriEq(snapshot->GetUnstrippedURI(), aLoadState->GetUnstrippedURI())) {
+    return Err("UnstrippedURI");
+  }
   if (!uriEq(snapshot->GetOriginalURI(), aLoadState->OriginalURI())) {
     return Err("OriginalURI");
   }
@@ -669,9 +730,15 @@ static Result<SessionHistoryEntry*, const char*> ValidateHistoryLoad(
              aLoadState->ResultPrincipalURI())) {
     return Err("ResultPrincipalURI");
   }
-  if (!uriEq(snapshot->GetUnstrippedURI(), aLoadState->GetUnstrippedURI())) {
-    return Err("UnstrippedURI");
+  if (!uriEq(snapshot->GetBaseURI(), aLoadState->BaseURI())) {
+    return Err("BaseURI");
   }
+
+  if (snapshot->GetSrcdocData().valueOr(VoidString()) !=
+      aLoadState->SrcdocData()) {
+    return Err("SrcdocData");
+  }
+
   if (!principalEq(snapshot->GetTriggeringPrincipal(),
                    aLoadState->TriggeringPrincipal())) {
     return Err("TriggeringPrincipal");
@@ -775,7 +842,9 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
 
   if (aLoadState->GetRemoteTypeOverride()) {
     if (!mIsDocumentLoad || !NS_IsAboutBlank(aLoadState->URI()) ||
-        !loadingContext->IsTopContent()) {
+        !loadingContext->IsTopContent() ||
+        aLoadState->GetEffectiveTriggeringRemoteType() != NOT_REMOTE_TYPE ||
+        aLoadState->LoadIsFromSessionHistory()) {
       LOG(
           ("DocumentLoadListener::Open with invalid remoteTypeOverride "
            "[this=%p]",
@@ -929,6 +998,34 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
     return nullptr;
   }
 
+  // Keep track of navigation for the Bounce Tracking Protection. This has to
+  // run for every top level content navigation, regardless of whether it was
+  // started in the content process (OpenDocument) or in the parent
+  // (OpenInParent), so it lives on the shared Open path. OnStartNavigation
+  // dedupes on the load id, so the redundant calls a single navigation makes
+  // across process switches and speculative loads only advance the state
+  // machine once.
+  if (mIsDocumentLoad && documentContext && documentContext->IsTopContent()) {
+    RefPtr<BounceTrackingState> bounceTrackingState =
+        documentContext->GetBounceTrackingState();
+
+    // Not every browsing context has a BounceTrackingState. It's also null when
+    // the feature is disabled.
+    if (bounceTrackingState) {
+      nsCOMPtr<nsIPrincipal> triggeringPrincipal;
+      nsresult rv = aLoadInfo->GetTriggeringPrincipal(
+          getter_AddRefs(triggeringPrincipal));
+
+      if (!NS_WARN_IF(NS_FAILED(rv))) {
+        DebugOnly<nsresult> rv = bounceTrackingState->OnStartNavigation(
+            triggeringPrincipal, aLoadInfo->GetHasValidUserGestureActivation(),
+            mLoadIdentifier);
+        NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                             "BounceTrackingState::OnStartNavigation failed");
+      }
+    }
+  }
+
   // Recalculate the openFlags, matching the logic in use in Content process.
   MOZ_ASSERT(!aLoadState->GetPendingRedirectedChannel());
   uint32_t openFlags = nsDocShell::ComputeURILoaderFlags(
@@ -939,6 +1036,17 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
                                         loadingContext, aLoadState->TypeHint(),
                                         mIsDocumentLoad);
   openInfo->Prepare();
+
+  // Check for a matching completed speculation rules prefetch; see
+  // TryActivateFromPrefetch. Only for document (navigational) loads; skipped
+  // for <object>/<embed>. Runs on all platforms before AsyncOpen.
+  if (mIsDocumentLoad) {
+    nsCOMPtr<nsIURI> channelURI;
+    if (NS_SUCCEEDED(mChannel->GetURI(getter_AddRefs(channelURI))) &&
+        channelURI) {
+      TryActivateFromPrefetch(channelURI);
+    }
+  }
 
 #ifdef ANDROID
   RefPtr<MozPromise<bool, bool, false>> promise;
@@ -1084,27 +1192,6 @@ auto DocumentLoadListener::OpenDocument(
   // content process won't have provided us with an existing one.
   RefPtr<LoadInfo> loadInfo =
       CreateDocumentLoadInfo(browsingContext, aLoadState);
-
-  // Keep track of navigation for the Bounce Tracking Protection.
-  if (browsingContext->IsTopContent()) {
-    RefPtr<BounceTrackingState> bounceTrackingState =
-        browsingContext->GetBounceTrackingState();
-
-    // Not every browsing context has a BounceTrackingState. It's also null when
-    // the feature is disabled.
-    if (bounceTrackingState) {
-      nsCOMPtr<nsIPrincipal> triggeringPrincipal;
-      nsresult rv =
-          loadInfo->GetTriggeringPrincipal(getter_AddRefs(triggeringPrincipal));
-
-      if (!NS_WARN_IF(NS_FAILED(rv))) {
-        DebugOnly<nsresult> rv = bounceTrackingState->OnStartNavigation(
-            triggeringPrincipal, loadInfo->GetHasValidUserGestureActivation());
-        NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                             "BounceTrackingState::OnStartNavigation failed");
-      }
-    }
-  }
 
   return Open(aLoadState, loadInfo, aLoadFlags, aCacheKey, aChannelId,
               aAsyncOpenTime, aTiming, std::move(aInfo), false, aContentParent,
@@ -1412,7 +1499,8 @@ void DocumentLoadListener::RedirectToRealChannelFinished(nsresult aRv) {
   redirectReg->GetParentChannel(mRedirectChannelId,
                                 getter_AddRefs(redirectParentChannel));
   if (!redirectParentChannel) {
-    FinishReplacementChannelSetup(NS_ERROR_FAILURE);
+    FinishReplacementChannelSetup(
+        NS_ERROR_DOCUMENT_LOAD_LISTENER_NO_PARENT_CHANNEL);
     return;
   }
 
@@ -1459,7 +1547,7 @@ void DocumentLoadListener::FinishReplacementChannelSetup(nsresult aResult) {
   nsresult rv = registrar->GetParentChannel(mRedirectChannelId,
                                             getter_AddRefs(redirectChannel));
   if (NS_FAILED(rv) || !redirectChannel) {
-    aResult = NS_ERROR_FAILURE;
+    aResult = NS_ERROR_DOCUMENT_LOAD_LISTENER_NO_PARENT_CHANNEL;
   }
 
   // Release all previously registered channels, they are no longer needed to
@@ -2236,8 +2324,7 @@ DocumentLoadListener::RedirectToRealChannel(
     mChannel->GetStatus(&status);
     bool updateGHistory =
         nsDocShell::ShouldUpdateGlobalHistory(mLoadStateLoadType);
-    if (NS_SUCCEEDED(status) && updateGHistory &&
-        !net::ChannelIsPost(mChannel)) {
+    if (NS_SUCCEEDED(status) && updateGHistory) {
       AddURIVisit(mChannel, aLoadFlags);
     }
   }
@@ -2293,9 +2380,6 @@ DocumentLoadListener::RedirectToRealChannel(
       mTiming->Anonymize(args.uri());
       args.timing() = std::move(mTiming);
     }
-
-    nsCOMPtr<nsILoadInfo> loadInfo = chan->LoadInfo();
-    cp->TransmitBlobDataIfBlobURL(args.uri(), loadInfo->GetOriginAttributes());
 
     if (CanonicalBrowsingContext* bc = GetDocumentBrowsingContext()) {
       if (bc->IsTop() && bc->IsActive()) {
@@ -2438,17 +2522,27 @@ void DocumentLoadListener::TriggerRedirectToRealChannel(
 
     // Validate that the target process, if specified, would be allowed to load
     // this principal, and fail the navigation if it would not.
-    // NOTE: Keep this in sync with the similar check in
+    // NOTE: Keep the AllowSystem condition in sync with the similar check in
     // BrowserParent::RecvNewWindowGlobal.
-    EnumSet<ValidatePrincipalOptions> validationOptions = {};
-    // FIXME(bug 1698087): chrome://devtools/**/webextension-fallback.html
-    // Automation-Only: chrome://reftest/** + blank subframes
-    if (docURI->SchemeIs("chrome") ||
-        (xpc::IsInAutomation() && NS_IsAboutBlank(docURI) &&
-         GetParentWindowContext() &&
-         GetParentWindowContext()->Manager()->Manager() == contentParent &&
-         GetParentWindowContext()->DocumentPrincipal()->IsSystemPrincipal())) {
-      validationOptions += ValidatePrincipalOptions::AllowSystem;
+    EnumSet<ValidatePrincipalOptions> validationOptions = {
+        ValidatePrincipalOptions::AllowNotLoadedOrigin};
+    if (xpc::IsInAutomation()) {
+      // Automation-Only: chrome://reftest/** + blank subframes
+      bool isChromeReftest = false;
+      if (docURI->SchemeIs("chrome")) {
+        nsAutoCString host;
+        docURI->GetHost(host);
+        isChromeReftest = host.EqualsLiteral("reftest");
+      }
+
+      if (isChromeReftest ||
+          (NS_IsAboutBlank(docURI) && GetParentWindowContext() &&
+           GetParentWindowContext()->Manager()->Manager() == contentParent &&
+           GetParentWindowContext()
+               ->DocumentPrincipal()
+               ->IsSystemPrincipal())) {
+        validationOptions += ValidatePrincipalOptions::AlwaysAllowSystem;
+      }
     }
     if (!contentParent->ValidatePrincipal(unsandboxedPrincipal,
                                           validationOptions)) {
@@ -2856,9 +2950,11 @@ nsresult DocumentLoadListener::DoOnStartRequest(nsIRequest* aRequest) {
     // Not every browsing context has a BounceTrackingState. It's also null when
     // the feature is disabled.
     if (bounceTrackingState) {
-      // Don't warn when OnDocumentStartRequest fails until bug 1894936 is
-      // fixed, because it fails frequently because of that.
-      (void)bounceTrackingState->OnDocumentStartRequest(mChannel);
+      DebugOnly<nsresult> rv =
+          bounceTrackingState->OnDocumentStartRequest(mChannel);
+      NS_WARNING_ASSERTION(
+          NS_SUCCEEDED(rv),
+          "BounceTrackingState::OnDocumentStartRequest failed");
 
       DynamicFpiNavigationHeuristic::MaybeGrantStorageAccess(loadingContext,
                                                              mChannel);
@@ -3318,8 +3414,10 @@ NS_IMETHODIMP DocumentLoadListener::OnStatus(nsIRequest* aRequest,
   }
 
   if (webProgress) {
-    NS_DispatchToMainThread(
-        NS_NewRunnableFunction("DocumentLoadListener::OnStatus", [=]() {
+    NS_DispatchToMainThread(NS_NewRunnableFunction(
+        "DocumentLoadListener::OnStatus",
+        [webProgress = std::move(webProgress), channel = std::move(channel),
+         aStatus, message = std::move(message)]() {
           webProgress->OnStatusChange(webProgress, channel, aStatus,
                                       message.get());
         }));

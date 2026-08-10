@@ -38,11 +38,11 @@
 use api::{AlphaType, BorderDetails, BorderDisplayItem, BuiltDisplayList, BuiltDisplayListIter, PrimitiveFlags, SnapshotInfo};
 use api::{ClipId, ColorF, CommonItemProperties, ComplexClipRegion, ComponentTransferFuncType, RasterSpace};
 use api::{DebugFlags, DisplayItem, DisplayItemRef, ExtendMode, ExternalScrollId, FilterData};
-use api::{FilterOp, FontInstanceKey, FontSize, GlyphInstance, GlyphOptions, GradientStop};
-use api::{IframeDisplayItem, ImageKey, ImageRendering, ItemRange, ColorDepth, QualitySettings};
+use api::{FilterOp, FontInstanceKey, FontSize, GlyphInstance, GlyphOptions, GlyphShadowMode, GradientStop};
+use api::{IdNamespace, IframeDisplayItem, ImageKey, ImageRendering, ItemRange, ColorDepth, QualitySettings};
 use api::{LineOrientation, LineStyle, NinePatchBorderSource, PipelineId, MixBlendMode, StackingContextFlags};
 use api::{PropertyBinding, ReferenceFrameKind, ScrollFrameDescriptor};
-use api::{APZScrollGeneration, HasScrollLinkedEffect, Shadow, SpatialId, StickyFrameDescriptor, ImageMask, ItemTag};
+use api::{APZScrollGeneration, HasScrollLinkedEffect, SpatialId, StickyFrameDescriptor, ImageMask, ItemTag};
 use api::{ClipMode, TransformStyle, YuvColorSpace, ColorRange, YuvData, TempFilterData};
 use api::{ReferenceTransformBinding, Rotation, FillRule, SpatialTreeItem, ReferenceFrameDescriptor};
 use api::{FilterOpGraphPictureBufferId, SVGFE_GRAPH_MAX};
@@ -51,7 +51,7 @@ use api::units::*;
 use crate::image_tiling::simplify_repeated_primitive;
 use api::prim_geometry::{process_repeat_size, compute_stretch_ratio};
 use crate::box_shadow::BLUR_SAMPLE_SCALE;
-use crate::clip::{ClipIntern, ClipItemKey, ClipItemKeyKind, ClipItemEntry, ClipStore};
+use crate::clip::{ClipIntern, ClipItemKey, ClipItemKeyKind, ClipStore};
 use crate::clip::{ClipInternData, ClipNodeId, ClipLeafId};
 use crate::clip::{PolygonDataHandle, ClipTreeBuilder};
 use crate::gpu_types::BlurEdgeMode;
@@ -63,8 +63,9 @@ use crate::hit_test::HitTestingScene;
 use crate::intern::Interner;
 use crate::internal_types::{FastHashMap, LayoutPrimitiveInfo, Filter, PlaneSplitterIndex};
 use crate::svg_filter::{FilterGraphNode, FilterGraphOp, FilterGraphPictureReference};
-use crate::picture::{Picture3DContext, PictureCompositeMode, PictureInstance};
-use crate::picture::{BlitReason, OrderedPictureChild, PrimitiveList, SurfaceInfo, PictureFlags};
+use crate::picture::{Picture3DContext, PictureInstance};
+use crate::picture::{BlitReason, OrderedPictureChild, PrimitiveList, PictureFlags};
+use crate::surface::SurfaceInfo;
 use crate::picture_graph::PictureGraph;
 use crate::prim_store::{PrimitiveInstance, PrimitiveStoreStats};
 use crate::prim_store::{PrimitiveKind, NinePatchDescriptor, PrimitiveStore};
@@ -72,7 +73,7 @@ use crate::prim_store::{InternablePrimitive, PictureIndex};
 use crate::prim_store::PolygonKey;
 use crate::prim_store::rectangle::RectanglePrim;
 use crate::prim_store::backdrop::{BackdropCapture, BackdropRender};
-use crate::prim_store::borders::{ImageBorder, NormalBorderPrim};
+use crate::prim_store::borders::ImageBorder;
 use crate::prim_store::gradient::{
     GradientStopKey, LinearGradient, RadialGradient, RadialGradientParams, ConicGradient,
     ConicGradientParams, optimize_radial_gradient, apply_gradient_local_clip,
@@ -81,10 +82,9 @@ use crate::prim_store::gradient::{
 use crate::prim_store::image::{Image, StretchSizeKey, YuvImage};
 use crate::prim_store::line_dec::LineDecoration;
 use crate::prim_store::picture::{Picture, PictureKey};
-use crate::picture_composite_mode::PictureCompositeKey;
+use crate::picture_composite_mode::{PictureCompositeKey, PictureCompositeMode};
 use crate::prim_store::text_run::TextRun;
 use crate::render_backend::SceneView;
-use crate::resource_cache::ImageRequest;
 use crate::scene::{BuiltScene, Scene, ScenePipeline, SceneStats, StackingContextHelpers};
 use crate::scene_builder_thread::Interners;
 use crate::spatial_node::{
@@ -93,7 +93,6 @@ use crate::spatial_node::{
 use crate::tile_cache::TileCacheBuilder;
 use euclid::approxeq::ApproxEq;
 use std::{f32, mem, usize};
-use std::collections::vec_deque::VecDeque;
 use std::sync::Arc;
 use crate::util::{VecHelper, MaxRect};
 use crate::filterdata::{SFilterDataComponent, SFilterData, SFilterDataKey};
@@ -433,7 +432,6 @@ pub struct SceneBuilder<'a> {
     raster_space_stack: Vec<RasterSpace>,
 
     /// Maintains state for any currently active shadows
-    pending_shadow_items: VecDeque<ShadowItem>,
 
     /// The SpatialTree that we are currently building during building.
     pub spatial_tree: &'a mut SceneSpatialTree,
@@ -505,6 +503,10 @@ pub struct SceneBuilder<'a> {
     /// here and set a boolean on the inner stacking context info to remember to
     /// pop from this stack (see StackingContextInfo::needs_extra_stacking_context)
     extra_stacking_context_stack: Vec<StackingContextInfo>,
+
+    /// Debug flags for the current scene build. Consulted e.g. to optionally
+    /// disable promoting rounded-rect clips to compositor clips.
+    debug_flags: DebugFlags,
 }
 
 impl<'a> SceneBuilder<'a> {
@@ -520,7 +522,7 @@ impl<'a> SceneBuilder<'a> {
         stats: &SceneStats,
         debug_flags: DebugFlags,
     ) -> BuiltScene {
-        profile_scope!("build_scene");
+        tracy_rs::profile_scope!("build_scene");
 
         // We checked that the root pipeline is available on the render backend.
         let root_pipeline_id = root_pipeline.or(scene.root_pipeline_id).unwrap();
@@ -538,7 +540,6 @@ impl<'a> SceneBuilder<'a> {
             config: *frame_builder_config,
             id_to_index_mapper_stack: mem::take(&mut recycler.id_to_index_mapper_stack),
             hit_testing_scene: recycler.hit_testing_scene.take().unwrap_or_else(|| HitTestingScene::new(&stats.hit_test_stats)),
-            pending_shadow_items: mem::take(&mut recycler.pending_shadow_items),
             sc_stack: mem::take(&mut recycler.sc_stack),
             containing_block_stack: mem::take(&mut recycler.containing_block_stack),
             raster_space_stack: mem::take(&mut recycler.raster_space_stack),
@@ -561,6 +562,7 @@ impl<'a> SceneBuilder<'a> {
             surfaces: mem::take(&mut recycler.surfaces),
             clip_tree_builder: recycler.clip_tree_builder.take().unwrap_or_else(|| ClipTreeBuilder::new()),
             extra_stacking_context_stack: Vec::new(),
+            debug_flags,
         };
 
         // Reset
@@ -573,7 +575,6 @@ impl<'a> SceneBuilder<'a> {
         builder.sc_stack.clear();
         builder.containing_block_stack.clear();
         builder.id_to_index_mapper_stack.clear();
-        builder.pending_shadow_items.clear();
         builder.iframe_size.clear();
 
         builder.raster_space_stack.clear();
@@ -621,7 +622,6 @@ impl<'a> SceneBuilder<'a> {
         recycler.id_to_index_mapper_stack = builder.id_to_index_mapper_stack;
         recycler.containing_block_stack = builder.containing_block_stack;
         recycler.raster_space_stack = builder.raster_space_stack;
-        recycler.pending_shadow_items = builder.pending_shadow_items;
         recycler.iframe_size = builder.iframe_size;
 
         BuiltScene {
@@ -665,10 +665,6 @@ impl<'a> SceneBuilder<'a> {
         let (mut prim_list, spatial_node_index) = {
             let pic = &mut pictures[pic_index.0];
             assert_ne!(pic.spatial_node_index, SpatialNodeIndex::UNKNOWN);
-
-            if pic.flags.contains(PictureFlags::IS_RESOLVE_TARGET) {
-                pic.flags |= PictureFlags::DISABLE_SNAPPING;
-            }
 
             // If we're a surface, use that spatial node, otherwise the parent
             let spatial_node_index = match pic.composite_mode {
@@ -821,10 +817,6 @@ impl<'a> SceneBuilder<'a> {
                         prim_instances,
                         clip_interner,
                     );
-
-                    if pictures[child_pic_index.0].flags.contains(PictureFlags::DISABLE_SNAPPING) {
-                        pictures[pic_index.0].flags |= PictureFlags::DISABLE_SNAPPING;
-                    }
                 }
             }
         }
@@ -887,6 +879,9 @@ impl<'a> SceneBuilder<'a> {
         }
         struct BuildContext<'a> {
             pipeline_id: PipelineId,
+            /// Namespace the items traversed in this context are allowed to
+            /// reference resources from. See `ScenePipeline::namespace`.
+            namespace: IdNamespace,
             kind: ContextKind<'a>,
         }
 
@@ -902,6 +897,7 @@ impl<'a> SceneBuilder<'a> {
 
         let mut stack = vec![BuildContext {
             pipeline_id: root_pipeline_id,
+            namespace: root_pipeline.namespace,
             kind: ContextKind::Root,
         }];
         let mut traversal = root_pipeline.display_list.iter();
@@ -915,7 +911,7 @@ impl<'a> SceneBuilder<'a> {
 
                 match item.item() {
                     DisplayItem::PushStackingContext(ref info) => {
-                        profile_scope!("build_stacking_context");
+                        tracy_rs::profile_scope!("build_stacking_context");
                         let spatial_node_index = self.get_space(info.spatial_id);
                         let mut subtraversal = item.sub_iter();
                         // Avoid doing unnecessary work for empty stacking contexts.
@@ -929,7 +925,9 @@ impl<'a> SceneBuilder<'a> {
                             continue;
                         }
 
-                        let snapshot = info.snapshot;
+                        let snapshot = info.snapshot.filter(|snapshot| {
+                            validate_image_key(snapshot.key.as_image(), bc.namespace)
+                        });
 
                         let composition_operations = CompositeOps::new(
                             filter_ops_for_compositing(item.filters()),
@@ -950,6 +948,7 @@ impl<'a> SceneBuilder<'a> {
 
                         let new_context = BuildContext {
                             pipeline_id: bc.pipeline_id,
+                            namespace: bc.namespace,
                             kind: ContextKind::StackingContext {
                                 sc_info,
                             },
@@ -962,11 +961,12 @@ impl<'a> SceneBuilder<'a> {
                         continue 'outer;
                     }
                     DisplayItem::PushReferenceFrame(..) => {
-                        profile_scope!("build_reference_frame");
+                        tracy_rs::profile_scope!("build_reference_frame");
                         let mut subtraversal = item.sub_iter();
 
                         let new_context = BuildContext {
                             pipeline_id: bc.pipeline_id,
+                            namespace: bc.namespace,
                             kind: ContextKind::ReferenceFrame,
                         };
                         stack.push(bc);
@@ -979,16 +979,23 @@ impl<'a> SceneBuilder<'a> {
                     DisplayItem::PopReferenceFrame |
                     DisplayItem::PopStackingContext => break,
                     DisplayItem::Iframe(ref info) => {
-                        profile_scope!("iframe");
+                        tracy_rs::profile_scope!("iframe");
 
                         let space = self.get_space(info.space_and_clip.spatial_id);
-                        let subtraversal = match self.push_iframe(info, space) {
+                        // Note: the referenced pipeline is not checked against the
+                        // parent pipeline's namespace. Nesting pipelines across
+                        // namespaces is legitimate (a content process embeds the
+                        // pipelines of its out-of-process iframes and of its async
+                        // image pipelines), so validating iframe references needs
+                        // ownership information webrender doesn't have.
+                        let (namespace, subtraversal) = match self.push_iframe(info, space) {
                             Some(pair) => pair,
                             None => continue,
                         };
 
                         let new_context = BuildContext {
                             pipeline_id: info.pipeline_id,
+                            namespace,
                             kind: ContextKind::Iframe {
                                 parent_traversal: mem::replace(&mut traversal, subtraversal),
                             },
@@ -998,7 +1005,7 @@ impl<'a> SceneBuilder<'a> {
                         continue 'outer;
                     }
                     _ => {
-                        self.build_item(item);
+                        self.build_item(item, bc.namespace);
                     }
                 };
             }
@@ -1174,7 +1181,7 @@ impl<'a> SceneBuilder<'a> {
         &mut self,
         info: &IframeDisplayItem,
         spatial_node_index: SpatialNodeIndex,
-    ) -> Option<BuiltDisplayListIter<'a>> {
+    ) -> Option<(IdNamespace, BuiltDisplayListIter<'a>)> {
         let iframe_pipeline_id = info.pipeline_id;
         let pipeline = match self.scene.pipelines.get(&iframe_pipeline_id) {
             Some(pipeline) => pipeline,
@@ -1218,7 +1225,6 @@ impl<'a> SceneBuilder<'a> {
                 is_2d_scale_translation: true,
                 should_snap: true,
                 paired_with_perspective: false,
-                is_offset_only: false,
             },
             origin.to_vector(),
             true,
@@ -1256,7 +1262,7 @@ impl<'a> SceneBuilder<'a> {
             iframe_pipeline_id,
         );
 
-        Some(pipeline.display_list.iter())
+        Some((pipeline.namespace, pipeline.display_list.iter()))
     }
 
     fn get_space(
@@ -1322,13 +1328,21 @@ impl<'a> SceneBuilder<'a> {
         )
     }
 
+    /// `namespace` is the id namespace this display list is allowed to reference
+    /// resources from; items referencing anything else are dropped. See
+    /// `validate_resource_namespace`.
     fn build_item<'b>(
         &'b mut self,
         item: DisplayItemRef,
+        namespace: IdNamespace,
     ) {
         match *item.item() {
             DisplayItem::Image(ref info) => {
-                profile_scope!("image");
+                tracy_rs::profile_scope!("image");
+
+                if !validate_image_key(info.image_key, namespace) {
+                    return;
+                }
 
                 let (layout, _, spatial_node_index, clip_node_id) = self.process_common_properties_with_bounds(
                     &info.common,
@@ -1348,7 +1362,11 @@ impl<'a> SceneBuilder<'a> {
                 );
             }
             DisplayItem::RepeatingImage(ref info) => {
-                profile_scope!("repeating_image");
+                tracy_rs::profile_scope!("repeating_image");
+
+                if !validate_image_key(info.image_key, namespace) {
+                    return;
+                }
 
                 let (layout, unsnapped_rect, spatial_node_index, clip_node_id) = self.process_common_properties_with_bounds(
                     &info.common,
@@ -1373,7 +1391,11 @@ impl<'a> SceneBuilder<'a> {
                 );
             }
             DisplayItem::YuvImage(ref info) => {
-                profile_scope!("yuv_image");
+                tracy_rs::profile_scope!("yuv_image");
+
+                if !validate_yuv_data(&info.yuv_data, namespace) {
+                    return;
+                }
 
                 let (layout, _, spatial_node_index, clip_node_id) = self.process_common_properties_with_bounds(
                     &info.common,
@@ -1392,7 +1414,11 @@ impl<'a> SceneBuilder<'a> {
                 );
             }
             DisplayItem::Text(ref info) => {
-                profile_scope!("text");
+                tracy_rs::profile_scope!("text");
+
+                if !validate_font_instance_key(info.font_key, namespace) {
+                    return;
+                }
 
                 // TODO(aosmond): Snapping text primitives does not make much sense, given the
                 // primitive bounds and clip are supposed to be conservative, not definitive.
@@ -1413,10 +1439,11 @@ impl<'a> SceneBuilder<'a> {
                     &info.color,
                     item.glyphs(),
                     info.glyph_options,
+                    info.shadow,
                 );
             }
             DisplayItem::Rectangle(ref info) => {
-                profile_scope!("rect");
+                tracy_rs::profile_scope!("rect");
 
                 let (layout, _, spatial_node_index, clip_node_id) = self.process_common_properties_with_bounds(
                     &info.common,
@@ -1427,7 +1454,6 @@ impl<'a> SceneBuilder<'a> {
                     spatial_node_index,
                     clip_node_id,
                     &layout,
-                    Vec::new(),
                     RectanglePrim {
                         color: info.color.into(),
                     },
@@ -1438,7 +1464,7 @@ impl<'a> SceneBuilder<'a> {
                 }
             }
             DisplayItem::HitTest(ref info) => {
-                profile_scope!("hit_test");
+                tracy_rs::profile_scope!("hit_test");
 
                 let spatial_node_index = self.get_space(info.spatial_id);
 
@@ -1476,7 +1502,7 @@ impl<'a> SceneBuilder<'a> {
                 );
             }
             DisplayItem::Line(ref info) => {
-                profile_scope!("line");
+                tracy_rs::profile_scope!("line");
 
                 let (layout, _, spatial_node_index, clip_node_id) = self.process_common_properties_with_bounds(
                     &info.common,
@@ -1494,7 +1520,7 @@ impl<'a> SceneBuilder<'a> {
                 );
             }
             DisplayItem::Gradient(ref info) => {
-                profile_scope!("gradient");
+                tracy_rs::profile_scope!("gradient");
 
                 if !info.gradient.is_valid() {
                     return;
@@ -1539,18 +1565,17 @@ impl<'a> SceneBuilder<'a> {
                         None,
                         EdgeMask::all(),
                     ) {
-                        self.add_nonshadowable_primitive(
+                        self.add_primitive(
                             spatial_node_index,
                             clip_node_id,
                             &layout,
-                            Vec::new(),
                             prim_key_kind,
                         );
                     }
                 }
             }
             DisplayItem::RadialGradient(ref info) => {
-                profile_scope!("radial");
+                tracy_rs::profile_scope!("radial");
 
                 if !info.gradient.is_valid() {
                     return;
@@ -1586,7 +1611,7 @@ impl<'a> SceneBuilder<'a> {
                     info.gradient.extend_mode,
                     &stops,
                     &mut |solid_rect, color, aa_mask| {
-                        self.add_nonshadowable_primitive(
+                        self.add_primitive(
                             spatial_node_index,
                             clip_node_id,
                             &LayoutPrimitiveInfo {
@@ -1595,7 +1620,6 @@ impl<'a> SceneBuilder<'a> {
                                 transformed_aa_edges: layout.transformed_aa_edges & aa_mask,
                                 .. layout
                             },
-                            Vec::new(),
                             RectanglePrim { color: PropertyBinding::Value(color) },
                         );
                     }
@@ -1606,7 +1630,7 @@ impl<'a> SceneBuilder<'a> {
 
                 // TODO: create_radial_gradient_prim already calls
                 // this, but it leaves the info variable that is
-                // passed to add_nonshadowable_primitive unmodified
+                // passed to add_primitive unmodified
                 // which can cause issues.
                 simplify_repeated_primitive(&tile_size, &mut tile_spacing, &mut prim_rect);
 
@@ -1625,17 +1649,16 @@ impl<'a> SceneBuilder<'a> {
                         None,
                     );
 
-                    self.add_nonshadowable_primitive(
+                    self.add_primitive(
                         spatial_node_index,
                         clip_node_id,
                         &layout,
-                        Vec::new(),
                         prim_key_kind,
                     );
                 }
             }
             DisplayItem::ConicGradient(ref info) => {
-                profile_scope!("conic");
+                tracy_rs::profile_scope!("conic");
 
                 if !info.gradient.is_valid() {
                     return;
@@ -1674,17 +1697,16 @@ impl<'a> SceneBuilder<'a> {
                         None,
                     );
 
-                    self.add_nonshadowable_primitive(
+                    self.add_primitive(
                         spatial_node_index,
                         clip_node_id,
                         &layout,
-                        Vec::new(),
                         prim_key_kind,
                     );
                 }
             }
             DisplayItem::BoxShadow(ref info) => {
-                profile_scope!("box_shadow");
+                tracy_rs::profile_scope!("box_shadow");
 
                 let (layout, _, spatial_node_index, clip_node_id) = self.process_common_properties_with_bounds(
                     &info.common,
@@ -1705,7 +1727,15 @@ impl<'a> SceneBuilder<'a> {
                 );
             }
             DisplayItem::Border(ref info) => {
-                profile_scope!("border");
+                tracy_rs::profile_scope!("border");
+
+                if let BorderDetails::NinePatch(ref border) = info.details {
+                    if let NinePatchBorderSource::Image(key, _) = border.source {
+                        if !validate_image_key(key, namespace) {
+                            return;
+                        }
+                    }
+                }
 
                 let (layout, _, spatial_node_index, clip_node_id) = self.process_common_properties_with_bounds(
                     &info.common,
@@ -1721,27 +1751,41 @@ impl<'a> SceneBuilder<'a> {
                 );
             }
             DisplayItem::ImageMaskClip(ref info) => {
-                profile_scope!("image_clip");
+                tracy_rs::profile_scope!("image_clip");
+
+                // The clip node has to be defined either way, since later clip
+                // chain items refer to it by id. Neutralize a foreign mask into
+                // an empty one, which clips everything out, rather than dropping
+                // the clip and letting the masked content draw unclipped.
+                let image_mask = if validate_image_key(info.image_mask.image, namespace) {
+                    info.image_mask
+                } else {
+                    ImageMask {
+                        image: ImageKey::DUMMY,
+                        rect: LayoutRect::zero(),
+                    }
+                };
 
                 self.add_image_mask_clip_node(
                     info.id,
                     info.spatial_id,
-                    &info.image_mask,
+                    &image_mask,
                     info.fill_rule,
                     item.points(),
                 );
             }
             DisplayItem::RoundedRectClip(ref info) => {
-                profile_scope!("rounded_clip");
+                tracy_rs::profile_scope!("rounded_clip");
 
                 self.add_rounded_rect_clip_node(
                     info.id,
                     info.spatial_id,
                     &info.clip,
+                    info.snap_outset,
                 );
             }
             DisplayItem::RectClip(ref info) => {
-                profile_scope!("rect_clip");
+                tracy_rs::profile_scope!("rect_clip");
 
                 self.add_rect_clip_node(
                     info.id,
@@ -1750,7 +1794,7 @@ impl<'a> SceneBuilder<'a> {
                 );
             }
             DisplayItem::ClipChain(ref info) => {
-                profile_scope!("clip_chain");
+                tracy_rs::profile_scope!("clip_chain");
 
                 self.clip_tree_builder.define_clip_chain(
                     info.id,
@@ -1759,7 +1803,7 @@ impl<'a> SceneBuilder<'a> {
                 );
             },
             DisplayItem::BackdropFilter(ref info) => {
-                profile_scope!("backdrop");
+                tracy_rs::profile_scope!("backdrop");
 
                 let (layout, _, spatial_node_index, clip_node_id) = self.process_common_properties(
                     &info.common,
@@ -1793,23 +1837,6 @@ impl<'a> SceneBuilder<'a> {
                 unreachable!("Handled in `build_all`")
             }
 
-            DisplayItem::PushShadow(info) => {
-                profile_scope!("push_shadow");
-
-                let spatial_node_index = self.get_space(info.space_and_clip.spatial_id);
-
-                self.push_shadow(
-                    info.shadow,
-                    spatial_node_index,
-                    info.space_and_clip.clip_chain_id,
-                    info.should_inflate,
-                );
-            }
-            DisplayItem::PopAllShadows => {
-                profile_scope!("pop_all_shadows");
-
-                self.pop_all_shadows();
-            }
             DisplayItem::DebugMarker(..) => {}
         }
     }
@@ -1909,12 +1936,11 @@ impl<'a> SceneBuilder<'a> {
 
     /// Convenience interface that creates a primitive entry and adds it
     /// to the draw list.
-    pub fn add_nonshadowable_primitive<P>(
+    pub fn add_primitive<P>(
         &mut self,
         spatial_node_index: SpatialNodeIndex,
         clip_node_id: ClipNodeId,
         info: &LayoutPrimitiveInfo,
-        clip_items: Vec<ClipItemEntry>,
         prim: P,
     )
     where
@@ -1925,8 +1951,7 @@ impl<'a> SceneBuilder<'a> {
             let clip_leaf_id = self.clip_tree_builder.build_for_prim(
                 clip_node_id,
                 info,
-                &clip_items,
-                &mut self.interners,
+                P::SNAP_CLIPS,
             );
 
             self.add_prim_to_draw_list(
@@ -1938,42 +1963,6 @@ impl<'a> SceneBuilder<'a> {
         }
     }
 
-    pub fn add_primitive<P>(
-        &mut self,
-        spatial_node_index: SpatialNodeIndex,
-        clip_node_id: ClipNodeId,
-        info: &LayoutPrimitiveInfo,
-        clip_items: Vec<ClipItemEntry>,
-        prim: P,
-    )
-    where
-        P: InternablePrimitive + IsVisible,
-        Interners: AsMut<Interner<P>>,
-        ShadowItem: From<PendingPrimitive<P>>
-    {
-        // If a shadow context is not active, then add the primitive
-        // directly to the parent picture.
-        if self.pending_shadow_items.is_empty() {
-            self.add_nonshadowable_primitive(
-                spatial_node_index,
-                clip_node_id,
-                info,
-                clip_items,
-                prim,
-            );
-        } else {
-            debug_assert!(clip_items.is_empty(), "No per-prim clips expected for shadowed primitives");
-
-            // There is an active shadow context. Store as a pending primitive
-            // for processing during pop_all_shadows.
-            self.pending_shadow_items.push_back(PendingPrimitive {
-                spatial_node_index,
-                clip_node_id,
-                info: *info,
-                prim,
-            }.into());
-        }
-    }
 
     fn add_prim_to_draw_list<P>(
         &mut self,
@@ -2011,8 +2000,6 @@ impl<'a> SceneBuilder<'a> {
             return;
         }
 
-        // Shadows can only exist within a stacking context
-        assert!(self.pending_shadow_items.is_empty());
         self.tile_cache_builder.make_current_slice_atomic();
     }
 
@@ -2023,9 +2010,6 @@ impl<'a> SceneBuilder<'a> {
         slice_flags: SliceFlags,
     ) {
         if self.sc_stack.is_empty() {
-            // Shadows can only exist within a stacking context
-            assert!(self.pending_shadow_items.is_empty());
-
             self.tile_cache_builder.add_tile_cache_barrier(
                 slice_flags,
                 self.root_iframe_clip,
@@ -2044,7 +2028,7 @@ impl<'a> SceneBuilder<'a> {
         requested_raster_space: RasterSpace,
         flags: StackingContextFlags,
     ) -> StackingContextInfo {
-        profile_scope!("push_stacking_context");
+        tracy_rs::profile_scope!("push_stacking_context");
 
         // Filters have to be baked into the snapshot. Most filters are applied
         // when rendering the picture into its parent, so if the stacking context
@@ -2211,7 +2195,12 @@ impl<'a> SceneBuilder<'a> {
                 // surface — equivalent to the intermediate surface approach.
                 // This allows tile cache barriers to fire normally, enabling
                 // proper picture caching with multiple slices.
-                if !self.sc_stack.is_empty() ||
+                //
+                // When DISABLE_COMPOSITOR_CLIPS is set, we never take this fast
+                // path, so the clip is always applied via an intermediate
+                // surface and the quad-shader clip path (useful for testing).
+                if self.debug_flags.contains(DebugFlags::DISABLE_COMPOSITOR_CLIPS) ||
+                   !self.sc_stack.is_empty() ||
                    !self.clip_tree_builder.clip_chain_complex_clips_are_promotable(
                        clip_chain_id,
                        &self.interners,
@@ -2313,7 +2302,7 @@ impl<'a> SceneBuilder<'a> {
         &mut self,
         info: StackingContextInfo,
     ) {
-        profile_scope!("pop_stacking_context");
+        tracy_rs::profile_scope!("pop_stacking_context");
 
         self.clip_tree_builder.pop_clip();
 
@@ -2628,11 +2617,6 @@ impl<'a> SceneBuilder<'a> {
             });
         }
 
-        assert!(
-            self.pending_shadow_items.is_empty(),
-            "Found unpopped shadows when popping stacking context!"
-        );
-
         if info.needs_extra_stacking_context {
             let inner_info = self.extra_stacking_context_stack.pop().unwrap();
             self.pop_stacking_context(inner_info);
@@ -2678,7 +2662,6 @@ impl<'a> SceneBuilder<'a> {
                 is_2d_scale_translation: true,
                 should_snap: true,
                 paired_with_perspective: false,
-                is_offset_only: false,
             },
             LayoutVector2D::zero(),
             true,
@@ -2785,6 +2768,7 @@ impl<'a> SceneBuilder<'a> {
         new_node_id: ClipId,
         spatial_id: SpatialId,
         clip: &ComplexClipRegion,
+        snap_outset: f32,
     ) {
         let spatial_node_index = self.get_space(spatial_id);
 
@@ -2793,6 +2777,7 @@ impl<'a> SceneBuilder<'a> {
         let item = ClipItemKey {
             kind: ClipItemKeyKind::rounded_rect(
                 clip.radii,
+                clip.inset,
                 clip.mode,
             ),
         };
@@ -2811,6 +2796,7 @@ impl<'a> SceneBuilder<'a> {
             handle,
             spatial_node_index,
             region_rect,
+            snap_outset,
         );
     }
 
@@ -2842,280 +2828,6 @@ impl<'a> SceneBuilder<'a> {
         node_index
     }
 
-    pub fn push_shadow(
-        &mut self,
-        shadow: Shadow,
-        spatial_node_index: SpatialNodeIndex,
-        clip_chain_id: api::ClipChainId,
-        should_inflate: bool,
-    ) {
-        self.clip_tree_builder.push_clip_chain(Some(clip_chain_id), false, false);
-
-        // Store this shadow in the pending list, for processing
-        // during pop_all_shadows.
-        self.pending_shadow_items.push_back(ShadowItem::Shadow(PendingShadow {
-            shadow,
-            spatial_node_index,
-            should_inflate,
-        }));
-    }
-
-    pub fn pop_all_shadows(
-        &mut self,
-    ) {
-        assert!(!self.pending_shadow_items.is_empty(), "popped shadows, but none were present");
-
-        let mut items = mem::replace(&mut self.pending_shadow_items, VecDeque::new());
-
-        //
-        // The pending_shadow_items queue contains a list of shadows and primitives
-        // that were pushed during the active shadow context. To process these, we:
-        //
-        // Iterate the list, popping an item from the front each iteration.
-        //
-        // If the item is a shadow:
-        //      - Create a shadow picture primitive.
-        //      - Add *any* primitives that remain in the item list to this shadow.
-        // If the item is a primitive:
-        //      - Add that primitive as a normal item (if alpha > 0)
-        //
-
-        while let Some(item) = items.pop_front() {
-            match item {
-                ShadowItem::Shadow(pending_shadow) => {
-                    // Quote from https://drafts.csswg.org/css-backgrounds-3/#shadow-blur
-                    // "the image that would be generated by applying to the shadow a
-                    // Gaussian blur with a standard deviation equal to half the blur radius."
-                    let std_deviation = pending_shadow.shadow.blur_radius * 0.5;
-
-                    // Add any primitives that come after this shadow in the item
-                    // list to this shadow.
-                    let mut prim_list = PrimitiveList::empty();
-                    let blur_filter = Filter::Blur {
-                        width: std_deviation,
-                        height: std_deviation,
-                        should_inflate: pending_shadow.should_inflate,
-                        edge_mode: BlurEdgeMode::Duplicate,
-                    };
-                    let blur_is_noop = blur_filter.is_noop();
-
-                    for item in &items {
-                        let (instance, info, spatial_node_index) = match item {
-                            ShadowItem::Image(ref pending_image) => {
-                                self.create_shadow_prim(
-                                    &pending_shadow,
-                                    pending_image,
-                                    blur_is_noop,
-                                )
-                            }
-                            ShadowItem::LineDecoration(ref pending_line_dec) => {
-                                self.create_shadow_prim(
-                                    &pending_shadow,
-                                    pending_line_dec,
-                                    blur_is_noop,
-                                )
-                            }
-                            ShadowItem::NormalBorder(ref pending_border) => {
-                                self.create_shadow_prim(
-                                    &pending_shadow,
-                                    pending_border,
-                                    blur_is_noop,
-                                )
-                            }
-                            ShadowItem::Primitive(ref pending_primitive) => {
-                                self.create_shadow_prim(
-                                    &pending_shadow,
-                                    pending_primitive,
-                                    blur_is_noop,
-                                )
-                            }
-                            ShadowItem::TextRun(ref pending_text_run) => {
-                                self.create_shadow_prim(
-                                    &pending_shadow,
-                                    pending_text_run,
-                                    blur_is_noop,
-                                )
-                            }
-                            _ => {
-                                continue;
-                            }
-                        };
-
-                        if blur_is_noop {
-                            self.add_primitive_to_draw_list(
-                                instance,
-                                info.rect,
-                                spatial_node_index,
-                                info.flags,
-                            );
-                        } else {
-                            prim_list.add_prim(
-                                instance,
-                                info.rect,
-                                spatial_node_index,
-                                info.flags,
-                                &mut self.prim_instances,
-                                &self.clip_tree_builder,
-                            );
-                        }
-                    }
-
-                    // No point in adding a shadow here if there were no primitives
-                    // added to the shadow.
-                    if !prim_list.is_empty() {
-                        // Create a picture that the shadow primitives will be added to. If the
-                        // blur radius is 0, the code in Picture::prepare_for_render will
-                        // detect this and mark the picture to be drawn directly into the
-                        // parent picture, which avoids an intermediate surface and blur.
-                        assert!(!blur_filter.is_noop());
-                        let composite_mode = Some(PictureCompositeMode::Filter(blur_filter));
-                        let composite_mode_key = composite_mode.clone().into();
-                        let raster_space = RasterSpace::Screen;
-
-                        // Create the primitive to draw the shadow picture into the scene.
-                        let shadow_pic_index = PictureIndex(self.prim_store.pictures
-                            .alloc()
-                            .init(PictureInstance::new_image(
-                                composite_mode,
-                                Picture3DContext::Out,
-                                PrimitiveFlags::IS_BACKFACE_VISIBLE,
-                                prim_list,
-                                pending_shadow.spatial_node_index,
-                                raster_space,
-                                PictureFlags::empty(),
-                                None,
-                            ))
-                        );
-
-                        let shadow_pic_key = PictureKey::new(
-                            Picture { composite_mode_key, raster_space },
-                        );
-
-                        let shadow_prim_data_handle = self.interners
-                            .picture
-                            .intern(&shadow_pic_key, || ());
-
-                        let clip_node_id = self.clip_tree_builder.build_clip_set(api::ClipChainId::INVALID);
-
-                        let shadow_prim_instance = PrimitiveInstance::new(
-                            PrimitiveKind::Picture {
-                                data_handle: shadow_prim_data_handle,
-                                pic_index: shadow_pic_index,
-                            },
-                            self.clip_tree_builder.build_for_picture(clip_node_id),
-                            LayoutRect::zero(),
-                        );
-
-                        // Add the shadow primitive. This must be done before pushing this
-                        // picture on to the shadow stack, to avoid infinite recursion!
-                        self.add_primitive_to_draw_list(
-                            shadow_prim_instance,
-                            LayoutRect::zero(),
-                            pending_shadow.spatial_node_index,
-                            PrimitiveFlags::IS_BACKFACE_VISIBLE,
-                        );
-                    }
-
-                    self.clip_tree_builder.pop_clip();
-                }
-                ShadowItem::Image(pending_image) => {
-                    self.add_shadow_prim_to_draw_list(
-                        pending_image,
-                    )
-                },
-                ShadowItem::LineDecoration(pending_line_dec) => {
-                    self.add_shadow_prim_to_draw_list(
-                        pending_line_dec,
-                    )
-                },
-                ShadowItem::NormalBorder(pending_border) => {
-                    self.add_shadow_prim_to_draw_list(
-                        pending_border,
-                    )
-                },
-                ShadowItem::Primitive(pending_primitive) => {
-                    self.add_shadow_prim_to_draw_list(
-                        pending_primitive,
-                    )
-                },
-                ShadowItem::TextRun(pending_text_run) => {
-                    self.add_shadow_prim_to_draw_list(
-                        pending_text_run,
-                    )
-                },
-            }
-        }
-
-        debug_assert!(items.is_empty());
-        self.pending_shadow_items = items;
-    }
-
-    fn create_shadow_prim<P>(
-        &mut self,
-        pending_shadow: &PendingShadow,
-        pending_primitive: &PendingPrimitive<P>,
-        blur_is_noop: bool,
-    ) -> (PrimitiveInstance, LayoutPrimitiveInfo, SpatialNodeIndex)
-    where
-        P: InternablePrimitive + CreateShadow,
-        Interners: AsMut<Interner<P>>,
-    {
-        // Offset the local rect and clip rect by the shadow offset. The pending
-        // primitive has already been snapped, but we will need to snap the
-        // shadow after translation. We don't need to worry about the size
-        // changing because the shadow has the same raster space as the
-        // primitive, and thus we know the size is already rounded.
-        let mut info = pending_primitive.info.clone();
-        info.rect = info.rect.translate(pending_shadow.shadow.offset);
-        info.clip_rect = info.clip_rect.translate(pending_shadow.shadow.offset);
-
-        let clip_set = self.clip_tree_builder.build_for_prim(
-            pending_primitive.clip_node_id,
-            &info,
-            &[],
-            &mut self.interners,
-        );
-
-        // Construct and add a primitive for the given shadow.
-        let shadow_prim_instance = self.create_primitive(
-            &info,
-            clip_set,
-            pending_primitive.prim.create_shadow(
-                &pending_shadow.shadow,
-                blur_is_noop,
-                self.raster_space_stack.last().cloned().unwrap(),
-            ),
-        );
-
-        (shadow_prim_instance, info, pending_primitive.spatial_node_index)
-    }
-
-    fn add_shadow_prim_to_draw_list<P>(
-        &mut self,
-        pending_primitive: PendingPrimitive<P>,
-    ) where
-        P: InternablePrimitive + IsVisible,
-        Interners: AsMut<Interner<P>>,
-    {
-        // For a normal primitive, if it has alpha > 0, then we add this
-        // as a normal primitive to the parent picture.
-        if pending_primitive.prim.is_visible() {
-            let clip_set = self.clip_tree_builder.build_for_prim(
-                pending_primitive.clip_node_id,
-                &pending_primitive.info,
-                &[],
-                &mut self.interners,
-            );
-
-            self.add_prim_to_draw_list(
-                &pending_primitive.info,
-                pending_primitive.spatial_node_index,
-                clip_set,
-                pending_primitive.prim,
-            );
-        }
-    }
-
     pub fn add_line(
         &mut self,
         spatial_node_index: SpatialNodeIndex,
@@ -3130,7 +2842,6 @@ impl<'a> SceneBuilder<'a> {
             spatial_node_index,
             clip_node_id,
             &info,
-            Vec::new(),
             LineDecoration {
                 style,
                 orientation,
@@ -3163,19 +2874,16 @@ impl<'a> SceneBuilder<'a> {
                 match border.source {
                     NinePatchBorderSource::Image(key, rendering) => {
                         let prim = ImageBorder {
-                            request: ImageRequest {
-                                key,
-                                rendering,
-                                tile: None,
-                            },
+                            key,
+                            rendering,
+                            tile: None,
                             nine_patch,
                         };
 
-                        self.add_nonshadowable_primitive(
+                        self.add_primitive(
                             spatial_node_index,
                             clip_node_id,
                             info,
-                            Vec::new(),
                             prim,
                         );
                     }
@@ -3195,11 +2903,10 @@ impl<'a> SceneBuilder<'a> {
                             None => return,
                         };
 
-                        self.add_nonshadowable_primitive(
+                        self.add_primitive(
                             spatial_node_index,
                             clip_node_id,
                             info,
-                            Vec::new(),
                             prim,
                         );
                     }
@@ -3217,11 +2924,10 @@ impl<'a> SceneBuilder<'a> {
                             Some(Box::new(nine_patch)),
                         );
 
-                        self.add_nonshadowable_primitive(
+                        self.add_primitive(
                             spatial_node_index,
                             clip_node_id,
                             info,
-                            Vec::new(),
                             prim,
                         );
                     }
@@ -3239,11 +2945,10 @@ impl<'a> SceneBuilder<'a> {
                             Some(Box::new(nine_patch)),
                         );
 
-                        self.add_nonshadowable_primitive(
+                        self.add_primitive(
                             spatial_node_index,
                             clip_node_id,
                             info,
-                            Vec::new(),
                             prim,
                         );
                     }
@@ -3262,7 +2967,7 @@ impl<'a> SceneBuilder<'a> {
     }
 
     pub fn create_linear_gradient_prim(
-        &mut self,
+        &self,
         info: &LayoutPrimitiveInfo,
         start_point: LayoutPoint,
         end_point: LayoutPoint,
@@ -3319,7 +3024,6 @@ impl<'a> SceneBuilder<'a> {
             reverse_stops,
             nine_patch,
             edge_aa_mask,
-            enable_dithering: self.config.enable_dithering,
         })
     }
 
@@ -3403,6 +3107,7 @@ impl<'a> SceneBuilder<'a> {
         text_color: &ColorF,
         glyph_range: ItemRange<GlyphInstance>,
         glyph_options: Option<GlyphOptions>,
+        shadow_mode: GlyphShadowMode,
     ) {
         let text_run = {
             let shared_key = self.fonts.instance_keys.map_key(font_instance_key);
@@ -3439,38 +3144,33 @@ impl<'a> SceneBuilder<'a> {
                 flags,
             );
 
-            // Store glyph pen positions relative to the prim rect origin. The
-            // display-list builder has already removed the external scroll
-            // offset from both the glyph positions and the prim rect, so the
-            // difference is scroll-invariant and the intern key stays stable
-            // across pre-scroll offset changes.
+            // Glyph pen positions arrive already relative to the prim rect
+            // origin: the display-list builder relativizes them at record time
+            // (see `DisplayListBuilder::push_text`), which keeps the intern key
+            // stable across pre-scroll offset changes.
             //
             // TODO(gw): It'd be nice not to have to allocate here for creating
             //           the primitive key, when the common case is that the
             //           hash will match and we won't end up creating a new
             //           primitive template.
-            let prim_origin = prim_info.rect.min.to_vector();
-            let glyphs = glyph_range
-                .iter()
-                .map(|glyph| {
-                    GlyphInstance {
-                        index: glyph.index,
-                        point: glyph.point - prim_origin,
-                    }
-                })
-                .collect();
+            let glyphs = glyph_range.iter().collect();
 
             // Query the current requested raster space (stack handled by push/pop
-            // stacking context).
-            let requested_raster_space = self.raster_space_stack
-                .last()
-                .cloned()
-                .unwrap();
+            // stacking context). A blurred shadow copy overrides this with
+            // `Local(1.0)`, matching the removed `TextRun::create_shadow`: the
+            // blur picture stays in screen space, but its shadow glyphs are
+            // rasterized in local space (with texture padding, no subpixel AA).
+            let requested_raster_space = match shadow_mode {
+                GlyphShadowMode::Blurred => RasterSpace::Local(1.0),
+                GlyphShadowMode::None | GlyphShadowMode::Unblurred => {
+                    self.raster_space_stack.last().cloned().unwrap()
+                }
+            };
 
             TextRun {
                 glyphs,
                 font,
-                shadow: false,
+                shadow: shadow_mode != GlyphShadowMode::None,
                 requested_raster_space,
             }
         };
@@ -3479,7 +3179,6 @@ impl<'a> SceneBuilder<'a> {
             spatial_node_index,
             clip_node_id,
             prim_info,
-            Vec::new(),
             text_run,
         );
     }
@@ -3515,7 +3214,6 @@ impl<'a> SceneBuilder<'a> {
             spatial_node_index,
             clip_node_id,
             &info,
-            Vec::new(),
             Image {
                 key: image_key,
                 tile_spacing: tile_spacing.into(),
@@ -3539,20 +3237,12 @@ impl<'a> SceneBuilder<'a> {
         image_rendering: ImageRendering,
     ) {
         let format = yuv_data.get_format();
-        let yuv_key = match yuv_data {
-            YuvData::NV12(plane_0, plane_1)
-            | YuvData::P010(plane_0, plane_1)
-            | YuvData::NV16(plane_0, plane_1)
-            | YuvData::P210(plane_0, plane_1) => [plane_0, plane_1, ImageKey::DUMMY],
-            YuvData::PlanarYCbCr(plane_0, plane_1, plane_2) => [plane_0, plane_1, plane_2],
-            YuvData::InterleavedYCbCr(plane_0) => [plane_0, ImageKey::DUMMY, ImageKey::DUMMY],
-        };
+        let yuv_key = yuv_planes(&yuv_data);
 
-        self.add_nonshadowable_primitive(
+        self.add_primitive(
             spatial_node_index,
             clip_node_id,
             info,
-            Vec::new(),
             YuvImage {
                 color_depth,
                 yuv_key,
@@ -3603,8 +3293,7 @@ impl<'a> SceneBuilder<'a> {
         let clip_leaf_id = self.clip_tree_builder.build_for_prim(
             clip_node_id,
             info,
-            &[],
-            &mut self.interners,
+            true,
         );
 
         // Create the backdrop prim - this is a placeholder which sets the size of resolve
@@ -4303,15 +3992,6 @@ impl<'a> SceneBuilder<'a> {
 }
 
 
-pub trait CreateShadow {
-    fn create_shadow(
-        &self,
-        shadow: &Shadow,
-        blur_is_noop: bool,
-        current_raster_space: RasterSpace,
-    ) -> Self;
-}
-
 pub trait IsVisible {
     fn is_visible(&self) -> bool;
 }
@@ -4474,63 +4154,6 @@ impl FlattenedStackingContext {
     }
 }
 
-/// A primitive that is added while a shadow context is
-/// active is stored as a pending primitive and only
-/// added to pictures during pop_all_shadows.
-pub struct PendingPrimitive<T> {
-    spatial_node_index: SpatialNodeIndex,
-    clip_node_id: ClipNodeId,
-    info: LayoutPrimitiveInfo,
-    prim: T,
-}
-
-/// As shadows are pushed, they are stored as pending
-/// shadows, and handled at once during pop_all_shadows.
-pub struct PendingShadow {
-    shadow: Shadow,
-    should_inflate: bool,
-    spatial_node_index: SpatialNodeIndex,
-}
-
-pub enum ShadowItem {
-    Shadow(PendingShadow),
-    Image(PendingPrimitive<Image>),
-    LineDecoration(PendingPrimitive<LineDecoration>),
-    NormalBorder(PendingPrimitive<NormalBorderPrim>),
-    Primitive(PendingPrimitive<RectanglePrim>),
-    TextRun(PendingPrimitive<TextRun>),
-}
-
-impl From<PendingPrimitive<Image>> for ShadowItem {
-    fn from(image: PendingPrimitive<Image>) -> Self {
-        ShadowItem::Image(image)
-    }
-}
-
-impl From<PendingPrimitive<LineDecoration>> for ShadowItem {
-    fn from(line_dec: PendingPrimitive<LineDecoration>) -> Self {
-        ShadowItem::LineDecoration(line_dec)
-    }
-}
-
-impl From<PendingPrimitive<NormalBorderPrim>> for ShadowItem {
-    fn from(border: PendingPrimitive<NormalBorderPrim>) -> Self {
-        ShadowItem::NormalBorder(border)
-    }
-}
-
-impl From<PendingPrimitive<RectanglePrim>> for ShadowItem {
-    fn from(container: PendingPrimitive<RectanglePrim>) -> Self {
-        ShadowItem::Primitive(container)
-    }
-}
-
-impl From<PendingPrimitive<TextRun>> for ShadowItem {
-    fn from(text_run: PendingPrimitive<TextRun>) -> Self {
-        ShadowItem::TextRun(text_run)
-    }
-}
-
 fn create_prim_instance(
     pic_index: PictureIndex,
     composite_mode_key: PictureCompositeKey,
@@ -4644,6 +4267,61 @@ fn read_gradient_stops(stops: ItemRange<GradientStop>) -> Vec<GradientStopKey> {
     }).collect()
 }
 
+/// Resource keys embedded in display items are only unique within the id
+/// namespace that minted them, and all namespaces of a window share a single
+/// `ResourceCache`. A key read out of a display item must be checked against
+/// the namespace the display list was submitted with before it can be used
+/// to look a resource up.
+fn resource_namespace_matches(key_namespace: IdNamespace, namespace: IdNamespace) -> bool {
+    // Namespace 0 is never handed out, so it is only ever the "no resource"
+    // sentinel (`ImageKey::DUMMY` and friends) and cannot name a resource.
+    key_namespace == namespace || key_namespace.0 == 0
+}
+
+fn validate_resource_namespace(
+    key_namespace: IdNamespace,
+    namespace: IdNamespace,
+    kind: &'static str,
+) -> bool {
+    if resource_namespace_matches(key_namespace, namespace) {
+        return true;
+    }
+
+    warn!(
+        "Ignoring {} referencing id namespace {:?} from a display list owned by {:?}",
+        kind, key_namespace, namespace,
+    );
+    debug_assert!(false, "display list references a resource of a foreign id namespace");
+
+    false
+}
+
+fn validate_image_key(key: ImageKey, namespace: IdNamespace) -> bool {
+    validate_resource_namespace(key.0, namespace, "image key")
+}
+
+/// The planes a `YuvData` actually references, padded with `ImageKey::DUMMY`.
+/// Shared by validation and `add_yuv_image` so that the set of keys checked is
+/// by construction the set of keys used.
+fn yuv_planes(yuv_data: &YuvData) -> [ImageKey; 3] {
+    match *yuv_data {
+        YuvData::NV12(p0, p1)
+        | YuvData::P010(p0, p1)
+        | YuvData::NV16(p0, p1)
+        | YuvData::P210(p0, p1) => [p0, p1, ImageKey::DUMMY],
+        YuvData::PlanarYCbCr(p0, p1, p2) => [p0, p1, p2],
+        YuvData::InterleavedYCbCr(p0) => [p0, ImageKey::DUMMY, ImageKey::DUMMY],
+    }
+}
+
+fn validate_yuv_data(yuv_data: &YuvData, namespace: IdNamespace) -> bool {
+    yuv_planes(yuv_data).iter().all(|key| validate_image_key(*key, namespace))
+}
+
+fn validate_font_instance_key(key: FontInstanceKey, namespace: IdNamespace) -> bool {
+    validate_resource_namespace(key.0, namespace, "font instance key")
+}
+
 /// A helper for reusing the scene builder's memory allocations and dropping
 /// scene allocations on the scene builder thread to avoid lock contention in
 /// jemalloc.
@@ -4672,7 +4350,6 @@ pub struct SceneRecycler {
     sc_stack: Vec<FlattenedStackingContext>,
     containing_block_stack: Vec<SpatialNodeIndex>,
     raster_space_stack: Vec<RasterSpace>,
-    pending_shadow_items: VecDeque<ShadowItem>,
     iframe_size: Vec<LayoutSize>,
 }
 
@@ -4695,7 +4372,6 @@ impl SceneRecycler {
             sc_stack: Vec::new(),
             containing_block_stack: Vec::new(),
             raster_space_stack: Vec::new(),
-            pending_shadow_items: VecDeque::new(),
             iframe_size: Vec::new(),
         }
     }

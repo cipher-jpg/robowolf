@@ -4,17 +4,17 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "nsFilePicker.h"
+#include "mozilla/Preferences.h"
+#include "nsArrayEnumerator.h"
 #include "nsCOMPtr.h"
-#include "nsReadableUtils.h"
-#include "nsNetUtil.h"
+#include "nsCocoaUtils.h"
+#include "nsFilePicker.h"
 #include "nsIFile.h"
 #include "nsILocalFileMac.h"
-#include "nsArrayEnumerator.h"
 #include "nsIStringBundle.h"
-#include "nsCocoaUtils.h"
+#include "nsNetUtil.h"
+#include "nsReadableUtils.h"
 #include "nsThreadUtils.h"
-#include "mozilla/Preferences.h"
 
 // This must be included last:
 #include "nsObjCExceptions.h"
@@ -49,6 +49,42 @@ const char kShowHiddenFilesPref[] = "filepicker.showHiddenFiles";
 - (void)menuChangedItem:(NSNotification*)aSender;
 @end
 
+// Panel delegate that ignores confirmations that arrive before the file
+// picker's input-protection time range has passed. Returning NO from
+// panel:validateURL:error: to keep the panel open is the documented purpose
+// of the method; leaving the error nil so no alert is shown is undocumented,
+// but observed to hold (including for the out-of-process panel). If a future
+// macOS changes this, the worst case is a stray alert or the check quietly
+// doing nothing, and it can be turned off with
+// security.notification_enable_delay.
+@interface MOZFilePickerInputProtector : NSObject <NSOpenSavePanelDelegate> {
+  RefPtr<nsFilePicker> mFilePicker;
+}
+- (id)initWithFilePicker:(nsFilePicker*)aFilePicker;
+@end
+
+@implementation MOZFilePickerInputProtector
+- (id)initWithFilePicker:(nsFilePicker*)aFilePicker {
+  if ((self = [super init])) {
+    mFilePicker = aFilePicker;
+  }
+  return self;
+}
+
+- (BOOL)panel:(id)sender validateURL:(NSURL*)url error:(NSError**)outError {
+  // url is intentionally unused: the file we return is read from the panel
+  // when it finally closes, so an ignored early confirmation can't pin a
+  // stale selection.
+  if (mFilePicker && mFilePicker->IsPickerInputProtected()) {
+    if (outError) {
+      *outError = nil;
+    }
+    return NO;
+  }
+  return YES;
+}
+@end
+
 NS_IMPL_ISUPPORTS(nsFilePicker, nsIFilePicker)
 
 static void SetShowHiddenFileState(NSSavePanel* panel) {
@@ -60,6 +96,22 @@ static void SetShowHiddenFileState(NSSavePanel* panel) {
   }
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
+}
+
+// On macOS 26 (Tahoe), the panel's sheet completion handler can run before the
+// modal session has fully unwound. Invoking the callback synchronously here
+// would let a consumer open another modal on top of a session that is still
+// tearing down, which hangs (bug 2053177). Deferring to a fresh main-thread
+// turn lets the modal finish unwinding before the callback runs.
+static void InvokeFilePickerCallbackDeferred(
+    nsIFilePickerShownCallback* aCallback, nsIFilePicker::ResultCode aResult) {
+  if (!aCallback) {
+    return;
+  }
+  nsCOMPtr<nsIFilePickerShownCallback> callback = aCallback;
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "nsFilePicker::InvokeCallback",
+      [callback, aResult]() { callback->Done(aResult); }));
 }
 
 nsFilePicker::nsFilePicker() = default;
@@ -214,10 +266,25 @@ void nsFilePicker::BeginPanelAsync(NSSavePanel* aPanel,
     parentWindow =
         static_cast<NSWindow*>(mParentWidget->GetNativeData(NS_NATIVE_WINDOW));
   }
+
+  // Attach a delegate to ignore confirmations that arrive before the
+  // input-protection time range has passed. The panel does not retain its
+  // delegate, so the completion handler releases it.
+  MOZFilePickerInputProtector* protector =
+      [[MOZFilePickerInputProtector alloc] initWithFilePicker:this];
+  [aPanel setDelegate:protector];
+
+  void (^handler)(NSModalResponse) = ^(NSModalResponse result) {
+    aHandler(result);
+    [aPanel setDelegate:nil];
+    [protector release];
+  };
+
+  RecordLastShownTime();
   if (parentWindow) {
-    [aPanel beginSheetModalForWindow:parentWindow completionHandler:aHandler];
+    [aPanel beginSheetModalForWindow:parentWindow completionHandler:handler];
   } else {
-    [aPanel beginWithCompletionHandler:aHandler];
+    [aPanel beginWithCompletionHandler:handler];
   }
 }
 
@@ -285,8 +352,13 @@ static void UpdatePanelFileTypes(NSOpenPanel* aPanel, NSArray* aFilters) {
     if (baseName.length > 0) {
       [mSavePanel setNameFieldStringValue:
                       [baseName stringByAppendingPathExtension:newExtension]];
+      // Keep the panel's allowed type in sync with the name field so the new
+      // extension is preserved on the saved file.
+      mSavePanel.allowedFileTypes = @[ newExtension ];
     }
   }
+  // For the "All Files" filter GetFilterList returns nil; we leave the name
+  // field and the allowed type untouched so the current extension is kept.
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -381,9 +453,7 @@ void nsFilePicker::PresentOpenPanel(bool aAllowMultiple,
         retVal = returnOK;
       }
     }
-    if (callback) {
-      callback->Done(retVal);
-    }
+    InvokeFilePickerCallbackDeferred(callback, retVal);
     NS_OBJC_END_TRY_IGNORE_BLOCK;
   });
 
@@ -440,9 +510,7 @@ void nsFilePicker::PresentFolderPanel(nsIFilePickerShownCallback* aCallback) {
         }
       }
     }
-    if (callback) {
-      callback->Done(retVal);
-    }
+    InvokeFilePickerCallbackDeferred(callback, retVal);
     NS_OBJC_END_TRY_IGNORE_BLOCK;
   });
 
@@ -485,6 +553,14 @@ void nsFilePicker::PresentSavePanel(nsIFilePickerShownCallback* aCallback) {
            selector:@selector(menuChangedItem:)
                name:NSMenuWillSendActionNotification
              object:[popupButton menu]];
+  }
+
+  // Declare the default file's extension as the allowed type so that saving
+  // without changing the format popup keeps it on the file. The observer
+  // updates this when the user changes the format.
+  NSString* defaultExtension = defaultFilename.pathExtension;
+  if (defaultExtension.length != 0) {
+    thePanel.allowedFileTypes = @[ defaultExtension ];
   }
 
   // Allow users to change the extension.
@@ -560,9 +636,7 @@ void nsFilePicker::PresentSavePanel(nsIFilePickerShownCallback* aCallback) {
         }
       }
     }
-    if (callback) {
-      callback->Done(retVal);
-    }
+    InvokeFilePickerCallbackDeferred(callback, retVal);
     NS_OBJC_END_TRY_IGNORE_BLOCK;
   });
 

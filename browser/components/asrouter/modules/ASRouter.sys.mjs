@@ -39,11 +39,15 @@ ChromeUtils.defineESModuleGetters(lazy, {
   MacAttribution:
     "moz-src:///browser/components/attribution/MacAttribution.sys.mjs",
   MenuMessage: "resource:///modules/asrouter/MenuMessage.sys.mjs",
+  MessagingSystemAllowlists:
+    "resource://messaging-system/lib/MessagingSystemAllowlists.sys.mjs",
   MomentsPageHub: "resource:///modules/asrouter/MomentsPageHub.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PanelTestProvider: "resource:///modules/asrouter/PanelTestProvider.sys.mjs",
   RemoteL10n: "resource:///modules/asrouter/RemoteL10n.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+  SidebarChatBotPromo:
+    "resource:///modules/asrouter/SidebarChatBotPromo.sys.mjs",
   SmartWindowNewTabPromo:
     "resource:///modules/asrouter/SmartWindowNewTabPromo.sys.mjs",
   SpecialMessageActions:
@@ -459,7 +463,20 @@ export const MessageLoaderUtils = {
         );
       }
 
-      const enrollments = featureAPI.getAllEnrollments();
+      let enrollments = featureAPI.getAllEnrollments();
+      // Features that don't support coenrollment can have two "active"
+      // enrollments at a time, 1 rollout and 1 experiment. But experiments take
+      // precedence over rollouts, so if both are active, we only ingest the
+      // experiment's messages. Coenrolling features don't have this limitation,
+      // so for those we include all active enrollments.
+      if (!featureAPI.allowCoenrollment) {
+        if (enrollments.length > 1) {
+          enrollments = enrollments.filter(
+            enrollment => !enrollment.meta.isRollout
+          );
+        }
+      }
+
       // If this doesn't return anything at all, there's something wrong with
       // the feature itself (since it otherwise returns at least an empty array)
       if (!enrollments) {
@@ -1253,6 +1270,7 @@ export class _ASRouter {
       initialized: false,
     });
     await this._updateMessageProviders();
+    await lazy.MessagingSystemAllowlists.ensureInit();
     await this.loadMessagesFromAllProviders();
     await MessageLoaderUtils.cleanupCache(this.state.providers, storage);
 
@@ -1601,6 +1619,44 @@ export class _ASRouter {
     ];
   }
 
+  /**
+   * Whether a special message action is allowed to fire automatically from an
+   * "action_only" template message (no UI). MULTI_ACTION is allowed only when
+   * every nested action is itself allowlisted and the list is non-empty.
+   *
+   * @param {object} action - The special message action to validate.
+   * @returns {boolean}
+   */
+  _isAllowedActionOnlyMessageAction(action) {
+    const ALLOWED_ACTION_MESSAGE_ACTIONS = [
+      "CONFIRM_LAUNCH_ON_LOGIN",
+      // This pinning action is ONLY to be used in cases where an OS level
+      // prompt will ask a user's consent to pin.
+      "PIN_FIREFOX_TO_TASKBAR",
+      // This set default action is ONLY to be used in cases where an OS level
+      // prompt or settings panel will obtain a user's consent to set default.
+      "SET_DEFAULT_BROWSER",
+    ];
+    // The in-tree baseline allowlist can be extended off-train via Remote
+    // Settings. If the collection is unavailable the getter returns nothing.
+    const allowed = new Set([
+      ...ALLOWED_ACTION_MESSAGE_ACTIONS,
+      ...lazy.MessagingSystemAllowlists.getActionOnlyActions(),
+    ]);
+    if (!action) {
+      return false;
+    }
+    if (action.type === "MULTI_ACTION") {
+      const actions = action.data?.actions;
+      return (
+        Array.isArray(actions) &&
+        !!actions.length &&
+        actions.every(nested => allowed.has(nested?.type))
+      );
+    }
+    return allowed.has(action.type);
+  }
+
   routeCFRMessage(originalMessage, browser, trigger, force = false) {
     if (!originalMessage) {
       return { message: {} };
@@ -1609,6 +1665,12 @@ export class _ASRouter {
       ? MessageLoaderUtils._delocalizeValues(originalMessage)
       : originalMessage;
 
+    // Callers that need to know when it's safe to act on the fact that a
+    // message finished being shown (currently only browser.js's
+    // lastWindowClose trigger, which waits on this before letting the window
+    // close) can await this. Most templates are fire-and-forget and never
+    // reassign it, so it stays resolved.
+    let closedPromise = Promise.resolve();
     switch (message.template) {
       case "cfr_doorhanger":
       case "milestone_message":
@@ -1667,6 +1729,29 @@ export class _ASRouter {
       case "update_action":
         lazy.MomentsPageHub.executeAction(message);
         break;
+      case "action_only": {
+        const { action } = message.content ?? {};
+        if (!this._isAllowedActionOnlyMessageAction(action)) {
+          break;
+        }
+        // Record the impression before the async action resolves so it's
+        // captured even if the action fails. We intentionally do not block the
+        // message. Whether it can run again is governed by its frequency caps.
+
+        // Send impression telemetry
+        this.dispatchCFRAction({
+          type: "ACTION_ONLY_TELEMETRY",
+          data: {
+            action: "action_only_user_event",
+            message_id: message.id,
+            event: "IMPRESSION",
+          },
+        });
+        // Add local impression record, used for enforcing frequency caps.
+        this.dispatchCFRAction({ type: "IMPRESSION", data: message });
+        lazy.SpecialMessageActions.handleAction(action, browser);
+        break;
+      }
       case "infobar":
         lazy.InfoBar.showInfoBarMessage(
           browser,
@@ -1675,7 +1760,10 @@ export class _ASRouter {
         );
         break;
       case "spotlight":
-        lazy.Spotlight.showSpotlightDialog(
+        // Deliberately the only template that reassigns closedPromise: it's
+        // the only template with a modal, so it's the only one browser.js's
+        // lastWindowClose trigger needs to wait on before closing the window.
+        closedPromise = lazy.Spotlight.showSpotlightDialog(
           browser,
           message,
           this.dispatchCFRAction
@@ -1707,6 +1795,9 @@ export class _ASRouter {
       case "menu_message":
         lazy.MenuMessage.showMenuMessage(browser, message, trigger, force);
         break;
+      case "sidebar_chatbot_promo":
+        lazy.SidebarChatBotPromo.showPromo(browser, message, force);
+        break;
       case "smart_window_newtab_promo":
         lazy.SmartWindowNewTabPromo.showPromo(browser, message, trigger, force);
         break;
@@ -1722,7 +1813,7 @@ export class _ASRouter {
       }
     }
 
-    return { message };
+    return { message, closedPromise };
   }
 
   async addScreenImpression(screen) {
@@ -2418,10 +2509,8 @@ export class _ASRouter {
   async sendPBNewTabMessage({ hideDefault }) {
     let message = null;
     const PromoInfo = {
-      FOCUS: { enabledPref: "browser.promo.focus.enabled" },
       VPN: { enabledPref: "browser.vpn_promo.enabled" },
       PIN: { enabledPref: "browser.promo.pin.enabled" },
-      COOKIE_BANNERS: { enabledPref: "browser.promo.cookiebanners.enabled" },
     };
     await this.loadMessagesFromAllProviders();
 
@@ -2493,6 +2582,33 @@ export class _ASRouter {
         ex
       );
     }
+  }
+
+  /**
+   * Synchronous check for whether any currently loaded message could possibly
+   * respond to the given trigger, without evaluating targeting. Intended for
+   * callers that want to avoid a full sendTriggerMessage call when nothing
+   * could show regardless. Besides the trigger match itself, this also rules
+   * out messages we already know can't show because they're blocked or over
+   * their frequency cap, since both of those are cheap, synchronous checks.
+   * Targeting is the only part that requires the async evaluation a full
+   * sendTriggerMessage call goes through.
+   *
+   * A false result means nothing will show. A true result means a message
+   * match is possible, but targeting still has to run to know for sure.
+   *
+   * @param {string} triggerId
+   * @returns {boolean}
+   */
+  hasMessageForTrigger(triggerId) {
+    return this.state.messages.some(
+      m =>
+        lazy.ASRouterTargeting.getMessageTriggers(m).some(
+          t => t.id === triggerId
+        ) &&
+        this.isUnblockedMessage(m) &&
+        this.isBelowFrequencyCaps(m)
+    );
   }
 
   /**

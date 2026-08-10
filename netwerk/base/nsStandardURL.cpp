@@ -2,33 +2,34 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ipc/IPCMessageUtils.h"
-
-#include "nsASCIIMask.h"
 #include "nsStandardURL.h"
-#include "nsCRT.h"
-#include "nsEscape.h"
-#include "nsIFile.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-#include "nsIIDNService.h"
+
+#include <string.h>
+
+#include "IPv4Parser.h"
+#include "ipc/IPCMessageUtils.h"
 #include "mozilla/Logging.h"
-#include "nsIURLParser.h"
-#include "nsPrintfCString.h"
-#include "nsNetCID.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/ipc/URIUtils.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TextUtils.h"
-#include "nsContentUtils.h"
-#include "prprf.h"
-#include "nsReadableUtils.h"
-#include "mozilla/net/MozURL_ffi.h"
 #include "mozilla/Utf8.h"
+#include "mozilla/ipc/URIUtils.h"
+#include "mozilla/net/MozURL_ffi.h"
+#include "nsASCIIMask.h"
+#include "nsCRT.h"
+#include "nsContentUtils.h"
+#include "nsEscape.h"
 #include "nsIClassInfoImpl.h"
-#include <string.h>
-#include "IPv4Parser.h"
+#include "nsIFile.h"
+#include "nsIIDNService.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
+#include "nsIURLParser.h"
+#include "nsNetCID.h"
+#include "nsPrintfCString.h"
+#include "nsReadableUtils.h"
+#include "prprf.h"
 
 //
 // setenv MOZ_LOG nsStandardURL:5
@@ -446,7 +447,7 @@ nsresult nsStandardURL::NormalizeIDN(const nsACString& aHost,
   if (aResult.IsEmpty()) {
     aResult.Assign(displayHost);
   } else {
-    mDisplayHost = displayHost;
+    mDisplayHost = std::move(displayHost);
   }
   return NS_OK;
 }
@@ -1247,7 +1248,7 @@ nsresult nsStandardURL::CheckIfHostIsAscii() {
   }
 
   if (!mozilla::IsAscii(displayHost)) {
-    mDisplayHost = displayHost;
+    mDisplayHost = std::move(displayHost);
   }
 
   return NS_OK;
@@ -1979,7 +1980,7 @@ nsresult nsStandardURL::SetHost(const nsACString& input) {
       if (NS_FAILED(rv)) {
         return rv;
       }
-      hostBuf = ipString;
+      hostBuf = std::move(ipString);
     }
   }
 
@@ -3496,6 +3497,8 @@ nsresult nsStandardURL::ReadPrivate(nsIObjectInputStream* stream) {
       nsDependentCSubstring(mSpec, mScheme.mLen, 3).EqualsLiteral("://"),
       NS_ERROR_MALFORMED_URI);
 
+  NS_ENSURE_TRUE(CheckSegmentInvariants(), NS_ERROR_MALFORMED_URI);
+
   rv = CheckIfHostIsAscii();
   if (NS_FAILED(rv)) {
     return rv;
@@ -3685,6 +3688,53 @@ void nsStandardURL::Serialize(URIParams& aParams) {
   aParams = params;
 }
 
+bool nsStandardURL::CheckSegmentInvariants() const {
+  NS_ENSURE_TRUE(mPath.mLen != -1 && mSpec.CharAt(mPath.mPos) == '/', false);
+  NS_ENSURE_TRUE(mPath.mPos == mFilepath.mPos, false);
+  NS_ENSURE_TRUE(mQuery.mLen == -1 || (mQuery.mPos > mPath.mPos &&
+                                       mSpec.CharAt(mQuery.mPos - 1) == '?'),
+                 false);
+  NS_ENSURE_TRUE(mRef.mLen == -1 || (mRef.mPos > mPath.mPos &&
+                                     mSpec.CharAt(mRef.mPos - 1) == '#'),
+                 false);
+  NS_ENSURE_TRUE(mQuery.mLen == -1 || mRef.mLen == -1 ||
+                     mQuery.mPos + mQuery.mLen < mRef.mPos,
+                 false);
+
+  // mDirectory, mBasename, mExtension must be sub-ranges of mFilepath,
+  // which must be a sub-range of mPath.
+  auto isSubSegment = [](const URLSegment& inner, const URLSegment& outer) {
+    if (inner.mLen == -1) return true;
+    if (outer.mLen == -1) return false;
+    return inner.mPos >= outer.mPos &&
+           inner.mPos + inner.mLen <= outer.mPos + outer.mLen;
+  };
+  NS_ENSURE_TRUE(isSubSegment(mFilepath, mPath), false);
+  NS_ENSURE_TRUE(isSubSegment(mDirectory, mFilepath), false);
+  NS_ENSURE_TRUE(isSubSegment(mBasename, mFilepath), false);
+  NS_ENSURE_TRUE(isSubSegment(mExtension, mFilepath), false);
+  NS_ENSURE_TRUE(isSubSegment(mHost, mAuthority), false);
+  NS_ENSURE_TRUE(isSubSegment(mUsername, mAuthority), false);
+  NS_ENSURE_TRUE(isSubSegment(mPassword, mAuthority), false);
+  NS_ENSURE_TRUE(isSubSegment(mQuery, mPath), false);
+  NS_ENSURE_TRUE(isSubSegment(mRef, mPath), false);
+
+  // mPath must immediately follow mAuthority. If mAuthority is absent, that is
+  // only valid for URLTYPE_NO_AUTHORITY (e.g. file: URLs parsed without an
+  // authority component); for all other URL types a missing authority while
+  // mPath is present indicates a malformed or crafted URL.
+  if (mPath.mLen >= 0) {
+    if (mAuthority.mLen >= 0) {
+      NS_ENSURE_TRUE(mPath.mPos == mAuthority.mPos + mAuthority.mLen, false);
+    } else {
+      NS_ENSURE_TRUE(mURLType == URLTYPE_NO_AUTHORITY, false);
+    }
+  }
+
+  NS_ENSURE_TRUE(mAuthority.mLen >= 0 || mPort == -1, false);
+  return true;
+}
+
 bool nsStandardURL::Deserialize(const URIParams& aParams) {
   MOZ_ASSERT(mDisplayHost.IsEmpty(), "Shouldn't have cached unicode host");
   MOZ_ASSERT(!mFile, "Shouldn't have cached file");
@@ -3746,46 +3796,7 @@ bool nsStandardURL::Deserialize(const URIParams& aParams) {
   NS_ENSURE_TRUE(
       nsDependentCSubstring(mSpec, mScheme.mLen, 3).EqualsLiteral("://"),
       false);
-  NS_ENSURE_TRUE(mPath.mLen != -1 && mSpec.CharAt(mPath.mPos) == '/', false);
-  NS_ENSURE_TRUE(mPath.mPos == mFilepath.mPos, false);
-  NS_ENSURE_TRUE(mQuery.mLen == -1 || (mQuery.mPos > mPath.mPos &&
-                                       mSpec.CharAt(mQuery.mPos - 1) == '?'),
-                 false);
-  NS_ENSURE_TRUE(mRef.mLen == -1 || (mRef.mPos > mPath.mPos &&
-                                     mSpec.CharAt(mRef.mPos - 1) == '#'),
-                 false);
-
-  // mDirectory, mBasename, mExtension must be sub-ranges of mFilepath,
-  // which must be a sub-range of mPath.
-  auto isSubSegment = [](const URLSegment& inner, const URLSegment& outer) {
-    if (inner.mLen == -1) return true;
-    if (outer.mLen == -1) return false;
-    return inner.mPos >= outer.mPos &&
-           inner.mPos + inner.mLen <= outer.mPos + outer.mLen;
-  };
-  NS_ENSURE_TRUE(isSubSegment(mFilepath, mPath), false);
-  NS_ENSURE_TRUE(isSubSegment(mDirectory, mFilepath), false);
-  NS_ENSURE_TRUE(isSubSegment(mBasename, mFilepath), false);
-  NS_ENSURE_TRUE(isSubSegment(mExtension, mFilepath), false);
-  NS_ENSURE_TRUE(isSubSegment(mHost, mAuthority), false);
-  NS_ENSURE_TRUE(isSubSegment(mUsername, mAuthority), false);
-  NS_ENSURE_TRUE(isSubSegment(mPassword, mAuthority), false);
-  NS_ENSURE_TRUE(isSubSegment(mQuery, mPath), false);
-  NS_ENSURE_TRUE(isSubSegment(mRef, mPath), false);
-
-  // mPath must immediately follow mAuthority. If mAuthority is absent, that is
-  // only valid for URLTYPE_NO_AUTHORITY (e.g. file: URLs parsed without an
-  // authority component); for all other URL types a missing authority while
-  // mPath is present indicates a malformed or crafted URL.
-  if (mPath.mLen >= 0) {
-    if (mAuthority.mLen >= 0) {
-      NS_ENSURE_TRUE(mPath.mPos == mAuthority.mPos + mAuthority.mLen, false);
-    } else {
-      NS_ENSURE_TRUE(mURLType == URLTYPE_NO_AUTHORITY, false);
-    }
-  }
-
-  NS_ENSURE_TRUE(mAuthority.mLen >= 0 || mPort == -1, false);
+  NS_ENSURE_TRUE(CheckSegmentInvariants(), false);
 
   if (!IsValid()) {
     return false;

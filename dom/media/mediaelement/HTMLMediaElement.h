@@ -1333,6 +1333,11 @@ class HTMLMediaElement : public nsGenericHTMLElement,
    */
   void SetVolumeInternal();
 
+  // Record the glean probe once per resource when a playback that would
+  // otherwise be audible is muted only by the muted content attribute added at
+  // runtime.
+  void MaybeRecordRuntimeMutedContentAttrImpact();
+
   /**
    * Suspend or resume element playback and resource download.  When we suspend
    * playback, event delivery would also be suspended (and events queued) until
@@ -1625,6 +1630,13 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   enum class MutedState : uint8_t { Default, True, False };
   MutedState mMutedState = MutedState::Default;
 
+  // Whether the muted content attribute added at runtime (while the muted state
+  // is "default") is what would mute this element, and whether the resulting
+  // impact has already been recorded for the current resource. Used only for
+  // the glean probe.
+  bool mMutedByRuntimeContentAttr = false;
+  bool mRecordedRuntimeContentAttrImpact = false;
+
   UniquePtr<const MetadataTags> mTags;
 
   // URI of the resource we're attempting to load. This stores the value we
@@ -1633,6 +1645,12 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // This is always the original URL we're trying to load --- before
   // redirects etc.
   nsCOMPtr<nsIURI> mLoadingSrc;
+
+  // The URI of the resource actually loaded. Starts equal to mLoadingSrc and
+  // is updated to the post-redirect URI on each redirect. Used to decide
+  // cross-origin load-error redaction; null means we have no captured URI, and
+  // is treated as cross-origin.
+  nsCOMPtr<nsIURI> mLoadingSrcFinalURI;
 
   // The triggering principal for the current source.
   nsCOMPtr<nsIPrincipal> mLoadingSrcTriggeringPrincipal;

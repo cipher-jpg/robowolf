@@ -5,23 +5,23 @@
 #ifndef mozilla_TaskController_h
 #define mozilla_TaskController_h
 
+#include <atomic>
+#include <set>
+#include <stack>
+#include <vector>
+
 #include "MainThreadUtils.h"
 #include "mozilla/CondVar.h"
+#include "mozilla/EventQueue.h"
 #include "mozilla/IdlePeriodState.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StaticString.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/EventQueue.h"
 #include "mozilla/UniquePtr.h"
 #include "nsISupportsImpl.h"
 #include "nsThreadUtils.h"  // for MOZ_COLLECTING_RUNNABLE_TELEMETRY
-
-#include <atomic>
-#include <vector>
-#include <set>
-#include <stack>
 
 class nsIRunnable;
 class nsIThreadObserver;
@@ -66,7 +66,7 @@ class TaskManager {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(TaskManager)
 
-  TaskManager() : mTaskCount(0) {}
+  TaskManager() = default;
 
   // Subclasses implementing task manager will have this function called to
   // determine whether their associated tasks are currently suspended. This
@@ -106,7 +106,7 @@ class TaskManager {
   bool mCurrentSuspended = false;
   int32_t mCurrentPriorityModifier = 0;
 
-  std::atomic<uint32_t> mTaskCount;
+  std::atomic<uint32_t> mTaskCount{};
 };
 
 // A Task is the the base class for any unit of work that may be scheduled.

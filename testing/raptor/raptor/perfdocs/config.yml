@@ -181,13 +181,14 @@ suites:
         description: >
             Standard benchmarks are third-party tests (i.e. Speedometer) that we have integrated
             into Raptor to run per-commit in our production CI. To update any of these benchmarks,
-            see `Updating Benchmark Tests <browsertime.html#updating-benchmark-tests>`_.
+            see [Updating Benchmark Tests](browsertime.md#updating-benchmark-tests).
         tests:
             ares6: ""
             assorted-dom: ""
             jetstream2: ""
             jetstream3: ""
             matrix-react-bench: ""
+            media-capabilities: ""
             motionmark-1-3: ""
             motionmark-htmlsuite-1-3: ""
             speedometer2: ""
@@ -228,7 +229,7 @@ suites:
     custom:
         description: "Browsertime tests that use a custom pageload test script. These use the pageload type, but may have other intentions."
         tests:
-            browsertime: "Used to run vanilla browsertime tests through raptor. For example: `./mach raptor -t browsertime --browsertime-arg url=https://www.sitespeed.io --browsertime-arg iterations=3`"
+            browsertime: "Used to run vanilla Browsertime tests through Raptor. For example: `./mach raptor -t browsertime --browsertime-arg url=https://www.sitespeed.io --browsertime-arg iterations=3`"
             process-switch: "Measures process switch time"
             welcome: "Measures pageload metrics for the first-install about:welcome page"
             idb-open-many-par: "Measures opening many IndexedDB databases in parallel"
@@ -249,6 +250,9 @@ suites:
             addkBLN: "Use add API to send a couple of large Blobs to IndexedDB independently"
             constant-regression: "Generates a constant value that can be changed to induce a regression."
             getkeyrng: "Measures the speed of key-range based reads of IndexedDB"
+            idbCurNext: "Measures IDBIndex cursor iteration via continue() over many rows sharing an index value"
+            idbCurPKey: "Measures IDBIndex cursor iteration via continuePrimaryKey() over many rows sharing an index value"
+            idbCurPrev: "Measures IDBIndex cursor iteration via continue() in the prev direction over many rows sharing an index value"
             dns-multi: "Tests multi-domain DNS lookup and pageload performance via native DNS."
             dns-native: "Tests DNS lookup time via native DNS."
             trr-cira: "Tests DNS lookup time on a CIRA TRR server."
@@ -260,6 +264,11 @@ suites:
             trr-w-clou: "Tests DNS lookup time on a Cloudflare TRR server, with the TRR connection warmed up."
             trr-w-comc: "Tests DNS lookup time on a Comcast TRR server, with the TRR connection warmed up."
             trr-w-next: "Tests DNS lookup time on a NextDNS TRR server, with the TRR connection warmed up."
+            baseline: "Cross-browser baseline: measures connection time and protocol to an HTTP/3 site (cloudflare.com). Used on Chrome, where the Firefox-only Happy Eyeballs v3 and DoH preferences do not apply."
+            he3off-dns: "Measures connection time and protocol to an HTTP/3 site (cloudflare.com) with Happy Eyeballs v3 disabled, using native DNS."
+            he3off-doh: "Measures connection time and protocol to an HTTP/3 site (cloudflare.com) with Happy Eyeballs v3 disabled, using DoH (TRR mode 2, CIRA)."
+            he3on-dns: "Measures connection time and protocol to an HTTP/3 site (cloudflare.com) with Happy Eyeballs v3 enabled, using native DNS."
+            he3on-doh: "Measures connection time and protocol to an HTTP/3 site (cloudflare.com) with Happy Eyeballs v3 enabled, using DoH (TRR mode 2, CIRA)."
             upload: "Measures HTTP/2 file upload throughput with a remote server"
             upload-h3: "Measures HTTP/3 file upload throughput with a remote server"
             h2-upload: "Measures HTTP/2 file upload throughput with a local server"
@@ -274,6 +283,10 @@ suites:
             prefetch-eager: "Speculation Rules prefetch test (eager eagerness): the inline speculationrules script prefetches the target on the slightest hover, then the link is clicked so a prefetch-capable browser serves the navigation from the prefetch cache."
             prefetch-moderate: "Speculation Rules prefetch test (moderate eagerness): the inline speculationrules script prefetches the target after ~200 ms of sustained hover, then the link is clicked so a prefetch-capable browser serves the navigation from the prefetch cache."
             prefetch-conservative: "Speculation Rules prefetch test (conservative eagerness): the inline speculationrules script prefetches the target on pointerdown, which is held so the prefetch can complete before release navigates, letting a prefetch-capable browser serve the navigation from the prefetch cache."
+            prefetch-list-immediate: "Speculation Rules prefetch test using a list-source rule (immediate eagerness): the inline speculationrules script lists the target URLs explicitly, so a prefetch-capable browser prefetches them as soon as the rules are parsed, then the link is clicked to serve the navigation from the prefetch cache."
+            prefetch-list-eager: "Speculation Rules prefetch test using a list-source rule (eager eagerness): the inline speculationrules script lists the target URLs explicitly; matching links are present so the prefetch can be triggered on the slightest hover (list-rule eagerness is browser-defined), then the link is clicked to serve the navigation from the prefetch cache."
+            prefetch-list-moderate: "Speculation Rules prefetch test using a list-source rule (moderate eagerness): the inline speculationrules script lists the target URLs explicitly; matching links are present so the prefetch can be triggered after ~200 ms of sustained hover (list-rule eagerness is browser-defined), then the link is clicked to serve the navigation from the prefetch cache."
+            prefetch-list-conservative: "Speculation Rules prefetch test using a list-source rule (conservative eagerness): the inline speculationrules script lists the target URLs explicitly; matching links are present so the prefetch can be triggered on pointerdown, which is held so the prefetch can complete before release navigates (list-rule eagerness is browser-defined)."
             tp6-bench: >
                 A pageload benchmark test that quickly runs through a selection of the
                 pages available to produce a single overall metric for fcp, lcp, and

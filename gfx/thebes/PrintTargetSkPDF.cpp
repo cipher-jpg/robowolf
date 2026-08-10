@@ -4,18 +4,18 @@
 
 #include "PrintTargetSkPDF.h"
 
-#include "mozilla/AppShutdown.h"
+#include "ImageOps.h"
 #include "imgIEncoder.h"
 #include "include/codec/SkCodec.h"
 #include "include/codec/SkEncodedImageFormat.h"
 #include "include/codec/SkEncodedOrigin.h"
 #include "include/core/SkStream.h"
 #include "include/private/SkEncodedInfo.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/image/SourceBuffer.h"
-#include "mozilla/image/ImageUtils.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/StaticPrefs_print.h"
-#include "ImageOps.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/image/ImageUtils.h"
+#include "mozilla/image/SourceBuffer.h"
 #include "nsJPEGEncoder.h"
 #include "nsString.h"
 #include "skia/src/pdf/SkPDFUtils.h"
@@ -213,7 +213,7 @@ static SkPDF::Metadata GetDefaultMetadata() {
 
 nsresult PrintTargetSkPDF::BeginPrinting(const nsAString& aTitle,
                                          const nsAString& aPrintToFileName,
-                                         uint64_t aBrowsingContextId,
+                                         uint64_t aInnerWindowId,
                                          int32_t aStartPage, int32_t aEndPage) {
   // We need to create the SkPDFDocument here rather than in CreateOrNull
   // because it's only now that we are given aTitle which we want for the
@@ -235,7 +235,7 @@ nsresult PrintTargetSkPDF::BeginPrinting(const nsAString& aTitle,
   // structRoot needs to survive until SkPDF::MakeDocument returns.
   SkPDF::StructureElementNode structRoot = {};
   if (auto* builder =
-          mozilla::a11y::PdfStructTreeBuilder::Get(aBrowsingContextId)) {
+          mozilla::a11y::PdfStructTreeBuilder::Get(aInnerWindowId)) {
     if (builder->BuildStructTree(structRoot)) {
       metadata.fStructureElementTreeRoot = &structRoot;
       metadata.fOutline = SkPDF::Metadata::Outline::StructureElementHeaders;

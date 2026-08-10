@@ -1594,8 +1594,7 @@ void nsCSSFrameConstructor::CreateGeneratedContent(
         if (!FindInReadable(accesskey, start, end)) {
           start = originalStart;
           // didn't find it - perform a case-insensitive search
-          found = FindInReadable(accesskey, start, end,
-                                 nsCaseInsensitiveStringComparator);
+          found = CaseInsensitiveFindInReadable(accesskey, start, end);
         }
         if (!found) {
           return Nothing();
@@ -4546,7 +4545,7 @@ nsCSSFrameConstructor::FindMathMLData(const Element& aElement,
   return &sMrowData;
 }
 
-nsContainerFrame* nsCSSFrameConstructor::ConstructFrameWithAnonymousChild(
+nsContainerFrame* nsCSSFrameConstructor::ConstructSVGFrameWithAnonymousChild(
     nsFrameConstructorState& aState, FrameConstructionItem& aItem,
     nsContainerFrame* aParentFrame, nsFrameList& aFrameList,
     ContainerFrameCreationFunc aConstructor,
@@ -4597,8 +4596,8 @@ nsContainerFrame* nsCSSFrameConstructor::ConstructFrameWithAnonymousChild(
         aState, aItem.mChildItems, innerFrame,
         aItem.mFCData->mBits & FCDATA_IS_WRAPPER_ANON_BOX, childList);
   } else {
-    ProcessChildren(aState, content, computedStyle, innerFrame, true, childList,
-                    false);
+    ProcessChildren(aState, content, computedStyle, innerFrame,
+                    /* aCanHaveGeneratedContent = */ false, childList, false);
   }
 
   // Set the inner wrapper frame's initial primary list
@@ -4612,7 +4611,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructOuterSVG(
     nsFrameConstructorState& aState, FrameConstructionItem& aItem,
     nsContainerFrame* aParentFrame, const nsStyleDisplay* aDisplay,
     nsFrameList& aFrameList) {
-  return ConstructFrameWithAnonymousChild(
+  return ConstructSVGFrameWithAnonymousChild(
       aState, aItem, aParentFrame, aFrameList, NS_NewSVGOuterSVGFrame,
       NS_NewSVGOuterSVGAnonChildFrame, PseudoStyleType::MozSvgOuterSvgAnonChild,
       true);
@@ -4622,7 +4621,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructMarker(
     nsFrameConstructorState& aState, FrameConstructionItem& aItem,
     nsContainerFrame* aParentFrame, const nsStyleDisplay* aDisplay,
     nsFrameList& aFrameList) {
-  return ConstructFrameWithAnonymousChild(
+  return ConstructSVGFrameWithAnonymousChild(
       aState, aItem, aParentFrame, aFrameList, NS_NewSVGMarkerFrame,
       NS_NewSVGMarkerAnonChildFrame, PseudoStyleType::MozSvgMarkerAnonChild,
       false);
@@ -4937,55 +4936,37 @@ void nsCSSFrameConstructor::AddFrameConstructionItems(
                                     computedStyle, flags, aItems);
 }
 
-// Whether we should suppress frames for a child under a <select> frame.
-//
-// Never create frames for non-option/optgroup kids of <select> and non-option
-// kids of <optgroup> inside a <select>.
-static bool ShouldSuppressFrameInListboxSelect(const nsIContent* aParent,
-                                               const nsIContent& aChild) {
-  if (!aParent ||
-      !aParent->IsAnyOfHTMLElements(nsGkAtoms::select, nsGkAtoms::optgroup,
-                                    nsGkAtoms::option)) {
+// Whether we should suppress frames for a child under a <select> element.
+// Right now we need this for two things:
+//  * To implement <option label>'s suppression of descendants (sad!)
+//  * To implement hiding of the <select>'s text content (hopefully going away
+//    soon enough, see https://github.com/whatwg/html/issues/12717).
+static bool ShouldSuppressFrameForSelect(const nsIContent* aParent,
+                                         const nsIContent& aChild) {
+  if (!aParent) {
     return false;
   }
 
-  if (const auto* select = HTMLSelectElement::FromNode(aParent);
-      select && select->IsCombobox()) {
-    return false;
-  }
-
-  // Allow native anonymous content no matter what.
   if (aChild.IsRootOfNativeAnonymousSubtree()) {
+    // Allow native anonymous content no matter what.
     return false;
   }
 
-  // Options with labels have their label text added in ::before by forms.css.
-  // Suppress frames for their child text.
   if (aParent->IsHTMLElement(nsGkAtoms::option)) {
+    // Options with labels have their label text added in ::before by forms.css.
+    // Suppress frames for their children.
+    // TODO(emilio): This should probably be done with shadow DOM instead (but a
+    // ShadowRoot per option seems unfortunate...).
     return aParent->AsElement()->HasNonEmptyAttr(nsGkAtoms::label);
   }
 
-  // If we're in any display: contents subtree, just suppress the frame.
-  //
-  // We can't be regular NAC, since display: contents has no frame to generate
-  // them off.
-  if (aChild.GetParent() != aParent) {
-    return true;
+  if (const auto* select = HTMLSelectElement::FromNode(aParent)) {
+    // Direct text descendants of listbox <select> are not expected to render.
+    return !select->IsCombobox() && aChild.IsText() &&
+           aParent == aChild.GetParent();
   }
 
-  // <option> and <hr> are always fine.
-  if (aChild.IsAnyOfHTMLElements(nsGkAtoms::option, nsGkAtoms::hr)) {
-    return false;
-  }
-
-  // <optgroup> is OK in <select> but not in <optgroup>.
-  if (aChild.IsHTMLElement(nsGkAtoms::optgroup) &&
-      aParent->IsHTMLElement(nsGkAtoms::select)) {
-    return false;
-  }
-
-  // Anything else is not ok.
-  return true;
+  return false;
 }
 
 const nsCSSFrameConstructor::FrameConstructionData*
@@ -5011,13 +4992,12 @@ nsCSSFrameConstructor::FindElementData(const Element& aElement,
                                        ItemFlags aFlags) {
   // Don't create frames for non-SVG element children of SVG elements.
   if (!aElement.IsSVGElement()) {
-    // NOTE: ::backdrop is explicitly allowed because it's out of flow, but we
-    // get here with other generated content and drop it here. We have
-    // mechanisms to drop this at the caller instead, which we should probably
-    // use.
+    // NOTE: Anon content is allowed, the native code should know what it's
+    // doing. In practice we care about ::backdrop and the
+    // custom-content-container.
     if (aParentFrame && IsFrameForSVG(aParentFrame) &&
         !aParentFrame->IsSVGForeignObjectFrame() &&
-        aStyle.GetPseudoType() != PseudoStyleType::Backdrop) {
+        !aElement.IsRootOfNativeAnonymousSubtree()) {
       return nullptr;
     }
     if (aFlags.contains(ItemFlag::IsWithinSVGText)) {
@@ -5137,7 +5117,7 @@ void nsCSSFrameConstructor::AddFrameConstructionItemsInternal(
   }
 
   nsIContent* parent = aParentFrame ? aParentFrame->GetContent() : nullptr;
-  if (ShouldSuppressFrameInListboxSelect(parent, *aContent)) {
+  if (ShouldSuppressFrameForSelect(parent, *aContent)) {
     return;
   }
 
@@ -6715,6 +6695,10 @@ static bool IsOnlyMeaningfulChildOfWrapperPseudo(nsIFrame* aFrame,
 static bool CanRemoveWrapperPseudoForChildRemoval(nsIFrame* aFrame,
                                                   nsIFrame* aParent) {
   if (!IsOnlyMeaningfulChildOfWrapperPseudo(aFrame, aParent)) {
+    return false;
+  }
+  if (aParent->GetPrevContinuation() || aParent->GetNextContinuation()) {
+    // If our parent is fragmented we're not really the only meaningful child.
     return false;
   }
   if (aParent->IsRubyBaseContainerFrame()) {
@@ -10065,7 +10049,8 @@ void nsCSSFrameConstructor::ConstructBlock(
 
   // Create column hierarchy if necessary.
   const bool needsColumn =
-      aComputedStyle->StyleColumn()->IsColumnContainerStyle();
+      aComputedStyle->StyleColumn()->IsColumnContainerStyle() &&
+      !aParentFrame->IsTextInputFrame();
   if (needsColumn) {
     *aNewFrame = BeginBuildingColumns(aState, aContent, aParentFrame,
                                       blockFrame, aComputedStyle);

@@ -306,12 +306,11 @@ bool AnchorPosResolutionParams::AutoResolutionOverrideParams::OverriddenToZero(
 static AnchorPosResolutionParams::AutoResolutionOverrideParams
 GetAutoResolutionOverrideParams(const nsIFrame* aFrame,
                                 bool aDefaultAnchorValid) {
-  if (!aFrame) {
+  if (!aFrame || !aDefaultAnchorValid) {
     return {};
   }
   nsIFrame* parent = aFrame->GetParent();
-  if (!parent || !aFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) ||
-      !aDefaultAnchorValid) {
+  if (!parent || !aFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
     return {};
   }
 
@@ -379,13 +378,12 @@ AnchorResolvedMargin AnchorResolvedMarginHelper::ResolveAnchor(
   }
 
   const auto& lp = aValue.AsAnchorContainingCalcFunction();
-  const auto& c = lp.AsCalc();
   auto result = StyleCalcAnchorPositioningFunctionResolution::Invalid();
   AnchorPosOffsetResolutionParams params =
       AnchorPosOffsetResolutionParams::UseCBFrameSize(aParams);
   const auto allowed =
       StyleAllowAnchorPosResolutionInCalcPercentage::AnchorSizeOnly(aAxis);
-  Servo_ResolveAnchorFunctionsInCalcPercentage(&c, &allowed, &params, &result);
+  Servo_ResolveAnchorFunctionsInCalcPercentage(&lp, &allowed, &params, &result);
   if (result.IsInvalid()) {
     return Zero();
   }
@@ -397,14 +395,16 @@ nsStyleMargin::nsStyleMargin()
           StyleMargin::LengthPercentage(LengthPercentage::Zero()))),
       mScrollMargin(StyleRectWithAllSides(StyleLength{0.})),
       mOverflowClipMargin(
-          {StyleLength::Zero(), StyleOverflowClipMarginBox::PaddingBox}) {
+          {StyleLength::Zero(), StyleOverflowClipMarginBox::PaddingBox}),
+      mMarginTrim(StyleMarginTrim::NONE) {
   MOZ_COUNT_CTOR(nsStyleMargin);
 }
 
 nsStyleMargin::nsStyleMargin(const nsStyleMargin& aSrc)
     : mMargin(aSrc.mMargin),
       mScrollMargin(aSrc.mScrollMargin),
-      mOverflowClipMargin(aSrc.mOverflowClipMargin) {
+      mOverflowClipMargin(aSrc.mOverflowClipMargin),
+      mMarginTrim(aSrc.mMarginTrim) {
   MOZ_COUNT_CTOR(nsStyleMargin);
 }
 
@@ -1417,11 +1417,10 @@ AnchorResolvedInset AnchorResolvedInsetHelper::ResolveAnchor(
   switch (aValue.tag) {
     case StyleInset::Tag::AnchorContainingCalcFunction: {
       const auto& lp = aValue.AsAnchorContainingCalcFunction();
-      const auto& c = lp.AsCalc();
       auto result = StyleCalcAnchorPositioningFunctionResolution::Invalid();
       const auto allowed =
           StyleAllowAnchorPosResolutionInCalcPercentage::Both(aSide);
-      Servo_ResolveAnchorFunctionsInCalcPercentage(&c, &allowed, &aParams,
+      Servo_ResolveAnchorFunctionsInCalcPercentage(&lp, &allowed, &aParams,
                                                    &result);
       if (result.IsInvalid()) {
         return Auto();
@@ -1486,13 +1485,12 @@ AnchorResolvedSize AnchorResolvedSizeHelper::ResolveAnchor(
 
   const auto& lp = aValue.AsAnchorContainingCalcFunction();
   // Follows the same reasoning as anchor resolved insets.
-  const auto& c = lp.AsCalc();
   auto result = StyleCalcAnchorPositioningFunctionResolution::Invalid();
   AnchorPosOffsetResolutionParams params =
       AnchorPosOffsetResolutionParams::UseCBFrameSize(aParams);
   const auto allowed =
       StyleAllowAnchorPosResolutionInCalcPercentage::AnchorSizeOnly(aAxis);
-  Servo_ResolveAnchorFunctionsInCalcPercentage(&c, &allowed, &params, &result);
+  Servo_ResolveAnchorFunctionsInCalcPercentage(&lp, &allowed, &params, &result);
   if (result.IsInvalid()) {
     return Auto();
   }
@@ -1521,13 +1519,12 @@ AnchorResolvedMaxSize AnchorResolvedMaxSizeHelper::ResolveAnchor(
 
   const auto& lp = aValue.AsAnchorContainingCalcFunction();
   // Follows the same reasoning as anchor resolved insets.
-  const auto& c = lp.AsCalc();
   auto result = StyleCalcAnchorPositioningFunctionResolution::Invalid();
   AnchorPosOffsetResolutionParams params =
       AnchorPosOffsetResolutionParams::UseCBFrameSize(aParams);
   const auto allowed =
       StyleAllowAnchorPosResolutionInCalcPercentage::AnchorSizeOnly(aAxis);
-  Servo_ResolveAnchorFunctionsInCalcPercentage(&c, &allowed, &params, &result);
+  Servo_ResolveAnchorFunctionsInCalcPercentage(&lp, &allowed, &params, &result);
   if (result.IsInvalid()) {
     return None();
   }
@@ -2311,7 +2308,10 @@ nsStyleDisplay::nsStyleDisplay()
       mAlignmentBaseline(StyleAlignmentBaseline::Baseline),
       mBaselineShift(StyleBaselineShift::Length(LengthPercentage::Zero())),
       mBaselineSource(StyleBaselineSource::Auto),
-      mWebkitLineClamp(0),
+      mWebkitLineClamp{
+          {StyleOptional<StyleInteger>::None(), StyleMaxLinesKeyword::None},
+          StyleBlockEllipsis::Ellipsis(),
+          false},
       mShapeMargin(LengthPercentage::Zero()),
       mShapeOutside(StyleShapeOutside::None()) {
   MOZ_COUNT_CTOR(nsStyleDisplay);
@@ -2928,15 +2928,49 @@ nsStyleContent::nsStyleContent(const nsStyleContent& aSource)
   MOZ_COUNT_CTOR(nsStyleContent);
 }
 
+/* static */
+bool nsStyleContent::CanUpdateGeneratedContentText(const nsStyleContent& aOld,
+                                                   const nsStyleContent& aNew) {
+  auto oldItems = aOld.NonAltContentItems();
+  auto newItems = aNew.NonAltContentItems();
+  if (oldItems.IsEmpty() || oldItems.Length() != newItems.Length() ||
+      aOld.AltContentItems() != aNew.AltContentItems()) {
+    return false;
+  }
+  auto isNonEmptyString = [](const auto& aItem) {
+    return aItem.IsString() && !aItem.AsString().AsString().IsEmpty();
+  };
+  for (size_t i = 0; i < oldItems.Length(); i++) {
+    if (oldItems[i] == newItems[i]) {
+      continue;
+    }
+    // TODO(Bug 2056632): we should look to avoid reframing when we change
+    // from/to an empty string.
+    if (!isNonEmptyString(oldItems[i]) || !isNonEmptyString(newItems[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
 nsChangeHint nsStyleContent::CalcDifference(
     const nsStyleContent& aNewData) const {
-  // Unfortunately we need to reframe even if the content lengths are the same;
-  // a simple reflow will not pick up different text or different image URLs,
-  // since we set all that up in the CSSFrameConstructor
-  if (mContent != aNewData.mContent ||
-      mCounterIncrement != aNewData.mCounterIncrement ||
+  if (mCounterIncrement != aNewData.mCounterIncrement ||
       mCounterReset != aNewData.mCounterReset ||
       mCounterSet != aNewData.mCounterSet) {
+    return nsChangeHint_ReconstructFrame;
+  }
+
+  if (mContent != aNewData.mContent) {
+    // Reframing is triggered from the originating element, which can be quite
+    // costly. When the change is limited to the text of string items, we
+    // instead rewrite the generated text nodes in place from
+    // nsIFrame::DidSetComputedStyle and report nsChangeHint_NeutralChange here.
+    if (CanUpdateGeneratedContentText(*this, aNewData)) {
+      return nsChangeHint_NeutralChange;
+    }
+    // Otherwise reframe: a simple reflow won't pick up different image URLs
+    // since we set all that up in the CSSFrameConstructor.
     return nsChangeHint_ReconstructFrame;
   }
 

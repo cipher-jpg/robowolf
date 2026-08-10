@@ -23,6 +23,7 @@
 #include "mozAutoDocUpdate.h"
 #include "mozilla/AnimationComparator.h"
 #include "mozilla/AnimationTarget.h"
+#include "mozilla/AnimationUtils.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/Components.h"
@@ -591,7 +592,7 @@ void Element::SetKeepCustomElementRegistryNull() {
 CustomElementRegistry* Element::GetCustomElementRegistry() {
   switch (GetCustomElementRegistryState()) {
     case CustomElementRegistryState::Global:
-      return OwnerDoc()->GetEffectiveGlobalCustomElementRegistry();
+      return OwnerDoc()->GetCustomElementRegistry();
     case CustomElementRegistryState::Null:
       return nullptr;
     case CustomElementRegistryState::Scoped: {
@@ -1199,7 +1200,7 @@ already_AddRefed<DOMRect> Element::GetBoundingClientRect() {
   RefPtr<DOMRect> rect = new DOMRect(ToSupports(OwnerDoc()));
 
   nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
-  if (!frame) {
+  if (!frame || frame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     // display:none, perhaps? Return the empty rect
     return rect.forget();
   }
@@ -1212,7 +1213,7 @@ already_AddRefed<DOMRectList> Element::GetClientRects() {
   RefPtr<DOMRectList> rectList = new DOMRectList(this);
 
   nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
-  if (!frame) {
+  if (!frame || frame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     // display:none, perhaps? Return an empty list
     return rectList.forget();
   }
@@ -2815,10 +2816,9 @@ static uint64_t HashClassesForBloom(const nsAttrValue* aValue) {
 
   if (aValue->Type() == nsAttrValue::eAtomArray) {
     const mozilla::AttrAtomArray* array = aValue->GetAtomArrayValue();
-    if (array) {
-      for (const RefPtr<nsAtom>& className : array->mArray) {
-        filter |= AttrArray::HashForBloomFilter(className);
-      }
+    MOZ_ASSERT(array);
+    for (const RefPtr<nsAtom>& className : array->Array()) {
+      filter |= AttrArray::HashForBloomFilter(className);
     }
   } else if (aValue->Type() == nsAttrValue::eAtom) {
     filter |= AttrArray::HashForBloomFilter(aValue->GetAtomValue());
@@ -2925,8 +2925,8 @@ nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
   MOZ_ASSERT(!IsInComposedDoc(), "Already have a document.  Unbind first!");
   // Note that as we recurse into the kids, they'll have a non-null parent.  So
   // only assert if our parent is _changing_ while we have a parent.
-  MOZ_ASSERT(!GetParentNode() || &aParent == GetParentNode(),
-             "Already have a parent.  Unbind first!");
+  MOZ_DIAGNOSTIC_ASSERT(!GetParentNode() || &aParent == GetParentNode(),
+                        "Already have a different parent.  Unbind first!");
 
   const bool hadParent = !!GetParentNode();
 
@@ -3705,9 +3705,9 @@ nsresult Element::SetAttrInternal(int32_t aNamespaceID, nsAtom* aName,
   nsAttrValue attrValue;
   aParseFn(attrValue);
 
-  BeforeSetAttr(aNamespaceID, aName, &attrValue, aNotify);
-
-  PreIdMaybeChange(aNamespaceID, aName, &attrValue);
+  if (aName->IsStatic()) {
+    BeforeSetAttr(aNamespaceID, aName, &attrValue, aNotify);
+  }
 
   return SetAttrAndNotify(
       aNamespaceID, aName, aPrefix, oldValueSet ? &oldValue : nullptr,
@@ -3748,9 +3748,9 @@ nsresult Element::SetParsedAttr(int32_t aNamespaceID, nsAtom* aName,
                                                  modType);
   }
 
-  BeforeSetAttr(aNamespaceID, aName, &aParsedValue, aNotify);
-
-  PreIdMaybeChange(aNamespaceID, aName, &aParsedValue);
+  if (aName->IsStatic()) {
+    BeforeSetAttr(aNamespaceID, aName, &aParsedValue, aNotify);
+  }
 
   return SetAttrAndNotify(aNamespaceID, aName, aPrefix,
                           oldValueSet ? &oldValue : nullptr, aParsedValue,
@@ -3835,11 +3835,7 @@ nsresult Element::SetNoNameSpaceAttrOnNewlyCreatedElement(
       }
     } else {
       RefPtr<nsAtom> valueAtom = aValue.ForgetAtom();
-      if (namePtr == nsGkAtoms::id) {
-        // Keep in sync with PostIdMaybeChange!
-        SetHasID();
-        // Not adding to table since not in doc or in doc fragment.
-      } else if (namePtr == nsGkAtoms::contenteditable) {
+      if (namePtr == nsGkAtoms::contenteditable) {
         // See below for the empty-value case.
         // Splitting this like this is a micro optimization to avoid the check
         // for non-parsed string attributes.
@@ -3942,7 +3938,9 @@ nsresult Element::SetNoNameSpaceAttrOnNewlyCreatedElement(
   // we only call this from the HTML parser and not from the prototype content
   // sink.
 
-  AfterSetAttr(kNameSpaceID_None, namePtr, valuePtr, nullptr, nullptr, false);
+  if (namePtr->IsStatic()) {
+    AfterSetAttr(kNameSpaceID_None, namePtr, valuePtr, nullptr, nullptr, false);
+  }
 
   // No `dir` handling; see above.
   // No notification.
@@ -3988,8 +3986,6 @@ nsresult Element::SetAttrAndNotify(
         aName, aPrefix, aNamespaceID, ATTRIBUTE_NODE);
     MOZ_TRY(SetAndSwapAttr(ni, aParsedValue, &oldValueSet, aIsKnownNew));
   }
-
-  PostIdMaybeChange(aNamespaceID, aName, &valueForAfterSetAttr);
 
   // If the old value owns its own data, we know it is OK to keep using it.
   // oldValue will be null if there was no previously set value
@@ -4042,7 +4038,7 @@ nsresult Element::SetAttrAndNotify(
     }
   }
 
-  if (aCallAfterSetAttr) {
+  if (aCallAfterSetAttr && aName->IsStatic()) {
     AfterSetAttr(aNamespaceID, aName, &valueForAfterSetAttr, oldValue,
                  aSubjectPrincipal, aNotify);
 
@@ -4118,18 +4114,20 @@ bool Element::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 
 void Element::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
                             const nsAttrValue* aValue, bool aNotify) {
-  if (aNamespaceID == kNameSpaceID_None) {
-    if (aName == nsGkAtoms::_class && aValue) {
-      // Note: This flag is asymmetrical. It is never unset and isn't exact.
-      // If it is ever made to be exact, we probably need to handle this
-      // similarly to how ids are handled in PreIdMaybeChange and
-      // PostIdMaybeChange.
-      // Note that SetSingleClassFromParser inlines BeforeSetAttr and
-      // calls SetMayHaveClass directly. Making a subclass take action
-      // on the class attribute in a BeforeSetAttr override would
-      // require revising SetSingleClassFromParser.
-      SetMayHaveClass();
-    }
+  MOZ_ASSERT(aName->IsStatic());
+  if (aNamespaceID != kNameSpaceID_None) {
+    return;
+  }
+  if (aName == nsGkAtoms::_class && aValue) {
+    // Note: This flag is asymmetrical. It is never unset and isn't exact.
+    // Note that SetSingleClassFromParser inlines BeforeSetAttr and
+    // calls SetMayHaveClass directly. Making a subclass take action
+    // on the class attribute in a BeforeSetAttr override would
+    // require revising SetSingleClassFromParser.
+    SetMayHaveClass();
+  }
+  if (aName == nsGkAtoms::id) {
+    PreIdMaybeChange(aValue);
   }
 }
 
@@ -4138,55 +4136,48 @@ void Element::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                            const nsAttrValue* aOldValue,
                            nsIPrincipal* aMaybeScriptedPrincipal,
                            bool aNotify) {
-  if (aNamespaceID == kNameSpaceID_None) {
-    if (aName == nsGkAtoms::part) {
-      bool isPart = !!aValue;
-      if (HasPartAttribute() != isPart) {
-        SetHasPartAttribute(isPart);
-        if (ShadowRoot* shadow = GetContainingShadow()) {
-          if (isPart) {
-            shadow->PartAdded(*this);
-          } else {
-            shadow->PartRemoved(*this);
-          }
+  MOZ_ASSERT(aName->IsStatic());
+  if (aNamespaceID != kNameSpaceID_None) {
+    return;
+  }
+  if (aName == nsGkAtoms::id) {
+    PostIdMaybeChange(aValue);
+  } else if (aName == nsGkAtoms::part) {
+    bool isPart = !!aValue;
+    if (HasPartAttribute() != isPart) {
+      SetHasPartAttribute(isPart);
+      if (ShadowRoot* shadow = GetContainingShadow()) {
+        if (isPart) {
+          shadow->PartAdded(*this);
+        } else {
+          shadow->PartRemoved(*this);
         }
       }
-      MOZ_ASSERT(HasPartAttribute() == isPart);
-    } else if (aName == nsGkAtoms::slot && GetParent()) {
-      if (ShadowRoot* shadow = GetParent()->GetShadowRoot()) {
-        shadow->MaybeReassignContent(*this);
-      }
-    } else if (aName == nsGkAtoms::aria_activedescendant) {
-      ClearExplicitlySetAttrElement(aName);
-      IDREFAttributeValueChanged(aName, aValue);
-    } else if (aName == nsGkAtoms::aria_controls ||
-               aName == nsGkAtoms::aria_describedby ||
-               aName == nsGkAtoms::aria_details ||
-               aName == nsGkAtoms::aria_errormessage ||
-               aName == nsGkAtoms::aria_flowto ||
-               aName == nsGkAtoms::aria_labelledby ||
-               aName == nsGkAtoms::aria_owns) {
-      ClearExplicitlySetAttrElements(aName);
     }
+    MOZ_ASSERT(HasPartAttribute() == isPart);
+  } else if (aName == nsGkAtoms::slot && GetParent()) {
+    if (ShadowRoot* shadow = GetParent()->GetShadowRoot()) {
+      shadow->MaybeReassignContent(*this);
+    }
+  } else if (aName == nsGkAtoms::aria_activedescendant) {
+    ClearExplicitlySetAttrElement(aName);
+    IDREFAttributeValueChanged(aName, aValue);
+  } else if (aName == nsGkAtoms::aria_controls ||
+             aName == nsGkAtoms::aria_describedby ||
+             aName == nsGkAtoms::aria_details ||
+             aName == nsGkAtoms::aria_errormessage ||
+             aName == nsGkAtoms::aria_flowto ||
+             aName == nsGkAtoms::aria_labelledby ||
+             aName == nsGkAtoms::aria_owns) {
+    ClearExplicitlySetAttrElements(aName);
   }
 }
 
-void Element::PreIdMaybeChange(int32_t aNamespaceID, nsAtom* aName,
-                               const nsAttrValue* aValue) {
-  if (aNamespaceID != kNameSpaceID_None || aName != nsGkAtoms::id) {
-    return;
-  }
+void Element::PreIdMaybeChange(const nsAttrValue* aValue) {
   RemoveFromIdTable();
 }
 
-void Element::PostIdMaybeChange(int32_t aNamespaceID, nsAtom* aName,
-                                const nsAttrValue* aValue) {
-  if (aNamespaceID != kNameSpaceID_None || aName != nsGkAtoms::id) {
-    return;
-  }
-
-  // Keep in sync with SetNoNameSpaceAttrOnNewlyCreatedElement!
-
+void Element::PostIdMaybeChange(const nsAttrValue* aValue) {
   // id="" means that the element has no id, not that it has an empty
   // string as the id.
   if (aValue && !aValue->IsEmptyString()) {
@@ -4261,6 +4252,72 @@ bool Element::GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
   return true;
 }
 
+void Element::GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr,
+                         nsAString& aResult) const {
+  nsCOMPtr<nsIURI> uri;
+  const nsAttrValue* attr = GetURIAttr(aAttr, aBaseAttr, getter_AddRefs(uri));
+  if (!attr) {
+    aResult.Truncate();
+    return;
+  }
+  if (!uri) {
+    // Just return the attr value
+    attr->ToString(aResult);
+    return;
+  }
+  nsAutoCString spec;
+  uri->GetSpec(spec);
+  CopyUTF8toUTF16(spec, aResult);
+}
+
+void Element::GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr,
+                         nsACString& aResult) const {
+  nsCOMPtr<nsIURI> uri;
+  const nsAttrValue* attr = GetURIAttr(aAttr, aBaseAttr, getter_AddRefs(uri));
+  if (!attr) {
+    aResult.Truncate();
+    return;
+  }
+  if (!uri) {
+    // Just return the attr value
+    nsAutoString value;
+    attr->ToString(value);
+    CopyUTF16toUTF8(value, aResult);
+    return;
+  }
+  uri->GetSpec(aResult);
+}
+
+const nsAttrValue* Element::GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr,
+                                       nsIURI** aURI) const {
+  *aURI = nullptr;
+
+  const nsAttrValue* attr = mAttrs.GetAttr(aAttr);
+  if (!attr) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIURI> baseURI = GetBaseURI();
+  if (aBaseAttr) {
+    nsAutoString baseAttrValue;
+    if (GetAttr(aBaseAttr, baseAttrValue)) {
+      nsCOMPtr<nsIURI> baseAttrURI;
+      nsresult rv = nsContentUtils::NewURIWithDocumentCharset(
+          getter_AddRefs(baseAttrURI), baseAttrValue, OwnerDoc(), baseURI);
+      if (NS_FAILED(rv)) {
+        return attr;
+      }
+      baseURI.swap(baseAttrURI);
+    }
+  }
+
+  // Don't care about return value.  If it fails, we still want to
+  // return true, and *aURI will be null.
+  nsContentUtils::NewURIWithDocumentCharset(
+      aURI, nsAttrValueOrString(attr).String(), OwnerDoc(), baseURI);
+  return attr;
+}
+
 int32_t Element::FindAttrValueIn(int32_t aNameSpaceID, const nsAtom* aName,
                                  AttrArray::AttrValuesArray* aValues,
                                  nsCaseTreatment aCaseSensitive) const {
@@ -4283,9 +4340,9 @@ nsresult Element::UnsetAttr(int32_t aNameSpaceID, nsAtom* aName, bool aNotify) {
                                                  AttrModType::Removal);
   }
 
-  BeforeSetAttr(aNameSpaceID, aName, nullptr, aNotify);
-
-  PreIdMaybeChange(aNameSpaceID, aName, nullptr);
+  if (aName->IsStatic()) {
+    BeforeSetAttr(aNameSpaceID, aName, nullptr, aNotify);
+  }
 
   // Clear the attribute out from attribute map.
   nsDOMSlots* slots = GetExistingDOMSlots();
@@ -4316,8 +4373,6 @@ nsresult Element::UnsetAttr(int32_t aNameSpaceID, nsAtom* aName, bool aNotify) {
   nsAttrValue oldValue;
   MOZ_TRY(mAttrs.RemoveAttrAt(index, oldValue));
 
-  PostIdMaybeChange(aNameSpaceID, aName, nullptr);
-
   const CustomElementData* data = GetCustomElementData();
   if (data && data->mState == CustomElementData::State::eCustom) {
     CustomElementDefinition* definition = data->GetCustomElementDefinition();
@@ -4333,7 +4388,9 @@ nsresult Element::UnsetAttr(int32_t aNameSpaceID, nsAtom* aName, bool aNotify) {
     }
   }
 
-  AfterSetAttr(aNameSpaceID, aName, nullptr, &oldValue, nullptr, aNotify);
+  if (aName->IsStatic()) {
+    AfterSetAttr(aNameSpaceID, aName, nullptr, &oldValue, nullptr, aNotify);
+  }
 
   if (aNotify) {
     // We can always pass oldValue here since there is no new value which could
@@ -5173,9 +5230,17 @@ already_AddRefed<Animation> Element::Animate(
   }
 
   // Step 5. If options is a KeyframeAnimationOptions object, assign the value
-  // of the id member of options to animation's id attribute.
+  // of the id member of options to animation's id attribute, and (Web
+  // Animations Level 2) apply its rangeStart and rangeEnd members to the
+  // animation's animation range.
   if (aOptions.IsKeyframeAnimationOptions()) {
-    animation->SetId(aOptions.GetAsKeyframeAnimationOptions().mId);
+    const KeyframeAnimationOptions& options =
+        aOptions.GetAsKeyframeAnimationOptions();
+    animation->SetId(options.mId);
+    if (!AnimationUtils::ApplyKeyframeAnimationRange(options, animation,
+                                                     aError)) {
+      return nullptr;
+    }
   }
 
   // Step 6. Play animation.
@@ -5496,7 +5561,9 @@ void Element::SetOuterHTML(const TrustedHTMLOrNullIsEmptyString& aOuterHTML,
     RefPtr<DocumentFragment> fragment = new (nim) DocumentFragment(nim);
     nsContentUtils::ParseFragmentHTML(
         *compliantString, fragment, localName, namespaceID,
-        OwnerDoc()->GetCompatibilityMode() == eCompatibility_NavQuirks, true);
+        OwnerDoc()->GetCompatibilityMode() == eCompatibility_NavQuirks, true,
+        nsContentUtils::kParseFragmentPrivilegedDefaultSanitization,
+        mozilla::Nothing());
     parent->ReplaceChild(*fragment, *this, aError);
     return;
   }
@@ -5514,7 +5581,7 @@ void Element::SetOuterHTML(const TrustedHTMLOrNullIsEmptyString& aOuterHTML,
   }
 
   RefPtr<DocumentFragment> fragment = nsContentUtils::CreateContextualFragment(
-      context, *compliantString, true, aError);
+      context, *compliantString, true, Nothing(), aError);
   if (aError.Failed()) {
     return;
   }
@@ -5580,6 +5647,12 @@ void Element::InsertAdjacentHTML(
   mozAutoDocUpdate updateBatch(doc, true);
   nsAutoScriptLoaderDisabler sld(doc);
 
+  // https://html.spec.whatwg.org/#create-an-element-for-the-token
+  // Step 6: Let registry be the result of looking up a custom element registry
+  // given intendedParent.
+  Maybe<RefPtr<CustomElementRegistry>> customElementRegistry =
+      nsContentUtils::GetCustomElementRegistry(destination);
+
   // XXX: Fast path - parse directly into destination if possible, bypassing
   // the fragment creation in steps 4-5.
   nsIContent* oldLastChild = destination->GetLastChild();
@@ -5599,7 +5672,9 @@ void Element::InsertAdjacentHTML(
     }
     aError = nsContentUtils::ParseFragmentHTML(
         *compliantString, destination, contextLocal, contextNs,
-        doc->GetCompatibilityMode() == eCompatibility_NavQuirks, true);
+        doc->GetCompatibilityMode() == eCompatibility_NavQuirks, true,
+        nsContentUtils::kParseFragmentPrivilegedDefaultSanitization,
+        std::move(customElementRegistry));
     doc->ResumeDOMNotifications();
     nsIContent* firstNewChild = oldLastChild ? oldLastChild->GetNextSibling()
                                              : destination->GetFirstChild();
@@ -5615,7 +5690,8 @@ void Element::InsertAdjacentHTML(
   // 5. "Let fragment be the result of invoking the fragment parsing algorithm
   //    steps with context and compliantString."
   RefPtr<DocumentFragment> fragment = nsContentUtils::CreateContextualFragment(
-      destination, *compliantString, true, aError);
+      destination, *compliantString, true, std::move(customElementRegistry),
+      aError);
   if (aError.Failed()) {
     return;
   }

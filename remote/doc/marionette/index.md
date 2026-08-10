@@ -43,7 +43,11 @@ Prefs.md
 
 ## Bugs
 
-Bugs are tracked in the `Testing :: Marionette` component.
+Bugs for the Marionette server are tracked in the
+[Remote Protocol :: Marionette](https://bugzilla.mozilla.org/buglist.cgi?product=Remote%20Protocol&component=Marionette&resolution=---)
+component. Bugs for the Python client and test harness are tracked in the
+[Testing :: Marionette Client and Harness](https://bugzilla.mozilla.org/buglist.cgi?product=Testing&component=Marionette%20Client%20and%20Harness&resolution=---)
+component.
 
 ## Communication
 
@@ -54,6 +58,6 @@ If you prefer real-time chat, ask your questions
 on [#webdriver:mozilla.org](https://chat.mozilla.org/#/room/#webdriver:mozilla.org).
 
 [geckodriver]: /testing/geckodriver/
-[marionette python client]: /python/marionette_driver.html
+[marionette python client]: /python/marionette_driver.rst
 [protocol]: Protocol.md
 [webdriver]: https://w3c.github.io/webdriver/

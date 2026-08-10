@@ -5,7 +5,10 @@
 #include "mozilla/dom/SpeculationRuleSet.h"
 
 #include "js/friend/ErrorMessages.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/PrefetchCandidates.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/speculationrules_ffi_generated.h"
 #include "nsIURI.h"
 
 namespace mozilla::dom {
@@ -62,6 +65,42 @@ SpeculationRuleSet::Parse(const nsACString& aSource, nsIURI* aDocumentBaseUri,
   }
   JS_ReportErrorNumberASCII(jsapi.cx(), js::GetErrorMessage, nullptr,
                             errorNumber);
+}
+
+void SpeculationRuleSet::ConsiderLoads(PrefetchCandidates* aCandidates,
+                                       const nsTArray<const Element*>& aLinks) {
+  consider_speculative_loads_for_rule_set(this, aCandidates, &aLinks);
+}
+
+void SpeculationRuleSet::SetUseCounters(Document& aDocument) const {
+  SpeculationRulesUsage counters = speculation_rule_set_use_counters(this);
+  if (counters.used_prefetch) {
+    aDocument.SetUseCounter(eUseCounter_custom_SpeculationRulesPrefetch);
+  }
+  if (counters.used_list_source) {
+    aDocument.SetUseCounter(eUseCounter_custom_SpeculationRulesListSource);
+  }
+  if (counters.used_document_source) {
+    aDocument.SetUseCounter(eUseCounter_custom_SpeculationRulesDocumentSource);
+  }
+  if (counters.used_eagerness_conservative) {
+    aDocument.SetUseCounter(
+        eUseCounter_custom_SpeculationRulesEagernessConservative);
+  }
+  if (counters.used_eagerness_moderate) {
+    aDocument.SetUseCounter(
+        eUseCounter_custom_SpeculationRulesEagernessModerate);
+  }
+  if (counters.used_eagerness_eager) {
+    aDocument.SetUseCounter(eUseCounter_custom_SpeculationRulesEagernessEager);
+  }
+  if (counters.used_eagerness_immediate) {
+    aDocument.SetUseCounter(
+        eUseCounter_custom_SpeculationRulesEagernessImmediate);
+  }
+  if (counters.used_tag) {
+    aDocument.SetUseCounter(eUseCounter_custom_SpeculationRulesTag);
+  }
 }
 
 }  // namespace mozilla::dom

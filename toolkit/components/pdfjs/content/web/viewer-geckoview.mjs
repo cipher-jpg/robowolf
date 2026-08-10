@@ -21,8 +21,8 @@
  */
 
 /**
- * pdfjsVersion = 6.1.239
- * pdfjsBuild = 0cc1718b0
+ * pdfjsVersion = 6.3.72
+ * pdfjsBuild = 71a3c6a89
  */
 
 ;// ./web/ui_utils.js
@@ -515,363 +515,278 @@ const Type = {
   STRING: 0x08,
   UNDEFINED: 0x10
 };
-const defaultOptions = {
-  allowedGlobalEvents: {
-    value: null,
-    kind: OptionKind.BROWSER
-  },
-  canvasMaxAreaInBytes: {
-    value: -1,
-    kind: OptionKind.BROWSER + OptionKind.API
-  },
-  isInAutomation: {
-    value: false,
-    kind: OptionKind.BROWSER
-  },
-  localeProperties: {
-    value: null,
-    kind: OptionKind.BROWSER
-  },
-  maxCanvasDim: {
-    value: 32767,
-    kind: OptionKind.BROWSER + OptionKind.VIEWER
-  },
-  nimbusDataStr: {
-    value: "",
-    kind: OptionKind.BROWSER
-  },
-  supportsCaretBrowsingMode: {
-    value: false,
-    kind: OptionKind.BROWSER
-  },
-  supportsDocumentFonts: {
-    value: true,
-    kind: OptionKind.BROWSER
-  },
-  supportsDownloading: {
-    value: true,
-    kind: OptionKind.BROWSER
-  },
-  supportsIntegratedFind: {
-    value: false,
-    kind: OptionKind.BROWSER
-  },
-  supportsMouseWheelZoomCtrlKey: {
-    value: true,
-    kind: OptionKind.BROWSER
-  },
-  supportsMouseWheelZoomMetaKey: {
-    value: true,
-    kind: OptionKind.BROWSER
-  },
-  supportsPinchToZoom: {
-    value: true,
-    kind: OptionKind.BROWSER
-  },
-  supportsPrinting: {
-    value: true,
-    kind: OptionKind.BROWSER
-  },
-  toolbarDensity: {
-    value: 0,
-    kind: OptionKind.BROWSER + OptionKind.EVENT_DISPATCH
-  },
-  altTextLearnMoreUrl: {
-    value: "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/pdf-alt-text",
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  annotationEditorMode: {
-    value: 0,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  annotationMode: {
-    value: 2,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  capCanvasAreaFactor: {
-    value: 200,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  commentLearnMoreUrl: {
-    value: "https://support.mozilla.org/%LOCALE%/kb/view-pdf-files-firefox-or-choose-another-viewer#w_add-a-comment-to-a-pdf",
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  cursorToolOnLoad: {
-    value: 0,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  debuggerSrc: {
-    value: "./debugger.mjs",
-    kind: OptionKind.VIEWER
-  },
-  defaultZoomDelay: {
-    value: 400,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  defaultZoomValue: {
-    value: "",
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  disableHistory: {
-    value: false,
-    kind: OptionKind.VIEWER
-  },
-  disablePageLabels: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableAltText: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableAltTextModelDownload: {
-    value: true,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE + OptionKind.EVENT_DISPATCH
-  },
-  enableAutoLinking: {
-    value: true,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableComment: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableDetailCanvas: {
-    value: true,
-    kind: OptionKind.VIEWER
-  },
-  enableGuessAltText: {
-    value: true,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE + OptionKind.EVENT_DISPATCH
-  },
-  enableHighlightFloatingButton: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableMerge: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableNewAltTextWhenAddingImage: {
-    value: true,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableNewBadge: {
-    value: true,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableOptimizedPartialRendering: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enablePermissions: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enablePrintAutoRotate: {
-    value: true,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableScripting: {
-    value: true,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableSignatureEditor: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableSignatureVerification: {
-    value: true,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableSplitMerge: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  enableUpdatedAddImage: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  externalLinkRel: {
-    value: "noopener noreferrer nofollow",
-    kind: OptionKind.VIEWER
-  },
-  externalLinkTarget: {
-    value: 0,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  highlightEditorColors: {
-    value: "yellow=#FFFF98,green=#53FFBC,blue=#80EBFF,pink=#FFCBE6,red=#FF4F5F," + "yellow_HCM=#FFFFCC,green_HCM=#53FFBC,blue_HCM=#80EBFF,pink_HCM=#F6B8FF,red_HCM=#C50043",
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  historyUpdateUrl: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  ignoreDestinationZoom: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  imageResourcesPath: {
-    value: "resource://pdf.js/web/images/",
-    kind: OptionKind.VIEWER
-  },
-  enableSelectionRendering: {
-    value: true,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  imagesRightClickMinSize: {
-    value: -1,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  maxCanvasPixels: {
-    value: 2 ** 25,
-    kind: OptionKind.VIEWER
-  },
-  minDurationToUpdateCanvas: {
-    value: 500,
-    kind: OptionKind.VIEWER
-  },
-  forcePageColors: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  pageColorsBackground: {
-    value: "Canvas",
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  pageColorsForeground: {
-    value: "CanvasText",
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  pdfBugEnabled: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  postMessageAfterPrintCallback: {
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  printResolution: {
-    value: 150,
-    kind: OptionKind.VIEWER
-  },
-  sidebarViewOnLoad: {
-    value: -1,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  scrollModeOnLoad: {
-    value: -1,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  spreadModeOnLoad: {
-    value: -1,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  textLayerMode: {
-    value: 1,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  viewerCssTheme: {
-    value: 0,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  viewOnLoad: {
-    value: 0,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE
-  },
-  cMapPacked: {
-    value: true,
-    kind: OptionKind.API
-  },
-  cMapUrl: {
-    value: "resource://pdf.js/web/cmaps/",
-    kind: OptionKind.API
-  },
-  disableAutoFetch: {
-    value: false,
-    kind: OptionKind.API + OptionKind.PREFERENCE
-  },
-  disableFontFace: {
-    value: false,
-    kind: OptionKind.API + OptionKind.PREFERENCE
-  },
-  disableRange: {
-    value: false,
-    kind: OptionKind.API + OptionKind.PREFERENCE
-  },
-  disableStream: {
-    value: false,
-    kind: OptionKind.API + OptionKind.PREFERENCE
-  },
-  docBaseUrl: {
-    value: "",
-    kind: OptionKind.API
-  },
-  enableHWA: {
-    value: true,
-    kind: OptionKind.API + OptionKind.PREFERENCE
-  },
-  enableWebGPU: {
-    value: true,
-    kind: OptionKind.API + OptionKind.PREFERENCE
-  },
-  enableXfa: {
-    value: true,
-    kind: OptionKind.API + OptionKind.PREFERENCE
-  },
-  fontExtraProperties: {
-    value: false,
-    kind: OptionKind.API
-  },
-  iccUrl: {
-    value: "resource://pdf.js/web/iccs/",
-    kind: OptionKind.API
-  },
-  isOffscreenCanvasSupported: {
-    value: true,
-    kind: OptionKind.API
-  },
-  maxImageSize: {
-    value: -1,
-    kind: OptionKind.API
-  },
-  pdfBug: {
-    value: false,
-    kind: OptionKind.API
-  },
-  standardFontDataUrl: {
-    value: "resource://pdf.js/web/standard_fonts/",
-    kind: OptionKind.API
-  },
-  useSystemFonts: {
-    value: false,
-    kind: OptionKind.API,
-    type: Type.BOOLEAN + Type.UNDEFINED
-  },
-  verbosity: {
-    value: 1,
-    kind: OptionKind.API
-  },
-  wasmUrl: {
-    value: "resource://pdf.js/web/wasm/",
-    kind: OptionKind.API
-  },
-  workerPort: {
-    value: globalThis.pdfjsPreloadedWorker || null,
-    kind: OptionKind.WORKER
-  },
-  workerSrc: {
-    value: "resource://pdf.js/build/pdf.worker.mjs",
-    kind: OptionKind.WORKER
-  }
-};
+const defaultOptions = new Map([["allowedGlobalEvents", {
+  value: null,
+  kind: OptionKind.BROWSER
+}], ["canvasMaxAreaInBytes", {
+  value: -1,
+  kind: OptionKind.BROWSER + OptionKind.API
+}], ["isInAutomation", {
+  value: false,
+  kind: OptionKind.BROWSER
+}], ["localeProperties", {
+  value: null,
+  kind: OptionKind.BROWSER
+}], ["maxCanvasDim", {
+  value: 32767,
+  kind: OptionKind.BROWSER + OptionKind.VIEWER
+}], ["nimbusDataStr", {
+  value: "",
+  kind: OptionKind.BROWSER
+}], ["supportsCaretBrowsingMode", {
+  value: false,
+  kind: OptionKind.BROWSER
+}], ["supportsDocumentFonts", {
+  value: true,
+  kind: OptionKind.BROWSER
+}], ["supportsDownloading", {
+  value: true,
+  kind: OptionKind.BROWSER
+}], ["supportsIntegratedFind", {
+  value: false,
+  kind: OptionKind.BROWSER
+}], ["supportsMouseWheelZoomCtrlKey", {
+  value: true,
+  kind: OptionKind.BROWSER
+}], ["supportsMouseWheelZoomMetaKey", {
+  value: true,
+  kind: OptionKind.BROWSER
+}], ["supportsPinchToZoom", {
+  value: true,
+  kind: OptionKind.BROWSER
+}], ["supportsPrinting", {
+  value: true,
+  kind: OptionKind.BROWSER
+}], ["toolbarDensity", {
+  value: 0,
+  kind: OptionKind.BROWSER + OptionKind.EVENT_DISPATCH
+}], ["altTextLearnMoreUrl", {
+  value: "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/pdf-alt-text",
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["annotationEditorMode", {
+  value: 0,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["annotationMode", {
+  value: 2,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["capCanvasAreaFactor", {
+  value: 200,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["commentLearnMoreUrl", {
+  value: "https://support.mozilla.org/%LOCALE%/kb/view-pdf-files-firefox-or-choose-another-viewer#w_add-a-comment-to-a-pdf",
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["cursorToolOnLoad", {
+  value: 0,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["debuggerSrc", {
+  value: "./debugger.mjs",
+  kind: OptionKind.VIEWER
+}], ...[], ["defaultZoomDelay", {
+  value: 400,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["defaultZoomValue", {
+  value: "",
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["disableHistory", {
+  value: false,
+  kind: OptionKind.VIEWER
+}], ["disablePageLabels", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ...[], ...[], ["enableAltText", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableAltTextModelDownload", {
+  value: true,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE + OptionKind.EVENT_DISPATCH
+}], ["enableAutoLinking", {
+  value: true,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableComment", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableDetailCanvas", {
+  value: true,
+  kind: OptionKind.VIEWER
+}], ...[], ["enableGuessAltText", {
+  value: true,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE + OptionKind.EVENT_DISPATCH
+}], ["enableHighlightFloatingButton", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableMerge", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableNewAltTextWhenAddingImage", {
+  value: true,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableNewBadge", {
+  value: true,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableNova", {
+  value: true,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableOptimizedPartialRendering", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enablePermissions", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enablePrintAutoRotate", {
+  value: true,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableScripting", {
+  value: true,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableSelectionRendering", {
+  value: true,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableSignatureEditor", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableSignatureVerification", {
+  value: true,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableSplitMerge", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["enableUpdatedAddImage", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["externalLinkRel", {
+  value: "noopener noreferrer nofollow",
+  kind: OptionKind.VIEWER
+}], ["externalLinkTarget", {
+  value: 0,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ...[], ["highlightEditorColors", {
+  value: "yellow=#FFFF98,green=#53FFBC,blue=#80EBFF,pink=#FFCBE6,red=#FF4F5F," + "yellow_HCM=#FFFFCC,green_HCM=#53FFBC,blue_HCM=#80EBFF,pink_HCM=#F6B8FF,red_HCM=#C50043",
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["historyUpdateUrl", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["ignoreDestinationZoom", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["imageResourcesPath", {
+  value: "resource://pdf.js/web/images/",
+  kind: OptionKind.VIEWER
+}], ["imagesRightClickMinSize", {
+  value: -1,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["maxCanvasPixels", {
+  value: 2 ** 25,
+  kind: OptionKind.VIEWER
+}], ["minDurationToUpdateCanvas", {
+  value: 500,
+  kind: OptionKind.VIEWER
+}], ["forcePageColors", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["pageColorsBackground", {
+  value: "Canvas",
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["pageColorsForeground", {
+  value: "CanvasText",
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["pdfBugEnabled", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["postMessageAfterPrintCallback", {
+  value: false,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["printResolution", {
+  value: 150,
+  kind: OptionKind.VIEWER
+}], ...[], ["sidebarViewOnLoad", {
+  value: -1,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["scrollModeOnLoad", {
+  value: -1,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["spreadModeOnLoad", {
+  value: -1,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["textLayerMode", {
+  value: 1,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["viewerCssTheme", {
+  value: 0,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["viewOnLoad", {
+  value: 0,
+  kind: OptionKind.VIEWER + OptionKind.PREFERENCE
+}], ["cMapPacked", {
+  value: true,
+  kind: OptionKind.API
+}], ["cMapUrl", {
+  value: "resource://pdf.js/web/cmaps/",
+  kind: OptionKind.API
+}], ["disableAutoFetch", {
+  value: false,
+  kind: OptionKind.API + OptionKind.PREFERENCE
+}], ["disableFontFace", {
+  value: false,
+  kind: OptionKind.API + OptionKind.PREFERENCE
+}], ["disableRange", {
+  value: false,
+  kind: OptionKind.API + OptionKind.PREFERENCE
+}], ["disableStream", {
+  value: false,
+  kind: OptionKind.API + OptionKind.PREFERENCE
+}], ["docBaseUrl", {
+  value: "",
+  kind: OptionKind.API
+}], ["enableHWA", {
+  value: true,
+  kind: OptionKind.API + OptionKind.PREFERENCE
+}], ["enableWebGPU", {
+  value: true,
+  kind: OptionKind.API + OptionKind.PREFERENCE
+}], ["enableXfa", {
+  value: true,
+  kind: OptionKind.API + OptionKind.PREFERENCE
+}], ["fontExtraProperties", {
+  value: false,
+  kind: OptionKind.API
+}], ["iccUrl", {
+  value: "resource://pdf.js/web/iccs/",
+  kind: OptionKind.API
+}], ["isOffscreenCanvasSupported", {
+  value: true,
+  kind: OptionKind.API
+}], ["maxImageSize", {
+  value: -1,
+  kind: OptionKind.API
+}], ["pdfBug", {
+  value: false,
+  kind: OptionKind.API
+}], ["standardFontDataUrl", {
+  value: "resource://pdf.js/web/standard_fonts/",
+  kind: OptionKind.API
+}], ["useSystemFonts", {
+  value: false,
+  kind: OptionKind.API,
+  type: Type.BOOLEAN + Type.UNDEFINED
+}], ["verbosity", {
+  value: 1,
+  kind: OptionKind.API
+}], ["wasmUrl", {
+  value: "resource://pdf.js/web/wasm/",
+  kind: OptionKind.API
+}], ["workerPort", {
+  value: globalThis.pdfjsPreloadedWorker || null,
+  kind: OptionKind.WORKER
+}], ["workerSrc", {
+  value: "resource://pdf.js/build/pdf.worker.mjs",
+  kind: OptionKind.WORKER
+}]]);
 class AppOptions {
   static eventBus;
   static #opts = new Map();
   static {
-    for (const name in defaultOptions) {
-      this.#opts.set(name, defaultOptions[name].value);
+    for (const [name, defaultOpt] of defaultOptions) {
+      this.#opts.set(name, defaultOpt.value);
     }
   }
   static get(name) {
@@ -879,8 +794,7 @@ class AppOptions {
   }
   static getAll(kind = null, defaultOnly = false) {
     const options = Object.create(null);
-    for (const name in defaultOptions) {
-      const defaultOpt = defaultOptions[name];
+    for (const [name, defaultOpt] of defaultOptions) {
       if (kind && !(kind & defaultOpt.kind)) {
         continue;
       }
@@ -896,7 +810,7 @@ class AppOptions {
   static setAll(options, prefs = false) {
     let events;
     for (const name in options) {
-      const defaultOpt = defaultOptions[name],
+      const defaultOpt = defaultOptions.get(name),
         userOpt = options[name];
       if (!defaultOpt || !(typeof userOpt === typeof defaultOpt.value || Type[(typeof userOpt).toUpperCase()] & defaultOpt.type)) {
         continue;
@@ -958,6 +872,7 @@ const {
   makeArr,
   makeMap,
   makeObj,
+  makeSet,
   MathClamp,
   noContextMenu,
   normalizeUnicode,
@@ -989,7 +904,7 @@ const {
 } = globalThis.pdfjsLib;
 
 ;// ./web/internal_evt.js
-const INTERNAL_EVT = "a683187c-5155-4022-ae51-654eff91e170";
+const INTERNAL_EVT = "73d553f8-709f-4713-892b-c46926003d23";
 const internalOpt = Object.freeze({
   internal: INTERNAL_EVT
 });
@@ -1338,6 +1253,7 @@ class SimpleLinkService extends PDFLinkService {
 
 ;// ./web/event_utils.js
 
+
 const WaitOnType = {
   EVENT: "event",
   TIMEOUT: "timeout"
@@ -1372,7 +1288,7 @@ async function waitOnEventOrTimeout({
   return promise;
 }
 class EventBus {
-  #listeners = Object.create(null);
+  #listeners = new Map();
   on(eventName, listener, options = null) {
     let rmAbort = null;
     if (options?.signal instanceof AbortSignal) {
@@ -1387,8 +1303,7 @@ class EventBus {
       rmAbort = () => signal.removeEventListener("abort", onAbort);
       signal.addEventListener("abort", onAbort);
     }
-    const eventListeners = this.#listeners[eventName] ??= [];
-    eventListeners.push({
+    this.#listeners.getOrInsertComputed(eventName, makeSet).add({
       listener,
       internal: options?.internal === INTERNAL_EVT,
       once: options?.once === true,
@@ -1396,22 +1311,16 @@ class EventBus {
     });
   }
   off(eventName, listener, options = null) {
-    const eventListeners = this.#listeners[eventName];
-    if (!eventListeners) {
-      return;
-    }
-    for (let i = 0, ii = eventListeners.length; i < ii; i++) {
-      const evt = eventListeners[i];
-      if (evt.listener === listener) {
-        evt.rmAbort?.();
-        eventListeners.splice(i, 1);
-        return;
-      }
+    const eventListeners = this.#listeners.get(eventName);
+    const evt = eventListeners?.keys().find(e => e.listener === listener);
+    if (evt) {
+      evt.rmAbort?.();
+      eventListeners.delete(evt);
     }
   }
   dispatch(eventName, data) {
-    const eventListeners = this.#listeners[eventName];
-    if (!eventListeners?.length) {
+    const eventListeners = this.#listeners.get(eventName);
+    if (!eventListeners?.size) {
       return;
     }
     let extListeners;
@@ -1419,7 +1328,7 @@ class EventBus {
       listener,
       internal,
       once
-    } of eventListeners.slice(0)) {
+    } of new Set(eventListeners)) {
       if (once) {
         this.off(eventName, listener);
       }
@@ -1807,7 +1716,7 @@ class Preferences extends BasePreferences {
     if (!viewerApp.initialized) {
       return;
     }
-    if (type === "zoomreset" && viewerApp.pdfViewer.currentScaleValue === DEFAULT_SCALE_VALUE) {
+    if (type === "zoomreset" && viewerApp.pdfViewer.currentScaleValue === (/* inlined export .DEFAULT_SCALE_VALUE */"auto")) {
       return;
     }
     viewerApp.eventBus.dispatch(type, {
@@ -2199,7 +2108,8 @@ class SignatureVerifier {
         errorCode: "SUBFILTER_NOT_SUPPORTED",
         message: signature.subFilter,
         certificate: null,
-        documentModifiedAfterSigning: !signature.coversWholeDocument
+        documentModifiedAfterSigning: !signature.coversWholeDocument,
+        modificationsAfterSignature: signature.modificationsAfterSignature
       };
     }
     let response;
@@ -2215,7 +2125,8 @@ class SignatureVerifier {
         errorCode: "BRIDGE_ERROR",
         message: ex?.message ?? null,
         certificate: null,
-        documentModifiedAfterSigning: !signature.coversWholeDocument
+        documentModifiedAfterSigning: !signature.coversWholeDocument,
+        modificationsAfterSignature: signature.modificationsAfterSignature
       };
     }
     if (!response || response.error) {
@@ -2224,7 +2135,8 @@ class SignatureVerifier {
         errorCode: response?.error ?? "EMPTY_RESPONSE",
         message: null,
         certificate: null,
-        documentModifiedAfterSigning: !signature.coversWholeDocument
+        documentModifiedAfterSigning: !signature.coversWholeDocument,
+        modificationsAfterSignature: signature.modificationsAfterSignature
       };
     }
     const entry = Array.isArray(response) ? response[0] : response;
@@ -2234,7 +2146,8 @@ class SignatureVerifier {
         errorCode: "EMPTY_RESPONSE",
         message: null,
         certificate: null,
-        documentModifiedAfterSigning: !signature.coversWholeDocument
+        documentModifiedAfterSigning: !signature.coversWholeDocument,
+        modificationsAfterSignature: signature.modificationsAfterSignature
       };
     }
     const {
@@ -2246,7 +2159,8 @@ class SignatureVerifier {
       errorCode,
       message: entry.message ?? null,
       certificate: entry.certificate ?? null,
-      documentModifiedAfterSigning: !signature.coversWholeDocument
+      documentModifiedAfterSigning: !signature.coversWholeDocument,
+      modificationsAfterSignature: signature.modificationsAfterSignature
     };
   }
   async viewCertificate(certificate) {
@@ -2349,25 +2263,10 @@ class ExternalServices extends BaseExternalServices {
   dispatchGlobalEvent(event) {
     FirefoxCom.request("dispatchGlobalEvent", event);
   }
+  openAboutPdfFeatures() {
+    throw new Error("Not implemented: openAboutPdfFeatures");
+  }
 }
-
-;// ./web/stubs-geckoview.js
-const AltTextManager = null;
-const AnnotationEditorParams = null;
-const ImageAltTextSettings = null;
-const NewAltTextManager = null;
-const PDFAttachmentViewer = null;
-const PDFCursorTools = null;
-const PDFDocumentProperties = null;
-const PDFFindBar = null;
-const PDFLayerViewer = null;
-const PDFOutlineViewer = null;
-const PDFPresentationMode = null;
-const PDFThumbnailViewer = null;
-const SecondaryToolbar = null;
-const SignatureManager = null;
-const SignaturePropertiesManager = null;
-const ViewsManager = null;
 
 ;// ./web/caret_browsing.js
 const PRECISION = 1e-1;
@@ -3923,72 +3822,26 @@ class PasswordPrompt {
 
 ;// ./web/pdf_find_utils.js
 
-const CharacterType = {
-  SPACE: 0,
-  ALPHA_LETTER: 1,
-  PUNCT: 2,
-  HAN_LETTER: 3,
-  KATAKANA_LETTER: 4,
-  HIRAGANA_LETTER: 5,
-  HALFWIDTH_KATAKANA_LETTER: 6,
-  THAI_LETTER: 7
-};
-function isAlphabeticalScript(charCode) {
-  return charCode < 0x2e80;
-}
-function isAscii(charCode) {
-  return (charCode & 0xff80) === 0;
-}
-function isAsciiAlpha(charCode) {
-  return charCode >= 0x61 && charCode <= 0x7a || charCode >= 0x41 && charCode <= 0x5a;
-}
-function isAsciiDigit(charCode) {
-  return charCode >= 0x30 && charCode <= 0x39;
-}
-function isAsciiSpace(charCode) {
-  return charCode === 0x20 || charCode === 0x09 || charCode === 0x0d || charCode === 0x0a;
-}
-function isHan(charCode) {
-  return charCode >= 0x3400 && charCode <= 0x9fff || charCode >= 0xf900 && charCode <= 0xfaff;
-}
-function isKatakana(charCode) {
-  return charCode >= 0x30a0 && charCode <= 0x30ff;
-}
-function isHiragana(charCode) {
-  return charCode >= 0x3040 && charCode <= 0x309f;
-}
-function isHalfwidthKatakana(charCode) {
-  return charCode >= 0xff60 && charCode <= 0xff9f;
-}
-function isThai(charCode) {
-  return (charCode & 0xff80) === 0x0e00;
-}
-function getCharacterType(charCode) {
-  if (isAlphabeticalScript(charCode)) {
-    if (isAscii(charCode)) {
-      if (isAsciiSpace(charCode)) {
-        return CharacterType.SPACE;
-      } else if (isAsciiAlpha(charCode) || isAsciiDigit(charCode) || charCode === 0x5f) {
-        return CharacterType.ALPHA_LETTER;
-      }
-      return CharacterType.PUNCT;
-    } else if (isThai(charCode)) {
-      return CharacterType.THAI_LETTER;
-    } else if (charCode === 0xa0) {
-      return CharacterType.SPACE;
-    }
-    return CharacterType.ALPHA_LETTER;
+let wordSegmenter = null;
+let graphemeSegmenter = null;
+function isWordBreakAt(content, pos) {
+  graphemeSegmenter ||= new Intl.Segmenter(undefined, {
+    granularity: "grapheme"
+  });
+  const graphemes = graphemeSegmenter.segment(content);
+  const after = graphemes.containing(pos);
+  if (after.index !== pos) {
+    return false;
   }
-  if (isHan(charCode)) {
-    return CharacterType.HAN_LETTER;
-  } else if (isKatakana(charCode)) {
-    return CharacterType.KATAKANA_LETTER;
-  } else if (isHiragana(charCode)) {
-    return CharacterType.HIRAGANA_LETTER;
-  } else if (isHalfwidthKatakana(charCode)) {
-    return CharacterType.HALFWIDTH_KATAKANA_LETTER;
-  }
-  return CharacterType.ALPHA_LETTER;
+  wordSegmenter ||= new Intl.Segmenter(undefined, {
+    granularity: "word"
+  });
+  const before = graphemes.containing(pos - 1).segment;
+  return wordSegmenter.segment(before + after.segment).containing(before.length).index === before.length;
+}
+function isEntireWord(content, startIdx, length) {
+  const endIdx = startIdx + length;
+  return (startIdx === 0 || isWordBreakAt(content, startIdx)) && (endIdx === content.length || isWordBreakAt(content, endIdx));
 }
 let NormalizeWithNFKC;
 function getNormalizeWithNFKC() {
@@ -4006,26 +3859,11 @@ const FindState = {
   WRAPPED: 2,
   PENDING: 3
 };
-const CHARACTERS_TO_NORMALIZE = {
-  "\u2010": "-",
-  "\u2018": "'",
-  "\u2019": "'",
-  "\u201A": "'",
-  "\u201B": "'",
-  "\u201C": '"',
-  "\u201D": '"',
-  "\u201E": '"',
-  "\u201F": '"',
-  "\u00BC": "1/4",
-  "\u00BD": "1/2",
-  "\u00BE": "3/4"
-};
+const CHARACTERS_TO_NORMALIZE = new Map([["\u2010", "-"], ["\u2018", "'"], ["\u2019", "'"], ["\u201A", "'"], ["\u201B", "'"], ["\u201C", '"'], ["\u201D", '"'], ["\u201E", '"'], ["\u201F", '"'], ["\u00BC", "1/4"], ["\u00BD", "1/2"], ["\u00BE", "3/4"]]);
 const DIACRITICS_EXCEPTION = new Set([0x3099, 0x309a, 0x094d, 0x09cd, 0x0a4d, 0x0acd, 0x0b4d, 0x0bcd, 0x0c4d, 0x0ccd, 0x0d3b, 0x0d3c, 0x0d4d, 0x0dca, 0x0e3a, 0x0eba, 0x0f84, 0x1039, 0x103a, 0x1714, 0x1734, 0x17d2, 0x1a60, 0x1b44, 0x1baa, 0x1bab, 0x1bf2, 0x1bf3, 0x2d7f, 0xa806, 0xa82c, 0xa8c4, 0xa953, 0xa9c0, 0xaaf6, 0xabed, 0x0c56, 0x0f71, 0x0f72, 0x0f7a, 0x0f7b, 0x0f7c, 0x0f7d, 0x0f80, 0x0f74]);
 let DIACRITICS_EXCEPTION_STR;
 const DIACRITICS_REG_EXP = /\p{M}+/gu;
 const SPECIAL_CHARS_REG_EXP = /([+^$|])|(\p{P}+)|(\s+)|(\p{M})|(\p{L})/gu;
-const NOT_DIACRITIC_FROM_END_REG_EXP = /(\P{M})\p{M}*$/u;
-const NOT_DIACRITIC_FROM_START_REG_EXP = /^\p{M}*(\P{M})/u;
 const SYLLABLES_REG_EXP = /[\uAC00-\uD7AF\uFA6C\uFACF-\uFAD1\uFAD5-\uFAD7]+/g;
 const SYLLABLES_LENGTHS = new Map();
 const FIRST_CHAR_SYLLABLES_REG_EXP = "[\\u1100-\\u1112\\ud7a4-\\ud7af\\ud84a\\ud84c\\ud850\\ud854\\ud857\\ud85f]";
@@ -4056,7 +3894,7 @@ function normalize(text, options = {}) {
   } else if (hasSyllables && withSyllablesRegExp) {
     normalizationRegex = withSyllablesRegExp;
   } else {
-    const replace = Object.keys(CHARACTERS_TO_NORMALIZE).join("");
+    const replace = CHARACTERS_TO_NORMALIZE.keys().join("");
     const toNormalizeWithNFKC = getNormalizeWithNFKC();
     const CJK = "(?:\\p{Ideographic}|[\u3040-\u30FF])";
     const HKDiacritics = "(?:\u3099|\u309A)";
@@ -4084,7 +3922,7 @@ function normalize(text, options = {}) {
   normalized = normalized.replace(normalizationRegex, (match, p1, p2, p3, p4, p5, p6, p7, p8, p9, i) => {
     i -= shiftOrigin;
     if (p1) {
-      const replacement = CHARACTERS_TO_NORMALIZE[p1];
+      const replacement = CHARACTERS_TO_NORMALIZE.get(p1);
       const jj = replacement.length;
       for (let j = 1; j < jj; j++) {
         positions.push(i - shift + j, shift - j);
@@ -4093,11 +3931,7 @@ function normalize(text, options = {}) {
       return replacement;
     }
     if (p2) {
-      let replacement = NFKC_CHARS_TO_NORMALIZE.get(p2);
-      if (!replacement) {
-        replacement = p2.normalize("NFKC");
-        NFKC_CHARS_TO_NORMALIZE.set(p2, replacement);
-      }
+      const replacement = NFKC_CHARS_TO_NORMALIZE.getOrInsertComputed(p2, () => p2.normalize("NFKC"));
       const jj = replacement.length;
       for (let j = 1; j < jj; j++) {
         positions.push(i - shift + j, shift - j);
@@ -4400,25 +4234,6 @@ class PDFFindController {
     }
     return true;
   }
-  #isEntireWord(content, startIdx, length) {
-    let match = content.slice(0, startIdx).match(NOT_DIACRITIC_FROM_END_REG_EXP);
-    if (match) {
-      const first = content.charCodeAt(startIdx);
-      const limit = match[1].charCodeAt(0);
-      if (getCharacterType(first) === getCharacterType(limit)) {
-        return false;
-      }
-    }
-    match = content.slice(startIdx + length).match(NOT_DIACRITIC_FROM_START_REG_EXP);
-    if (match) {
-      const last = content.charCodeAt(startIdx + length - 1);
-      const limit = match[1].charCodeAt(0);
-      if (getCharacterType(last) === getCharacterType(limit)) {
-        return false;
-      }
-    }
-    return true;
-  }
   #convertToRegExpString(query, hasDiacritics) {
     const {
       matchDiacritics
@@ -4535,7 +4350,7 @@ class PDFFindController {
     const matches = [];
     let match;
     while ((match = query.exec(pageContent)) !== null) {
-      if (entireWord && !this.#isEntireWord(pageContent, match.index, match[0].length)) {
+      if (entireWord && !isEntireWord(pageContent, match.index, match[0].length)) {
         continue;
       }
       matches.push({
@@ -5115,7 +4930,7 @@ class PDFHistory {
     if (this._destination.hash === position.hash) {
       return;
     }
-    if (!this._destination.page && (POSITION_UPDATED_THRESHOLD <= 0 || this._numPositionUpdates <= POSITION_UPDATED_THRESHOLD)) {
+    if (!this._destination.page && ( false || this._numPositionUpdates <= POSITION_UPDATED_THRESHOLD)) {
       return;
     }
     let forceReplace = false;
@@ -5198,10 +5013,10 @@ class PDFHistory {
     if (this._popStateInProgress) {
       return;
     }
-    if (POSITION_UPDATED_THRESHOLD > 0 && this._isPagesLoaded && this._destination && !this._destination.page) {
+    if ( true && this._isPagesLoaded && this._destination && !this._destination.page) {
       this._numPositionUpdates++;
     }
-    if (UPDATE_VIEWAREA_TIMEOUT > 0) {
+    if (true) {
       this._updateViewareaTimeout = setTimeout(() => {
         if (!this._popStateInProgress) {
           this.#tryPushCurrentPosition(true);
@@ -5720,6 +5535,7 @@ class PDFScriptingManager {
   #eventAC = null;
   #eventBus = null;
   #externalServices = null;
+  #objectIds = null;
   #pdfDocument = null;
   #pdfViewer = null;
   #ready = false;
@@ -5752,6 +5568,16 @@ class PDFScriptingManager {
     }
     if (pdfDocument !== this.#pdfDocument) {
       return;
+    }
+    if (objects) {
+      this.#objectIds = new Set();
+      for (const fields of objects.values()) {
+        for (const {
+          id
+        } of fields) {
+          this.#objectIds.add(id);
+        }
+      }
     }
     try {
       this.#scripting = this.#initScripting();
@@ -5968,6 +5794,9 @@ class PDFScriptingManager {
     delete detail.siblings;
     const ids = siblings ? [id, ...siblings] : [id];
     for (const elementId of ids) {
+      if (!this.#objectIds?.has(elementId)) {
+        continue;
+      }
       const element = document.querySelector(`[data-element-id="${elementId}"]`);
       if (element) {
         element.dispatchEvent(new CustomEvent("updatefromsandbox", {
@@ -6039,6 +5868,7 @@ class PDFScriptingManager {
     return this.#externalServices.createScripting();
   }
   async #destroyScripting() {
+    this.#objectIds = null;
     if (!this.#scripting) {
       this.#pdfDocument = null;
       this.#destroyCapability?.resolve();
@@ -6528,7 +6358,7 @@ class Autolinker {
   static #regex;
   static #numericTLDRegex;
   static findLinks(text) {
-    this.#regex ??= /\b(?:https?:\/\/|mailto:|www\.)(?:[\S--[\p{P}<>]]|\/|[\S--[\[\]]]+[\S--[\p{P}<>]])+|(?=\p{L})[\S--[@\p{Ps}\p{Pe}<>]]+@([\S--[[\p{P}--\-]<>]]+(?:\.[\S--[[\p{P}--\-]<>]]+)+)/gv;
+    this.#regex ??= /\b(?:https?:\/\/|mailto:|www\.)(?:[\S--[\p{P}<>]]|\/|[\S--[\[\]]]+[\S--[\p{P}<>]])+|(?=\p{L})[\S--[@\p{Ps}\p{Pe}<>]]{1,64}@([\S--[[\p{P}--\-]<>]]{1,63}(?:\.[\S--[[\p{P}--\-]<>]]{1,63})+)/gv;
     const [normalizedText, diffs] = normalize(text, {
       ignoreDashEOL: true
     });
@@ -7077,7 +6907,7 @@ const MathMLNamespace = "http://www.w3.org/1998/Math/MathML";
 class MathMLSanitizer {
   static get sanitizer() {
     return shadow(this, "sanitizer", FeatureTest.isSanitizerSupported ? new Sanitizer({
-      elements: [...MathMLElements].map(name => ({
+      elements: Array.from(MathMLElements.keys(), name => ({
         name,
         namespace: MathMLNamespace
       })),
@@ -7927,7 +7757,7 @@ class PDFPageView extends BasePDFPageView {
     this.pdfPage = null;
     this.pageLabel = null;
     this.rotation = 0;
-    this.scale = options.scale || DEFAULT_SCALE;
+    this.scale = options.scale || (/* inlined export .DEFAULT_SCALE */1);
     this.viewport = defaultViewport;
     this.pdfPageRotate = defaultViewport.rotation;
     this._optionalContentConfigPromise = options.optionalContentConfigPromise || null;
@@ -8421,13 +8251,17 @@ class PDFPageView extends BasePDFPageView {
     if (this.structTreeLayer && !this.textLayer) {
       this.structTreeLayer = null;
     }
-    if (this.annotationEditorLayer && (!keepAnnotationEditorLayer || !this.annotationEditorLayer.div)) {
+    if (this.annotationEditorLayer && (!keepAnnotationEditorLayer || !this.annotationEditorLayer.div || !this.textLayer)) {
       if (this.drawLayer) {
         this.drawLayer.cancel();
         this.drawLayer = null;
       }
       this.annotationEditorLayer.cancel();
       this.annotationEditorLayer = null;
+    }
+    if (this.drawLayer && !this.textLayer) {
+      this.drawLayer.cancel();
+      this.drawLayer = null;
     }
     if (this.xfaLayer && (!keepXfaLayer || !this.xfaLayer.div)) {
       this.xfaLayer.cancel();
@@ -8809,7 +8643,7 @@ class PDFViewer {
   #savedPageViews = null;
   #deletedPageNumbers = null;
   constructor(options) {
-    const viewerVersion = "6.1.239";
+    const viewerVersion = "6.3.72";
     if (version !== viewerVersion) {
       throw new Error(`The API version "${version}" does not match the Viewer version "${viewerVersion}".`);
     }
@@ -8974,7 +8808,7 @@ class PDFViewer {
     }
   }
   get currentScale() {
-    return this._currentScale !== UNKNOWN_SCALE ? this._currentScale : DEFAULT_SCALE;
+    return this._currentScale !== (/* inlined export .UNKNOWN_SCALE */0) ? this._currentScale : (/* inlined export .DEFAULT_SCALE */1);
   }
   set currentScale(val) {
     if (isNaN(val)) {
@@ -9522,7 +9356,7 @@ class PDFViewer {
   _resetView() {
     this._pages = [];
     this._currentPageNumber = 1;
-    this._currentScale = UNKNOWN_SCALE;
+    this._currentScale = (/* inlined export .UNKNOWN_SCALE */0);
     this._currentScaleValue = null;
     this._pageLabels = null;
     this.#buffer = new PDFPageViewBuffer(DEFAULT_CACHE_SIZE);
@@ -9705,10 +9539,7 @@ class PDFViewer {
     }
   }
   get #pageWidthScaleFactor() {
-    if (this._spreadMode !== SpreadMode.NONE && this._scrollMode !== ScrollMode.HORIZONTAL) {
-      return 2;
-    }
-    return 1;
+    return this._spreadMode !== SpreadMode.NONE && this._scrollMode !== ScrollMode.HORIZONTAL ? 2 : 1;
   }
   #setScale(value, options) {
     let scale = parseFloat(value);
@@ -9720,8 +9551,8 @@ class PDFViewer {
       if (!currentPage) {
         return;
       }
-      let hPadding = SCROLLBAR_PADDING,
-        vPadding = VERTICAL_PADDING;
+      let hPadding = (/* inlined export .SCROLLBAR_PADDING */40),
+        vPadding = (/* inlined export .VERTICAL_PADDING */5);
       if (this.isInPresentationMode) {
         hPadding = vPadding = 4;
         if (this._spreadMode !== SpreadMode.NONE) {
@@ -9747,7 +9578,7 @@ class PDFViewer {
           break;
         case "auto":
           const horizontalScale = isPortraitOrientation(currentPage) ? pageWidthScale : Math.min(pageHeightScale, pageWidthScale);
-          scale = Math.min(MAX_AUTO_SCALE, horizontalScale);
+          scale = Math.min((/* inlined export .MAX_AUTO_SCALE */1.25), horizontalScale);
           break;
         default:
           console.error(`#setScale: "${value}" is an unknown zoom value.`);
@@ -9840,8 +9671,8 @@ class PDFViewer {
         y = destArray[3];
         width = destArray[4] - x;
         height = destArray[5] - y;
-        let hPadding = SCROLLBAR_PADDING,
-          vPadding = VERTICAL_PADDING;
+        let hPadding = (/* inlined export .SCROLLBAR_PADDING */40),
+          vPadding = (/* inlined export .VERTICAL_PADDING */5);
         widthScale = (this.container.clientWidth - hPadding) / width / PixelsPerInch.PDF_TO_CSS_UNITS;
         heightScale = (this.container.clientHeight - vPadding) / height / PixelsPerInch.PDF_TO_CSS_UNITS;
         scale = Math.min(Math.abs(widthScale), Math.abs(heightScale));
@@ -9853,8 +9684,8 @@ class PDFViewer {
     if (!ignoreDestinationZoom) {
       if (scale && scale !== this._currentScale) {
         this.currentScaleValue = scale;
-      } else if (this._currentScale === UNKNOWN_SCALE) {
-        this.currentScaleValue = DEFAULT_SCALE_VALUE;
+      } else if (this._currentScale === (/* inlined export .UNKNOWN_SCALE */0)) {
+        this.currentScaleValue = (/* inlined export .DEFAULT_SCALE_VALUE */"auto");
       }
     }
     if (scale === "page-fit" && !destArray[4]) {
@@ -9888,17 +9719,16 @@ class PDFViewer {
     const currentPageView = this._pages[pageNumber - 1];
     const container = this.container;
     const topLeft = currentPageView.getPagePoint(container.scrollLeft - firstPage.x, container.scrollTop - firstPage.y);
-    const intLeft = Math.round(topLeft[0]);
-    const intTop = Math.round(topLeft[1]);
+    const [left, top] = topLeft;
     let pdfOpenParams = `#page=${pageNumber}`;
     if (!this.isInPresentationMode) {
-      pdfOpenParams += `&zoom=${normalizedScaleValue},${intLeft},${intTop}`;
+      pdfOpenParams += `&zoom=${normalizedScaleValue},` + `${Math.round(left)},${Math.round(top)}`;
     }
     this._location = {
       pageNumber,
       scale: normalizedScaleValue,
-      top: intTop,
-      left: intLeft,
+      top,
+      left,
       rotation: this._pagesRotation,
       pdfOpenParams
     };
@@ -10326,14 +10156,14 @@ class PDFViewer {
     if (scaleFactor > 0 && scaleFactor !== 1) {
       newScale = Math.round(newScale * scaleFactor * 100) / 100;
     } else if (steps) {
-      const delta = steps > 0 ? DEFAULT_SCALE_DELTA : 1 / DEFAULT_SCALE_DELTA;
+      const delta = steps > 0 ? (/* inlined export .DEFAULT_SCALE_DELTA */1.1) : 1 / (/* inlined export .DEFAULT_SCALE_DELTA */1.1);
       const round = steps > 0 ? Math.ceil : Math.floor;
       steps = Math.abs(steps);
       do {
         newScale = round((newScale * delta).toFixed(2) * 10) / 10;
       } while (--steps > 0);
     }
-    newScale = MathClamp(newScale, MIN_SCALE, MAX_SCALE);
+    newScale = MathClamp(newScale, (/* inlined export .MIN_SCALE */0.1), (/* inlined export .MAX_SCALE */25));
     this.#setScale(newScale, {
       noScroll: false,
       drawingDelay,
@@ -10549,28 +10379,20 @@ class Toolbar {
 const DEFAULT_VIEW_HISTORY_CACHE_SIZE = 20;
 class ViewHistory {
   constructor(fingerprint, cacheSize = DEFAULT_VIEW_HISTORY_CACHE_SIZE) {
-    this.fingerprint = fingerprint;
-    this.cacheSize = cacheSize;
     this._initializedPromise = this._readFromStorage().then(databaseStr => {
       const database = JSON.parse(databaseStr || "{}");
       let index = -1;
       if (!Array.isArray(database.files)) {
         database.files = [];
       } else {
-        while (database.files.length >= this.cacheSize) {
+        while (database.files.length >= cacheSize) {
           database.files.shift();
         }
-        for (let i = 0, ii = database.files.length; i < ii; i++) {
-          const branch = database.files[i];
-          if (branch.fingerprint === this.fingerprint) {
-            index = i;
-            break;
-          }
-        }
+        index = database.files.findIndex(branch => branch.fingerprint === fingerprint);
       }
       if (index === -1) {
         index = database.files.push({
-          fingerprint: this.fingerprint
+          fingerprint
         }) - 1;
       }
       this.file = database.files[index];
@@ -10896,14 +10718,14 @@ const PDFViewerApplication = {
     const enableSplitMerge = AppOptions.get("enableSplitMerge");
     let altTextManager;
     if (AppOptions.get("enableUpdatedAddImage")) {
-      altTextManager = appConfig.newAltTextDialog ? new NewAltTextManager(appConfig.newAltTextDialog, overlayManager, eventBus) : null;
+      altTextManager = appConfig.newAltTextDialog ? new (/* inlined export .NewAltTextManager */null)(appConfig.newAltTextDialog, overlayManager, eventBus) : null;
     } else {
-      altTextManager = appConfig.altTextDialog ? new AltTextManager(appConfig.altTextDialog, container, overlayManager, eventBus) : null;
+      altTextManager = appConfig.altTextDialog ? new (/* inlined export .AltTextManager */null)(appConfig.altTextDialog, container, overlayManager, eventBus) : null;
     }
     if (appConfig.editorUndoBar) {
       this.editorUndoBar = new EditorUndoBar(appConfig.editorUndoBar, eventBus);
     }
-    const signatureManager = AppOptions.get("enableSignatureEditor") && appConfig.addSignatureDialog ? new SignatureManager(appConfig.addSignatureDialog, appConfig.editSignatureDialog, appConfig.annotationEditorParams?.editorSignatureAddSignature || null, overlayManager, l10n, externalServices.createSignatureStorage(eventBus, abortSignal), eventBus) : null;
+    const signatureManager = AppOptions.get("enableSignatureEditor") && appConfig.addSignatureDialog ? new (/* inlined export .SignatureManager */null)(appConfig.addSignatureDialog, appConfig.editSignatureDialog, appConfig.annotationEditorParams?.editorSignatureAddSignature || null, overlayManager, l10n, externalServices.createSignatureStorage(eventBus, abortSignal), eventBus) : null;
     const commentManager = AppOptions.get("enableComment") && appConfig.editCommentDialog ? new CommentManager(appConfig.editCommentDialog, {
       learnMoreUrl: AppOptions.get("commentLearnMoreUrl"),
       sidebar: appConfig.annotationEditorParams?.editorCommentsSidebar || null,
@@ -10963,7 +10785,7 @@ const PDFViewerApplication = {
       const {
         viewsManager
       } = appConfig;
-      this.pdfThumbnailViewer = new PDFThumbnailViewer({
+      this.pdfThumbnailViewer = new (/* inlined export .PDFThumbnailViewer */null)({
         container: viewsManager.thumbnailsView,
         eventBus,
         renderingQueue,
@@ -10991,7 +10813,7 @@ const PDFViewerApplication = {
       linkService.setHistory(this.pdfHistory);
     }
     if (!this.supportsIntegratedFind && appConfig.findBar) {
-      this.findBar = new PDFFindBar(appConfig.findBar, appConfig.principalContainer, eventBus);
+      this.findBar = new (/* inlined export .PDFFindBar */null)(appConfig.findBar, appConfig.principalContainer, eventBus);
     }
     if (appConfig.annotationEditorParams) {
       if (annotationEditorMode !== AnnotationEditorType.DISABLE) {
@@ -11003,7 +10825,7 @@ const PDFViewerApplication = {
         if (editorCommentButton && AppOptions.get("enableComment")) {
           editorCommentButton.parentElement.hidden = false;
         }
-        this.annotationEditorParams = new AnnotationEditorParams(appConfig.annotationEditorParams, eventBus);
+        this.annotationEditorParams = new (/* inlined export .AnnotationEditorParams */null)(appConfig.annotationEditorParams, eventBus);
       } else {
         for (const id of ["editorModeButtons", "editorModeSeparator"]) {
           document.getElementById(id)?.classList.add("hidden");
@@ -11011,13 +10833,13 @@ const PDFViewerApplication = {
       }
     }
     if (mlManager && appConfig.secondaryToolbar?.imageAltTextSettingsButton) {
-      this.imageAltTextSettings = new ImageAltTextSettings(appConfig.altTextSettingsDialog, overlayManager, eventBus, mlManager);
+      this.imageAltTextSettings = new (/* inlined export .ImageAltTextSettings */null)(appConfig.altTextSettingsDialog, overlayManager, eventBus, mlManager);
     }
     if (appConfig.documentProperties) {
-      this.pdfDocumentProperties = new PDFDocumentProperties(appConfig.documentProperties, overlayManager, eventBus, l10n, () => this._docFilename, () => this._docTitle);
+      this.pdfDocumentProperties = new (/* inlined export .PDFDocumentProperties */null)(appConfig.documentProperties, overlayManager, eventBus, l10n, () => this._docFilename, () => this._docTitle);
     }
     if (appConfig.secondaryToolbar?.cursorHandToolButton) {
-      this.pdfCursorTools = new PDFCursorTools({
+      this.pdfCursorTools = new (/* inlined export .PDFCursorTools */null)({
         container,
         eventBus,
         cursorToolOnLoad: AppOptions.get("cursorToolOnLoad")
@@ -11032,10 +10854,10 @@ const PDFViewerApplication = {
         appConfig.secondaryToolbar.imageAltTextSettingsButton?.classList.remove("hidden");
         appConfig.secondaryToolbar.imageAltTextSettingsSeparator?.classList.remove("hidden");
       }
-      this.secondaryToolbar = new SecondaryToolbar(appConfig.secondaryToolbar, eventBus);
+      this.secondaryToolbar = new (/* inlined export .SecondaryToolbar */null)(appConfig.secondaryToolbar, eventBus);
     }
     if (this.supportsFullscreen && appConfig.secondaryToolbar?.presentationModeButton) {
-      this.pdfPresentationMode = new PDFPresentationMode({
+      this.pdfPresentationMode = new (/* inlined export .PDFPresentationMode */null)({
         container,
         pdfViewer,
         eventBus
@@ -11045,7 +10867,7 @@ const PDFViewerApplication = {
       this.passwordPrompt = new PasswordPrompt(appConfig.passwordOverlay, overlayManager, this.isViewerEmbedded);
     }
     if (appConfig.viewsManager?.outlinesView) {
-      this.pdfOutlineViewer = new PDFOutlineViewer({
+      this.pdfOutlineViewer = new (/* inlined export .PDFOutlineViewer */null)({
         container: appConfig.viewsManager.outlinesView,
         eventBus,
         l10n,
@@ -11054,7 +10876,7 @@ const PDFViewerApplication = {
       });
     }
     if (appConfig.viewsManager?.attachmentsView) {
-      this.pdfAttachmentViewer = new PDFAttachmentViewer({
+      this.pdfAttachmentViewer = new (/* inlined export .PDFAttachmentViewer */null)({
         container: appConfig.viewsManager.attachmentsView,
         eventBus,
         l10n,
@@ -11063,14 +10885,14 @@ const PDFViewerApplication = {
       });
     }
     if (appConfig.viewsManager?.layersView) {
-      this.pdfLayerViewer = new PDFLayerViewer({
+      this.pdfLayerViewer = new (/* inlined export .PDFLayerViewer */null)({
         container: appConfig.viewsManager.layersView,
         eventBus,
         l10n
       });
     }
     if (appConfig.viewsManager) {
-      this.viewsManager = new ViewsManager({
+      this.viewsManager = new (/* inlined export .ViewsManager */null)({
         elements: appConfig.viewsManager,
         eventBus,
         l10n,
@@ -11154,7 +10976,7 @@ const PDFViewerApplication = {
     if (this.pdfViewer.isInPresentationMode) {
       return;
     }
-    this.pdfViewer.currentScaleValue = DEFAULT_SCALE_VALUE;
+    this.pdfViewer.currentScaleValue = (/* inlined export .DEFAULT_SCALE_VALUE */"auto");
   },
   touchPinchCallback(origin, prevDistance, distance) {
     if (this.supportsPinchToZoom) {
@@ -11393,6 +11215,7 @@ const PDFViewerApplication = {
     if (!this.downloadManager) {
       return;
     }
+    this.pdfViewer._layerProperties.annotationEditorUIManager?.endCurrentEditing();
     const {
       classList
     } = this.appConfig.appContainer;
@@ -11496,7 +11319,7 @@ const PDFViewerApplication = {
     this.pdfThumbnailViewer?.setDocument(pdfDocument);
     const storedPromise = (this.store = new ViewHistory(pdfDocument.fingerprints[0])).getMultiple({
       page: null,
-      zoom: DEFAULT_SCALE_VALUE,
+      zoom: (/* inlined export .DEFAULT_SCALE_VALUE */"auto"),
       scrollLeft: "0",
       scrollTop: "0",
       rotation: null,
@@ -11512,7 +11335,7 @@ const PDFViewerApplication = {
         this._initializePdfHistory({
           fingerprint: pdfDocument.fingerprints[0],
           viewOnLoad,
-          initialDest: openAction?.dest
+          initialDest: openAction?.get("dest")
         });
         const initialBookmark = this.initialBookmark;
         const zoom = AppOptions.get("defaultZoomValue");
@@ -11656,10 +11479,10 @@ const PDFViewerApplication = {
     if (pdfDocument !== this.pdfDocument) {
       return;
     }
-    let triggerAutoPrint = openAction?.action === "Print";
+    let triggerAutoPrint = openAction?.get("action") === "Print";
     if (jsActions) {
       console.warn("Warning: JavaScript support is not enabled");
-      for (const name in jsActions) {
+      for (const [name, actions] of jsActions) {
         if (triggerAutoPrint) {
           break;
         }
@@ -11671,7 +11494,7 @@ const PDFViewerApplication = {
           case "DidPrint":
             continue;
         }
-        triggerAutoPrint = jsActions[name].some(js => AutoPrintRegExp.test(js));
+        triggerAutoPrint = actions.some(js => AutoPrintRegExp.test(js));
       }
     }
     if (triggerAutoPrint) {
@@ -11734,7 +11557,7 @@ const PDFViewerApplication = {
     if (pdfDocument !== this.pdfDocument) {
       return true;
     }
-    this.signaturePropertiesManager ??= new SignaturePropertiesManager({
+    this.signaturePropertiesManager ??= new (/* inlined export .SignaturePropertiesManager */null)({
       appConfig: this.appConfig.toolbar,
       verifier,
       eventBus: this.eventBus
@@ -11818,9 +11641,7 @@ const PDFViewerApplication = {
     }
     this.toolbar?.setPageNumber(this.pdfViewer.currentPageNumber, this.pdfViewer.currentPageLabel);
     this.secondaryToolbar?.setPageNumber(this.pdfViewer.currentPageNumber);
-    if (!this.pdfViewer.currentScaleValue) {
-      this.pdfViewer.currentScaleValue = DEFAULT_SCALE_VALUE;
-    }
+    this.pdfViewer.currentScaleValue ||= (/* inlined export .DEFAULT_SCALE_VALUE */"auto");
   },
   _cleanup() {
     if (!this.pdfDocument) {
@@ -12092,7 +11913,10 @@ const PDFViewerApplication = {
     this.pdfViewer.onPagesEdited(data);
   },
   async onSavePages({
-    data: extractParams
+    data: {
+      pageInfos,
+      copyLevels
+    }
   }) {
     if (!this.downloadManager) {
       return;
@@ -12100,7 +11924,7 @@ const PDFViewerApplication = {
     if (!this.pdfDocument) {
       return;
     }
-    const modifiedPdfBytes = await this.pdfDocument.extractPages(extractParams);
+    const modifiedPdfBytes = await this.pdfDocument.extractPages(pageInfos, copyLevels);
     if (!modifiedPdfBytes) {
       console.error("Something wrong happened when saving the edited PDF.\nPlease file a bug.");
       return;
@@ -12108,12 +11932,15 @@ const PDFViewerApplication = {
     this.downloadManager.download(modifiedPdfBytes, this._downloadUrl, this._docFilename);
   },
   async onSaveAndLoad({
-    data: extractParams
+    data: {
+      pageInfos,
+      copyLevels
+    }
   }) {
     if (!this.pdfDocument) {
       return;
     }
-    const modifiedPdfBytes = await this.pdfDocument.extractPages(extractParams);
+    const modifiedPdfBytes = await this.pdfDocument.extractPages(pageInfos, copyLevels);
     if (!modifiedPdfBytes) {
       console.error("Something wrong happened when saving the edited PDF.\nPlease file a bug.");
       return;

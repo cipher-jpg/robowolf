@@ -648,14 +648,11 @@ RegExpShared::RegExpShared(JSAtom* source, RegExpFlags flags)
 
 void RegExpShared::traceChildren(JSTracer* trc) {
   TraceCellHeaderEdge(trc, this, "RegExpShared source");
-  if (kind() == RegExpShared::Kind::Atom) {
-    TraceEdge(trc, &patternAtom_, "RegExpShared pattern atom");
-  } else {
-    for (auto& comp : compilationArray) {
-      TraceEdge(trc, &comp.jitCode, "RegExpShared code");
-    }
-    TraceEdge(trc, &groupsTemplate_, "RegExpShared groups template");
+  TraceEdge(trc, &patternAtom_, "RegExpShared pattern atom");
+  for (auto& comp : compilationArray) {
+    TraceEdge(trc, &comp.jitCode, "RegExpShared code");
   }
+  TraceEdge(trc, &groupsTemplate_, "RegExpShared groups template");
 }
 
 void RegExpShared::discardJitCode() {
@@ -1333,7 +1330,7 @@ JS_PUBLIC_API bool JS::CheckRegExpSyntax(JSContext* cx, const char16_t* chars,
   bool success = irregexp::CheckPatternSyntax(
       cx->tempLifoAlloc(), cx->stackLimitForCurrentPrincipal(),
       dummyTokenStream, source, flags);
-  error.set(UndefinedValue());
+  error.setUndefined();
   if (!success) {
     if (!fc.convertToRuntimeErrorAndClear()) {
       return false;

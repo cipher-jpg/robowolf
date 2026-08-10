@@ -5,11 +5,12 @@
 #ifndef mozilla_Range_h
 #define mozilla_Range_h
 
+#include <stddef.h>
+
+#include <type_traits>
+
 #include "mozilla/RangedPtr.h"
 #include "mozilla/Span.h"
-
-#include <stddef.h>
-#include <type_traits>
 
 namespace mozilla {
 
@@ -44,15 +45,15 @@ class Range {
     MOZ_ASSERT_DEBUG_OR_FUZZING(aStart <= aEnd);
   }
 
-  template <typename U>
-    requires(std::is_convertible_v<U (*)[], T (*)[]>)
+  template <typename U, class = std::enable_if_t<
+                            std::is_convertible_v<U (*)[], T (*)[]>, int>>
   MOZ_IMPLICIT Range(const Range<U>& aOther)
       : mStart(aOther.mStart), mEnd(aOther.mEnd) {}
 
   MOZ_IMPLICIT Range(Span<T> aSpan) : Range(aSpan.Elements(), aSpan.Length()) {}
 
-  template <typename U>
-    requires(std::is_convertible_v<U (*)[], T (*)[]>)
+  template <typename U, class = std::enable_if_t<
+                            std::is_convertible_v<U (*)[], T (*)[]>, int>>
   MOZ_IMPLICIT Range(const Span<U>& aSpan)
       : Range(aSpan.Elements(), aSpan.Length()) {}
 

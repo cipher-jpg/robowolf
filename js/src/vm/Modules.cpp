@@ -998,15 +998,16 @@ static bool CyclicModuleResolveExport(JSContext* cx,
       }
       MOZ_ASSERT(importedModule->status() >= ModuleStatus::Unlinked);
 
-      name = e.importName();
       // Step 6.a.iii. If e.[[ImportName]] is ~namespace~, then:
-      if (e.importName() == cx->names().star_namespace_star_) {
+      if (e.importNameValueType() == ImportNameValueType::Namespace) {
         // Step 6.a.iii.1. Assert: module does not provide the direct binding
         //                 for this export.
         // Step 6.a.iii.2. Return ResolvedBinding Record { [[Module]]:
         //                 importedModule, [[BindingName]]: NAMESPACE }.
+        name = cx->names().star_namespace_star_;
         return CreateResolvedBindingObject(cx, importedModule, name, result);
       } else {
+        name = e.importName();
         // Step 6.a.iv.1. Assert: module imports a specific binding for this
         //                export.
         // Step 6.a.iv.2. Return ? importedModule.ResolveExport(e.[[ImportName]]
@@ -1107,7 +1108,7 @@ static bool CyclicModuleResolveExport(JSContext* cx,
         //                 starResolution.[[BindingName]]), return AMBIGUOUS.
         if (binding->module() != starResolution->module() ||
             binding->bindingName() != starResolution->bindingName()) {
-          result.set(StringValue(cx->names().ambiguous));
+          result.setString(cx->names().ambiguous);
 
           if (errorInfoOut) {
             ModuleObject* module1 = starResolution->module();
@@ -1466,7 +1467,7 @@ static bool ModuleInitializeEnvironment(JSContext* cx,
     importName = in.importName();
 
     // Step 7.b. If in.[[ImportName]] is ~namespace~, then:
-    if (importName == cx->names().star_namespace_star_) {
+    if (in.importNameValueType() == ImportNameValueType::Namespace) {
       // Step 7.b.i. Let namespace be ? GetModuleNamespace(importedModule).
       ModuleNamespaceObject* ns =
           GetOrCreateModuleNamespace(cx, importedModule);
@@ -1480,7 +1481,7 @@ static bool ModuleInitializeEnvironment(JSContext* cx,
       // Step 7.b.iii. Perform ! env.InitializeBinding(in.[[LocalName]],
       // namespace).
       InitNamespaceOrSourceBinding(cx, env, localName, ObjectValue(*ns));
-    } else if (importName == cx->names().star_source_star_) {
+    } else if (in.importNameValueType() == ImportNameValueType::Source) {
       // https://tc39.es/ecma262/#sec-source-text-module-record-initialize-environment
       // Step 7.c. Else if in.[[ImportName]] is ~source~, then
       // Step 7.c.i. Let moduleSourceObject be importedModule.[[ModuleSource]].
@@ -1504,8 +1505,8 @@ static bool ModuleInitializeEnvironment(JSContext* cx,
     } else {
       // Step 7.d. Else:
       // Step 7.d.i. Assert: in.[[ImportName]] is a String.
-      MOZ_ASSERT(importName && importName != cx->names().star_namespace_star_ &&
-                 importName != cx->names().star_source_star_);
+      MOZ_ASSERT(importName &&
+                 in.importNameValueType() == ImportNameValueType::String);
 
       // Step 7.d.ii. Let resolution be ?
       // importedModule.ResolveExport(in.[[ImportName]]).
@@ -1582,6 +1583,20 @@ static bool ModuleInitializeEnvironment(JSContext* cx,
   return ModuleObject::instantiateFunctionDeclarations(cx, module);
 }
 
+// Reject the load with the pending exception instead of unwinding out of it.
+// ContinueModuleLoading sets state.[[IsLoading]] to false and calls the state
+// record's rejected handler.
+static bool FailWithPendingException(
+    JSContext* cx, Handle<GraphLoadingStateRecordObject*> state) {
+  JS::ExceptionStack exnStack(cx);
+  if (!JS::StealPendingExceptionStack(cx, &exnStack)) {
+    return false;
+  }
+
+  return ContinueModuleLoading(cx, state, nullptr, ImportPhase::Evaluation,
+                               exnStack.exception());
+}
+
 static bool FailWithUnsupportedAttributeException(
     JSContext* cx, Handle<GraphLoadingStateRecordObject*> state,
     Handle<ModuleRequestObject*> moduleRequest) {
@@ -1592,13 +1607,7 @@ static bool FailWithUnsupportedAttributeException(
       JSMSG_IMPORT_ATTRIBUTES_STATIC_IMPORT_UNSUPPORTED_ATTRIBUTE,
       printableKey ? printableKey.get() : "");
 
-  JS::ExceptionStack exnStack(cx);
-  if (!JS::StealPendingExceptionStack(cx, &exnStack)) {
-    return false;
-  }
-
-  return ContinueModuleLoading(cx, state, nullptr, ImportPhase::Evaluation,
-                               exnStack.exception());
+  return FailWithPendingException(cx, state);
 }
 
 // https://tc39.es/proposal-source-phase-imports/#sec-InnerModuleLoading
@@ -1613,7 +1622,7 @@ static bool InnerModuleLoading(JSContext* cx,
 
   AutoCheckRecursionLimit recursion(cx);
   if (!recursion.check(cx)) {
-    return false;
+    return FailWithPendingException(cx, state);
   }
 
   // Step 1. Assert: state.[[IsLoading]] is true.
@@ -1627,7 +1636,7 @@ static bool InnerModuleLoading(JSContext* cx,
     // Step 2.a. Append module to state.[[Visited]].
     if (!state->visited().putNew(module)) {
       ReportOutOfMemory(cx);
-      return false;
+      return FailWithPendingException(cx, state);
     }
 
     // Step 2.b. Let requestedModulesCount be the number of elements in
@@ -1782,7 +1791,15 @@ bool js::LoadRequestedModules(JSContext* cx, Handle<ModuleObject*> module,
   }
 
   // Step 4. Perform InnerModuleLoading(state, module, recursive-load).
-  return InnerModuleLoading(cx, state, module, LoadType::RecursiveLoad);
+  if (!InnerModuleLoading(cx, state, module, LoadType::RecursiveLoad)) {
+    // Returning false means the load was abandoned without notifying the
+    // caller through |resolved| or |rejected|, i.e. an OOM occurred.
+    // Deactivate the state.[[IsLoading]] accordingly.
+    state->setIsLoading(false);
+    return false;
+  }
+
+  return true;
 }
 
 bool js::LoadRequestedModules(JSContext* cx, Handle<ModuleObject*> module,
@@ -1814,6 +1831,10 @@ bool js::LoadRequestedModules(JSContext* cx, Handle<ModuleObject*> module,
 
   // Step 4. Perform InnerModuleLoading(state, module, recursive-load).
   if (!InnerModuleLoading(cx, state, module, LoadType::RecursiveLoad)) {
+    // Returning false means the load was abandoned without notifying the
+    // caller through |resolved| or |rejected|, i.e. an OOM occurred.
+    // Deactivate the state.[[IsLoading]] accordingly.
+    state->setIsLoading(false);
     return false;
   }
 
@@ -2039,7 +2060,7 @@ static bool SyntheticModuleEvaluate(JSContext* cx,
   }
 
   // 16. Return pc.[[Promise]].
-  rval.set(ObjectValue(*resultPromise));
+  rval.setObject(*resultPromise);
   return true;
 }
 
@@ -2079,7 +2100,7 @@ static bool ModuleEvaluate(JSContext* cx, Handle<ModuleObject*> moduleArg,
   // Step 4. If module.[[TopLevelCapability]] is not empty, then:
   if (module->hasTopLevelCapability()) {
     // Step 4.a. Return module.[[TopLevelCapability]].[[Promise]].
-    result.set(ObjectValue(*module->topLevelCapability()));
+    result.setObject(*module->topLevelCapability());
     return true;
   }
 
@@ -2157,7 +2178,7 @@ static bool ModuleEvaluate(JSContext* cx, Handle<ModuleObject*> moduleArg,
   }
 
   // Step 11. Return capability.[[Promise]].
-  result.set(ObjectValue(*capability));
+  result.setObject(*capability);
   return true;
 }
 

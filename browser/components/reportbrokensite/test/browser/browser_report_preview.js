@@ -47,8 +47,7 @@ async function getExpectedReportData(win, basic) {
     out[category] = Object.fromEntries(
       Object.entries(values)
         .filter(
-          ([key, { do_not_preview }]) =>
-            !do_not_preview && key != "isTabSpecific"
+          ([key, { doNotPreview }]) => !doNotPreview && key != "isTabSpecific"
         )
         .map(([name, { value }]) => [name, adjustForWrapping(value)])
     );
@@ -151,7 +150,10 @@ add_task(async function testPreview() {
       await checkPreviewPanelUX(rbs);
 
       if (win.browsingContext.usePrivateBrowsing) {
-        rbs.blockedTrackersToggle.pressed = false;
+        if (rbs.blockedTrackersToggle.pressed) {
+          rbs.blockedTrackersToggle.click();
+          await isNotPressed(rbs.blockedTrackersToggle);
+        }
         const [data] = await checkPreviewPanelData(rbs, basicInfo);
         await checkPreviewPanelUX(rbs);
         ok(

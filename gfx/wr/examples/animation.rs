@@ -67,7 +67,6 @@ impl App {
                 is_2d_scale_translation: false,
                 should_snap: false,
                 paired_with_perspective: false,
-                is_offset_only: false,
             },
         );
 
@@ -86,6 +85,7 @@ impl App {
         let complex_clip = ComplexClipRegion {
             rect: clip_bounds,
             radii: BorderRadius::uniform(30.0),
+            inset: LayoutSideOffsets::zero(),
             mode: ClipMode::Clip,
         };
         let clip_id = builder.define_clip_rounded_rect(

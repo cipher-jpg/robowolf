@@ -7,7 +7,6 @@ package org.mozilla.fenix.components
 import android.content.Context
 import android.content.res.Configuration
 import androidx.core.content.ContextCompat
-import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
@@ -17,8 +16,6 @@ import kotlinx.coroutines.withContext
 import mozilla.components.browser.domains.autocomplete.BaseDomainAutocompleteProvider
 import mozilla.components.browser.domains.autocomplete.ShippedDomainsProvider
 import mozilla.components.browser.engine.gecko.GeckoEngine
-import mozilla.components.browser.engine.gecko.cookiebanners.GeckoCookieBannersStorage
-import mozilla.components.browser.engine.gecko.cookiebanners.ReportSiteDomainsRepository
 import mozilla.components.browser.engine.gecko.fetch.GeckoViewFetchClient
 import mozilla.components.browser.engine.gecko.permission.GeckoSitePermissionsStorage
 import mozilla.components.browser.engine.gecko.util.EngineDownloadDelegate
@@ -90,9 +87,9 @@ import mozilla.components.service.location.LocationService
 import mozilla.components.service.location.MozillaLocationService
 import mozilla.components.service.mars.MacTopSitesProvider
 import mozilla.components.service.mars.MacTopSitesRequestConfig
+import mozilla.components.service.mars.MacTopSitesUpdater
 import mozilla.components.service.mars.NEW_TAB_TILE_1_PLACEMENT_KEY
 import mozilla.components.service.mars.NEW_TAB_TILE_2_PLACEMENT_KEY
-import mozilla.components.service.mars.contile.ContileTopSitesUpdater
 import mozilla.components.service.merino.manifest.MerinoManifestProvider
 import mozilla.components.service.pocket.ContentRecommendationsRequestConfig
 import mozilla.components.service.pocket.PocketStoriesConfig
@@ -190,12 +187,6 @@ class Core(
             dohExceptionsList = context.components.settings.dohExceptionsList.toList(),
             globalPrivacyControlEnabled = context.components.settings.shouldEnableGlobalPrivacyControl,
             fdlibmMathEnabled = FxNimbus.features.fingerprintingProtection.value().fdlibmMath,
-            cookieBannerHandlingMode = context.components.settings.getCookieBannerHandling(),
-            cookieBannerHandlingModePrivateBrowsing = context.components.settings.getCookieBannerHandlingPrivateMode(),
-            cookieBannerHandlingDetectOnlyMode = context.components.settings.shouldEnableCookieBannerDetectOnly,
-            cookieBannerHandlingGlobalRules = context.components.settings.shouldEnableCookieBannerGlobalRules,
-            cookieBannerHandlingGlobalRulesSubFrames =
-                context.components.settings.shouldEnableCookieBannerGlobalRulesSubFrame,
             emailTrackerBlockingPrivateBrowsing = true,
             userCharacteristicPingCurrentVersion = FxNimbus.features.userCharacteristics.value().currentVersion,
             getDesktopMode = {
@@ -313,17 +304,6 @@ class Core(
         )
     }
 
-    private val Context.dataStore by preferencesDataStore(
-        name = ReportSiteDomainsRepository.REPORT_SITE_DOMAINS_REPOSITORY_NAME,
-    )
-
-    val cookieBannersStorage by lazyMonitored {
-        GeckoCookieBannersStorage(
-            geckoRuntime,
-            ReportSiteDomainsRepository(context.dataStore),
-        )
-    }
-
     val geckoSitePermissionsStorage by lazyMonitored {
         GeckoSitePermissionsStorage(geckoRuntime, OnDiskSitePermissionsStorage(context))
     }
@@ -415,10 +395,6 @@ class Core(
                     isTranslationsEnabled = {
                         TranslationsEnabledSettings.dataStore(context).isEnabled.first()
                     },
-                ),
-                StartupMiddleware(
-                    applicationContext = context,
-                    repository = DefaultHomepageAsANewTabPreferenceRepository(context.components.settings),
                 ),
                 AboutHomeMiddleware(
                     homepageTitle = context.getString(R.string.tab_tray_homepage_tab),
@@ -626,7 +602,6 @@ class Core(
     val pocketStoriesConfig by lazyMonitored {
         PocketStoriesConfig(
             client,
-            Frequency(4, TimeUnit.HOURS),
             contentRecommendationsParams = ContentRecommendationsRequestConfig(
                 locale = LocaleManager.getSelectedLocale(context).toLanguageTag(),
             ),
@@ -658,8 +633,8 @@ class Core(
     }
 
     @Suppress("MagicNumber")
-    val contileTopSitesUpdater by lazyMonitored {
-        ContileTopSitesUpdater(
+    val macTopSitesUpdater by lazyMonitored {
+        MacTopSitesUpdater(
             context = context,
             provider = macTopSitesProvider,
             frequency = Frequency(3, TimeUnit.HOURS),

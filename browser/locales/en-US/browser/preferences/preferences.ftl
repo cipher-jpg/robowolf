@@ -200,6 +200,7 @@ windows-launch-on-login =
     .accesskey = O
 windows-launch-on-login-disabled = This preference has been disabled in Windows. To change, visit <a data-l10n-name="startup-link">Startup Apps</a> in System settings.
 
+# Option to also opens a new tab, in addition to restoring previous tabs and windows
 windows-launch-on-login-open-new-tab =
     .label = Also open a new tab
     .accesskey = n
@@ -799,7 +800,7 @@ update-setting-write-failure-title2 = Error saving Update settings
 # The newlines between the main text and the line containing the path is
 # intentional so the path is easier to identify.
 update-setting-write-failure-message2 =
-    { -brand-short-name } encountered an error and didn’t save this change. Note that changing this update setting requires permission to write to the file below. You or a system administrator may be able resolve the error by granting the Users group full control to this file.
+    { -brand-short-name } encountered an error and didn’t save this change. Note that changing this update setting requires permission to write to the file below. You or a system administrator may be able to resolve the error by granting the Users group full control to this file.
 
     Could not write to file: { $path }
 
@@ -998,6 +999,55 @@ use-current-pages =
 choose-bookmark =
     .label = Use Bookmark…
     .accesskey = B
+
+home-homepage-title =
+    .label = Homepage
+
+home-homepage-new-windows =
+    .label = New windows
+
+home-homepage-new-tabs =
+    .label = New tabs
+
+# This option leads to the "Custom Homepage" subpage
+home-homepage-custom-homepage-button =
+    .label = Choose a specific site
+
+# Subheader on the Custom Homepage subpage. Followed by a form to enter URLs and a list of URLs already saved, if any.
+home-custom-homepage-card-header =
+    .label = Website address(es)
+
+home-custom-homepage-address =
+    .placeholder = Enter address
+home-custom-homepage-address-button =
+    .label = Add address
+
+# Shown when no custom websites/URLs to use as a homepage have been added yet
+home-custom-homepage-no-results =
+    .label = No websites added yet.
+
+home-custom-homepage-delete-address-button =
+    .aria-label = Delete address
+    .title = Delete address
+
+# Further options to use when setting the home page. Two action buttons are placed in line with this prompt
+# to replace the current home page with a currently open page or bookmark.
+home-custom-homepage-replace-with-prompt =
+    .label = Replace with
+
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-current-pages-button =
+    .label = Current opened pages
+
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
+home-custom-homepage-bookmarks-button =
+    .label = Bookmarks…
+
+# Dropdown option shown when an extension replaces the contents of new windows or tabs.
+# Variables:
+#   $extension (string) - Name of the extension
+home-prefs-homepage-extension-option =
+    .label = Extension ({ $extension })
 
 ## Home Section - Firefox Home Content Customization
 
@@ -1717,6 +1767,29 @@ autofill-addresses-manage-addresses-title =
 addresses-no-addresses-stored-message =
     .label = No addresses added
 
+personal-info-group =
+    .label = Personal info
+autofill-personal-info-checkbox-message =
+    .label = Save and autofill personal info
+autofill-personal-info-manage-button =
+    .label = Manage personal info
+passports-list-header =
+    .label = Passports
+passports-delete-passport-button-label =
+    .aria-label = Delete
+passports-edit-passport-button-label =
+    .aria-label = Edit
+passports-delete-passport-prompt-title = Delete this passport?
+passports-delete-passport-prompt-confirm-button = Delete
+passports-delete-passport-prompt-cancel-button = Cancel
+autofill-passports-add-button = Add new passport
+autofill-personal-info-manage-title =
+    .heading = Manage personal info
+
+# This message is displayed when no passports are stored in Firefox
+passports-no-passports-stored-message =
+    .label = No passports added
+
 pane-passwords-autofill-title2 = Passwords and autofill
   .title = Passwords and autofill
 preferences-passwords-autofill-header =
@@ -1856,14 +1929,6 @@ sitedata-cookies-exceptions3 =
     .label = Manage exceptions
     .accesskey = x
     .description = Choose how specific sites handle cookies and site data.
-
-## Privacy Section - Cookie Banner Blocking
-
-cookie-banner-blocker-header = Cookie Banner Blocker
-cookie-banner-blocker-description = When a site asks if they can use cookies in private browsing mode, { -brand-short-name } automatically refuses for you. Only on supported sites.
-cookie-banner-learn-more = Learn more
-cookie-banner-blocker-checkbox-label =
-    .label = Automatically refuse cookie banners
 
 ## Privacy Section - Content Blocking
 
@@ -2110,13 +2175,6 @@ collection-backlogged-crash-reports2 =
     .label = Automatically send crash reports
     .accesskey = c
 collection-backlogged-crash-reports-description = This helps { -vendor-short-name } diagnose and fix issues with the browser. Reports may include personal or sensitive data.
-
-# Promotional message displayed in the Settings panes to inform users of the new redesign
-settings-redesign-promo =
-    .heading = Same settings, new look!
-    .message = We reorganized this page so it’s easier to scan and explore. Your personal settings haven’t changed, and everything’s still here. Tip: use search to jump straight to what you need.
-settings-redesign-promo-dismiss-button =
-    .label = Got it
 
 privacy-segmentation-section-header = New features that enhance your browsing
 
@@ -2493,9 +2551,9 @@ preferences-ai-controls-key-points-control =
     .label = Key points in link previews
     .description = See a quick summary before opening a link.
 
-preferences-ai-controls-sidebar-chatbot-group =
+preferences-ai-controls-sidebar-chatbot-group-2 =
     .label = AI chatbot providers in sidebar
-    .description = Keep a chatbot in view as you browse. Choose from Anthropic Claude, ChatGPT, Copilot, Google Gemini, and Le Chat Mistral.
+    .description = Keep a chatbot in view as you browse. Choose from Anthropic Claude, ChatGPT, Copilot, Google Gemini, and Mistral Vibe.
 
 preferences-ai-controls-sidebar-chatbot-control =
     .label = Chatbot in sidebar
@@ -2594,6 +2652,9 @@ preferences-etp-level-custom =
 
 preferences-etp-status-advanced-button =
     .label = Advanced settings
+
+preferences-etp-tracker-count-enabled =
+    .label = Show trackers blocked in address bar
 
 preferences-etp-status-protections-dashboard-link =
         .label = View your personalized protections dashboard
@@ -2705,14 +2766,27 @@ security-privacy-issue-warning-safe-browsing =
   .label = Dangerous and deceptive content is not blocked
   .description = Your exposure to scams and malware from websites is increased.
 
-security-privacy-issue-warning-doh =
+security-privacy-issue-warning-doh2 =
   .label = DNS over HTTPS is disabled
-  .description = DNS over HTTPS hides what sites you visit from your network provider.
+  .description = DNS over HTTPS helps hide what sites you’re about to visit from your network provider.
 
-security-privacy-issue-warning-ech =
+security-privacy-issue-warning-ech2 =
   .label = Encrypted Client Hello is disabled
-  .description = Encrypted Client Hello hides what sites you visit from your network provider.
+  .description = Encrypted Client Hello helps hide what sites you’re about to visit from your network provider.
 
 security-privacy-issue-warning-proxy-autodetection =
   .label = Proxy auto-configuration is enabled
   .description = Proxy auto-configuration could let untrusted networks to monitor your activity.
+
+## Referrals Section
+
+# The header in settings with link to the referral page, where the user can invite others to
+# use the browser. "Share" here means recommending or referring the browser
+referrals-section-header =
+  .label = Share { -brand-short-name }
+  .description = Invite someone to choose the browser that puts privacy first.
+
+# Link that opens the referral page, where the user can invite others to
+# use the browser. "Share" here means recommending or referring the browser
+referrals-link =
+  .label = Share { -brand-short-name }

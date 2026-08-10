@@ -882,15 +882,23 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
 }
 
 - (NSArray*)moxLinkedUIElements {
-  return [self getRelationsByType:RelationType::FLOWS_TO];
+  // AAM says to use this method to expose both flows-to and controller-for
+  // relations.
+  NSArray* controls = [self getRelationsByType:RelationType::CONTROLLER_FOR];
+  NSArray* flows = [self getRelationsByType:RelationType::FLOWS_TO];
+
+  if ([controls count] && [flows count]) {
+    // If both are used, construct an array that holds all targets.
+    NSArray* allLinkedElements = [controls arrayByAddingObjectsFromArray:flows];
+    // Remove duplicates before returning
+    return [[NSSet setWithArray:allLinkedElements] allObjects];
+  }
+  // If we only have one relation, return only that rel's targets.
+  return [controls count] ? controls : flows;
 }
 
 - (NSArray*)moxDetailsElements {
   return [self getRelationsByType:RelationType::DETAILS];
-}
-
-- (NSArray*)moxARIAControls {
-  return [self getRelationsByType:RelationType::CONTROLLER_FOR];
 }
 
 - (mozAccessible*)topWebArea {
@@ -1271,6 +1279,17 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
       nsAutoString nameNotUsed;
       if (ProvidesTitle(mGeckoAccessible, nameNotUsed)) {
         [self moxPostNotification:NSAccessibilityTitleChangedNotification];
+      }
+      break;
+    }
+    case nsIAccessibleEvent::EVENT_DESCRIPTION_CHANGE: {
+      // There is no specific description-change event on macOS, so we use the
+      // announcement requested notification to expose this change manually.
+      nsAutoString description;
+      mGeckoAccessible->Description(description);
+      if (!description.IsEmpty()) {
+        [self handleAnnouncementEvent:nsCocoaUtils::ToNSString(description)
+                             priority:nsIAccessibleAnnouncementEvent::POLITE];
       }
       break;
     }

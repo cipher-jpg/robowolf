@@ -13,6 +13,8 @@ import {
   UrlbarUtils,
 } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
+import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -26,14 +28,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusTestUtils: "resource://testing-common/NimbusTestUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  ProvidersManager:
+    "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
   UrlbarChildController:
     "chrome://browser/content/urlbar/UrlbarChildController.mjs",
-  UrlbarParentController:
-    "moz-src:///browser/components/urlbar/UrlbarParentController.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
@@ -150,6 +151,27 @@ class UrlbarInputTestUtils {
   }
 
   /**
+   * Waits until an `UrlbarPrefs` preference holds the given value, checking the
+   * current value first and otherwise observing subsequent changes, then
+   * records an assertion. Handy for prefs a provider updates parent-side, which
+   * land asynchronously over the actor message path.
+   *
+   * @param {string} pref
+   *   The preference name, relative to the `browser.urlbar.` branch.
+   * @param {number|string|boolean} value
+   *   The value to wait for.
+   * @param {string} message
+   *   The message for the assertion recorded once the value is reached.
+   */
+  async waitForPrefValue(pref, value, message) {
+    await lazy.TestUtils.waitForCondition(
+      () => lazy.UrlbarPrefs.get(pref) === value,
+      `Waiting for pref "${pref}" to become ${JSON.stringify(value)}`
+    );
+    this.Assert?.equal(lazy.UrlbarPrefs.get(pref), value, message);
+  }
+
+  /**
    * Starts a search for a given string and waits for the search to be complete.
    *
    * @param {object} options The options object.
@@ -194,7 +216,7 @@ class UrlbarInputTestUtils {
         lazy.UrlbarPrefs.get("trimURLs") &&
         value != lazy.BrowserUIUtils.trimURL(value)
       ) {
-        this.#urlbar(window)._setValue(value);
+        this.#urlbar(window).setValue(value);
         fireInputEvent = true;
       } else {
         this.#urlbar(window).value = value;
@@ -248,7 +270,12 @@ class UrlbarInputTestUtils {
     if (index >= container.children.length) {
       throw new Error("Not enough results");
     }
-    return container.children[index];
+    let row = container.children[index];
+    // A dynamic result's view update is applied asynchronously (and lands a
+    // round-trip later on the message path), so wait for it before returning
+    // the row. Undefined for non-dynamic rows, so this is a no-op for them.
+    await row._dynamicViewUpdatePromise;
+    return row;
   }
 
   /**
@@ -332,7 +359,7 @@ class UrlbarInputTestUtils {
     );
     let promiseMenuOpen = lazy.BrowserTestUtils.waitForEvent(
       this.#urlbar(win).view.resultMenu,
-      "popupshown"
+      "shown"
     );
     if (byMouse) {
       this.info(
@@ -363,9 +390,8 @@ class UrlbarInputTestUtils {
       this.info(`waiting for ${activationKey} to open the menu popup`);
     }
     await promiseMenuOpen;
-    this.Assert?.equal(
-      this.#urlbar(win).view.resultMenu.state,
-      "open",
+    this.Assert?.ok(
+      this.#urlbar(win).view.resultMenu.hasAttribute("open"),
       "Checking popup state"
     );
   }
@@ -414,19 +440,11 @@ class UrlbarInputTestUtils {
 
       let promisePopup = lazy.BrowserTestUtils.waitForEvent(
         this.#urlbar(window).view.resultMenu,
-        "popupshown"
+        "shown"
       );
 
-      if (AppConstants.platform == "macosx") {
-        // Synthesized clicks don't work in the native Mac menu.
-        this.info(
-          "Calling openMenu() on submenu item with selector: " + selector
-        );
-        menuitem.openMenu(true);
-      } else {
-        this.info("Clicking submenu item with selector: " + selector);
-        this.EventUtils.synthesizeMouseAtCenter(menuitem, {}, window);
-      }
+      this.info("Clicking submenu item with selector: " + selector);
+      this.EventUtils.synthesizeMouseAtCenter(menuitem, {}, window);
 
       this.info("Waiting for submenu popupshown event");
       await promisePopup;
@@ -438,13 +456,13 @@ class UrlbarInputTestUtils {
     if (accesskey) {
       await lazy.TestUtils.waitForCondition(() => {
         menuitem = this.#urlbar(window).view.resultMenu.querySelector(
-          `menuitem[accesskey=${accesskey}]`
+          `panel-item[accesskey=${accesskey}]`
         );
         return menuitem;
       }, "Waiting for strings to load");
     } else if (command) {
       menuitem = this.#urlbar(window).view.resultMenu.querySelector(
-        `menuitem[data-command=${command}]`
+        `panel-item[data-command=${command}]`
       );
     } else {
       throw new Error("accesskey or command must be specified");
@@ -483,24 +501,8 @@ class UrlbarInputTestUtils {
       throw new Error("Menu item not found for accesskey: " + accesskey);
     }
 
-    let promiseCommand = lazy.BrowserTestUtils.waitForEvent(
-      this.#urlbar(win).view.resultMenu,
-      "command"
-    );
-
-    if (AppConstants.platform == "macosx") {
-      // The native Mac menu doesn't support access keys.
-      this.info("calling doCommand() to activate menu item");
-      menuitem.doCommand();
-      this.#urlbar(win).view.resultMenu.hidePopup(true);
-    } else {
-      this.info(`pressing access key (${accesskey}) to activate menu item`);
-      this.EventUtils.synthesizeKey(accesskey, {}, win);
-    }
-
-    this.info("waiting for command event");
-    await promiseCommand;
-    this.info("got the command event");
+    this.info(`pressing access key (${accesskey}) to activate menu item`);
+    this.EventUtils.synthesizeKey(accesskey, {}, win);
   }
 
   /**
@@ -541,28 +543,19 @@ class UrlbarInputTestUtils {
       submenuSelectors,
       window: win,
     });
+
     if (!menuitem) {
       throw new Error("Menu item not found for command: " + command);
     }
 
     let promiseCommand = lazy.BrowserTestUtils.waitForEvent(
       this.#urlbar(win).view.resultMenu,
-      "command"
+      "click"
     );
 
-    if (AppConstants.platform == "macosx") {
-      // Synthesized clicks don't work in the native Mac menu.
-      this.info("calling doCommand() to activate menu item");
-      menuitem.doCommand();
-      this.#urlbar(win).view.resultMenu.hidePopup(true);
-    } else {
-      this.info("Clicking menu item with command: " + command);
-      this.EventUtils.synthesizeMouseAtCenter(menuitem, {}, win);
-    }
-
-    this.info("Waiting for command event");
+    this.info("Clicking menu item with command: " + command);
+    this.EventUtils.synthesizeMouseAtCenter(menuitem, {}, win);
     await promiseCommand;
-    this.info("Got the command event");
   }
 
   /**
@@ -573,13 +566,13 @@ class UrlbarInputTestUtils {
    *
    * @param {ChromeWindow} win The window containing the urlbar.
    * @param {string} url The URL to match against the result's payload.
-   * @param {number} [type] The lazy.UrlbarShared.RESULT_TYPE to match.
+   * @param {number} [type] The UrlbarShared.RESULT_TYPE to match.
    *   Defaults to RESULT_TYPE.URL.
    */
   async pickResultAndWaitForLoad(
     win,
     url,
-    type = lazy.UrlbarShared.RESULT_TYPE.URL
+    type = UrlbarShared.RESULT_TYPE.URL
   ) {
     let resultCount = this.getResultCount(win);
     let targetIndex = -1;
@@ -663,7 +656,7 @@ class UrlbarInputTestUtils {
       title: element.getElementsByClassName("urlbarView-title")[0],
       url: element.getElementsByClassName("urlbarView-url")[0],
     };
-    if (details.type == lazy.UrlbarShared.RESULT_TYPE.SEARCH) {
+    if (details.type == UrlbarShared.RESULT_TYPE.SEARCH) {
       details.searchParams = {
         engine: result.payload.engine,
         keyword: result.payload.keyword,
@@ -672,9 +665,9 @@ class UrlbarInputTestUtils {
         inPrivateWindow: result.payload.inPrivateWindow,
         isPrivateEngine: result.payload.isPrivateEngine,
       };
-    } else if (details.type == lazy.UrlbarShared.RESULT_TYPE.KEYWORD) {
+    } else if (details.type == UrlbarShared.RESULT_TYPE.KEYWORD) {
       details.keyword = result.payload.keyword;
-    } else if (details.type == lazy.UrlbarShared.RESULT_TYPE.DYNAMIC) {
+    } else if (details.type == UrlbarShared.RESULT_TYPE.DYNAMIC) {
       details.dynamicType = result.payload.dynamicType;
     }
     return details;
@@ -753,6 +746,29 @@ class UrlbarInputTestUtils {
   }
 
   /**
+   * Returns a promise resolved when the picked result's provider has handled the
+   * engagement (its `onEngagement` hook ran). Set it up before triggering the
+   * engagement, since the notification can land as soon as the pick is processed
+   * (and a round-trip later on the actor message path). Lets a test await a
+   * provider's parent-side engagement side effect.
+   *
+   * @param {ChromeWindow} win The window containing the urlbar.
+   * @returns {Promise} Resolved when a provider's `onEngagement` has run.
+   */
+  promiseProviderEngagement(win) {
+    let { controller } = this.#urlbar(win);
+    let { promise, resolve } = Promise.withResolvers();
+    let listener = {
+      onProviderEngagement() {
+        controller.removeListener(listener);
+        resolve();
+      },
+    };
+    controller.addListener(listener);
+    return promise;
+  }
+
+  /**
    * Gets the number of results.
    * You must wait for the query to be complete before using this.
    *
@@ -779,8 +795,7 @@ class UrlbarInputTestUtils {
     return this.promiseSearchComplete(win).then(context => {
       // Look for search suggestions.
       let firstSearchSuggestionIndex = context.results.findIndex(
-        r =>
-          r.type == lazy.UrlbarShared.RESULT_TYPE.SEARCH && r.payload.suggestion
+        r => r.type == UrlbarShared.RESULT_TYPE.SEARCH && r.payload.suggestion
       );
       if (firstSearchSuggestionIndex == -1) {
         throw new Error("Cannot find a search suggestion");
@@ -867,6 +882,31 @@ class UrlbarInputTestUtils {
     this.info("Waiting for the view to close");
     await closePromise;
     this.info("Urlbar view closed");
+  }
+
+  /**
+   * Returns a promise that resolves the next time the given controller
+   * notification is dispatched. Useful for awaiting an effect that arrives
+   * asynchronously on the actor message path (e.g. a result dismissal) while
+   * resolving synchronously on the in-process path. Register it before
+   * triggering the effect.
+   *
+   * @param {ChromeWindow} win The window containing the urlbar.
+   * @param {string} notification The listener method name, e.g.
+   *   "onQueryResultRemoved".
+   * @returns {Promise<any[]>} Resolves with the notification's arguments.
+   */
+  promiseControllerNotification(win, notification) {
+    let { controller } = this.#urlbar(win);
+    return new Promise(resolve => {
+      let listener = {
+        [notification](...args) {
+          controller.removeListener(listener);
+          resolve(args);
+        },
+      };
+      controller.addListener(listener);
+    });
   }
 
   /**
@@ -963,6 +1003,46 @@ class UrlbarInputTestUtils {
   }
 
   /**
+   * Asserts that the result and element carried by an `onEngagement` details
+   * match what the view presented. `onEngagement` runs parent-side, so on the
+   * message path the details are wire-reconstructed: `element` is dropped (a
+   * DOM node can't cross the actor boundary) and `result` is a wire copy
+   * resolved back to the live result by its stable `id`, not the view row's
+   * result object. So the result is compared by `id`, and the element is
+   * expected to be null on the message path.
+   *
+   * @param {UrlbarResult} pickedResult
+   *   The result carried by the engagement details.
+   * @param {Element} pickedElement
+   *   The element carried by the engagement details.
+   * @param {UrlbarResult} expectedResult
+   *   The result the view presented.
+   * @param {Element} expectedElement
+   *   The element the view presented.
+   */
+  assertPickedResult(
+    pickedResult,
+    pickedElement,
+    expectedResult,
+    expectedElement
+  ) {
+    this.Assert.equal(
+      pickedResult.id,
+      expectedResult.id,
+      "Picked result has the expected id"
+    );
+    if (lazy.UrlbarPrefs.get("ipc.chromeMessagePassing")) {
+      this.Assert.equal(
+        pickedElement,
+        null,
+        "Picked element is null on the message path"
+      );
+    } else {
+      this.Assert.equal(pickedElement, expectedElement, "Picked element");
+    }
+  }
+
+  /**
    * Asserts that the input is in a given search mode, or no search mode. Can
    * only be used if UrlbarTestUtils has been initialized with init().
    *
@@ -972,6 +1052,16 @@ class UrlbarInputTestUtils {
    *   The expected search mode object.
    */
   async assertSearchMode(window, expectedSearchMode) {
+    // Entering and exiting search mode resolves the engine through the engine
+    // store, which is asynchronous on the message path, so let the mode settle
+    // before asserting.
+    await lazy.TestUtils.waitForCondition(
+      () => !!this.#urlbar(window).searchMode == !!expectedSearchMode
+    ).catch(() => {
+      // waitForCondition rejects once it stops polling. The mode never reached
+      // the expected state, which the assertions below report precisely.
+    });
+
     this.Assert.equal(
       !!this.#urlbar(window).searchMode,
       this.#urlbar(window).hasAttribute("searchmode"),
@@ -989,7 +1079,7 @@ class UrlbarInputTestUtils {
       () =>
         results.hasAttribute("actionmode") ==
         (this.#urlbar(window).searchMode?.source ==
-          lazy.UrlbarShared.RESULT_SOURCE.ACTIONS)
+          UrlbarShared.RESULT_SOURCE.ACTIONS)
     );
     this.Assert.ok(true, "Urlbar results have proper actionmode attribute");
 
@@ -1046,7 +1136,7 @@ class UrlbarInputTestUtils {
       expectedSearchMode.isGeneralPurposeEngine = isGeneralPurposeEngine;
     }
 
-    // expectedSearchMode may come from UrlbarUtils.LOCAL_SEARCH_MODES.  The
+    // expectedSearchMode may come from UrlbarShared.LOCAL_SEARCH_MODES.  The
     // objects in that array include useful metadata like icon URIs and pref
     // names that are not usually included in actual search mode objects.  For
     // convenience, ignore those properties if they aren't also present in the
@@ -1084,7 +1174,7 @@ class UrlbarInputTestUtils {
       if (expectedSearchMode.engineName) {
         expectedTextContent = expectedSearchMode.engineName;
       } else if (expectedSearchMode.source) {
-        let name = UrlbarUtils.getResultSourceName(expectedSearchMode.source);
+        let name = UrlbarShared.getResultSourceName(expectedSearchMode.source);
         this.Assert.ok(name, "Expected result source should have a name");
         expectedL10n = { id: `urlbar-search-mode-${name}`, args: null };
       } else {
@@ -1123,7 +1213,7 @@ class UrlbarInputTestUtils {
         args: { name: expectedSearchMode.engineName },
       };
     } else if (expectedSearchMode.source) {
-      let name = UrlbarUtils.getResultSourceName(expectedSearchMode.source);
+      let name = UrlbarShared.getResultSourceName(expectedSearchMode.source);
       expectedPlaceholderL10n = {
         id: `urlbar-placeholder-search-mode-other-${name}`,
         args: null,
@@ -1147,7 +1237,7 @@ class UrlbarInputTestUtils {
       let resultCount = this.getResultCount(window);
       for (let i = 0; i < resultCount; i++) {
         let result = await this.getDetailsOfResultAt(window, i);
-        if (result.source == lazy.UrlbarShared.RESULT_SOURCE.SEARCH) {
+        if (result.source == UrlbarShared.RESULT_SOURCE.SEARCH) {
           this.Assert.equal(
             expectedSearchMode.engineName,
             result.searchParams.engine,
@@ -1204,7 +1294,7 @@ class UrlbarInputTestUtils {
       searchMode = { engineName: buttons[0].engine.name };
       let engine = lazy.SearchService.getEngineByName(searchMode.engineName);
       if (engine.isGeneralPurposeEngine) {
-        searchMode.source = lazy.UrlbarShared.RESULT_SOURCE.SEARCH;
+        searchMode.source = UrlbarShared.RESULT_SOURCE.SEARCH;
       }
     }
 
@@ -1212,11 +1302,23 @@ class UrlbarInputTestUtils {
       searchMode.entry = "oneoff";
     }
 
-    let oneOff = buttons.find(o =>
-      searchMode.engineName
-        ? o.engine.name == searchMode.engineName
-        : o.source == searchMode.source
-    );
+    // A rebuild replaces the one-off buttons, so one found before it runs is
+    // detached by the time it would be clicked. Resolve the button after the
+    // rebuild settles and confirm it is still in the document.
+    let oneOff;
+    await lazy.TestUtils.waitForCondition(() => {
+      if (oneOffs._rebuilding) {
+        return false;
+      }
+      oneOff = oneOffs
+        .getSelectableButtons(true)
+        .find(o =>
+          searchMode.engineName
+            ? o.engine.name == searchMode.engineName
+            : o.source == searchMode.source
+        );
+      return oneOff?.isConnected;
+    }, "Waiting for a connected one-off button for the search mode");
     this.Assert.ok(oneOff, "Found one-off button for search mode");
     this.EventUtils.synthesizeMouseAtCenter(oneOff, {}, window);
     await this.promiseSearchComplete(window);
@@ -1267,7 +1369,7 @@ class UrlbarInputTestUtils {
     if (Services.prefs.getBoolPref("browser.urlbar.trimURLs")) {
       return lazy.UrlbarPrefs.getScotchBonnetPref("trimHttps")
         ? "https://"
-        : "http://"; // eslint-disable-line @microsoft/sdl/no-insecure-url
+        : "http://"; // eslint-disable-line sdl/no-insecure-url
     }
     return "";
   }
@@ -1414,23 +1516,40 @@ class UrlbarInputTestUtils {
       },
       options
     );
-    let parentController = new lazy.UrlbarParentController({
-      sapName,
-      isPrivate: parentOptions.input.isPrivate,
-      manager: parentOptions.manager,
-    });
-    // Stub the actor plumbing so the child controller's constructor reaches
-    // the parent we just built.
+    // The child controller arms the event bufferer when a query starts; a real
+    // input always has one, so give the mock's input a no-op stand-in. Set here
+    // after the merge, since a caller-supplied `input` replaces the default one.
+    parentOptions.input.eventBufferer = { queryStarting() {} };
+    // The parent controller resolves the browser window from its actor (for the
+    // SAP window facts telemetry reads). Mock a minimal one representing a
+    // non-blank, non-extension page, exposed on the stubbed actor.
+    let browserWindow = {
+      closed: false,
+      isBlankPageURL: () => false,
+      gBrowser: { currentURI: Services.io.newURI("https://example.com/") },
+    };
+    // Stub the actor so the child controller builds a direct-path parent
+    // controller (the child owns construction; the actor only resolves the
+    // chrome window). It is exposed as `controller.parentController`.
     parentOptions.input.window.windowGlobalChild = {
       getActor: () => ({
-        getOrCreateController: () => parentController,
+        usesMessagePath: false,
+        browsingContext: { topChromeWindow: browserWindow },
       }),
     };
-    let controller = new lazy.UrlbarChildController({
-      input: parentOptions.input,
-    });
-    controller.parentController = parentController;
-    return controller;
+    // A provided `manager` stands in for the per-sap `ProvidersManager` the
+    // child-built parent controller resolves at construction. Swap it in for the
+    // duration of construction so the controller adopts it without touching the
+    // real per-sap instance (and its search-service init).
+    let originalGetInstanceForSap = lazy.ProvidersManager.getInstanceForSap;
+    if (parentOptions.manager) {
+      lazy.ProvidersManager.getInstanceForSap = () => parentOptions.manager;
+    }
+    try {
+      return new lazy.UrlbarChildController({ input: parentOptions.input });
+    } finally {
+      lazy.ProvidersManager.getInstanceForSap = originalGetInstanceForSap;
+    }
   }
 
   /**
@@ -1527,7 +1646,7 @@ class UrlbarInputTestUtils {
       // Set most of the string directly instead of going through sendString,
       // so that we don't make life unnecessarily hard for consumers by
       // possibly starting multiple searches.
-      this.#urlbar(win)._setValue(text.substr(0, text.length - 1));
+      this.#urlbar(win).setValue(text.substr(0, text.length - 1));
     }
     this.EventUtils.sendString(text.substr(-1, 1), win);
   }
@@ -1674,6 +1793,61 @@ class UrlbarInputTestUtils {
     return searchModeSwitcherButton.getAttribute("iconsrc");
   }
 
+  /**
+   * Reads the image behind an icon URL, so that icons can be compared by what
+   * they show rather than by how they are addressed.
+   *
+   * @param {?string} url
+   * @returns {Promise<?string>}
+   *   The image's bytes, or null if there is no URL or it couldn't be read.
+   */
+  async #readIconImage(url) {
+    if (!url) {
+      return null;
+    }
+    try {
+      let buffer = await (await fetch(url)).arrayBuffer();
+      return new Uint8Array(buffer).join();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Whether the search mode switcher is showing the given icon. Its iconsrc can
+   * be a different string for the same image: over the message path an icon's
+   * bytes cross the actor boundary and are addressed anew on the content side.
+   *
+   * @param {Window} win
+   * @param {?string} expected
+   *   The URL of the expected image.
+   * @returns {Promise<boolean>}
+   */
+  async searchModeSwitcherIconIs(win, expected) {
+    let actual = this.getSearchModeSwitcherIcon(win);
+    if (actual == expected) {
+      return true;
+    }
+    let image = await this.#readIconImage(actual);
+    return !!image && image == (await this.#readIconImage(expected));
+  }
+
+  /**
+   * Asserts that the search mode switcher is showing the given icon.
+   * See searchModeSwitcherIconIs.
+   *
+   * @param {Window} win
+   * @param {?string} expected
+   * @param {string} message
+   */
+  async assertSearchModeSwitcherIcon(win, expected, message) {
+    let matches = await this.searchModeSwitcherIconIs(win, expected);
+    this.Assert?.ok(
+      matches,
+      `${message} (showing ${this.getSearchModeSwitcherIcon(win)})`
+    );
+  }
+
   async openTrustPanel(win) {
     let btn = win.document.getElementById("trust-icon");
     if (!btn.checkVisibility()) {
@@ -1814,8 +1988,24 @@ class UrlbarInputTestUtils {
   }
 
   /**
-   * Stubs `UrlbarUtils._zonedDateTimeISO()`. Helpful for tests that use
-   * `UrlbarUtils.formatDate()`.
+   * Returns the `UrlbarShared` instance the urlbar UI in the given window uses.
+   * `UrlbarShared` is a content module, so each realm that imports it gets its
+   * own copy; the system-realm copy this module imports is not the one
+   * `UrlbarInput` and `UrlbarView` call into.
+   *
+   * @param {ChromeWindow} win
+   * @returns {typeof UrlbarShared}
+   */
+  getUrlbarShared(win) {
+    return win.ChromeUtils.importESModule(
+      "chrome://browser/content/urlbar/UrlbarShared.mjs",
+      { global: "current" }
+    ).UrlbarShared;
+  }
+
+  /**
+   * Stubs `UrlbarShared._zonedDateTimeISO()`. Helpful for tests that use
+   * `UrlbarShared.formatDate()`.
    *
    * Browser tests should call this again with a falsey value during cleanup to
    * remove the stub.
@@ -1836,18 +2026,46 @@ class UrlbarInputTestUtils {
 
     if (!this.#zonedDateTimeISOStub) {
       this.#zonedDateTimeISOStub = lazy.sinon.stub(
-        UrlbarUtils,
+        UrlbarShared,
         "_zonedDateTimeISO"
       );
     }
 
-    let global = Cu.getGlobalForObject(UrlbarUtils);
+    let global = Cu.getGlobalForObject(UrlbarShared);
     let zonedNow = global.Temporal.ZonedDateTime.from(nowStr);
     this.#zonedDateTimeISOStub.returns(zonedNow);
 
     return zonedNow;
   }
 
+  /**
+   * Stubs `UrlbarShared._firstDayOfWeek()`. Helpful for tests that use
+   * `UrlbarShared.formatDate()`.
+   *
+   * Browser tests should call this again with a falsey value during cleanup to
+   * remove the stub.
+   *
+   * @param {?number} firstDay
+   *   A valid day integer from 1 to 7 inclusive. 1 is Monday, 7 is Sunday. A
+   *   falsey value removes the stub.
+   */
+  stubFirstDayOfWeek(firstDay) {
+    if (!firstDay) {
+      this.#firstDayOfWeekStub?.restore();
+      this.#firstDayOfWeekStub = null;
+      return;
+    }
+
+    if (!this.#firstDayOfWeekStub) {
+      this.#firstDayOfWeekStub = lazy.sinon.stub(
+        UrlbarShared,
+        "_firstDayOfWeek"
+      );
+    }
+    this.#firstDayOfWeekStub.returns(firstDay);
+  }
+
+  #firstDayOfWeekStub;
   #urlbar;
   #zonedDateTimeISOStub;
 }
@@ -1939,7 +2157,7 @@ class TestProvider extends UrlbarProvider {
    *   An array of UrlbarResult objects that will be the provider's results.
    * @param {string} [options.name]
    *   The provider's name.  Provider names should be unique.
-   * @param {Values<typeof UrlbarUtils.PROVIDER_TYPE>} [options.type]
+   * @param {Values<typeof UrlbarShared.PROVIDER_TYPE>} [options.type]
    *   The provider's type.
    * @param {number} [options.priority]
    *   The provider's priority.  Built-in providers have a priority of zero.
@@ -1973,7 +2191,7 @@ class TestProvider extends UrlbarProvider {
   constructor({
     results = [],
     name = "TestProvider" + Services.uuid.generateUUID(),
-    type = UrlbarUtils.PROVIDER_TYPE.PROFILE,
+    type = UrlbarShared.PROVIDER_TYPE.PROFILE,
     priority = 0,
     addTimeout = 0,
     getViewTemplate = null,
@@ -2004,7 +2222,7 @@ class TestProvider extends UrlbarProvider {
     // As this has been a common source of mistakes, auto-upgrade the provider
     // type to heuristic if any result is heuristic.
     if (!type && this.results?.some(r => r.heuristic)) {
-      this._type = UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
+      this._type = UrlbarShared.PROVIDER_TYPE.HEURISTIC;
     }
 
     if (getViewTemplate) {

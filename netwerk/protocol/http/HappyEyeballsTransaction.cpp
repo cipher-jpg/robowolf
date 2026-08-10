@@ -3,14 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
-
 #include "HappyEyeballsTransaction.h"
 
 #include "ConnectionHandle.h"
-#include "HttpConnectionBase.h"
 #include "Http2Session.h"
 #include "Http3Session.h"
+#include "HttpConnectionBase.h"
+#include "HttpLog.h"
 #include "nsHttpConnection.h"
 #include "nsHttpTransaction.h"
 #include "nsITLSSocketControl.h"
@@ -152,10 +151,15 @@ nsresult HappyEyeballsTransaction::ReadSegments(nsAHttpSegmentReader* aReader,
 nsresult HappyEyeballsTransaction::WriteSegments(nsAHttpSegmentWriter* aWriter,
                                                  uint32_t aCount,
                                                  uint32_t* aCountWritten) {
-  // OnSocketReadable calls WriteSegments after EnsureNPNComplete returns true,
-  // which can happen after our Finish0RTT already closed the HET (e.g. the
-  // PostProcessNPNSetup path has no early return on Finish0RTT failure).
-  if (mState == State::Closed) {
+  LOG(("HappyEyeballsTransaction::WriteSegments %p mState=%d", this,
+       (uint32_t)mState));
+  // Only the adopted winner has had its carrier swapped to the real txn, so it
+  // is the only state in which the carrier should never route response bytes
+  // here. A Racing attempt that lost the race can still receive early server
+  // data (e.g. an h3 0-RTT loser's stream delivers HeaderReady before the
+  // attempt is torn down); a Closed one can be hit after Finish0RTT closed it.
+  // In both cases drop the bytes rather than assert.
+  if (mState != State::Adopted) {
     return NS_BASE_STREAM_CLOSED;
   }
   MOZ_ASSERT_UNREACHABLE("Should not be called");

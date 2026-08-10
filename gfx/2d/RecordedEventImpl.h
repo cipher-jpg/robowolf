@@ -5,20 +5,18 @@
 #ifndef MOZILLA_GFX_RECORDEDEVENTIMPL_H_
 #define MOZILLA_GFX_RECORDEDEVENTIMPL_H_
 
-#include "RecordedEvent.h"
-
-#include "PathRecording.h"
-#include "RecordingTypes.h"
-#include "Tools.h"
 #include "Filters.h"
 #include "Logging.h"
-#include "ScaledFontBase.h"
+#include "PathRecording.h"
+#include "RecordedEvent.h"
+#include "RecordingTypes.h"
 #include "SFNTData.h"
-
+#include "ScaledFontBase.h"
+#include "Tools.h"
 #include "mozilla/dom/CanvasRenderingContextHelper.h"
+#include "mozilla/ipc/SerializeToBytesUtil.h"
 #include "mozilla/layers/BuildConstants.h"
 #include "mozilla/layers/LayersSurfaces.h"
-#include "mozilla/ipc/SerializeToBytesUtil.h"
 
 namespace mozilla {
 namespace gfx {
@@ -1879,9 +1877,9 @@ class RecordedDestination : public RecordedEventDerived<RecordedDestination> {
 
 class RecordedAccessibleId : public RecordedEventDerived<RecordedAccessibleId> {
  public:
-  RecordedAccessibleId(uint64_t aBrowsingContextId, uint64_t aAccId)
+  RecordedAccessibleId(uint64_t aInnerWindowId, uint64_t aAccId)
       : RecordedEventDerived(ACCESSIBLEID),
-        mBrowsingContextId(aBrowsingContextId),
+        mInnerWindowId(aInnerWindowId),
         mAccId(aAccId) {}
 
   bool PlayEvent(Translator* aTranslator) const override;
@@ -1894,7 +1892,7 @@ class RecordedAccessibleId : public RecordedEventDerived<RecordedAccessibleId> {
  private:
   friend class RecordedEvent;
 
-  uint64_t mBrowsingContextId = 0;
+  uint64_t mInnerWindowId = 0;
   uint64_t mAccId = 0;
 
   template <class S>
@@ -4226,9 +4224,8 @@ inline bool RecordedFontDescriptor::PlayEvent(Translator* aTranslator) const {
   RefPtr<UnscaledFont> font = Factory::CreateUnscaledFontFromFontDescriptor(
       mType, mData.data(), mData.size(), mIndex);
   if (!font) {
-    gfxDevCrash(LogReason::InvalidFont)
-        << "Failed creating UnscaledFont of type " << int(mType)
-        << " from font descriptor";
+    gfxCriticalNote << "Failed creating UnscaledFont of type " << int(mType)
+                    << " from font descriptor";
     return false;
   }
 
@@ -4694,27 +4691,26 @@ inline bool RecordedAccessibleId::PlayEvent(Translator* aTranslator) const {
   if (!dt) {
     return false;
   }
-  dt->AccessibleId(mBrowsingContextId, mAccId);
+  dt->AccessibleId(mInnerWindowId, mAccId);
   return true;
 }
 
 template <class S>
 void RecordedAccessibleId::Record(S& aStream) const {
-  WriteElement(aStream, mBrowsingContextId);
+  WriteElement(aStream, mInnerWindowId);
   WriteElement(aStream, mAccId);
 }
 
 template <class S>
 RecordedAccessibleId::RecordedAccessibleId(S& aStream)
     : RecordedEventDerived(ACCESSIBLEID) {
-  ReadElement(aStream, mBrowsingContextId);
+  ReadElement(aStream, mInnerWindowId);
   ReadElement(aStream, mAccId);
 }
 
 inline void RecordedAccessibleId::OutputSimpleEventInfo(
     std::stringstream& aStringStream) const {
-  aStringStream << "AccessibleId [" << mBrowsingContextId << ", " << mAccId
-                << "]";
+  aStringStream << "AccessibleId [" << mInnerWindowId << ", " << mAccId << "]";
 }
 
 #define FOR_EACH_EVENT(f)                                          \

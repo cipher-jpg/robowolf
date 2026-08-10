@@ -66,6 +66,24 @@
  *    user-pref-wins pattern as resolveWidgetSize().
  * 3. Update components to call the helper instead of reading the pref directly.
  *
+ * DEVTOOLS ADMIN INTEGRATION
+ * The New Tab admin devtools panel (DiscoveryStreamAdmin.jsx, shown when
+ * browser.newtabpage.activity-stream.asrouter.devtoolsEnabled is true) drives a
+ * "Widgets" section directly off this registry: it maps WIDGET_REGISTRY to render
+ * one system-enable toggle per widget (from systemEnabledPref), plus "Enable all"
+ * / "Disable all" and reset controls. Any widget added here appears there
+ * automatically -- no devtools edit needed.
+ *
+ * To expose an extra pref-gated widget feature in that panel (e.g. an internal
+ * feature that defaults off but QA/devs want to flip, such as
+ * widgets.pictureOfTheDay.setAsWallpaper.enabled or
+ * widgets.sportsWidget.live.enabled), add an entry to the hand-maintained
+ * WIDGET_EXTRA_FEATURES map in DiscoveryStreamAdmin.jsx keyed by widget id:
+ *   sportsWidget: [{ pref: "widgets.sportsWidget.live.enabled", label: "Live scores" }]
+ * Each entry becomes a boolean toggle nested under that widget's row. This map is
+ * intentionally kept in the devtools component, not the registry, so shipping code
+ * carries no dependency on dev-only feature lists.
+ *
  * The widgets.order pref (CSV of widget IDs) persists user-defined order.
  * It is only written when the user explicitly reorders widgets — never on
  * enable/disable. Disabled widgets keep their slot so they reappear in the
@@ -97,6 +115,12 @@ export const PREF_WIDGETS_PRIVACY_ENABLED = "widgets.privacy.enabled";
 export const PREF_PRIVACY_SIZE = "widgets.privacy.size";
 export const PREF_WIDGETS_SYSTEM_PRIVACY_ENABLED =
   "widgets.system.privacy.enabled";
+export const PREF_PRIVACY_MAX_COUNT = "widgets.privacy.maxCount";
+export const PREF_PRIVACY_MAX_DISPLAY_COUNT = "widgets.privacy.maxDisplayCount";
+export const PREF_PRIVACY_BLANK_CHANCE = "widgets.privacy.blankChance";
+export const PREF_PRIVACY_SHOW_VPN_MESSAGES = "widgets.privacy.showVpnMessages";
+export const PREF_PRIVACY_FORCE_MESSAGE_ID = "widgets.privacy.forceMessageId";
+export const PREF_PRIVACY_MESSAGE_STATE = "widgets.privacy.messageState";
 export const PREF_WIDGETS_CROSSWORD_ENABLED = "widgets.crossword.enabled";
 export const PREF_CROSSWORD_SIZE = "widgets.crossword.size";
 export const PREF_WIDGETS_SYSTEM_CROSSWORD_ENABLED =
@@ -105,6 +129,12 @@ export const PREF_WIDGETS_STOCKS_ENABLED = "widgets.stocks.enabled";
 export const PREF_STOCKS_SIZE = "widgets.stocks.size";
 export const PREF_WIDGETS_SYSTEM_STOCKS_ENABLED =
   "widgets.system.stocks.enabled";
+export const PREF_CROSSWORD_ENDPOINT = "widgets.crossword.endpoint";
+export const PREF_WIDGETS_PICTURE_OF_THE_DAY_ENABLED =
+  "widgets.pictureOfTheDay.enabled";
+export const PREF_PICTURE_OF_THE_DAY_SIZE = "widgets.pictureOfTheDay.size";
+export const PREF_WIDGETS_SYSTEM_PICTURE_OF_THE_DAY_ENABLED =
+  "widgets.system.pictureOfTheDay.enabled";
 
 /**
  * @typedef {object} WidgetRegistryEntry
@@ -122,14 +152,32 @@ export const PREF_WIDGETS_SYSTEM_STOCKS_ENABLED =
  * @property {string|null} trainhopSidebarKey - Key in trainhopConfig.widgets.* for the hasSidebar override.
  * @property {string} widgetsSettingsVisibleKey - Key in trainhopConfig.widgetsSettings.* that additively reveals this widget's toggle in the settings UIs (does not enable the widget).
  * @property {string} widgetsSettingsEnabledKey - Key in trainhopConfig.widgetsSettings.* that overrides this widget's default enabled value (written to the pref default branch; an explicit user toggle still wins).
+ * @property {string|null} [trainhopNamespace] - When set, the widget ships its whole config in one dedicated object at trainhopConfig.<namespace>. Its `enabled` overrides the default value of enabledPref on the default branch (user toggle still wins, like widgetsSettings.*Enabled); `visible` reveals the widget (isWidgetAddable) without writing a pref; `size` is read by resolveWidgetSize. Picture of the Day and Crossword use this today.
  */
 
 /** @type {WidgetRegistryEntry[]} */
 export const WIDGET_REGISTRY = [
   {
+    id: "pictureOfTheDay",
+    telemetryName: "picture_of_the_day",
+    order: 0,
+    enabledPref: PREF_WIDGETS_PICTURE_OF_THE_DAY_ENABLED,
+    sizePref: PREF_PICTURE_OF_THE_DAY_SIZE,
+    defaultSize: "medium",
+    validSizes: ["medium", "large"],
+    hasSidebar: false,
+    systemEnabledPref: PREF_WIDGETS_SYSTEM_PICTURE_OF_THE_DAY_ENABLED,
+    trainhopEnabledKey: "pictureOfTheDayEnabled",
+    trainhopSizeKey: "pictureOfTheDaySize",
+    trainhopSidebarKey: null,
+    widgetsSettingsVisibleKey: "pictureOfTheDayVisible",
+    widgetsSettingsEnabledKey: "pictureOfTheDayEnabled",
+    trainhopNamespace: "widgetPictureOfTheDay",
+  },
+  {
     id: "sportsWidget",
     telemetryName: "sports",
-    order: 0,
+    order: 1,
     enabledPref: PREF_WIDGETS_SPORTS_WIDGET_ENABLED,
     sizePref: PREF_SPORTS_WIDGET_SIZE,
     defaultSize: "medium",
@@ -145,7 +193,7 @@ export const WIDGET_REGISTRY = [
   {
     id: "clocks",
     telemetryName: "clocks",
-    order: 1,
+    order: 2,
     enabledPref: PREF_WIDGETS_CLOCKS_ENABLED,
     sizePref: PREF_CLOCKS_SIZE,
     defaultSize: "medium",
@@ -161,7 +209,7 @@ export const WIDGET_REGISTRY = [
   {
     id: "lists",
     telemetryName: "lists",
-    order: 2,
+    order: 3,
     enabledPref: PREF_WIDGETS_LISTS_ENABLED,
     sizePref: PREF_LISTS_SIZE,
     defaultSize: "medium",
@@ -177,7 +225,7 @@ export const WIDGET_REGISTRY = [
   {
     id: "focusTimer",
     telemetryName: "focus_timer",
-    order: 3,
+    order: 4,
     enabledPref: PREF_WIDGETS_TIMER_ENABLED,
     sizePref: PREF_FOCUS_TIMER_SIZE,
     defaultSize: "medium",
@@ -193,7 +241,7 @@ export const WIDGET_REGISTRY = [
   {
     id: "weather",
     telemetryName: "weather",
-    order: 4,
+    order: 5,
     enabledPref: PREF_WIDGETS_WEATHER_ENABLED,
     sizePref: PREF_WEATHER_SIZE,
     defaultSize: "small",
@@ -209,7 +257,7 @@ export const WIDGET_REGISTRY = [
   {
     id: "privacy",
     telemetryName: "privacy",
-    order: 5,
+    order: 6,
     enabledPref: PREF_WIDGETS_PRIVACY_ENABLED,
     sizePref: PREF_PRIVACY_SIZE,
     defaultSize: "medium",
@@ -225,7 +273,7 @@ export const WIDGET_REGISTRY = [
   {
     id: "crossword",
     telemetryName: "crossword",
-    order: 6,
+    order: 7,
     enabledPref: PREF_WIDGETS_CROSSWORD_ENABLED,
     sizePref: PREF_CROSSWORD_SIZE,
     defaultSize: "medium",
@@ -237,11 +285,12 @@ export const WIDGET_REGISTRY = [
     trainhopSidebarKey: null,
     widgetsSettingsVisibleKey: "crosswordVisible",
     widgetsSettingsEnabledKey: "crosswordEnabled",
+    trainhopNamespace: "widgetCrossword",
   },
   {
     id: "stocks",
     telemetryName: "stocks",
-    order: 7,
+    order: 8,
     enabledPref: PREF_WIDGETS_STOCKS_ENABLED,
     sizePref: PREF_STOCKS_SIZE,
     defaultSize: "medium",
@@ -308,6 +357,8 @@ export function resolveWidgetOrder(prefs) {
  */
 export function isWidgetAddable(widget, prefs) {
   return Boolean(
+    (widget.trainhopNamespace &&
+      prefs.trainhopConfig?.[widget.trainhopNamespace]?.visible) ||
     prefs.trainhopConfig?.widgets?.[widget.trainhopEnabledKey] ||
     prefs.trainhopConfig?.widgetsSettings?.[widget.widgetsSettingsVisibleKey] ||
     prefs[widget.systemEnabledPref]
@@ -385,10 +436,13 @@ export function resolveWidgetSize(widget, prefs) {
   if (userPref) {
     return userPref;
   }
+  const dedicatedSize = widget.trainhopNamespace
+    ? prefs.trainhopConfig?.[widget.trainhopNamespace]?.size
+    : null;
   const trainhopSize = widget.trainhopSizeKey
     ? prefs.trainhopConfig?.widgets?.[widget.trainhopSizeKey]
     : null;
-  return trainhopSize || widget.defaultSize;
+  return dedicatedSize || trainhopSize || widget.defaultSize;
 }
 
 /**
@@ -408,6 +462,116 @@ export function resolveWidgetHasSidebar(widget, prefs) {
     }
   }
   return widget.hasSidebar;
+}
+
+/**
+ * Returns the Merino endpoint the Crossword widget iframe should load.
+ * The dedicated widgetCrossword trainhop object wins, then the legacy
+ * widgets.crosswordEndpoint key, then the raw pref, so the endpoint can be
+ * swapped (e.g. staging to production) without a release. The raw pref is never
+ * read directly by the component.
+ *
+ * @param {object} prefs - current pref values from the Redux store
+ * @returns {string}
+ */
+export function resolveCrosswordEndpoint(prefs) {
+  return (
+    prefs.trainhopConfig?.widgetCrossword?.endpoint ||
+    prefs.trainhopConfig?.widgets?.crosswordEndpoint ||
+    prefs[PREF_CROSSWORD_ENDPOINT]
+  );
+}
+
+/**
+ * Resolves the today-count at which the Privacy widget fires its "daily cap"
+ * celebration message. This is NOT the display ceiling — the readout keeps
+ * showing the real number past this point (see resolvePrivacyDisplayCount).
+ * Priority: trainhopConfig > pref > 100. Routed through this helper (never the
+ * raw pref) per the trainhop-gate convention.
+ *
+ * @param {object} prefs - current pref values from the Redux store
+ * @returns {number}
+ */
+export function resolvePrivacyMaxCount(prefs) {
+  return (
+    prefs.trainhopConfig?.widgets?.privacyMaxCount ||
+    prefs[PREF_PRIVACY_MAX_COUNT] ||
+    100
+  );
+}
+
+/**
+ * Resolves the ceiling for the tracker-count readout: above it the number
+ * shows as "{cap}+" so it stays a tidy few characters. Default 999 (three
+ * digits). Distinct from resolvePrivacyMaxCount (the daily-cap celebration
+ * threshold). Priority: trainhopConfig > pref > 999.
+ *
+ * @param {object} prefs - current pref values from the Redux store
+ * @returns {number}
+ */
+export function resolvePrivacyDisplayCount(prefs) {
+  return (
+    prefs.trainhopConfig?.widgets?.privacyMaxDisplayCount ||
+    prefs[PREF_PRIVACY_MAX_DISPLAY_COUNT] ||
+    999
+  );
+}
+
+/**
+ * Resolves the Privacy widget "blank chance" — the probability (0..1) that an
+ * eligible info message is suppressed to keep the experience calm. It's compared
+ * against Math.random(), so it MUST be a 0–1 fraction (0.4 = 40%), not a percent.
+ * A value > 1 (e.g. 40) would blank every message; guard against that by warning
+ * and falling back to the default. Priority: trainhopConfig > pref > 0.4.
+ *
+ * @param {object} prefs - current pref values from the Redux store
+ * @returns {number}
+ */
+export function resolvePrivacyBlankChance(prefs) {
+  const DEFAULT = 0.4;
+  const trainhop = prefs.trainhopConfig?.widgets?.privacyBlankChance;
+  // The pref is stored as a string ("0.4") because Firefox prefs have no float
+  // type — a numeric default would land as 0 and silently disable blanks.
+  // trainhopConfig comes from JSON, so it's already a number.
+  const rawPref = prefs[PREF_PRIVACY_BLANK_CHANCE];
+  const raw = typeof trainhop === "number" ? trainhop : parseFloat(rawPref);
+  if (Number.isNaN(raw)) {
+    // Warn on a present-but-unparseable value (a misconfig); stay quiet when
+    // the pref is simply unset.
+    if (rawPref !== undefined && rawPref !== "") {
+      console.warn(
+        `widgets.privacy.blankChance is ${JSON.stringify(
+          rawPref
+        )}; expected a 0-1 number. Using ${DEFAULT}.`
+      );
+    }
+    return DEFAULT;
+  }
+  if (raw < 0 || raw > 1) {
+    console.warn(
+      `widgets.privacy.blankChance is ${raw}; expected a 0-1 fraction (0.4 = 40%). Using ${DEFAULT}.`
+    );
+    return DEFAULT;
+  }
+  return raw;
+}
+
+/**
+ * Resolves whether the Privacy widget may show VPN promotional messages. Off by
+ * default: not all users are eligible for the built-in VPN (unsupported region,
+ * enterprise-managed, removed from the toolbar), and promoting an unavailable
+ * feature erodes trust. An experiment can enable them for eligible cohorts — or
+ * force them off. Priority: trainhopConfig > pref > false.
+ *
+ * @param {object} prefs - current pref values from the Redux store
+ * @returns {boolean}
+ */
+export function resolvePrivacyShowVpnMessages(prefs) {
+  const trainhop = prefs.trainhopConfig?.widgets?.privacyShowVpnMessages;
+  if (typeof trainhop === "boolean") {
+    return trainhop;
+  }
+  return !!prefs[PREF_PRIVACY_SHOW_VPN_MESSAGES];
 }
 
 /**

@@ -383,6 +383,12 @@ inline uint64_t CountTrailingZeros(uint64_t value) {
   return std::countr_zero(value);
 }
 
+template <typename T>
+inline constexpr unsigned CountLeadingZeros(T value) {
+  static_assert(std::is_unsigned_v<T>);
+  return std::countl_zero(value);
+}
+
 inline constexpr size_t RoundUpToPowerOfTwo32(size_t value) {
   return mozilla::RoundUpPow2(value);
 }
@@ -1096,7 +1102,7 @@ inline Handle<To> CheckedCast(Handle<From> value) {
 template <typename T>
 class MOZ_NONHEAP_CLASS MaybeHandle final {
  public:
-  MaybeHandle() : location_(nullptr) {}
+  MaybeHandle() = default;
 
   // Constructor for handling automatic up casting from Handle.
   // Ex. Handle<JSArray> can be passed when MaybeHandle<Object> is expected.
@@ -1122,7 +1128,7 @@ class MOZ_NONHEAP_CLASS MaybeHandle final {
   }
 
  private:
-  JS::Value* location_;
+  JS::Value* location_{nullptr};
 };
 
 // From v8/src/handles/handles-inl.h

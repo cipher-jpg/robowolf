@@ -16,10 +16,11 @@ interface IPProtectionHandler {
     /**
      * Activates the IP protection.
      *
+     * @param countryCode ISO 3166-1 alpha-2 country code.
      * @param onResult Invoked once the activation request resolves. Receives `null` on success or
      *  the [Throwable] that caused the failure.
      */
-    fun activate(onResult: (Throwable?) -> Unit = {})
+    fun activate(countryCode: String?, onResult: (Throwable?) -> Unit = {})
 
     /**
      * Deactivates the IP protection proxy.
@@ -44,6 +45,11 @@ interface IPProtectionHandler {
     fun getState(onResult: (ServiceState) -> Unit)
 
     /**
+     * Requests an update for the list of countries available in the proxy server-list.
+     */
+    fun updateCountryList()
+
+    /**
      * Initializes the proxy state machine.
      */
     fun init()
@@ -63,6 +69,14 @@ interface IPProtectionHandler {
     fun setAuthProvider(
         provider: AuthProvider?,
     )
+
+    /**
+     * Sets the [GpiProvider] used to handle Google Play Integrity warm-up and token requests.
+     * Pass null to clear the provider.
+     *
+     * @param provider The [GpiProvider], or null to clear.
+     */
+    fun setGpiProvider(provider: GpiProvider?)
 
     /**
      * Result of an enrollment attempt.
@@ -88,6 +102,23 @@ interface IPProtectionHandler {
     interface AuthProvider {
         /**
          * Fetches a fresh authentication token and delivers it via [onComplete].
+         * Pass null to [onComplete] if the token could not be obtained.
+         */
+        fun getToken(onComplete: (String?) -> Unit)
+    }
+
+    /**
+     * Provides Google Play Integrity warm-up and token retrieval for the IP protection service.
+     */
+    interface GpiProvider {
+        /**
+         * Warms up the GPI token provider. Calls [onComplete] with true on success, false on
+         * failure.
+         */
+        fun warmUp(onComplete: (Boolean) -> Unit)
+
+        /**
+         * Fetches a GPI integrity token and delivers it via [onComplete].
          * Pass null to [onComplete] if the token could not be obtained.
          */
         fun getToken(onComplete: (String?) -> Unit)
@@ -132,6 +163,17 @@ interface IPProtectionHandler {
                 " lastError=$lastError)"
         }
     }
+
+    /**
+     * Represents a country from the IP protection proxy server list.
+     *
+     * @property code ISO 3166-1 alpha-2 country code.
+     * @property available Whether the country could be selected as the active proxy.
+     */
+    data class Country(
+        val code: String,
+        val available: Boolean,
+    )
 }
 
 /** The possible states of the IP protection service. */

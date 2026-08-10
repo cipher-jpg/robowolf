@@ -42,6 +42,12 @@ document.addEventListener(
         case "sync-tabs-menuitem":
           gSync.openSyncedTabsPanel();
           break;
+        case "historyRemoteTabsPromo":
+          gSync.handleSyncPromoAction(
+            event.target.dataset.action,
+            "remote-tabs-top-menu-history"
+          );
+          break;
         case "hiddenTabsMenu":
           gTabsPanel.showHiddenTabsPanel(event, "hidden-tabs-menuitem");
           break;
@@ -101,6 +107,12 @@ document.addEventListener(
           break;
         case "aboutName":
           openAboutDialog();
+          break;
+        case "menu_referralsPage":
+          // Ensure the referrals pref is enabled
+          if (Services.prefs.getBoolPref("browser.referrals.enabled")) {
+            openReferralsPage();
+          }
           break;
         case "helpPolicySupport":
           openTrustedLinkIn(Services.policies.getSupportMenu().URL.href, "tab");

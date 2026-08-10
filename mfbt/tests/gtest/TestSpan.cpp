@@ -17,16 +17,14 @@
 // Adapted from
 // https://github.com/Microsoft/GSL/blob/3819df6e378ffccf0e29465afe99c3b324c2aa70/tests/Span_tests.cpp
 
+#include <type_traits>
+
 #include "gtest/gtest.h"
-
 #include "mozilla/Array.h"
+#include "mozilla/Range.h"
 #include "mozilla/Span.h"
-
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/Range.h"
-
-#include <type_traits>
 
 #define SPAN_TEST(name) TEST(SpanTest, name)
 #define CHECK_THROW(a, b)
@@ -68,15 +66,6 @@ static_assert(std::is_convertible_v<std::vector<int>, Span<const int>>,
               "std::vector should convert into const");
 static_assert(!std::is_convertible_v<const std::vector<int>, Span<int>>,
               "std::vector should not drop const in conversion");
-
-static_assert(!std::is_convertible_v<const char*, Span<const char>>,
-              "const char* is not directly convertible to Span");
-static_assert(!std::is_convertible_v<const char16_t*, Span<const char16_t>>,
-              "const char16_t* is not directly convertible to Span");
-static_assert(!std::is_convertible_v<char*, Span<char>>,
-              "char* is not directly convertible to Span");
-static_assert(!std::is_convertible_v<char16_t*, Span<char16_t>>,
-              "char16_t* is not directly convertible to Span");
 
 /**
  * Rust slice-compatible nullptr replacement value.

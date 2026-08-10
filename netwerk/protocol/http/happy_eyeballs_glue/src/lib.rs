@@ -87,7 +87,11 @@ pub unsafe extern "C" fn happy_eyeballs_create(
     let alt_svc_vec: Vec<_> = alt_svc
         .iter()
         .map(|a| happy_eyeballs::AltSvc {
-            host: None,
+            host: if a.host.is_empty() {
+                None
+            } else {
+                Some(a.host.to_utf8().to_string())
+            },
             port: if a.port != 0 { Some(a.port) } else { None },
             http_version: a.http_version.into(),
         })
@@ -97,8 +101,10 @@ pub unsafe extern "C" fn happy_eyeballs_create(
 
     // Clamp the delays to at least 10ms to avoid excessive connection attempts,
     // and the multiplier to at least 1 (it is a non-zero factor).
-    let resolution_delay_ms =
-        std::cmp::max(10, static_prefs::pref!("network.http.happy_eyeballs_resolution_delay"));
+    let resolution_delay_ms = std::cmp::max(
+        10,
+        static_prefs::pref!("network.http.happy_eyeballs_resolution_delay"),
+    );
     let connection_attempt_delay_ms = std::cmp::max(
         10,
         static_prefs::pref!("network.http.happy_eyeballs_connection_attempt_delay"),
@@ -150,6 +156,7 @@ pub unsafe extern "C" fn happy_eyeballs_process_dns_response_a(
     he: *mut HappyEyeballs,
     id: u64,
     addrs: *const ThinVec<NetAddr>,
+    is_trr: bool,
 ) -> nsresult {
     let Some(he) = (unsafe { he.as_mut() }) else {
         debug_assert!(false, "unexpected null he pointer");
@@ -161,7 +168,7 @@ pub unsafe extern "C" fn happy_eyeballs_process_dns_response_a(
         return NS_ERROR_INVALID_ARG;
     };
 
-    he.process_dns_response_a(id, addrs)
+    he.process_dns_response_a(id, addrs, is_trr)
 }
 
 #[no_mangle]
@@ -169,6 +176,7 @@ pub unsafe extern "C" fn happy_eyeballs_process_dns_response_aaaa(
     he: *mut HappyEyeballs,
     id: u64,
     addrs: *const ThinVec<NetAddr>,
+    is_trr: bool,
 ) -> nsresult {
     let Some(he) = (unsafe { he.as_mut() }) else {
         debug_assert!(false, "unexpected null he pointer");
@@ -180,7 +188,7 @@ pub unsafe extern "C" fn happy_eyeballs_process_dns_response_aaaa(
         return NS_ERROR_INVALID_ARG;
     };
 
-    he.process_dns_response_aaaa(id, addrs)
+    he.process_dns_response_aaaa(id, addrs, is_trr)
 }
 
 #[no_mangle]
@@ -275,7 +283,12 @@ pub struct HappyEyeballs {
 }
 
 impl HappyEyeballs {
-    fn process_dns_response_a(&mut self, id: u64, net_addrs: &ThinVec<NetAddr>) -> nsresult {
+    fn process_dns_response_a(
+        &mut self,
+        id: u64,
+        net_addrs: &ThinVec<NetAddr>,
+        is_trr: bool,
+    ) -> nsresult {
         let id: happy_eyeballs::Id = id.into();
         let mut addrs = Vec::with_capacity(net_addrs.len());
         for na in net_addrs.iter() {
@@ -291,16 +304,25 @@ impl HappyEyeballs {
         }
 
         self.profiler.dns_response(id, &addrs);
-        self.metrics.dns_response(id);
+        self.metrics.dns_response(id, !addrs.is_empty(), is_trr);
 
         let result = happy_eyeballs::DnsResult::A(Ok(addrs));
-        let input = happy_eyeballs::Input::DnsResult { id, result };
+        let input = happy_eyeballs::Input::DnsResult {
+            id,
+            result,
+            stale: false,
+        };
         self.inner.process_input(input, Instant::now());
 
         NS_OK
     }
 
-    fn process_dns_response_aaaa(&mut self, id: u64, net_addrs: &ThinVec<NetAddr>) -> nsresult {
+    fn process_dns_response_aaaa(
+        &mut self,
+        id: u64,
+        net_addrs: &ThinVec<NetAddr>,
+        is_trr: bool,
+    ) -> nsresult {
         let id: happy_eyeballs::Id = id.into();
         let mut addrs = Vec::with_capacity(net_addrs.len());
         for na in net_addrs.iter() {
@@ -317,10 +339,14 @@ impl HappyEyeballs {
         }
 
         self.profiler.dns_response(id, &addrs);
-        self.metrics.dns_response(id);
+        self.metrics.dns_response(id, !addrs.is_empty(), is_trr);
 
         let result = happy_eyeballs::DnsResult::Aaaa(Ok(addrs));
-        let input = happy_eyeballs::Input::DnsResult { id, result };
+        let input = happy_eyeballs::Input::DnsResult {
+            id,
+            result,
+            stale: false,
+        };
         self.inner.process_input(input, Instant::now());
 
         NS_OK
@@ -404,7 +430,11 @@ impl HappyEyeballs {
         self.metrics.dns_response_https(id, &infos, is_trr);
 
         let result = happy_eyeballs::DnsResult::Https(Ok(infos));
-        let input = happy_eyeballs::Input::DnsResult { id, result };
+        let input = happy_eyeballs::Input::DnsResult {
+            id,
+            result,
+            stale: false,
+        };
         self.inner.process_input(input, Instant::now());
 
         NS_OK
@@ -460,7 +490,15 @@ impl HappyEyeballs {
                 id,
                 hostname,
                 record_type,
+                allow_stale,
             }) => {
+                // Optimistic DNS is not wired up on the C++ side: DnsResult
+                // inputs are always reported fresh, so happy-eyeballs never
+                // schedules a revalidation query that forbids a stale answer.
+                debug_assert!(
+                    allow_stale,
+                    "optimistic DNS is not wired up on the C++ side"
+                );
                 self.profiler.dns_query_started(id, record_type);
                 self.metrics.dns_query_started(id, record_type);
                 let hostname: String = hostname.into();
@@ -521,11 +559,13 @@ impl HappyEyeballs {
     }
 }
 
-// TODO: Expose host.
 #[repr(C)]
 pub struct AltSvc {
     pub http_version: HttpVersion,
     pub port: u16,
+    /// The alt-svc alternate's host. Empty means the alternate uses the origin
+    /// host (a port/protocol-only alt-svc).
+    pub host: nsCString,
 }
 
 #[repr(C)]

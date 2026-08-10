@@ -7752,11 +7752,11 @@ def convertConstIDLValueToJSVal(value):
     if tag == IDLType.Tags.uint32:
         return "JS::NumberValue(%sU)" % (value.value)
     if tag in [IDLType.Tags.int64, IDLType.Tags.uint64]:
-        return "JS::CanonicalizedDoubleValue(%s)" % numericValue(tag, value.value)
+        return "JS::DoubleValue(%s)" % numericValue(tag, value.value)
     if tag == IDLType.Tags.bool:
         return "JS::BooleanValue(%s)" % (toStringBool(value.value))
     if tag in [IDLType.Tags.float, IDLType.Tags.double]:
-        return "JS::CanonicalizedDoubleValue(%s)" % (value.value)
+        return "JS::DoubleValue(%s)" % (value.value)
     raise TypeError("Const value of unhandled type: %s" % value.type)
 
 
@@ -7996,7 +7996,7 @@ def getWrapTemplateForType(
         return _setValue(value, setter="setNumber")
 
     def setDouble(value):
-        return _setValue("JS_NumberValue(%s)" % value)
+        return _setValue("JS::NumberValue(%s)" % value)
 
     def setBoolean(value):
         return _setValue(value, setter="setBoolean")
@@ -12473,8 +12473,8 @@ class CGMemberJITInfo(CGThing):
             IDLType.Tags.unrestricted_double,
             IDLType.Tags.double,
         ]:
-            # These all use JS_NumberValue, which can return int or double.
-            # But TI treats "double" as meaning "int or double", so we're
+            # These all use JS::NumberValue, which can return int or double.
+            # JSJitInfo treats "double" as meaning "int or double", so we're
             # good to return JSVAL_TYPE_DOUBLE here.
             return "JSVAL_TYPE_DOUBLE"
         if tag != IDLType.Tags.uint32:
@@ -12556,8 +12556,8 @@ class CGMemberJITInfo(CGThing):
             IDLType.Tags.unrestricted_double,
             IDLType.Tags.double,
         ]:
-            # These all use JS_NumberValue, which can return int or double.
-            # But TI treats "double" as meaning "int or double", so we're
+            # These all use JS::NumberValue, which can return int or double.
+            # JSJitInfo treats "double" as meaning "int or double", so we're
             # good to return JSVAL_TYPE_DOUBLE here.
             return "JSJitInfo::Double"
         if tag != IDLType.Tags.uint32:
@@ -18048,7 +18048,7 @@ class CGDictionary(CGThing):
                 if (!obj) {
                   return false;
                 }
-                rval.set(JS::ObjectValue(*obj));
+                rval.setObject(*obj);
 
                 """
             )
@@ -20688,11 +20688,17 @@ class CGExampleClass(CGBindingImplClass):
                 )
             )
         else:
+            isFinal = not descriptor.interface.hasChildInterfaces()
+            isupportsVariant = (
+                "NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL"
+                if isFinal
+                else "NS_DECL_CYCLE_COLLECTING_ISUPPORTS"
+            )
             extradeclarations = (
                 "public:\n"
-                "  NS_DECL_CYCLE_COLLECTING_ISUPPORTS\n"
+                "  %s\n"
                 "  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(%s)\n"
-                "\n" % self.nativeLeafName(descriptor)
+                "\n" % (isupportsVariant, self.nativeLeafName(descriptor))
             )
 
         if descriptor.interface.hasChildInterfaces():
@@ -21141,7 +21147,12 @@ class CGJSImplClass(CGBindingImplClass):
                 ClassBase("nsSupportsWeakReference"),
                 ClassBase("nsWrapperCache"),
             ]
-            isupportsDecl = "NS_DECL_CYCLE_COLLECTING_ISUPPORTS\n"
+            isFinal = not descriptor.interface.hasChildInterfaces()
+            isupportsDecl = (
+                "NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL\n"
+                if isFinal
+                else "NS_DECL_CYCLE_COLLECTING_ISUPPORTS\n"
+            )
             ccDecl = (
                 "NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(%s)\n" % descriptor.name
             )

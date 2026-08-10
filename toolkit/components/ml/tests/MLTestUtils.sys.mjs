@@ -47,6 +47,20 @@ const EXTRA_RESPONSE_ARGS = {
 };
 
 /**
+ * Start a server and return the URL for one of its registered paths.
+ *
+ * @param {HttpServer} server
+ * @param {string} path
+ * @returns {string}
+ */
+function startServer(server, path) {
+  server.start(-1);
+  const { primaryHost, primaryPort } = server.identity;
+  // eslint-disable-next-line sdl/no-insecure-url
+  return `http://${primaryHost}:${primaryPort}${path}`;
+}
+
+/**
  * Create an HTTP server that serves HTML once.
  *
  * @param {string} markup - The HTML content to serve
@@ -84,7 +98,7 @@ function createServer(markup, code) {
   server.start(-1);
 
   let { primaryHost, primaryPort } = server.identity;
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   const url = `http://${primaryHost}:${primaryPort}/page.html`;
 
   return {
@@ -373,6 +387,56 @@ export const MLTestUtils = {
   },
 
   /**
+   * Serve a URL that accepts the request and never answers it, so the load
+   * never commits.
+   *
+   * @returns {{url: string, cleanup: () => Promise<void>}}
+   */
+  serveStalledPage() {
+    const server = new HttpServer();
+
+    /** @type {any} */
+    let heldResponse;
+
+    server.registerPathHandler("/stalled.html", (_request, response) => {
+      response.processAsync();
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      heldResponse = response;
+    });
+
+    return {
+      url: startServer(server, "/stalled.html"),
+      async cleanup() {
+        // Release the held request so the server can stop.
+        heldResponse?.finish();
+        await new Promise(resolve => server.stop(resolve));
+      },
+    };
+  },
+
+  /**
+   * Serve a URL that redirects to another origin, the way bot detection sends a
+   * request off to a challenge page.
+   *
+   * @param {object} options
+   * @param {string} options.to - The absolute URL to redirect to.
+   * @returns {{url: string, cleanup: () => Promise<void>}}
+   */
+  serveRedirect({ to }) {
+    const server = new HttpServer();
+
+    server.registerPathHandler("/redirect.html", (request, response) => {
+      response.setStatusLine(request.httpVersion, 302, "Found");
+      response.setHeader("Location", to);
+    });
+
+    return {
+      url: startServer(server, "/redirect.html"),
+      cleanup: () => new Promise(resolve => server.stop(resolve)),
+    };
+  },
+
+  /**
    * Similar to serveHTML, but loads the HTML automatically in a tab.
    *
    * Example usage:
@@ -514,7 +578,7 @@ export const MLTestUtils = {
 
       server.registerPathHandler(path, pageHandler);
 
-      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+      // eslint-disable-next-line sdl/no-insecure-url
       const url = `http://${primaryHost}:${primaryPort}${path}`;
       const tab = await BrowserTestUtils.openNewForegroundTab(
         browser,
@@ -562,7 +626,7 @@ export const MLTestUtils = {
        *
        * @type {string}
        */
-      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+      // eslint-disable-next-line sdl/no-insecure-url
       origin: `http://${primaryHost}:${primaryPort}`,
     };
   },

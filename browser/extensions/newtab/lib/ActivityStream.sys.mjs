@@ -48,7 +48,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   SectionsFeed: "resource://newtab/lib/SectionsManager.sys.mjs",
   SectionsLayoutFeed: "resource://newtab/lib/SectionsLayoutFeed.sys.mjs",
   SportsFeed: "resource://newtab/lib/Widgets/SportsFeed.sys.mjs",
+  StocksFeed: "resource://newtab/lib/Widgets/StocksFeed.sys.mjs",
   PrivacyFeed: "resource://newtab/lib/Widgets/PrivacyFeed.sys.mjs",
+  PictureOfTheDayFeed:
+    "resource://newtab/lib/Widgets/PictureOfTheDayFeed.sys.mjs",
   StartupCacheInit: "resource://newtab/lib/StartupCacheInit.sys.mjs",
   Store: "resource://newtab/lib/Store.sys.mjs",
   SystemTickFeed: "resource://newtab/lib/SystemTickFeed.sys.mjs",
@@ -58,6 +61,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   TopStoriesFeed: "resource://newtab/lib/TopStoriesFeed.sys.mjs",
   WallpaperFeed: "resource://newtab/lib/Wallpapers/WallpaperFeed.sys.mjs",
   WeatherFeed: "resource://newtab/lib/WeatherFeed.sys.mjs",
+  WebNotificationsFeed: "resource://newtab/lib/WebNotificationsFeed.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -268,10 +272,13 @@ function getDefaultWidgetSize() {
  * - Forecast enabled + maximized → user had the large forecast widget → "large"
  * - Forecast enabled + not maximized → user had the medium forecast widget → "medium"
  */
-// @nova-cleanup(remove-pref): Replace this function with a _migratePref call
-// that writes the computed size as a user pref for widgets.weather.size, then
-// change widgets.weather.size in PREFS_CONFIG to value: "" (consistent with
-// other widget size prefs; new users fall through to defaultSize in the registry).
+// @nova-cleanup(remove-pref): Do NOT fold this into the pref removal -- it does
+// not read nova.enabled, and changing it is user-data-affecting. Split it to its
+// own bug: replace with a one-time _migratePref that writes the computed size as
+// a user pref, then set widgets.weather.size to value: "" like the other widget
+// size prefs. A user who had classic weather but never picked a size currently
+// gets "small" recomputed each startup and would otherwise silently resize, so
+// it needs QA against an upgraded profile.
 function getWeatherWidgetSize() {
   const forecastSystemEnabled = Services.prefs.getBoolPref(
     "browser.newtabpage.activity-stream.widgets.system.weatherForecast.enabled",
@@ -372,6 +379,22 @@ export const PREFS_CONFIG = new Map([
     "showSponsoredTopSites",
     {
       title: "Show sponsored top sites",
+      value: true,
+    },
+  ],
+  [
+    "system.showWebNotifications",
+    {
+      title:
+        "System pref gating the web notifications feature. Off means the feature does not exist for this profile: no capture, no surfaces, and no toggle in the customize menu",
+      value: false,
+    },
+  ],
+  [
+    "showWebNotifications",
+    {
+      title:
+        "User pref for showing web notifications on newtab. Only consulted when system.showWebNotifications is set",
       value: true,
     },
   ],
@@ -576,6 +599,45 @@ export const PREFS_CONFIG = new Map([
       title:
         "The Merino endpoint for fetching World Cup watch-live broadcaster data",
       value: "https://merino.services.mozilla.com/api/v1/wcs/watch-links",
+    },
+  ],
+  [
+    "widgets.pictureOfTheDay.endpoint",
+    {
+      title: "The Merino endpoint for fetching the daily Picture of the day",
+      value:
+        "https://merino.services.mozilla.com/api/v1/rss/picture-of-the-day",
+    },
+  ],
+  [
+    "widgets.pictureOfTheDay.wallpaperActive",
+    {
+      title:
+        "Published date of the Picture of the day set as the active wallpaper",
+      value: "",
+    },
+  ],
+  [
+    "widgets.pictureOfTheDay.setAsWallpaper.enabled",
+    {
+      title:
+        "Whether the Picture of the day 'Set as wallpaper' feature/CTA is enabled",
+      value: false,
+    },
+  ],
+  [
+    "widgets.pictureOfTheDay.dismissedDate",
+    {
+      title: "Published date of the Picture of the day the user dismissed",
+      value: "",
+    },
+  ],
+  [
+    "widgets.pictureOfTheDay.interaction",
+    {
+      title:
+        "Boolean flag for determining if a user has interacted with the Picture of the day widget",
+      value: false,
     },
   ],
   [
@@ -947,10 +1009,20 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "discoverystream.sections.layout",
+    "discoverystream.sections.ordering",
     {
-      title: "CSV string of section layouts configs",
-      value: "7-double-row-2-ad",
+      title: "Name of the sections ordering to render from Remote Settings",
+      // Channel-derived (resolves on the host), so it's set in Nightly but stays
+      // empty after the XPI train-hops to Beta/Release. Hardcoding the value
+      // would bake it into the XPI and wrongly activate it on other channels.
+      value: AppConstants.NIGHTLY_BUILD ? "default" : "",
+    },
+  ],
+  [
+    "discoverystream.sections.adAllowedRanks",
+    {
+      title: "An ordered, comma-separated list of section ranks that allow ads",
+      value: "",
     },
   ],
   [
@@ -1469,6 +1541,14 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "widgets.clocks.interaction",
+    {
+      title:
+        "Boolean flag for determining if a user has interacted with the clock widget",
+      value: false,
+    },
+  ],
+  [
     "widgets.privacy.enabled",
     {
       title: "Enables the privacy widget",
@@ -1483,9 +1563,32 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "widgets.crossword.interaction",
+    {
+      title:
+        "Boolean flag for determining if a user has interacted with the crossword widget",
+      value: false,
+    },
+  ],
+  [
     "widgets.stocks.enabled",
     {
       title: "Enables the stocks widget",
+      value: true,
+    },
+  ],
+  [
+    "widgets.stocks.interaction",
+    {
+      title:
+        "Boolean flag for determining if a user has interacted with the stocks widget",
+      value: false,
+    },
+  ],
+  [
+    "widgets.pictureOfTheDay.enabled",
+    {
+      title: "Enables the picture of the day widget",
       value: true,
     },
   ],
@@ -1511,6 +1614,13 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "widgets.system.pictureOfTheDay.enabled",
+    {
+      title: "Enables the picture of the day widget experiment in Nimbus",
+      value: false,
+    },
+  ],
+  [
     "widgets.privacy.size",
     {
       title: "Size of the privacy widget (medium or large)",
@@ -1520,8 +1630,53 @@ export const PREFS_CONFIG = new Map([
   [
     "widgets.privacy.maxCount",
     {
-      title: "Max trackers-blocked count shown before the '+' cap",
+      title:
+        "Today-count that fires the Privacy widget 'daily cap' celebration",
       value: 100,
+    },
+  ],
+  [
+    "widgets.privacy.maxDisplayCount",
+    {
+      title: "Ceiling for the tracker-count readout before the '+' (e.g. 999+)",
+      value: 999,
+    },
+  ],
+  [
+    "widgets.privacy.blankChance",
+    {
+      title:
+        "Probability (0..1) an eligible Privacy widget info message is shown blank",
+      // Stored as a string: prefs have no float type, so a numeric 0.4 would
+      // land as 0 and disable blanks. resolvePrivacyBlankChance parses it.
+      value: "0.4",
+    },
+  ],
+  [
+    "widgets.privacy.showVpnMessages",
+    {
+      title:
+        "Allow VPN promotional messages in the Privacy widget (off by default; not all users are VPN-eligible)",
+      value: false,
+    },
+  ],
+  [
+    "widgets.privacy.forceMessageId",
+    {
+      title:
+        "Debug: pin the Privacy widget to one catalog message id (QA/design; empty = normal scheduling)",
+      value: "",
+    },
+  ],
+  [
+    "widgets.privacy.messageState",
+    {
+      // Parent-only scheduler bookkeeping (frequency caps, milestone
+      // watermarks, etc.) owned by PrivacyFeed. skipBroadcast keeps the blob
+      // out of the content-synced prefs.
+      title: "Privacy widget message scheduler state (JSON, internal)",
+      skipBroadcast: true,
+      value: "{}",
     },
   ],
   [
@@ -1536,6 +1691,29 @@ export const PREFS_CONFIG = new Map([
     {
       title: "Size of the stocks widget (small, medium, or large)",
       value: "",
+    },
+  ],
+  [
+    "widgets.pictureOfTheDay.size",
+    {
+      title: "Size of the picture of the day widget (small, medium, or large)",
+      value: "",
+    },
+  ],
+  [
+    "widgets.stocks.size",
+    {
+      title: "Size of the stocks widget (small, medium, or large)",
+      value: "",
+    },
+  ],
+  [
+    "widgets.crossword.endpoint",
+    {
+      title:
+        "The Merino endpoint that serves the crossword bundle rendered in the widget iframe",
+      value:
+        "https://prod-games-particle.merino.prod.webservices.mozgcp.net/index.html",
     },
   ],
   [
@@ -1900,19 +2078,6 @@ export const PREFS_CONFIG = new Map([
       value: false,
     },
   ],
-  /**
-   * @backward-compat { version 153 }
-   * Remove this pref entry after Firefox 153 hits Release — it's only
-   * needed while the 2026 World Cup logo variation is live.
-   */
-  [
-    "logo.variation",
-    {
-      title:
-        "Variant ID of a logo variation to render in place of the standard newtab logo (e.g. 'spin-ball-small'). Empty string disables. Overridden by trainhopConfig.logo.variation when set.",
-      value: "",
-    },
-  ],
 ]);
 
 // Array of each feed's FEEDS_CONFIG factory and values to add to PREFS_CONFIG
@@ -2063,6 +2228,19 @@ const FEEDS_DATA = [
     value: true,
   },
   {
+    name: "webnotificationsfeed",
+    factory: () => new lazy.WebNotificationsFeed(),
+    title:
+      "Captures web notifications (Service-Worker and page) for newtab surfaces",
+    value: true,
+  },
+  {
+    name: "stocksfeed",
+    factory: () => new lazy.StocksFeed(),
+    title: "Handles fetching and caching stocks data",
+    value: true,
+  },
+  {
     name: "adsfeed",
     factory: () => new lazy.AdsFeed(),
     title: "Handles fetching and caching ads data",
@@ -2111,6 +2289,12 @@ const FEEDS_DATA = [
     factory: () => new lazy.PrivacyFeed(),
     title:
       "Handles fetching the daily tracker-blocked count for the Privacy widget",
+    value: true,
+  },
+  {
+    name: "pictureofthedayfeed",
+    factory: () => new lazy.PictureOfTheDayFeed(),
+    title: "Handles fetching and caching the daily Picture of the day",
     value: true,
   },
   {

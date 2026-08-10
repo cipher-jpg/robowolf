@@ -12,6 +12,8 @@ import {
   resolveWidgetSize,
   resolveWidgetOrder,
   resolveWidgetHasSidebar,
+  resolveCrosswordEndpoint,
+  resolvePrivacyBlankChance,
   PREF_WIDGETS_ORDER,
 } from "common/WidgetsRegistry.mjs";
 
@@ -108,6 +110,7 @@ describe("getWidgetOrder", () => {
       "clocks",
       "privacy",
       "crossword",
+      "pictureOfTheDay",
       "stocks",
     ]);
   });
@@ -115,6 +118,7 @@ describe("getWidgetOrder", () => {
   it("appends missing registry IDs after saved ones", () => {
     expect(getWidgetOrder("weather")).toEqual([
       "weather",
+      "pictureOfTheDay",
       "sportsWidget",
       "clocks",
       "lists",
@@ -129,6 +133,7 @@ describe("getWidgetOrder", () => {
     expect(getWidgetOrder("unknownWidget,lists,weather")).toEqual([
       "lists",
       "weather",
+      "pictureOfTheDay",
       "sportsWidget",
       "clocks",
       "focusTimer",
@@ -149,6 +154,7 @@ describe("getWidgetOrder", () => {
     expect(result).toEqual([
       "focusTimer",
       "lists",
+      "pictureOfTheDay",
       "sportsWidget",
       "clocks",
       "weather",
@@ -174,6 +180,7 @@ describe("resolveWidgetOrder", () => {
       "weather",
       "lists",
       "focusTimer",
+      "pictureOfTheDay",
       "sportsWidget",
       "clocks",
       "privacy",
@@ -192,6 +199,7 @@ describe("resolveWidgetOrder", () => {
       "focusTimer",
       "weather",
       "lists",
+      "pictureOfTheDay",
       "sportsWidget",
       "clocks",
       "privacy",
@@ -210,6 +218,7 @@ describe("resolveWidgetOrder", () => {
       "lists",
       "focusTimer",
       "weather",
+      "pictureOfTheDay",
       "sportsWidget",
       "clocks",
       "privacy",
@@ -263,6 +272,26 @@ describe("isWidgetAddable", () => {
       isWidgetAddable(listsWidget, {
         [listsWidget.systemEnabledPref]: true,
         [listsWidget.enabledPref]: false,
+      })
+    ).toBe(true);
+  });
+
+  it("is addable when revealed via the dedicated widgetPictureOfTheDay namespace", () => {
+    const potd = WIDGET_REGISTRY.find(w => w.id === "pictureOfTheDay");
+    expect(
+      isWidgetAddable(potd, {
+        [potd.systemEnabledPref]: false,
+        trainhopConfig: { widgetPictureOfTheDay: { visible: true } },
+      })
+    ).toBe(true);
+  });
+
+  it("is addable when revealed via the dedicated widgetCrossword namespace", () => {
+    const crossword = WIDGET_REGISTRY.find(w => w.id === "crossword");
+    expect(
+      isWidgetAddable(crossword, {
+        [crossword.systemEnabledPref]: false,
+        trainhopConfig: { widgetCrossword: { visible: true } },
       })
     ).toBe(true);
   });
@@ -376,6 +405,52 @@ describe("resolveWidgetSize", () => {
       })
     ).toBe("medium");
   });
+
+  it("prefers the dedicated widgetPictureOfTheDay size over the shared widgets key", () => {
+    const potd = WIDGET_REGISTRY.find(w => w.id === "pictureOfTheDay");
+    expect(
+      resolveWidgetSize(potd, {
+        [potd.sizePref]: "",
+        trainhopConfig: {
+          widgetPictureOfTheDay: { size: "large" },
+          widgets: { [potd.trainhopSizeKey]: "medium" },
+        },
+      })
+    ).toBe("large");
+  });
+
+  it("falls back to the shared widgets size key for POTD when no dedicated size", () => {
+    const potd = WIDGET_REGISTRY.find(w => w.id === "pictureOfTheDay");
+    expect(
+      resolveWidgetSize(potd, {
+        [potd.sizePref]: "",
+        trainhopConfig: { widgets: { [potd.trainhopSizeKey]: "large" } },
+      })
+    ).toBe("large");
+  });
+
+  it("prefers the dedicated widgetCrossword size over the shared widgets key", () => {
+    const crossword = WIDGET_REGISTRY.find(w => w.id === "crossword");
+    expect(
+      resolveWidgetSize(crossword, {
+        [crossword.sizePref]: "",
+        trainhopConfig: {
+          widgetCrossword: { size: "large" },
+          widgets: { [crossword.trainhopSizeKey]: "medium" },
+        },
+      })
+    ).toBe("large");
+  });
+
+  it("falls back to the shared widgets size key for crossword when no dedicated size", () => {
+    const crossword = WIDGET_REGISTRY.find(w => w.id === "crossword");
+    expect(
+      resolveWidgetSize(crossword, {
+        [crossword.sizePref]: "",
+        trainhopConfig: { widgets: { [crossword.trainhopSizeKey]: "large" } },
+      })
+    ).toBe("large");
+  });
 });
 
 describe("resolveWidgetHasSidebar", () => {
@@ -408,5 +483,86 @@ describe("resolveWidgetHasSidebar", () => {
         },
       })
     ).toBe(true);
+  });
+});
+
+describe("resolveCrosswordEndpoint", () => {
+  const dedicatedEndpoint = "https://dedicated.example.com/index.html";
+  const sharedEndpoint = "https://shared.example.com/index.html";
+  const prefEndpoint = "https://pref.example.com/index.html";
+
+  it("prefers the dedicated widgetCrossword endpoint over the shared key and pref", () => {
+    expect(
+      resolveCrosswordEndpoint({
+        "widgets.crossword.endpoint": prefEndpoint,
+        trainhopConfig: {
+          widgetCrossword: { endpoint: dedicatedEndpoint },
+          widgets: { crosswordEndpoint: sharedEndpoint },
+        },
+      })
+    ).toBe(dedicatedEndpoint);
+  });
+
+  it("falls back to the shared widgets endpoint when no dedicated endpoint", () => {
+    expect(
+      resolveCrosswordEndpoint({
+        "widgets.crossword.endpoint": prefEndpoint,
+        trainhopConfig: { widgets: { crosswordEndpoint: sharedEndpoint } },
+      })
+    ).toBe(sharedEndpoint);
+  });
+
+  it("falls back to the raw pref when no trainhop override is present", () => {
+    expect(
+      resolveCrosswordEndpoint({ "widgets.crossword.endpoint": prefEndpoint })
+    ).toBe(prefEndpoint);
+  });
+});
+
+describe("resolvePrivacyBlankChance", () => {
+  it("parses the string pref as a 0-1 fraction", () => {
+    expect(
+      resolvePrivacyBlankChance({ "widgets.privacy.blankChance": "0.25" })
+    ).toBe(0.25);
+  });
+
+  it("defaults to 0.4 when unset, without warning", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    expect(resolvePrivacyBlankChance({})).toBe(0.4);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("warns and defaults to 0.4 for a present-but-unparseable value", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    expect(
+      resolvePrivacyBlankChance({ "widgets.privacy.blankChance": "abc" })
+    ).toBe(0.4);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("treats a parsed 0 as valid (blanks off), not as the default", () => {
+    expect(
+      resolvePrivacyBlankChance({ "widgets.privacy.blankChance": "0" })
+    ).toBe(0);
+  });
+
+  it("warns and falls back to 0.4 for an out-of-range value (e.g. 40)", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    expect(
+      resolvePrivacyBlankChance({ "widgets.privacy.blankChance": "40" })
+    ).toBe(0.4);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("prefers a valid trainhopConfig number over the pref", () => {
+    expect(
+      resolvePrivacyBlankChance({
+        "widgets.privacy.blankChance": "0.9",
+        trainhopConfig: { widgets: { privacyBlankChance: 0.1 } },
+      })
+    ).toBe(0.1);
   });
 });

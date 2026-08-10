@@ -195,7 +195,6 @@ impl SceneSpatialTree {
                 should_snap: true,
                 is_2d_scale_translation: true,
                 paired_with_perspective: false,
-                is_offset_only: false,
             },
             LayoutVector2D::zero(),
             PipelineId::dummy(),
@@ -537,6 +536,9 @@ pub struct TransformUpdateState {
     /// True if the any parent nodes are currently zooming
     pub is_ancestor_or_self_zooming: bool,
 
+    /// True if this node or any parent node has an animated (property-bound) transform
+    pub is_ancestor_or_self_animating: bool,
+
     /// Set to true if this state represents a scroll node with external id
     pub external_id: Option<ExternalScrollId>,
 
@@ -570,14 +572,6 @@ impl<Src, Dst> CoordinateSpaceMapping<Src, Dst> {
         }
     }
 
-    pub fn is_perspective(&self) -> bool {
-        match *self {
-            CoordinateSpaceMapping::Local |
-            CoordinateSpaceMapping::ScaleOffset(_) => false,
-            CoordinateSpaceMapping::Transform(ref transform) => transform.has_perspective_component(),
-        }
-    }
-
     pub fn is_2d_axis_aligned(&self) -> bool {
         match *self {
             CoordinateSpaceMapping::Local |
@@ -599,6 +593,14 @@ impl<Src, Dst> CoordinateSpaceMapping<Src, Dst> {
             CoordinateSpaceMapping::Local => (1.0, 1.0),
             CoordinateSpaceMapping::ScaleOffset(ref scale_offset) => (scale_offset.scale.x.abs(), scale_offset.scale.y.abs()),
             CoordinateSpaceMapping::Transform(ref transform) => scale_factors(transform),
+        }
+    }
+
+    pub fn coplanar_scale_factors(&self) -> Option<(f32, f32)> {
+        match *self {
+            CoordinateSpaceMapping::Local => Some((1.0, 1.0)),
+            CoordinateSpaceMapping::ScaleOffset(ref scale_offset) => Some((scale_offset.scale.x.abs(), scale_offset.scale.y.abs())),
+            CoordinateSpaceMapping::Transform(ref transform) => transform.coplanar_scale_factors(),
         }
     }
 
@@ -729,6 +731,7 @@ impl SpatialTree {
                 invertible: true,
                 is_async_zooming: false,
                 is_ancestor_or_self_zooming: false,
+                is_ancestor_or_self_animating: false,
             });
         }
 
@@ -911,10 +914,10 @@ impl SpatialTree {
             if index == self.root_reference_frame_index {
                 CoordinateSpaceMapping::Local
             } else {
-              match scroll {
-                TransformScroll::Scrolled => CoordinateSpaceMapping::ScaleOffset(child.content_transform),
-                TransformScroll::Unscrolled => CoordinateSpaceMapping::ScaleOffset(child.viewport_transform),
-              }
+                match scroll {
+                    TransformScroll::Scrolled => CoordinateSpaceMapping::ScaleOffset(child.content_transform),
+                    TransformScroll::Unscrolled => CoordinateSpaceMapping::ScaleOffset(child.viewport_transform),
+                }
             }
         } else {
             let system = &self.coord_systems[child.coordinate_system_id.0 as usize];
@@ -976,7 +979,7 @@ impl SpatialTree {
             return;
         }
 
-        profile_scope!("update_tree");
+        tracy_rs::profile_scope!("update_tree");
         self.coord_systems.clear();
         self.coord_systems.push(CoordinateSystem::root());
 
@@ -993,6 +996,7 @@ impl SpatialTree {
             invertible: true,
             preserves_3d: false,
             is_ancestor_or_self_zooming: false,
+            is_ancestor_or_self_animating: false,
             external_id: None,
             scroll_offset: LayoutVector2D::zero(),
         };
@@ -1039,7 +1043,7 @@ impl SpatialTree {
     }
 
     pub fn build_transform_palette(&self, memory: &FrameMemory) -> TransformPalette {
-        profile_scope!("build_transform_palette");
+        tracy_rs::profile_scope!("build_transform_palette");
         TransformPalette::new(self.spatial_nodes.len(), memory)
     }
 
@@ -1169,7 +1173,6 @@ fn add_reference_frame(
             is_2d_scale_translation: false,
             should_snap: false,
             paired_with_perspective: false,
-            is_offset_only: false,
         },
         origin_in_parent_reference_frame,
         PipelineId::dummy(),
@@ -1445,7 +1448,6 @@ fn test_find_scroll_root_simple() {
             is_2d_scale_translation: true,
             should_snap: true,
             paired_with_perspective: false,
-            is_offset_only: false,
         },
         LayoutVector2D::new(0.0, 0.0),
         PipelineId::dummy(),
@@ -1480,7 +1482,6 @@ fn test_find_scroll_root_sub_scroll_frame() {
             is_2d_scale_translation: true,
             should_snap: true,
             paired_with_perspective: false,
-            is_offset_only: false,
         },
         LayoutVector2D::new(0.0, 0.0),
         PipelineId::dummy(),
@@ -1527,7 +1528,6 @@ fn test_find_scroll_root_not_scrollable() {
             is_2d_scale_translation: true,
             should_snap: true,
             paired_with_perspective: false,
-            is_offset_only: false,
         },
         LayoutVector2D::new(0.0, 0.0),
         PipelineId::dummy(),
@@ -1574,7 +1574,6 @@ fn test_find_scroll_root_too_small() {
             is_2d_scale_translation: true,
             should_snap: true,
             paired_with_perspective: false,
-            is_offset_only: false,
         },
         LayoutVector2D::new(0.0, 0.0),
         PipelineId::dummy(),
@@ -1622,7 +1621,6 @@ fn test_find_scroll_root_perspective() {
             is_2d_scale_translation: true,
             should_snap: true,
             paired_with_perspective: false,
-            is_offset_only: false,
         },
         LayoutVector2D::new(0.0, 0.0),
         PipelineId::dummy(),
@@ -1682,7 +1680,6 @@ fn test_find_scroll_root_2d_scale() {
             is_2d_scale_translation: true,
             should_snap: true,
             paired_with_perspective: false,
-            is_offset_only: false,
         },
         LayoutVector2D::new(0.0, 0.0),
         PipelineId::dummy(),
@@ -1709,7 +1706,6 @@ fn test_find_scroll_root_2d_scale() {
             is_2d_scale_translation: true,
             should_snap: false,
             paired_with_perspective: false,
-            is_offset_only: false,
         },
         LayoutVector2D::new(0.0, 0.0),
         PipelineId::dummy(),
@@ -1745,7 +1741,6 @@ fn test_find_scroll_root_sticky() {
             is_2d_scale_translation: true,
             should_snap: true,
             paired_with_perspective: false,
-            is_offset_only: false,
         },
         LayoutVector2D::new(0.0, 0.0),
         PipelineId::dummy(),
@@ -1852,4 +1847,122 @@ fn test_is_ancestor_or_self_zooming() {
     assert!(st.get_spatial_node(root).is_ancestor_or_self_zooming);
     assert!(st.get_spatial_node(child1).is_ancestor_or_self_zooming);
     assert!(st.get_spatial_node(child2).is_ancestor_or_self_zooming);
+}
+
+/// Tests the `is_ancestor_or_self_animating` policy: a CSS-transform reference
+/// frame counts as animating (and propagates that to its descendants) only once
+/// its bound transform has been observed to actually move. A bound-but-static
+/// transform, an APZ scale/translation frame, and static ancestors are not.
+#[test]
+fn test_is_ancestor_or_self_animating() {
+    let mut cst = SceneSpatialTree::new();
+    let root_reference_frame_index = cst.root_reference_frame_index();
+
+    // A static reference frame ...
+    let root = add_reference_frame(
+        &mut cst,
+        root_reference_frame_index,
+        LayoutTransform::identity(),
+        LayoutVector2D::zero(),
+    );
+    // ... a CSS-transform reference frame below it whose bound transform moves ...
+    let animated = cst.add_reference_frame(
+        root,
+        TransformStyle::Flat,
+        PropertyBinding::Binding(api::PropertyBindingKey::new(1), LayoutTransform::identity()),
+        ReferenceFrameKind::Transform {
+            is_2d_scale_translation: false,
+            should_snap: false,
+            paired_with_perspective: false,
+        },
+        LayoutVector2D::zero(),
+        PipelineId::dummy(),
+        false,
+    );
+    // ... and a static child of the animated frame.
+    let child = add_reference_frame(
+        &mut cst,
+        animated,
+        LayoutTransform::identity(),
+        LayoutVector2D::zero(),
+    );
+
+    // A CSS-transform reference frame whose bound transform never changes value
+    // (e.g. a `hold` animation): it must NOT be treated as animating, so its
+    // text stays device-snapped (bug 2051166).
+    let static_bound = cst.add_reference_frame(
+        root,
+        TransformStyle::Flat,
+        PropertyBinding::Binding(api::PropertyBindingKey::new(3), LayoutTransform::identity()),
+        ReferenceFrameKind::Transform {
+            is_2d_scale_translation: false,
+            should_snap: false,
+            paired_with_perspective: false,
+        },
+        LayoutVector2D::zero(),
+        PipelineId::dummy(),
+        false,
+    );
+
+    // A bound reference frame marked `is_2d_scale_translation` is an APZ
+    // async-zoom / fixed-position frame, not a CSS animation: it must NOT be
+    // treated as animating (and must not propagate that to its children) even if
+    // its bound transform moves.
+    let apz = cst.add_reference_frame(
+        root,
+        TransformStyle::Flat,
+        PropertyBinding::Binding(api::PropertyBindingKey::new(2), LayoutTransform::identity()),
+        ReferenceFrameKind::Transform {
+            is_2d_scale_translation: true,
+            should_snap: true,
+            paired_with_perspective: false,
+        },
+        LayoutVector2D::zero(),
+        PipelineId::dummy(),
+        false,
+    );
+    let apz_child = add_reference_frame(
+        &mut cst,
+        apz,
+        LayoutTransform::identity(),
+        LayoutVector2D::zero(),
+    );
+
+    let mut st = SpatialTree::new();
+    st.apply_updates(cst.end_frame_and_get_pending_updates());
+
+    // Feed two frames of dynamic properties: the id 1 (animated) and id 2 (APZ)
+    // transforms move, while id 3 (static_bound) holds a constant value.
+    let mut props = SceneProperties::new();
+    let sample = |props: &mut SceneProperties, moving: LayoutTransform| {
+        props.reset_properties();
+        props.add_transforms(vec![
+            api::PropertyValue { key: api::PropertyBindingKey::new(1), value: moving },
+            api::PropertyValue { key: api::PropertyBindingKey::new(2), value: moving },
+            api::PropertyValue { key: api::PropertyBindingKey::new(3), value: LayoutTransform::identity() },
+        ]);
+        props.flush_pending_updates();
+    };
+    sample(&mut props, LayoutTransform::identity());
+    sample(&mut props, LayoutTransform::translation(10.0, 0.0, 0.0));
+    st.update_tree(&props);
+
+    // The static ancestor above the animated frame is unaffected.
+    assert!(!st.get_spatial_node(root).is_ancestor_or_self_animating);
+    // The moving CSS-transform frame and everything below it are marked.
+    assert!(st.get_spatial_node(animated).is_ancestor_or_self_animating);
+    assert!(st.get_spatial_node(child).is_ancestor_or_self_animating);
+    // A bound-but-static transform is not animating.
+    assert!(!st.get_spatial_node(static_bound).is_ancestor_or_self_animating);
+    // The APZ (async-zoom / fixed) frame and its children are not, despite the
+    // bound transform moving.
+    assert!(!st.get_spatial_node(apz).is_ancestor_or_self_animating);
+    assert!(!st.get_spatial_node(apz_child).is_ancestor_or_self_animating);
+
+    // The latch is monotonic while the binding exists: once id 1 has moved it
+    // stays animating even on a frame where its value is unchanged.
+    sample(&mut props, LayoutTransform::translation(10.0, 0.0, 0.0));
+    st.update_tree(&props);
+    assert!(st.get_spatial_node(animated).is_ancestor_or_self_animating);
+    assert!(!st.get_spatial_node(static_bound).is_ancestor_or_self_animating);
 }

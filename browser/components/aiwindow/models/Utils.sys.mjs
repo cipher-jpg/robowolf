@@ -12,8 +12,10 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 export { openAIEngine };
 
 export const MODEL_PREF = "browser.smartwindow.model";
-const GENERIC_MODEL_NAME = "generic";
+export const GENERIC_MODEL_NAME = "generic";
 const MODEL_CHOICE_PREF = "browser.smartwindow.firstrun.modelChoice";
+// TODO Bug 2053495: remove with mistral release pref
+const MISTRAL_RELEASE_PREF = "browser.smartwindow.mistralRelease";
 
 const RS_AI_WINDOW_COLLECTION = "ai-window-prompts";
 
@@ -89,6 +91,7 @@ export const DEFAULT_ENGINE_ID = "smart-openai";
  */
 export const MODEL_FEATURES = Object.freeze({
   CHAT: "chat",
+  SMART_FORM_FILL: "smart-form-fill",
   TITLE_GENERATION: "title-generation",
   CONVERSATION_STARTERS_SIDEBAR_SYSTEM: "conversation-starters-sidebar-system",
   CONVERSATION_SUGGESTIONS_SIDEBAR_STARTER:
@@ -115,6 +118,10 @@ export const MODEL_FEATURES = Object.freeze({
   REAL_TIME_CONTEXT_TAB: "real-time-context-tab",
   REAL_TIME_CONTEXT_MENTIONS: "real-time-context-mentions",
   MEMORIES_RELEVANT_CONTEXT: "memories-relevant-context",
+  // agents
+  AGENT_MONITOR: "agent-monitor",
+  // search agent
+  SEARCH_ANSWER_GENERATION: "search-answer-generation",
 });
 
 /** @typedef {(typeof MODEL_FEATURES)[keyof typeof MODEL_FEATURES]} ModelFeature */
@@ -125,6 +132,7 @@ export const MODEL_FEATURES = Object.freeze({
 export const SERVICE_TYPES = Object.freeze({
   AI: "ai",
   MEMORIES: "memories",
+  AGENT: "agent",
 });
 
 /**
@@ -132,9 +140,12 @@ export const SERVICE_TYPES = Object.freeze({
  */
 export const PURPOSES = Object.freeze({
   CHAT: "chat",
+  SMART_FORM_FILL: "smart-form-fill",
   TITLE_GENERATION: "title-generation",
   CONVERSATION_STARTERS_SIDEBAR: "convo-starters-sidebar",
   MEMORY_GENERATION: "memory-generation",
+  // agents
+  MONITOR: "monitor",
 });
 
 /**
@@ -147,10 +158,14 @@ export const PURPOSES = Object.freeze({
  * Keep ui/test/browser/head.js MOCK_RS_RECORDS aligned with this table.
  */
 export const FEATURE_MAJOR_VERSIONS = Object.freeze({
-  [MODEL_FEATURES.CHAT]: 7,
+  // TODO Bug 2053495: remove with mistral release pref (CHAT becomes 11)
+  get [MODEL_FEATURES.CHAT]() {
+    return Services.prefs.getBoolPref(MISTRAL_RELEASE_PREF, false) ? 11 : 10;
+  },
+  [MODEL_FEATURES.SMART_FORM_FILL]: 1,
   [MODEL_FEATURES.TITLE_GENERATION]: 1,
   [MODEL_FEATURES.CONVERSATION_STARTERS_SIDEBAR_SYSTEM]: 1,
-  [MODEL_FEATURES.CONVERSATION_SUGGESTIONS_SIDEBAR_STARTER]: 2,
+  [MODEL_FEATURES.CONVERSATION_SUGGESTIONS_SIDEBAR_STARTER]: 3,
   [MODEL_FEATURES.CONVERSATION_SUGGESTIONS_FOLLOWUP]: 1,
   [MODEL_FEATURES.CONVERSATION_SUGGESTIONS_ASSISTANT_LIMITATIONS]: 1,
   [MODEL_FEATURES.CONVERSATION_SUGGESTIONS_MEMORIES]: 1,
@@ -169,7 +184,32 @@ export const FEATURE_MAJOR_VERSIONS = Object.freeze({
   [MODEL_FEATURES.REAL_TIME_CONTEXT_DATE]: 1,
   [MODEL_FEATURES.REAL_TIME_CONTEXT_TAB]: 1,
   [MODEL_FEATURES.REAL_TIME_CONTEXT_MENTIONS]: 1,
+  // agents
+  [MODEL_FEATURES.AGENT_MONITOR]: 1,
+  // search agent
+  [MODEL_FEATURES.SEARCH_ANSWER_GENERATION]: 1,
 });
+
+/**
+ * Inference parameters Firefox may pass to the model endpoint. This mirrors the
+ * set the MLPA ChatRequest (mlpa/core/classes.py) will respect — the server
+ * drops anything not in that set. This list should mirror the parameter list in
+ * the MLPA pydantic object - as any parameter listed here can be passed through
+ * RS parameters for inference.
+ *
+ * @typedef {object} InferenceParams
+ * @property {number} [temperature] - model temperature param
+ * @property {number} [top_p] - model top_p param
+ * @property {number} [max_completion_tokens] - model param
+ * @property {object} [response_format] - model param
+ * @property {number} [presence_penalty] - model param
+ * @property {number} [frequency_penalty] - model param
+ * @property {object} [logit_bias] - model param
+ * @property {boolean} [parallel_tool_calls] - model param
+ * @property {boolean} [logprobs] - model param
+ * @property {number} [top_logprobs] - model param
+ * @property {string|object} [tool_choice] - model param
+ */
 
 /**
  * Remote Settings configuration record structure
@@ -180,7 +220,7 @@ export const FEATURE_MAJOR_VERSIONS = Object.freeze({
  * @property {string} prompts - Prompt template content
  * @property {string} version - Version string in "v{major}.{minor}" format
  * @property {boolean} [is_default] - Whether this is the default config for the feature
- * @property {object} [parameters] - Optional inference parameters (e.g., temperature)
+ * @property {InferenceParams} [parameters] - Optional inference parameters (e.g., temperature)
  * @property {string[]} [additional_components] - Optional list of dependent feature configs
  */
 
@@ -222,6 +262,9 @@ export function checkMajorVersion(recordVersion, comparisonVersion) {
 /*
  * Fallback model data - matches Remote Settings shape
  * Used when Remote Settings lookup fails
+ *
+ * TODO Bug 2053495: remove with mistral release pref (delete FALLBACK_MODELS,
+ * keep FALLBACK_MODELS_V2)
  */
 export const FALLBACK_MODELS = {
   0: { model: "custom-model", ownerName: "", labelId: "custom" },
@@ -239,6 +282,31 @@ export const FALLBACK_MODELS = {
     model: "gpt-oss-120b",
     ownerName: "OpenAI",
     labelId: "personal",
+  },
+};
+
+export const FALLBACK_MODELS_V2 = {
+  0: { model: "custom-model", ownerName: "", labelId: "custom" },
+  1: {
+    model: "gemini-3.1-flash-lite",
+    ownerName: "Google",
+    labelId: "fast",
+    shortName: "Gemini 3.1 Flash Lite",
+    brandName: "Gemini",
+  },
+  2: {
+    model: "qwen3-235b-a22b-instruct-2507-maas",
+    ownerName: "Alibaba",
+    labelId: "allpurpose",
+    shortName: "Qwen 3 235B",
+    brandName: "Qwen",
+  },
+  3: {
+    model: "mistral-small-2603",
+    ownerName: "Mistral",
+    labelId: "personal",
+    shortName: "Mistral Small 4",
+    brandName: "Mistral",
   },
 };
 
@@ -278,7 +346,7 @@ export function selectMainConfig(
   // We figure out which model the user wants and load prompts for that model
   // If we can't find a config for the user selection, we load the generic one
   if (feature === MODEL_FEATURES.CHAT) {
-    if (modelChoiceId !== "0") {
+    if (modelChoiceId !== "0" && modelChoiceId !== "") {
       // First check the choice ID. If it's not 0, use the model associated with that ID
 
       // Look for config based on model choice ID
@@ -315,12 +383,12 @@ export function selectMainConfig(
     const genericConfig = sameMajor.find(
       config => config.model === GENERIC_MODEL_NAME
     );
-    // Inject the user model if one was provided
-    // If one wasn't, we return the generic config plain, which will intentionally break inference
-    if (userModel) {
-      genericConfig.model = userModel;
+    if (!genericConfig) {
+      return null;
     }
-    return genericConfig;
+    // Inject the user model if provided (non-mutating; the record may be a
+    // shared RS cache object). Plain generic intentionally breaks inference.
+    return userModel ? { ...genericConfig, model: userModel } : genericConfig;
   }
 
   // **For all features other than "chat"**
@@ -336,11 +404,44 @@ export function selectMainConfig(
 }
 
 /**
+ * Reads the bundled display metadata from a chat config record. The
+ * `model_details` field is JSON that can arrive either as an object or as a
+ * stringified blob, so handle both. Returns null when absent.
+ *
+ * @param {object} record
+ * @returns {{ownerName: string, labelId: string, shortName: string, brandName: string}|null}
+ */
+function parseModelDetails(record) {
+  const raw = record?.model_details;
+
+  if (!raw) {
+    return null;
+  }
+  let details;
+  try {
+    details = typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch (e) {
+    console.warn("Failed to parse model_details", e);
+    return null;
+  }
+  return {
+    ownerName: details.ownerName ?? "",
+    labelId: details.labelId ?? "",
+    shortName: details.shortName ?? "",
+    brandName: details.brandName ?? "",
+  };
+}
+
+/**
  * Resolves chat model metadata for a given choice ID from Remote Settings.
+ * Display fields (ownerName, labelId, shortName, brandName) come from the
+ * record's own `model_details` bundle so a row is always internally consistent,
+ * regardless of how choice IDs are ordered server-side. The `model` used for
+ * inference is kept from the top-level record field.
  *
  * @param {string} choiceId - Model choice ID (e.g., "1", "2", "3")
  * @param {number} [maxMajorVersion] - Maximum major version to include
- * @returns {Promise<{model: string, ownerName: string}|null>}
+ * @returns {Promise<ModelChoiceData|null>}
  *   Returns null if choice ID not found in Remote Settings
  */
 export async function resolveChatModelChoice(
@@ -348,11 +449,9 @@ export async function resolveChatModelChoice(
   maxMajorVersion = FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]
 ) {
   if (choiceId === "0") {
-    // Custom model - no RS lookup needed
-    return {
-      model: "custom-model",
-      ownerName: "",
-    };
+    // Custom model - no RS lookup needed. Return the complete custom entry from
+    // the fallback so it carries its label like every other choice.
+    return getActiveFallbackModels()[choiceId];
   }
 
   try {
@@ -360,7 +459,10 @@ export async function resolveChatModelChoice(
     const allRecords = await client.get();
 
     const record = selectMainConfig(
-      allRecords.filter(r => r.feature === MODEL_FEATURES.CHAT),
+      // CHAT model+params live in v2 kind:"params" records.
+      allRecords.filter(
+        r => r.feature === MODEL_FEATURES.CHAT && r.kind === "params"
+      ),
       {
         majorVersion: maxMajorVersion,
         feature: MODEL_FEATURES.CHAT,
@@ -371,9 +473,13 @@ export async function resolveChatModelChoice(
       return null;
     }
 
+    const details = parseModelDetails(record);
     return {
       model: record.model,
-      ownerName: record.owner_name ?? "",
+      ownerName: details?.ownerName || record.owner_name || "",
+      labelId: details?.labelId ?? "",
+      shortName: details?.shortName ?? "",
+      brandName: details?.brandName ?? "",
     };
   } catch (error) {
     console.warn(
@@ -382,6 +488,33 @@ export async function resolveChatModelChoice(
     );
     return null;
   }
+}
+
+/**
+ * Returns the active fallback models based on the mistral release pref.
+ *
+ * @returns {typeof FALLBACK_MODELS}
+ */
+function getActiveFallbackModels() {
+  // TODO Bug 2053495: remove with mistral release pref (always FALLBACK_MODELS_V2)
+  return Services.prefs.getBoolPref(MISTRAL_RELEASE_PREF, false)
+    ? FALLBACK_MODELS_V2
+    : FALLBACK_MODELS;
+}
+
+/**
+ * Single source of truth for the order model choices are shown in across the
+ * UI (smartbar selector, settings, onboarding). Choice IDs keep their
+ * server-defined identity; only the display position lives here. Change this
+ * list to reorder every surface at once.
+ *
+ * @returns {string[]} Choice IDs in display order.
+ */
+export function getModelDisplayOrder() {
+  // TODO Bug 2053495: remove with mistral release pref (always ["3", "1", "2"])
+  return Services.prefs.getBoolPref(MISTRAL_RELEASE_PREF, false)
+    ? ["3", "1", "2"]
+    : ["1", "2", "3"];
 }
 
 /**
@@ -395,26 +528,42 @@ export async function getModelForChoice(choiceId = getCurrentModelChoiceId()) {
     return null;
   }
 
-  const labelId = FALLBACK_MODELS[choiceId]?.labelId;
   const resolved = await resolveChatModelChoice(choiceId);
   if (resolved) {
-    return { ...resolved, labelId };
+    return resolved;
   }
 
-  if (choiceId in FALLBACK_MODELS) {
-    return FALLBACK_MODELS[choiceId];
+  const fallbackModels = getActiveFallbackModels();
+  if (choiceId in fallbackModels) {
+    return fallbackModels[choiceId];
   }
 
   return { model: "unknown", ownerName: "unknown" };
 }
 
 /**
+ * @typedef {object} ModelChoiceData
+ * @property {string} model - Model identifier for LLM inference
+ * @property {string} ownerName - Display name of the model's owner
+ * @property {string} [labelId] - Fallback label identifier for the choice
+ * @property {string} [shortName] - Display name of the model collection
+ * @property {string} [brandName] - Short brand name for the model
+ */
+
+/**
  *
- * @type {{[key: string]: {model: string, ownerName: string}}|null}
+ * @type {{[key: string]: ModelChoiceData}|null}
  * holds model metadata -- this should replace FALLBACK_MODELS where sync calls are needed
  * see getCachedModelsData() below
  */
 let _modelsDataCache = null;
+
+// The active model set depends on the mistral release pref. If it changes at
+// runtime, drop the cached data so the next read rebuilds against the new pref.
+// TODO Bug 2053495: remove with mistral release pref
+Services.prefs.addObserver(MISTRAL_RELEASE_PREF, () => {
+  _modelsDataCache = null;
+});
 
 export async function refreshModelsDataCache() {
   _modelsDataCache = null;
@@ -424,21 +573,26 @@ export async function refreshModelsDataCache() {
 /**
  * Gets metadata for all models, with fallback. Result is cached after first call.
  *
- * @returns {Promise<{[key: string]: {model: string, ownerName: string}}>}
+ * @returns {Promise<{[key: string]: ModelChoiceData}>}
  */
 export async function getAllModelsData() {
   if (_modelsDataCache) {
     return _modelsDataCache;
   }
-  const modelData = { ...FALLBACK_MODELS };
+  const fallbackModels = getActiveFallbackModels();
+  const modelData = { ...fallbackModels };
   // RS reads from a local dump. Only the first call sets up RS state,
   // subsequent calls are cached
   const entries = await Promise.all(
-    ["1", "2", "3"].map(async id => [id, await getModelForChoice(id)])
+    getModelDisplayOrder().map(async id => [id, await getModelForChoice(id)])
   );
   for (const [id, data] of entries) {
-    // Preserve labelId from fallback when merging with RS data
-    modelData[id] = { ...data, labelId: FALLBACK_MODELS[id]?.labelId };
+    // Each entry already carries a consistent bundle (from the record's own
+    // model_details, or the fallback map when RS is unavailable), so use it
+    // as-is rather than re-stitching fields by choice ID.
+    if (data) {
+      modelData[id] = data;
+    }
   }
   _modelsDataCache = modelData;
   return _modelsDataCache;
@@ -447,10 +601,10 @@ export async function getAllModelsData() {
 /**
  * Returns cached model data synchronously, or FALLBACK_MODELS if not yet fetched.
  *
- * @returns {{[key: string]: {model: string, ownerName: string}}}
+ * @returns {{[key: string]: ModelChoiceData}}
  */
 export function getCachedModelsData() {
-  return _modelsDataCache ?? FALLBACK_MODELS;
+  return _modelsDataCache ?? getActiveFallbackModels();
 }
 
 export function getCurrentModelName() {
@@ -484,4 +638,56 @@ export function renderPrompt(rawPromptContent, stringsToReplace = {}) {
   }
 
   return finalPromptContent;
+}
+
+/**
+ * Extracts a JSON value from an LLM response (handles markdown-formatted code
+ * blocks). Returns the fallback when the response is not parseable JSON.
+ *
+ * @param {any} response  LLM response
+ * @param {any} fallback  Fallback value if parsing fails to protect downstream code
+ * @returns {any}         Parsed JSON value, or the fallback
+ */
+export function parseAndExtractJSON(response, fallback) {
+  const rawContent = response?.finalOutput ?? "";
+  const markdownMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const payload = markdownMatch ? markdownMatch[1] : rawContent;
+  try {
+    return JSON.parse(payload);
+  } catch (e) {
+    // If we can't parse a JSON from the LLM response, return a tailored fallback value to prevent downstream code failures
+    if (e instanceof SyntaxError) {
+      console.warn(
+        `Could not parse JSON from LLM response; using fallback (${fallback}): ${e.message}`
+      );
+      return fallback;
+    }
+    throw new Error(
+      `Unexpected error parsing JSON from LLM response: ${e.message}`
+    );
+  }
+}
+
+/**
+ * Builds an OpenAI-style `response_format` object for JSON-schema output,
+ * suitable for passing through `inferenceParams` to the LLM.
+ *
+ * @param {string} name - Identifier for the schema (required by the API even
+ *   when not enforced); use a short PascalCase label, e.g. "InitialMemories".
+ * @param {object} schema - JSON Schema describing the desired output shape.
+ * @param {boolean} [strict=false] - When true, requests guaranteed conformance
+ *   (Structured Outputs); the schema must be strict-valid (object root, every
+ *   property listed in `required`, `additionalProperties: false`). When false,
+ *   the schema is a best-effort hint only and is not enforced.
+ * @returns {{type: string, json_schema: {name: string, strict: boolean, schema: object}}}
+ */
+export function makeJSONSchemaBlob(name, schema, strict = false) {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name,
+      strict,
+      schema,
+    },
+  };
 }

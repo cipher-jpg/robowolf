@@ -50,6 +50,8 @@ describe("ASRouter", () => {
   let fakeTargetingContext;
   let FakeToolbarBadgeHub;
   let FakeMomentsPageHub;
+  let FakeSpecialMessageActions;
+  let FakeMessagingSystemAllowlists;
   let ASRouterTargeting;
   let gBrowser;
   let screenImpressions;
@@ -300,9 +302,13 @@ describe("ASRouter", () => {
         getAllBranches: sandbox.stub().resolves([]),
         ready: sandbox.stub().resolves(),
       },
-      SpecialMessageActions: {
+      SpecialMessageActions: (FakeSpecialMessageActions = {
         handleAction: sandbox.stub(),
-      },
+      }),
+      MessagingSystemAllowlists: (FakeMessagingSystemAllowlists = {
+        ensureInit: sandbox.stub().resolves(),
+        getActionOnlyActions: sandbox.stub().returns([]),
+      }),
       TargetingContext: class {
         static combineContexts(...args) {
           return fakeTargetingContext.combineContexts.apply(sandbox, args);
@@ -893,6 +899,197 @@ describe("ASRouter", () => {
       assert.notCalled(CFRPageActions.addRecommendation);
       assert.notCalled(FakeToolbarBadgeHub.registerBadgeNotificationListener);
       assert.notCalled(FakeMomentsPageHub.executeAction);
+    });
+    describe("action template", () => {
+      let addImpressionStub;
+      let blockMessageByIdStub;
+      const allowedMessage = {
+        id: "TEST_ACTION",
+        template: "action_only",
+        content: { action: { type: "CONFIRM_LAUNCH_ON_LOGIN" } },
+      };
+      beforeEach(() => {
+        addImpressionStub = sandbox.stub(Router, "addImpression");
+        blockMessageByIdStub = sandbox.stub(Router, "blockMessageById");
+      });
+      it("calls handleAction and records an impression without blocking for an allowed action", async () => {
+        Router.routeCFRMessage(allowedMessage, browser, {});
+        await Promise.resolve(); // let dispatchCFRAction's async wrapper resolve
+
+        assert.calledOnceWithExactly(
+          FakeSpecialMessageActions.handleAction,
+          allowedMessage.content.action,
+          browser
+        );
+        assert.calledWithMatch(initParams.dispatchCFRAction, {
+          type: "ACTION_ONLY_TELEMETRY",
+          data: {
+            action: "action_only_user_event",
+            message_id: allowedMessage.id,
+            event: "IMPRESSION",
+          },
+        });
+        assert.calledWithMatch(initParams.dispatchCFRAction, {
+          type: "IMPRESSION",
+          data: allowedMessage,
+        });
+        assert.notCalled(addImpressionStub);
+        assert.notCalled(blockMessageByIdStub);
+      });
+      it("does nothing for a non-allowlisted action", () => {
+        const badMessage = {
+          id: "BAD",
+          template: "action_only",
+          content: { action: { type: "OPEN_URL" } },
+        };
+        Router.routeCFRMessage(badMessage, browser, {});
+
+        assert.notCalled(FakeSpecialMessageActions.handleAction);
+        assert.notCalled(addImpressionStub);
+        assert.notCalled(blockMessageByIdStub);
+      });
+      it("allows MULTI_ACTION when every nested action is allowlisted", async () => {
+        const multiMessage = {
+          id: "MULTI",
+          template: "action_only",
+          content: {
+            action: {
+              type: "MULTI_ACTION",
+              data: {
+                actions: [
+                  { type: "CONFIRM_LAUNCH_ON_LOGIN" },
+                  { type: "PIN_FIREFOX_TO_TASKBAR" },
+                ],
+              },
+            },
+          },
+        };
+        Router.routeCFRMessage(multiMessage, browser, {});
+        await Promise.resolve(); // let dispatchCFRAction's async wrapper resolve
+
+        assert.calledOnce(FakeSpecialMessageActions.handleAction);
+        assert.calledWithMatch(initParams.dispatchCFRAction, {
+          type: "IMPRESSION",
+          data: multiMessage,
+        });
+        assert.notCalled(addImpressionStub);
+      });
+      it("rejects MULTI_ACTION when any nested action is not allowlisted", () => {
+        const badMulti = {
+          id: "BAD_MULTI",
+          template: "action_only",
+          content: {
+            action: {
+              type: "MULTI_ACTION",
+              data: {
+                actions: [
+                  { type: "CONFIRM_LAUNCH_ON_LOGIN" },
+                  { type: "OPEN_URL" },
+                ],
+              },
+            },
+          },
+        };
+        Router.routeCFRMessage(badMulti, browser, {});
+
+        assert.notCalled(FakeSpecialMessageActions.handleAction);
+        assert.notCalled(addImpressionStub);
+      });
+      it("rejects a MULTI_ACTION with no nested actions", () => {
+        const emptyMulti = {
+          id: "EMPTY_MULTI",
+          template: "action_only",
+          content: {
+            action: { type: "MULTI_ACTION", data: { actions: [] } },
+          },
+        };
+        Router.routeCFRMessage(emptyMulti, browser, {});
+
+        assert.notCalled(FakeSpecialMessageActions.handleAction);
+        assert.notCalled(addImpressionStub);
+      });
+      it("does nothing when the message has no action", () => {
+        const noAction = {
+          id: "NO_ACTION",
+          template: "action_only",
+          content: {},
+        };
+        Router.routeCFRMessage(noAction, browser, {});
+
+        assert.notCalled(FakeSpecialMessageActions.handleAction);
+        assert.notCalled(addImpressionStub);
+        assert.notCalled(blockMessageByIdStub);
+      });
+      it("allows an action supplied only by the Remote Settings allowlist", async () => {
+        FakeMessagingSystemAllowlists.getActionOnlyActions.returns([
+          "FOO_ACTION",
+        ]);
+        const rsMessage = {
+          id: "RS_ACTION",
+          template: "action_only",
+          content: { action: { type: "FOO_ACTION" } },
+        };
+        Router.routeCFRMessage(rsMessage, browser, {});
+        await Promise.resolve(); // let dispatchCFRAction's async wrapper resolve
+
+        assert.calledOnceWithExactly(
+          FakeSpecialMessageActions.handleAction,
+          rsMessage.content.action,
+          browser
+        );
+        assert.notCalled(addImpressionStub);
+        assert.calledWithMatch(initParams.dispatchCFRAction, {
+          type: "IMPRESSION",
+          data: rsMessage,
+        });
+      });
+      it("rejects an action absent from both baseline and Remote Settings", () => {
+        FakeMessagingSystemAllowlists.getActionOnlyActions.returns([
+          "FOO_ACTION",
+        ]);
+        const badMessage = {
+          id: "BAR",
+          template: "action_only",
+          content: { action: { type: "BAR_ACTION" } },
+        };
+        Router.routeCFRMessage(badMessage, browser, {});
+
+        assert.notCalled(FakeSpecialMessageActions.handleAction);
+        assert.notCalled(addImpressionStub);
+      });
+      it("allows MULTI_ACTION mixing baseline and Remote Settings actions", async () => {
+        FakeMessagingSystemAllowlists.getActionOnlyActions.returns([
+          "FOO_ACTION",
+        ]);
+        const multiMessage = {
+          id: "MIXED_MULTI",
+          template: "action_only",
+          content: {
+            action: {
+              type: "MULTI_ACTION",
+              data: {
+                actions: [
+                  { type: "CONFIRM_LAUNCH_ON_LOGIN" },
+                  { type: "FOO_ACTION" },
+                ],
+              },
+            },
+          },
+        };
+        Router.routeCFRMessage(multiMessage, browser, {});
+        await Promise.resolve(); // let dispatchCFRAction's async wrapper resolve
+
+        assert.calledOnceWithExactly(
+          FakeSpecialMessageActions.handleAction,
+          multiMessage.content.action,
+          browser
+        );
+        assert.notCalled(addImpressionStub);
+        assert.calledWithMatch(initParams.dispatchCFRAction, {
+          type: "IMPRESSION",
+          data: multiMessage,
+        });
+      });
     });
   });
 
@@ -1710,6 +1907,92 @@ describe("ASRouter", () => {
       });
 
       assert.isFalse(Router.isUnblockedMessage(msg));
+    });
+  });
+
+  describe("#hasMessageForTrigger", () => {
+    const provider = { id: "unit-test" };
+
+    it("should return true for a loaded message that matches the trigger, is unblocked, and is below its frequency cap", async () => {
+      const msg = {
+        id: "msg1",
+        groups: [],
+        provider: "unit-test",
+        trigger: { id: "lastWindowClose" },
+      };
+      await Router.setState({ messages: [msg], providers: [provider] });
+
+      assert.isTrue(Router.hasMessageForTrigger("lastWindowClose"));
+    });
+
+    it("should return false if no loaded message has a matching trigger", async () => {
+      const msg = {
+        id: "msg1",
+        groups: [],
+        provider: "unit-test",
+        trigger: { id: "openURL" },
+      };
+      await Router.setState({ messages: [msg], providers: [provider] });
+
+      assert.isFalse(Router.hasMessageForTrigger("lastWindowClose"));
+    });
+
+    it("should return false if the only matching message is blocked by its group", async () => {
+      const msg = {
+        id: "msg1",
+        groups: ["foo"],
+        provider: "unit-test",
+        trigger: { id: "lastWindowClose" },
+      };
+      await Router.setState({
+        messages: [msg],
+        providers: [provider],
+        groups: [{ id: "foo", enabled: false }],
+      });
+
+      assert.isFalse(Router.hasMessageForTrigger("lastWindowClose"));
+    });
+
+    it("should return false if the only matching message is over its frequency cap", async () => {
+      const msg = {
+        id: "msg1",
+        groups: [],
+        provider: "unit-test",
+        trigger: { id: "lastWindowClose" },
+        frequency: { lifetime: 1 },
+      };
+      await Router.setState(state => ({
+        messages: [msg],
+        providers: [provider],
+        messageImpressions: {
+          ...state.messageImpressions,
+          msg1: [0],
+        },
+      }));
+
+      assert.isFalse(Router.hasMessageForTrigger("lastWindowClose"));
+    });
+
+    it("should return true if at least one matching message is eligible, even if another matching one is blocked", async () => {
+      const blockedMsg = {
+        id: "blocked",
+        groups: ["foo"],
+        provider: "unit-test",
+        trigger: { id: "lastWindowClose" },
+      };
+      const eligibleMsg = {
+        id: "eligible",
+        groups: [],
+        provider: "unit-test",
+        trigger: { id: "lastWindowClose" },
+      };
+      await Router.setState({
+        messages: [blockedMsg, eligibleMsg],
+        providers: [provider],
+        groups: [{ id: "foo", enabled: false }],
+      });
+
+      assert.isTrue(Router.hasMessageForTrigger("lastWindowClose"));
     });
   });
 

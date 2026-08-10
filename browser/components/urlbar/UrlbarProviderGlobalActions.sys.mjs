@@ -7,10 +7,7 @@
  * global actions for a query.
  */
 
-import {
-  UrlbarProvider,
-  UrlbarUtils,
-} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
+import { UrlbarProvider } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
@@ -52,10 +49,10 @@ let globalActionsProviders = [
  */
 export class UrlbarProviderGlobalActions extends UrlbarProvider {
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.PROFILE;
+    return lazy.UrlbarShared.PROVIDER_TYPE.PROFILE;
   }
 
   /**
@@ -130,13 +127,12 @@ export class UrlbarProviderGlobalActions extends UrlbarProvider {
   }
 
   async onEngagement(queryContext, controller, details) {
-    let key = details.element.dataset.action;
+    let key = details.pickedActionKey;
     let action = details.result.payload.actionsResults.find(a => a.key == key);
     let provider = globalActionsProviders.find(
       p => p.name == action.providerName
     );
     provider.onPick(queryContext, controller, action);
-    controller.view.close();
   }
 
   onSearchSessionEnd(queryContext, controller, details) {

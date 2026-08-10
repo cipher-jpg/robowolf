@@ -15,6 +15,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/BackgroundSessionStorageServiceParent.h"
 #include "mozilla/dom/ClientManagerActors.h"
+#include "mozilla/dom/ClientValidation.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/CookieStoreParent.h"
 #include "mozilla/dom/DOMTypes.h"
@@ -254,7 +255,7 @@ BackgroundParentImpl::AllocPBackgroundSDBConnectionParent(
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
 
-  if (!BackgroundParent::ValidatePrincipalInfo(this, aPrincipalInfo, {})) {
+  if (!BackgroundParent::ValidatePrincipalInfo(this, aPrincipalInfo)) {
     return nullptr;
   }
 
@@ -394,7 +395,7 @@ BackgroundParentImpl::RecvPBackgroundLocalStorageCacheConstructor(
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aActor);
 
-  if (!BackgroundParent::ValidatePrincipalInfo(this, aPrincipalInfo, {})) {
+  if (!BackgroundParent::ValidatePrincipalInfo(this, aPrincipalInfo)) {
     return IPC_FAIL(
         this,
         "Invalid aPrincipalInfo in PBackgroundLocalStorageCacheConstructor");
@@ -460,6 +461,21 @@ BackgroundParentImpl::AllocPBackgroundSessionStorageServiceParent() {
   return MakeAndAddRef<mozilla::dom::BackgroundSessionStorageServiceParent>();
 }
 
+mozilla::ipc::IPCResult
+BackgroundParentImpl::RecvPBackgroundSessionStorageServiceConstructor(
+    mozilla::dom::PBackgroundSessionStorageServiceParent* aActor) {
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  // ClearStoragesForOrigin is not scoped to any origin the sender is allowed
+  // to touch, so only the parent process may construct this actor.
+  if (BackgroundParent::IsOtherProcessActor(this)) {
+    return IPC_FAIL(aActor, "Wrong actor");
+  }
+
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateFileSystemManagerParent(
     const PrincipalInfo& aPrincipalInfo,
     Endpoint<PFileSystemManagerParent>&& aParentEndpoint,
@@ -471,7 +487,7 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateFileSystemManagerParent(
   // so system principals must be allowed there.
   EnumSet<dom::ValidatePrincipalOptions> options;
   if (BackgroundParent::GetRemoteType(this) == INFERENCE_REMOTE_TYPE) {
-    options += dom::ValidatePrincipalOptions::AllowSystem;
+    options += dom::ValidatePrincipalOptions::AllowSystemIfLoaded;
   }
   if (!BackgroundParent::ValidatePrincipalInfo(this, aPrincipalInfo, options)) {
     aResolver(NS_ERROR_FAILURE);
@@ -486,17 +502,29 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateWebTransportParent(
     const nsAString& aURL, nsIPrincipal* aPrincipal,
     const uint64_t& aBrowsingContextID, const IPCClientInfo& aClientInfo,
     const bool& aDedicated, const bool& aRequireUnreliable,
-    const uint32_t& aCongestionControl,
+    const uint32_t& aCongestionControl, nsTArray<nsString>&& aProtocols,
     nsTArray<WebTransportHash>&& aServerCertHashes,
     Endpoint<PWebTransportParent>&& aParentEndpoint,
     CreateWebTransportParentResolver&& aResolver) {
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
 
+  if (!BackgroundParent::ValidatePrincipal(this, aPrincipal, {})) {
+    return IPC_FAIL(this, "CreateWebTransport aPrincipal is invalid");
+  }
+
+  if (!dom::ClientIsValidPrincipalInfo(
+          aClientInfo.principalInfo(),
+          BackgroundParent::GetLoadedOrigins(this))) {
+    return IPC_FAIL(
+        this,
+        "CreateWebTransport ClientInfo principal not valid for remote type");
+  }
+
   RefPtr<mozilla::dom::WebTransportParent> webt =
       new mozilla::dom::WebTransportParent();
   webt->Create(aURL, aPrincipal, aBrowsingContextID, aClientInfo, aDedicated,
-               aRequireUnreliable, aCongestionControl,
+               aRequireUnreliable, aCongestionControl, std::move(aProtocols),
                std::move(aServerCertHashes), std::move(aParentEndpoint),
                std::move(aResolver));
   return IPC_OK();
@@ -580,8 +608,8 @@ IPCResult BackgroundParentImpl::RecvPSharedWorkerConstructor(
     return IPC_FAIL(this, "Invalid worker type for PSharedWorkerParent");
   }
 
-  if (!BackgroundParent::ValidatePrincipalInfo(
-          this, aData.loadingPrincipalInfo(), {})) {
+  if (!BackgroundParent::ValidatePrincipalInfo(this,
+                                               aData.loadingPrincipalInfo())) {
     return IPC_FAIL(this,
                     "Invalid loadingPrincipalInfo for PSharedWorkerParent");
   }
@@ -785,7 +813,7 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvPBroadcastChannelConstructor(
   }
   nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
 
-  if (!BackgroundParent::ValidatePrincipal(this, principal, {})) {
+  if (!BackgroundParent::ValidatePrincipal(this, principal)) {
     return IPC_FAIL(this, "Invalid principal for BroadcastChannel");
   }
 
@@ -874,7 +902,7 @@ BackgroundParentImpl::RecvShutdownServiceWorkerRegistrar() {
 already_AddRefed<PCacheStorageParent>
 BackgroundParentImpl::AllocPCacheStorageParent(
     const Namespace& aNamespace, const PrincipalInfo& aPrincipalInfo) {
-  if (!BackgroundParent::ValidatePrincipalInfo(this, aPrincipalInfo, {})) {
+  if (!BackgroundParent::ValidatePrincipalInfo(this, aPrincipalInfo)) {
     return nullptr;
   }
 
@@ -1105,7 +1133,7 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateBoundStorageKeyParent(
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
 
-  if (!BackgroundParent::ValidatePrincipalInfo(this, aPrincipalInfo, {})) {
+  if (!BackgroundParent::ValidatePrincipalInfo(this, aPrincipalInfo)) {
     return IPC_FAIL(this, "Invalid principalInfo for BoundStorageKeyParent");
   }
 
@@ -1208,8 +1236,7 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateMLSTransaction(
 
   RefPtr<ThreadsafeContentParentHandle> parent =
       BackgroundParent::GetContentParentHandle(this);
-  if (parent && !dom::ValidatePrincipalCouldPotentiallyBeLoadedBy(
-                    aPrincipal, parent->GetRemoteType(), {})) {
+  if (parent && !parent->ValidatePrincipal(aPrincipal)) {
     dom::ContentParent::LogAndAssertFailedPrincipalValidationInfo(aPrincipal,
                                                                   __func__);
     return IPC_FAIL(this, "Principal validation failed");
@@ -1279,7 +1306,7 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvPClientManagerConstructor(
 
 IPCResult BackgroundParentImpl::RecvStorageActivity(
     const PrincipalInfo& aPrincipalInfo) {
-  if (!BackgroundParent::ValidatePrincipalInfo(this, aPrincipalInfo, {})) {
+  if (!BackgroundParent::ValidatePrincipalInfo(this, aPrincipalInfo)) {
     return IPC_FAIL(this, "Invalid principalInfo for StorageActivity");
   }
 
@@ -1305,6 +1332,11 @@ BackgroundParentImpl::AllocPServiceWorkerParent(
 IPCResult BackgroundParentImpl::RecvPServiceWorkerConstructor(
     PServiceWorkerParent* aActor,
     const IPCServiceWorkerDescriptor& aDescriptor) {
+  if (!BackgroundParent::ValidatePrincipalInfo(this,
+                                               aDescriptor.principalInfo())) {
+    return IPC_FAIL(this, "Invalid principal for PServiceWorker");
+  }
+
   dom::InitServiceWorkerParent(aActor, aDescriptor);
   return IPC_OK();
 }
@@ -1332,6 +1364,17 @@ BackgroundParentImpl::RecvPServiceWorkerRegistrationConstructor(
     PServiceWorkerRegistrationParent* aActor,
     const IPCServiceWorkerRegistrationDescriptor& aDescriptor,
     const IPCClientInfo& aForClient) {
+  if (!BackgroundParent::ValidatePrincipalInfo(this,
+                                               aDescriptor.principalInfo())) {
+    return IPC_FAIL(this, "Invalid principal for PServiceWorkerRegistration");
+  }
+
+  if (!dom::ClientIsValidPrincipalInfo(
+          aForClient.principalInfo(),
+          BackgroundParent::GetLoadedOrigins(this))) {
+    return IPC_FAIL(this, "Invalid ClientInfo for PServiceWorkerRegistration");
+  }
+
   dom::InitServiceWorkerRegistrationParent(aActor, aDescriptor, aForClient);
   return IPC_OK();
 }
@@ -1461,6 +1504,10 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvPLockManagerConstructor(
   if (aPrincipalInfo->IsSystemPrincipal() &&
       BackgroundParent::IsOtherProcessActor(this)) {
     return IPC_FAIL_NO_REASON(this);
+  }
+
+  if (!BackgroundParent::ValidatePrincipal(this, aPrincipalInfo)) {
+    return IPC_FAIL(this, "Invalid principal for PLockManager");
   }
 
   return IPC_OK();

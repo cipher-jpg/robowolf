@@ -462,6 +462,7 @@ MSG_DEF(JSMSG_WASM_BAD_ENFORCE_RANGE,  2, JSEXN_TYPEERR,     "bad {0} {1}")
 MSG_DEF(JSMSG_WASM_BAD_BUF_ARG,        0, JSEXN_TYPEERR,     "first argument must be an ArrayBuffer or typed array object")
 MSG_DEF(JSMSG_WASM_BAD_MOD_ARG,        0, JSEXN_TYPEERR,     "first argument must be a WebAssembly.Module")
 MSG_DEF(JSMSG_WASM_BAD_BUF_MOD_ARG,    0, JSEXN_TYPEERR,     "first argument must be a WebAssembly.Module, ArrayBuffer or typed array object")
+MSG_DEF(JSMSG_WASM_BAD_COMPONENT_ARG,  0, JSEXN_TYPEERR,     "first argument must be a WebAssembly.Component")
 MSG_DEF(JSMSG_WASM_BAD_DESC_ARG,       1, JSEXN_TYPEERR,     "first argument must be a {0} descriptor")
 MSG_DEF(JSMSG_WASM_BAD_IMPORT_ARG,     0, JSEXN_TYPEERR,     "second argument must be an object")
 MSG_DEF(JSMSG_WASM_BAD_IMPORT_FIELD,   1, JSEXN_TYPEERR,     "import object field '{0}' is not an Object")
@@ -952,7 +953,7 @@ MSG_DEF(JSMSG_TEMPORAL_PARSER_EMPTY_STRING, 1, JSEXN_RANGEERR, "can't parse empt
 // Explicit Resource Management
 
 // TODO: Improve the messaging for suppressed errors (Bug 1906150)
-MSG_DEF(JSMSG_ERROR_WAS_SUPPRESSED, 0, IF_EXPLICIT_RESOURCE_MANAGEMENT(JSEXN_SUPPRESSEDERR, JSEXN_INTERNALERR), "An error is suppressed because another error happened while disposing an object")
+MSG_DEF(JSMSG_ERROR_WAS_SUPPRESSED, 0, JSEXN_SUPPRESSEDERR, "An error is suppressed because another error happened while disposing an object")
 
 // DisposableStack
 MSG_DEF(JSMSG_DISPOSABLE_STACK_DISPOSED, 0, JSEXN_REFERENCEERR, "DisposableStack has already been disposed")

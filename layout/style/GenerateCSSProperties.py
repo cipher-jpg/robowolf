@@ -224,8 +224,7 @@ def gen_page_descriptors_webidl(output):
 
 def gen_position_try_descriptors_webidl(output):
     return gen_webidl(output, "position-try", "CSSPositionTryDescriptors",
-                      "CSSPositionTryDescriptor",
-                      "layout.css.anchor-positioning.enabled")
+                      "CSSPositionTryDescriptor")
 
 
 def gen_font_face_descriptors_webidl(output):
@@ -251,6 +250,11 @@ interface CSSFontFaceDescriptors : CSSStyleDeclaration {
             extendedAttrs.append('Pref="%s"' % d.gecko_pref)
         if idl_name != d.name:
             extendedAttrs.append('BindingAlias="%s"' % d.name)
+        for alias in d.aliases:
+            alias_idl_name = data.to_idl_name(alias)
+            if alias_idl_name != alias:
+                 extendedAttrs.append('BindingAlias="%s"' % alias)
+            extendedAttrs.append('BindingAlias="%s"' % alias_idl_name)
         output.write(generateLine(idl_name, extendedAttrs))
     output.write("};\n")
     return deps
@@ -386,13 +390,12 @@ def gen_ns_css_props(output):
 
     properties = [
         PropertyWrapper(i, p)
-        for i, p in enumerate(raw_properties.longhands + raw_properties.shorthands)
-        if p.type() != "alias"
+        for i, p in enumerate(raw_properties.all_properties_and_aliases())
     ]
 
     # Generate kIDLNameTable
     output.write(
-        "const char* const nsCSSProps::" "kIDLNameTable[eCSSProperty_COUNT] = {\n"
+        "const char* const nsCSSProps::kIDLNameTable[eCSSProperty_COUNT_with_aliases] = {\n"
     )
     for p in properties:
         if p.idlname is None:
@@ -406,8 +409,7 @@ def gen_ns_css_props(output):
     ps = [(p, position) for position, p in enumerate(ps)]
     ps.sort(key=lambda item: item[0].index)
     output.write(
-        "const int32_t nsCSSProps::"
-        "kIDLNameSortPositionTable[eCSSProperty_COUNT] = {\n"
+        "const int32_t nsCSSProps::kIDLNameSortPositionTable[eCSSProperty_COUNT_with_aliases] = {\n"
     )
     for p, position in ps:
         output.write("  {},\n".format(position))
@@ -415,7 +417,7 @@ def gen_ns_css_props(output):
 
     # Generate preferences table
     output.write(
-        "const nsCSSProps::PropertyPref " "nsCSSProps::kPropertyPrefTable[] = {\n"
+        "const nsCSSProps::PropertyPref nsCSSProps::kPropertyPrefTable[] = {\n"
     )
     for p in raw_properties.all_properties_and_aliases():
         if not p.gecko_pref:
@@ -457,7 +459,9 @@ def gen_ns_css_props(output):
     )
     for p in properties:
         output.write(
-            'static_assert(eCSSProperty_{} == {}, "{}");\n'.format(p.ident, p.index, msg)
+            'static_assert({} == {}, "{}");\n'.format(
+                p.noncustomcsspropertyid(), p.index, msg
+            )
         )
 
     output.write("\n")

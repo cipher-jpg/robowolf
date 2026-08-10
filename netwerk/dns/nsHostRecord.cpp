@@ -3,13 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsHostRecord.h"
+
 #include "TRRQuery.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
-#include "mozilla/StaticPrefs_network.h"
-#include "mozilla/glean/NetwerkDnsMetrics.h"
 #include "TRRService.h"
 #include "mozilla/ProfilerMarkers.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/glean/NetwerkDnsMetrics.h"
 
 //----------------------------------------------------------------------------
 // this macro filters out any flags that are not used when constructing the
@@ -43,7 +44,7 @@ struct HostResolverMarker {
     aWriter.StringProperty("host", aHost);
     aWriter.StringProperty("originSuffix", aOriginSuffix);
     aWriter.IntProperty("qtype", aType);
-    aWriter.StringProperty("flags", nsPrintfCString("0x%x", aFlags));
+    aWriter.IntProperty("flags", aFlags);
   }
   static MarkerSchema MarkerTypeDisplay() {
     using MS = MarkerSchema;
@@ -52,7 +53,7 @@ struct HostResolverMarker {
     schema.AddKeyFormat("host", MS::Format::SanitizedString);
     schema.AddKeyFormat("originSuffix", MS::Format::SanitizedString);
     schema.AddKeyFormat("qtype", MS::Format::Integer);
-    schema.AddKeyFormat("flags", MS::Format::String);
+    schema.AddKeyFormat("flags", MS::Format::Hexadecimal);
     return schema;
   }
 };

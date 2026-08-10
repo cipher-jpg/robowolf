@@ -79,10 +79,10 @@ export class UrlbarProviderSearchSuggestions extends UrlbarProvider {
   }
 
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.NETWORK;
+    return lazy.UrlbarShared.PROVIDER_TYPE.NETWORK;
   }
 
   /**
@@ -165,9 +165,13 @@ export class UrlbarProviderSearchSuggestions extends UrlbarProvider {
       (queryContext.sapName == "urlbar" &&
         !lazy.UrlbarPrefs.get("suggest.searches") &&
         !this._isTokenOrRestrictionPresent(queryContext)) ||
-      !lazy.UrlbarPrefs.get("browser.search.suggest.enabled") ||
-      (queryContext.isPrivate &&
-        !lazy.UrlbarPrefs.get("browser.search.suggest.enabled.private"))
+      // In the search bar, `browser.search.suggest.enabled` turns off only the
+      // remote suggestions, which `SearchSuggestionController` takes care of,
+      // and form history is shown regardless.
+      (queryContext.sapName != "searchbar" &&
+        (!lazy.UrlbarPrefs.get("browser.search.suggest.enabled") ||
+          (queryContext.isPrivate &&
+            !lazy.UrlbarPrefs.get("browser.search.suggest.enabled.private"))))
     ) {
       return false;
     }
@@ -342,14 +346,14 @@ export class UrlbarProviderSearchSuggestions extends UrlbarProvider {
       return /** @type {UrlbarResultCommand[]} */ ([
         {
           name: RESULT_MENU_COMMANDS.TRENDING_BLOCK,
-          l10n: { id: "urlbar-result-menu-trending-dont-show" },
+          l10n: { id: "urlbar-result-menu-trending-dont-show2" },
         },
         {
           name: "separator",
         },
         {
           name: RESULT_MENU_COMMANDS.TRENDING_HELP,
-          l10n: { id: "urlbar-result-menu-learn-more" },
+          l10n: { id: "urlbar-result-menu-learn-more2" },
         },
       ]);
     }
@@ -517,10 +521,10 @@ export class UrlbarProviderSearchSuggestions extends UrlbarProvider {
         let titleHighlight;
         if (tail && entry.tailOffsetIndex >= 0) {
           title = tail;
-          titleHighlight = UrlbarUtils.HIGHLIGHT.SUGGESTED;
+          titleHighlight = lazy.UrlbarShared.HIGHLIGHT.SUGGESTED;
         } else if (suggestion) {
           title = suggestion;
-          titleHighlight = UrlbarUtils.HIGHLIGHT.SUGGESTED;
+          titleHighlight = lazy.UrlbarShared.HIGHLIGHT.SUGGESTED;
         } else {
           title = query;
         }
@@ -662,15 +666,22 @@ export class UrlbarProviderSearchSuggestions extends UrlbarProvider {
     let resultsToRemove = controller.view.visibleResults.filter(
       result => result.payload.trending
     );
-    if (resultsToRemove.length) {
-      // Show an acknowledgement tip for the first result.
-      resultsToRemove[0].acknowledgeDismissalL10n = {
-        id: "urlbar-trending-dismissal-acknowledgment",
-      };
-    }
+    // Show an acknowledgement tip for the first result.
+    let acknowledgedResult = resultsToRemove[0];
     // Remove results in reverse order so the acknowledgment tip isn't removed.
     resultsToRemove.reverse();
-    resultsToRemove.forEach(result => controller.removeResult(result));
+    resultsToRemove.forEach(result =>
+      controller.removeResult(
+        result,
+        result == acknowledgedResult
+          ? {
+              acknowledgeDismissalL10n: {
+                id: "urlbar-trending-dismissal-acknowledgment",
+              },
+            }
+          : undefined
+      )
+    );
   }
 }
 
@@ -684,13 +695,13 @@ function makeFormHistoryResult(queryContext, engine, entry) {
       title: entry.value,
       lowerCaseSuggestion: entry.value.toLocaleLowerCase(),
       isBlockable: true,
-      blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+      blockL10n: { id: "urlbar-result-menu-remove-from-history2" },
       helpUrl:
         Services.urlFormatter.formatURLPref("app.support.baseURL") +
         "awesome-bar-result-menu",
     },
     highlights: {
-      suggestion: UrlbarUtils.HIGHLIGHT.SUGGESTED,
+      suggestion: lazy.UrlbarShared.HIGHLIGHT.SUGGESTED,
     },
   });
 }

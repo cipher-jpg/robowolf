@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ctypes/CTypes.h"
-#include "js/experimental/CTypes.h"  // JS::CTypesActivity{Callback,Type}, JS::InitCTypesClass, JS::SetCTypesActivityCallback, JS::SetCTypesCallbacks
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/MemoryReporting.h"
@@ -11,6 +10,8 @@
 #include "mozilla/TextUtils.h"
 #include "mozilla/Vector.h"
 #include "mozilla/WrappingOperations.h"
+
+#include "js/experimental/CTypes.h"  // JS::CTypesActivity{Callback,Type}, JS::InitCTypesClass, JS::SetCTypesActivityCallback, JS::SetCTypesCallbacks
 
 #if defined(XP_UNIX)
 #  include <errno.h>
@@ -3168,11 +3169,11 @@ static bool ConvertToJS(JSContext* cx, HandleObject typeObj,
   }
       CTYPES_FOR_EACH_WRAPPED_INT_TYPE(WRAPPED_INT_CASE)
 #undef WRAPPED_INT_CASE
-#define FLOAT_CASE(name, type, ffiType)        \
-  case TYPE_##name: {                          \
-    type value = *static_cast<type*>(data);    \
-    result.set(JS_NumberValue(double(value))); \
-    break;                                     \
+#define FLOAT_CASE(name, type, ffiType)     \
+  case TYPE_##name: {                       \
+    type value = *static_cast<type*>(data); \
+    result.setNumber(double(value));        \
+    break;                                  \
   }
       CTYPES_FOR_EACH_FLOAT_TYPE(FLOAT_CASE)
 #undef FLOAT_CASE
@@ -4462,6 +4463,14 @@ JSObject* CType::DefineBuiltin(JSContext* cx, HandleObject ctypesObj,
   return typeObj;
 }
 
+#ifdef CTYPES_HAVE_FAST_CALL_PLAN
+// ffi_call_plan is incomplete here, so hardcode its size: two pointers, the cif
+// and libffi's internal plan. That internal plan is private to libffi and goes
+// unaccounted, so this is deliberately approximate. AddCellMemory and
+// removeCellMemory must pass the same value.
+static constexpr size_t kCallPlanSize = 2 * sizeof(void*);
+#endif
+
 static void FinalizeFFIType(JS::GCContext* gcx, JSObject* obj,
                             const Value& slot, size_t elementCount) {
   ffi_type* ffiType = static_cast<ffi_type*>(slot.toPrivate());
@@ -4484,6 +4493,14 @@ void CType::Finalize(JS::GCContext* gcx, JSObject* obj) {
       slot = JS::GetReservedSlot(obj, SLOT_FNINFO);
       if (!slot.isUndefined()) {
         auto fninfo = static_cast<FunctionInfo*>(slot.toPrivate());
+#ifdef CTYPES_HAVE_FAST_CALL_PLAN
+        if (fninfo->mCallPlan) {
+          gcx->removeCellMemory(obj, kCallPlanSize,
+                                MemoryUse::CTypeFFICallPlan);
+          ffi_call_plan_free(fninfo->mCallPlan);
+          fninfo->mCallPlan = nullptr;
+        }
+#endif
         gcx->delete_(obj, fninfo, MemoryUse::CTypeFunctionInfo);
       }
       break;
@@ -6812,6 +6829,15 @@ static bool CreateFunctionInfo(JSContext* cx, HandleObject typeObj,
     return false;
   }
 
+#ifdef CTYPES_HAVE_FAST_CALL_PLAN
+  // Precompute the argument placement now so repeated calls skip it. A null
+  // plan (allocation failure) is fine; the call site falls back to ffi_call.
+  fninfo->mCallPlan = ffi_call_plan_alloc(&fninfo->mCIF);
+  if (fninfo->mCallPlan) {
+    AddCellMemory(typeObj, kCallPlanSize, MemoryUse::CTypeFFICallPlan);
+  }
+#endif
+
   return true;
 }
 
@@ -7141,7 +7167,15 @@ bool FunctionType::Call(JSContext* cx, unsigned argc, Value* vp) {
     avalue[i] = values[i].mData;
   }
 
-  ffi_call(&fninfo->mCIF, FFI_FN(fn), returnValue.mData, avalue.begin());
+#ifdef CTYPES_HAVE_FAST_CALL_PLAN
+  if (fninfo->mCallPlan) {
+    ffi_call_plan_invoke(fninfo->mCallPlan, FFI_FN(fn), returnValue.mData,
+                         avalue.begin());
+  } else
+#endif
+  {
+    ffi_call(&fninfo->mCIF, FFI_FN(fn), returnValue.mData, avalue.begin());
+  }
 
   // Save error value.
   // We need to save it before leaving the scope of |suspend| as destructing

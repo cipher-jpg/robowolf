@@ -2,27 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "AppleUtils.h"
 #include "CoreTextFontList.h"
+
+#include "AppleUtils.h"
+#include "MainThreadUtils.h"
+#include "SharedFontList-impl.h"
 #include "gfxFontConstants.h"
 #include "gfxMacFont.h"
 #include "gfxUserFontSet.h"
-
 #include "harfbuzz/hb.h"
-
-#include "MainThreadUtils.h"
-
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/gfx/2D.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/Utf16.h"
-
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/glean/GfxMetrics.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsCharTraits.h"
 #include "nsComponentManagerUtils.h"
@@ -30,7 +28,6 @@
 #include "nsDirectoryServiceUtils.h"
 #include "nsIDirectoryEnumerator.h"
 #include "nsServiceManagerUtils.h"
-#include "SharedFontList-impl.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -377,12 +374,17 @@ nsresult CTFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
 }
 
 gfxFont* CTFontEntry::CreateFontInstance(const gfxFontStyle* aFontStyle) {
-  RefPtr<UnscaledFontMac> unscaledFont(mUnscaledFont);
+  RefPtr<UnscaledFontMac> unscaledFont;
+  {
+    AutoReadLock lock(mLock);
+    unscaledFont = RefPtr<UnscaledFontMac>(mUnscaledFont);
+  }
   if (!unscaledFont) {
     CGFontRef baseFont = GetFontRef();
     if (!baseFont) {
       return nullptr;
     }
+    AutoWriteLock lock(mLock);
     unscaledFont = new UnscaledFontMac(baseFont, mIsDataUserFont);
     mUnscaledFont = unscaledFont;
   }
@@ -443,7 +445,7 @@ CTFontEntry::CTFontEntry(const nsACString& aPostscriptName, WeightRange aWeight,
 }
 
 CTFontEntry::CTFontEntry(const nsACString& aPostscriptName, CGFontRef aFontRef,
-                         WeightRange aWeight, StretchRange aStretch,
+                         WeightRange aWeight, WidthRange aWidth,
                          SlantStyleRange aStyle, bool aIsDataUserFont,
                          bool aIsLocalUserFont)
     : gfxFontEntry(aPostscriptName, false),
@@ -462,7 +464,7 @@ CTFontEntry::CTFontEntry(const nsACString& aPostscriptName, CGFontRef aFontRef,
   CFRetain(mFontRef);
 
   mWeightRange = aWeight;
-  mStretchRange = aStretch;
+  mWidthRange = aWidth;
   mFixedPitch = false;  // xxx - do we need this for downloaded fonts?
   mStyleRange = aStyle;
   mOpszAxis.mTag = 0;
@@ -477,7 +479,7 @@ gfxFontEntry* CTFontEntry::Clone() const {
   MOZ_ASSERT(!IsUserFont(), "we can only clone installed fonts!");
   CTFontEntry* fe = new CTFontEntry(Name(), Weight(), mStandardFace, mSizeHint);
   fe->mStyleRange = mStyleRange;
-  fe->mStretchRange = mStretchRange;
+  fe->mWidthRange = mWidthRange;
   fe->mFixedPitch = mFixedPitch;
   return fe;
 }
@@ -816,11 +818,11 @@ static inline int32_t CoreTextWeightToCSSWeight(CGFloat aCTWeight) {
 // CSS 'normal' font-stretch is 100%; 'ultra-expanded' is 200%, and 'ultra-
 // condensed' is 50%. We map the extremes of the Core Text trait to these
 // values, and interpolate in between these and normal.
-static inline FontStretch CoreTextWidthToCSSStretch(CGFloat aCTWidth) {
+static inline FontWidth CoreTextWidthToCSSWidth(CGFloat aCTWidth) {
   if (aCTWidth >= 0.0) {
-    return FontStretch::FromFloat(100.0 + aCTWidth * 100.0);
+    return FontWidth::FromFloat(100.0 + aCTWidth * 100.0);
   }
-  return FontStretch::FromFloat(100.0 + aCTWidth * 50.0);
+  return FontWidth::FromFloat(100.0 + aCTWidth * 50.0);
 }
 
 void CTFontFamily::AddFace(CTFontDescriptorRef aFace) {
@@ -875,8 +877,7 @@ void CTFontFamily::AddFace(CTFontDescriptorRef aFace) {
 
   CGFloat widthValue;
   CFNumberGetValue(width, kCFNumberCGFloatType, &widthValue);
-  fontEntry->mStretchRange =
-      StretchRange(CoreTextWidthToCSSStretch(widthValue));
+  fontEntry->mWidthRange = WidthRange(CoreTextWidthToCSSWidth(widthValue));
 
   SInt32 traitsValue;
   CFNumberGetValue(symbolicTraits, kCFNumberSInt32Type, &traitsValue);
@@ -896,7 +897,7 @@ void CTFontFamily::AddFace(CTFontDescriptorRef aFace) {
     nsAutoCString weightString;
     fontEntry->Weight().ToString(weightString);
     nsAutoCString stretchString;
-    fontEntry->Stretch().ToString(stretchString);
+    fontEntry->Width().ToString(stretchString);
     LOG_FONTLIST(
         ("(fontlist) added (%s) to family (%s)"
          " with style: %s weight: %s stretch: %s",
@@ -1422,7 +1423,7 @@ gfxFontEntry* CoreTextFontList::PlatformGlobalFontFallback(
 already_AddRefed<gfxFontEntry> CoreTextFontList::LookupLocalFont(
     FontVisibilityProvider* aFontVisibilityProvider,
     const nsACString& aFontName, WeightRange aWeightForEntry,
-    StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry) {
+    WidthRange aWidthForEntry, SlantStyleRange aStyleForEntry) {
   if (aFontName.IsEmpty() || aFontName[0] == '.') {
     return nullptr;
   }
@@ -1484,7 +1485,7 @@ already_AddRefed<gfxFontEntry> CoreTextFontList::LookupLocalFont(
   }
 
   return MakeAndAddRef<CTFontEntry>(aFontName, fontRef, aWeightForEntry,
-                                    aStretchForEntry, aStyleForEntry, false,
+                                    aWidthForEntry, aStyleForEntry, false,
                                     true);
 }
 
@@ -1496,7 +1497,7 @@ MOZ_DEFINE_MALLOC_SIZE_OF_ON_ALLOC(UserFontMallocSizeOfOnAlloc)
 
 already_AddRefed<gfxFontEntry> CoreTextFontList::MakePlatformFont(
     const nsACString& aFontName, WeightRange aWeightForEntry,
-    StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry,
+    WidthRange aWidthForEntry, SlantStyleRange aStyleForEntry,
     const uint8_t* aFontData, uint32_t aLength) {
   NS_ASSERTION(aFontData, "MakePlatformFont called with null data");
 
@@ -1520,7 +1521,7 @@ already_AddRefed<gfxFontEntry> CoreTextFontList::MakePlatformFont(
 
   RefPtr newFontEntry = MakeRefPtr<CTFontEntry>(
       NS_ConvertUTF16toUTF8(uniqueName), fontRef, aWeightForEntry,
-      aStretchForEntry, aStyleForEntry, true, false);
+      aWidthForEntry, aStyleForEntry, true, false);
 
   // Record size for memory reporting purposes.
   // The *OnAlloc function will also tell DMD about this block, as the
@@ -1746,7 +1747,7 @@ void CoreTextFontList::AddFaceInitData(
 
   CGFloat widthValue;
   CFNumberGetValue(width, kCFNumberCGFloatType, &widthValue);
-  StretchRange stretch(CoreTextWidthToCSSStretch(widthValue));
+  WidthRange stretch(CoreTextWidthToCSSWidth(widthValue));
 
   SlantStyleRange slantStyle(FontSlantStyle::NORMAL);
   SInt32 traitsValue;

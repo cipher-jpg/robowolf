@@ -11,6 +11,7 @@ import mozilla.components.concept.engine.ipprotection.IPProtectionHandler
 import mozilla.components.concept.engine.ipprotection.ServiceState
 import mozilla.components.feature.ipprotection.store.state.AccountStatus
 import mozilla.components.feature.ipprotection.store.state.EligibilityStatus
+import mozilla.components.feature.ipprotection.store.state.Location
 import mozilla.components.lib.state.Action
 
 /**
@@ -26,6 +27,18 @@ sealed class IPProtectionAction : Action {
      * Reports a fresh snapshot from the GeckoView IP protection toolkit.
      */
     data class EngineStateChanged(val info: IPProtectionHandler.StateInfo) : IPProtectionAction()
+
+    /**
+     * Reports a fresh list of available proxy countries from the GeckoView IP protection toolkit.
+     */
+    data class CountryListChanged(val countries: List<IPProtectionHandler.Country>) : IPProtectionAction()
+
+    /**
+     * Reports a newly selected location by the user from the location list.
+     *
+     * @param location The selected location.
+     */
+    data class LocationChanged(val location: Location) : IPProtectionAction()
 
     /**
      * Reports a change in whether the user is signed in to a Firefox Account.
@@ -45,8 +58,13 @@ sealed class IPProtectionAction : Action {
 
     /**
      * Reports that the most recent activate or deactivate request failed.
+     *
+     * @property error The [Throwable] the engine rejected the request with, or null when the engine
+     * gave no reason.
      */
-    object ToggleFailed : IPProtectionAction()
+    data class ToggleFailed(
+        val error: Throwable? = null,
+    ) : IPProtectionAction()
 
     /**
      * Checks if an account has already been entitled. If so, this will lead to a token exchange that gives us a new

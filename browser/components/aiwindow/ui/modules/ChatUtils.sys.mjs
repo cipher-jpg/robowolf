@@ -9,9 +9,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   CryptoUtils: "moz-src:///services/crypto/modules/utils.sys.mjs",
 });
 
-import { MESSAGE_ROLE } from "./AIWindowConstants.sys.mjs";
+import { MESSAGE_ROLE, TOOL_RESULT_TYPE } from "./AIWindowConstants.sys.mjs";
 import { ChatConversation } from "./ChatConversation.sys.mjs";
 import { ChatMessage, ChatHistoryResult } from "./ChatMessage.sys.mjs";
+
+/** @typedef {import("./ChatConversation.sys.mjs").PooledHistoryResult} PooledHistoryResult */
+/** @typedef {import("./ChatConversation.sys.mjs").Citation} Citation */
 
 /**
  *  Gets the URL of the currently selected tab of a window.
@@ -78,6 +81,8 @@ export function parseConversationRow(row) {
  */
 export function parseMessageRows(rows) {
   return rows.map(row => {
+    const toolResults =
+      parseJSONOrNull(row.getResultByName("tool_results")) ?? {};
     return new ChatMessage({
       id: row.getResultByName("message_id"),
       createdDate: row.getResultByName("created_date"),
@@ -100,7 +105,9 @@ export function parseMessageRows(rows) {
         row.getResultByName("web_search_queries")
       ),
       pageHistoryDeleted: !!row.getResultByName("page_history_deleted"),
-      toolUIData: parseJSONOrNull(row.getResultByName("tool_ui_data")),
+      toolUIData: toolResults[TOOL_RESULT_TYPE.TOOL_UI]?.[0],
+      historyResults: toolResults[TOOL_RESULT_TYPE.HISTORY_RESULTS],
+      citations: toolResults[TOOL_RESULT_TYPE.CITATIONS],
     });
   });
 }
@@ -154,6 +161,22 @@ export function parseJSONOrNull(value) {
  */
 export function toJSONOrNull(value) {
   return value ? JSON.stringify(value) : null;
+}
+
+/**
+ * Strip resolved page assets from a pooled record before persisting.
+ * `image` (a moz-page-thumb:// URI) and `hasFavicon` are re-resolved lazily on
+ * load, since the underlying thumbnail/favicon cache can be evicted.
+ *
+ * @param {PooledHistoryResult|Citation} record - A pooled record.
+ * @returns {Omit<PooledHistoryResult|Citation, "image" | "hasFavicon">} A copy
+ *   removing the resolved asset fields `image` and `hasFavicon`.
+ */
+export function stripResolvedAssets(record) {
+  const persisted = { ...record };
+  delete persisted.image;
+  delete persisted.hasFavicon;
+  return persisted;
 }
 
 /**

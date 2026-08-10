@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "jit/JitFrames-inl.h"
-
 #include "mozilla/ScopeExit.h"
 
 #include <algorithm>
@@ -31,11 +29,13 @@
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
+#include "vm/Stack.h"  // js::ResumeFrameArgs
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmInstance.h"
 
 #include "builtin/Sorting-inl.h"
 #include "debugger/DebugAPI-inl.h"
+#include "jit/JitFrames-inl.h"
 #include "jit/JSJitFrameIter-inl.h"
 #include "vm/GeckoProfiler-inl.h"
 #include "vm/JSScript-inl.h"
@@ -593,6 +593,18 @@ static void HandleExceptionBaseline(JSContext* cx, JSJitFrameIter& frame,
   jsbytecode* pc;
   frame.baselineScriptAndPc(nullptr, &pc);
 
+  if (frame.baselineFrame()->isResumingGenerator()) {
+    // We're in the generator-resume prologue and JSOp::AfterYield hasn't run
+    // yet. The only fallible operation in the prologue is the overrecursion
+    // check. The debugger hasn't been told about this resume (that happens at
+    // JSOp::AfterYield) and the environment chain is the suspended generator's
+    // environment, so it must not be unwound here. Just pop the frame.
+    MOZ_ASSERT(pc == frame.baselineFrame()->script()->code());
+    EnsureUnwoundJitExitFrame(cx->activation()->asJit(),
+                              frame.baselineFrame()->framePrefix());
+    return;
+  }
+
   // Ensure the BaselineFrame is an interpreter frame. This is easy to do and
   // simplifies the code below and interaction with DebugModeOSR.
   //
@@ -942,6 +954,14 @@ uintptr_t* JitFrameLayout::slotRef(SafepointSlotEntry where) {
   return (uintptr_t*)((uint8_t*)thisAndActualArgs() + where.slot);
 }
 
+JS::Value* JitFrameLayout::resumeArgs() {
+  MOZ_ASSERT(isResumingGenerator());
+  if (!CalleeTokenIsFunction(calleeToken())) {
+    return moduleResumeArgs();
+  }
+  return actualArgs() + CalleeTokenToFunction(calleeToken())->nargs();
+}
+
 #ifdef DEBUG
 void ExitFooterFrame::assertValidVMFunctionId() const {
   MOZ_ASSERT(data_ >= uintptr_t(ExitFrameType::VMFunction));
@@ -971,6 +991,13 @@ static void TraceThisAndArguments(JSTracer* trc, const JSJitFrameIter& frame,
   //
   // For other frames such as LazyLink frames or InterpreterStub frames, we
   // always trace all actual and formal arguments.
+
+  // If we're in the middle of resuming a generator or an async function/module,
+  // we have to trace the ResumeFrameArgs too.
+  if (layout->isResumingGenerator()) {
+    TraceRootRange(trc, ResumeFrameArgs::NumSlots, layout->resumeArgs(),
+                   "jit-resume-args");
+  }
 
   if (!CalleeTokenIsFunction(layout->calleeToken())) {
     return;
@@ -1618,7 +1645,6 @@ RInstructionResults& RInstructionResults::operator=(RInstructionResults&& rhs) {
 }
 
 // results_ is freed by the UniquePtr.
-RInstructionResults::~RInstructionResults() = default;
 
 bool RInstructionResults::init(JSContext* cx, uint32_t numResults) {
   if (numResults) {
@@ -1813,14 +1839,13 @@ Value SnapshotIterator::allocationValue(const RValueAllocation& alloc,
       return NullValue();
 
     case RValueAllocation::DOUBLE_REG:
-      return JS::CanonicalizedDoubleValue(fromRegister<double>(alloc.fpuReg()));
+      return DoubleValue(fromRegister<double>(alloc.fpuReg()));
 
     case RValueAllocation::FLOAT32_REG:
-      return JS::CanonicalizedDoubleValue(fromRegister<float>(alloc.fpuReg()));
+      return DoubleValue(fromRegister<float>(alloc.fpuReg()));
 
     case RValueAllocation::FLOAT32_STACK:
-      return JS::CanonicalizedDoubleValue(
-          ReadFrameFloat32Slot(fp_, alloc.stackOffset()));
+      return DoubleValue(ReadFrameFloat32Slot(fp_, alloc.stackOffset()));
 
     case RValueAllocation::TYPED_REG:
       return FromTypedPayload(alloc.knownType(), fromRegister(alloc.reg2()));
@@ -1828,8 +1853,7 @@ Value SnapshotIterator::allocationValue(const RValueAllocation& alloc,
     case RValueAllocation::TYPED_STACK: {
       switch (alloc.knownType()) {
         case JSVAL_TYPE_DOUBLE:
-          return JS::CanonicalizedDoubleValue(
-              ReadFrameDoubleSlot(fp_, alloc.stackOffset2()));
+          return DoubleValue(ReadFrameDoubleSlot(fp_, alloc.stackOffset2()));
         case JSVAL_TYPE_INT32:
           return Int32Value(ReadFrameInt32Slot(fp_, alloc.stackOffset2()));
         case JSVAL_TYPE_BOOLEAN:

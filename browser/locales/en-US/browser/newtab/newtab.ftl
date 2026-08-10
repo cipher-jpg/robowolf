@@ -49,7 +49,6 @@ newtab-search-box-input =
 newtab-topsites-add-search-engine-header = Add Search Engine
 newtab-topsites-add-shortcut-header = New Shortcut
 newtab-topsites-edit-shortcut-header = Edit Shortcut
-newtab-topsites-add-shortcut-label = Add Shortcut
 newtab-topsites-add-shortcut-title =
     .title = Add Shortcut
     .aria-label = Add Shortcut
@@ -69,7 +68,7 @@ newtab-topsites-clear-input =
     .aria-label = Clear text
 
 newtab-topsites-image-url-label = Custom Image URL
-newtab-topsites-use-image-link = Use a custom image…
+newtab-topsites-use-custom-image-link = Use a custom image
 newtab-topsites-image-validation = Image failed to load. Try a different URL.
 
 ## Top Sites - General form dialog buttons. These are verbs/actions.
@@ -98,6 +97,27 @@ topsite-label-pinned =
     .aria-label = { $title } (pinned)
     .title = { $title }
 
+## Top Sites - Web notifications hover card
+
+# Variables:
+#   $site (string) - The label or hostname of the site the notifications are from.
+newtab-topsites-hover-card-header = Notifications from { $site }
+
+# Relative time shown for a notification posted less than a minute ago.
+newtab-topsites-hover-card-just-now = Just now
+
+newtab-topsites-hover-card-mark-all-read =
+    .title = Mark all as read
+    .aria-label = Mark all as read
+
+newtab-topsites-hover-card-settings =
+    .title = Notification settings
+    .aria-label = Notification settings
+
+newtab-topsites-hover-card-dismiss =
+    .title = Dismiss
+    .aria-label = Dismiss
+
 ## Context Menu - Action Tooltips.
 
 # General tooltip for context menus.
@@ -115,6 +135,7 @@ newtab-menu-content-tooltip =
 ## Context Menu: These strings are displayed in a context menu and are meant as a call to action for a given page.
 
 newtab-menu-edit-topsites = Edit
+newtab-menu-add-topsite = Add New Shortcut
 newtab-menu-open-new-window = Open in a New Window
 newtab-menu-open-new-private-window = Open in a New Private Window
 newtab-menu-dismiss = Dismiss
@@ -239,6 +260,10 @@ newtab-custom-shortcuts-toggle =
 newtab-custom-shortcuts-nova =
   .label = Shortcuts
 
+newtab-custom-web-notifications-toggle =
+  .label = Web notifications
+  .description = Show notifications from your sites on their shortcuts
+
 newtab-custom-row-description =
   .description = Number of rows
 # Variables
@@ -257,7 +282,8 @@ newtab-recommended-stories-toggle =
   .label = Recommended stories
 newtab-custom-stories-personalized-toggle =
   .label = Stories
-newtab-custom-stories-personalized-checkbox-label = Personalized stories based on your activity
+newtab-custom-stories-personalized-checkbox =
+  .label = Personalized stories based on your activity
 newtab-custom-weather-toggle =
   .label = Weather
   .description = Today’s forecast at a glance
@@ -284,6 +310,29 @@ newtab-widget-manage-title = Widgets
 newtab-widget-manage-widget-button =
     .label = Manage widgets
 
+## New Tab Appearance (browser theme picker)
+
+# Title of the browser theme ("Appearance") section in the customize panel.
+newtab-custom-appearance-section-title = Appearance
+# Button that opens the full browser theme selection view.
+newtab-appearance-more-themes-button =
+    .label = See more themes
+# Title of the full theme selection sub-panel, also used as its back button label.
+newtab-appearance-manage-title = { -brand-product-name } Themes
+# Header for the list of the user's already-installed themes in the full theme panel.
+newtab-appearance-your-themes-header = Your themes
+# Button that enables an already-installed theme.
+newtab-appearance-enable-theme-button =
+    .label = Enable
+# Button that disables the active theme and reverts to the default.
+newtab-appearance-disable-theme-button =
+    .label = Disable
+# Button that installs a theme.
+newtab-appearance-install-theme-button =
+    .label = Install theme
+# Button/link on the full theme panel that opens the complete list of available themes.
+newtab-appearance-explore-more-themes-button = Explore more themes
+
 # Tooltip for close button
 newtab-custom-close-menu-button =
     .title = Close
@@ -292,7 +341,9 @@ newtab-custom-settings = Manage more settings
 
 ## New Tab Wallpapers
 
+#  (developer note): @nova-cleanup(remove-string): Remove old "Wallpapers" heading string once Nova lands. The newtab-wallpaper-toggle-title string will take over
 newtab-wallpaper-title = Wallpapers
+#  (developer note): @nova-cleanup(remove-string): Remove string once Nova lands. Nova has no reset button; the wallpapers toggle handles reset
 newtab-wallpaper-reset = Reset to default
 #  (developer note): @nova-cleanup(remove-string): Remove old "Upload an image" string once Nova lands. The new "Add an image"  string will take over
 newtab-wallpaper-upload-image = Upload an image
@@ -590,11 +641,6 @@ newtab-download-mobile-highlight-body-variant-c = Did you know you can take { -b
 newtab-download-mobile-highlight-image =
     .aria-label = QR code to download { -brand-product-name } for mobile
 
-## Strings for shortcuts highlight
-
-newtab-shortcuts-highlight-title = Your favorites at your fingertips
-newtab-shortcuts-highlight-subtitle = Add a shortcut to keep your favorite sites one click away.
-
 ## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
@@ -731,6 +777,9 @@ newtab-widget-lists-input-menu-edit2 =
 newtab-widget-lists-edit-clear =
     .aria-label = Cancel
     .title = Cancel
+# Lists is a noun, as in "options for the lists"
+newtab-widget-lists-menu-button =
+    .aria-label = Lists options
 
 # the + symbol emphasises the functionality of adding a new list
 newtab-widget-lists-dropdown-create =
@@ -1072,9 +1121,6 @@ newtab-widget-timer-mode-group =
 newtab-widget-timer-running-focus = Focus
 # Small label shown beneath the live time while the break timer is running or paused.
 newtab-widget-timer-running-break = Break
-# Context-menu item to hide the Timer widget. Replaces the shared "Hide widget"
-# copy with a widget-specific string per the Nova design.
-newtab-widget-timer-menu-hide = Hide timer
 # Heading shown inside the Timer widget after a focus session ends.
 newtab-widget-timer-celebration-heading-focus = Nice work
 # Heading shown inside the Timer widget after a break session ends.
@@ -1143,8 +1189,6 @@ newtab-activation-window-message-values-focus-message = { -brand-product-name } 
 
 ## Strings for the Clock widget
 
-# Context menu item: toggle the clock card off.
-newtab-clock-widget-menu-hide = Hide clock
 newtab-clock-widget-menu-learn-more = Learn more
 newtab-clock-widget-menu-edit = Edit clocks
 newtab-clock-widget-menu-switch-to-12h = Switch to 12-hour format
@@ -1201,10 +1245,26 @@ newtab-clock-widget-edit-clock-form =
 # It means "results of the search", not "search within the results".
 newtab-clock-widget-search-results =
     .aria-label = Search results
-# Shown in place of the search results when the user's query does not match any
-# supported city — e.g. typing a misspelled name or a place not in the IANA
-# time zone list.
-newtab-clock-widget-search-no-results = No matches
+# Fallback row in the search results that lets the user add a city that is
+# not in the list. $city (String) is the text the user has typed.
+newtab-clock-widget-add-custom = Add “{ $city }” as a custom clock
+# Text field for the display name of a user-added custom clock.
+newtab-clock-widget-custom-city-input =
+    .label = City name
+    .placeholder = Name this clock
+    .aria-label = City name
+# Searchable time-zone field shown when adding a custom clock. The user
+# types a city they know and picks it to set the clock's time zone.
+newtab-clock-widget-custom-timezone-input =
+    .label = Time zone
+    .placeholder = Search by city, time zone, or UTC offset
+    .aria-label = Time zone
+newtab-clock-widget-custom-zone-results =
+    .aria-label = Time zone results
+# Shown in the time-zone picker when the search matches no time zones.
+newtab-clock-widget-custom-zone-no-results = No matching time zones
+# Returns from the custom clock form back to the city search.
+newtab-clock-widget-custom-back = Back
 # "Open menu for clock" is an icon-only button in the widget toolbar — the
 # attributes are consumed as tooltip/screen-reader label only. The button
 # never renders visible text.
@@ -1214,59 +1274,114 @@ newtab-clock-widget-menu-button =
 # $nickname (String) - The user-defined nickname for a saved clock location (e.g., "Home", "Office").
 newtab-clock-widget-label-nickname-with-value = Nickname: { $nickname }
 
+# Curated World Clock city names. The value is the city name shown on the
+# clock; translate to your locale's usual spelling for the city.
+newtab-clock-city-us-new-york = New York
+newtab-clock-city-us-los-angeles = Los Angeles
+newtab-clock-city-us-chicago = Chicago
+newtab-clock-city-us-san-francisco = San Francisco
+newtab-clock-city-us-san-diego = San Diego
+newtab-clock-city-us-dallas = Dallas
+newtab-clock-city-us-houston = Houston
+newtab-clock-city-us-philadelphia = Philadelphia
+newtab-clock-city-us-atlanta = Atlanta
+newtab-clock-city-us-washington-dc = Washington, D.C.
+newtab-clock-city-us-boston = Boston
+newtab-clock-city-us-miami = Miami
+newtab-clock-city-us-seattle = Seattle
+newtab-clock-city-us-denver = Denver
+newtab-clock-city-us-honolulu = Honolulu
+newtab-clock-city-us-anchorage = Anchorage
+newtab-clock-city-de-berlin = Berlin
+newtab-clock-city-de-munich = Munich
+newtab-clock-city-de-frankfurt = Frankfurt
+newtab-clock-city-de-hamburg = Hamburg
+newtab-clock-city-fr-paris = Paris
+newtab-clock-city-fr-lyon = Lyon
+newtab-clock-city-fr-marseille = Marseille
+newtab-clock-city-fr-toulouse = Toulouse
+newtab-clock-city-in-kolkata = Kolkata
+newtab-clock-city-in-mumbai = Mumbai
+newtab-clock-city-in-delhi = Delhi
+newtab-clock-city-in-bangalore = Bangalore
+newtab-clock-city-cn-shanghai = Shanghai
+newtab-clock-city-cn-beijing = Beijing
+newtab-clock-city-cn-shenzhen = Shenzhen
+newtab-clock-city-br-sao-paulo = São Paulo
+newtab-clock-city-br-rio-de-janeiro = Rio de Janeiro
+newtab-clock-city-br-brasilia = Brasília
+newtab-clock-city-id-jakarta = Jakarta
+newtab-clock-city-id-surabaya = Surabaya
+newtab-clock-city-id-makassar = Makassar
+newtab-clock-city-ca-toronto = Toronto
+newtab-clock-city-ca-montreal = Montreal
+newtab-clock-city-ca-vancouver = Vancouver
+newtab-clock-city-au-sydney = Sydney
+newtab-clock-city-au-perth = Perth
+newtab-clock-city-au-adelaide = Adelaide
+newtab-clock-city-pl-warsaw = Warsaw
+newtab-clock-city-pl-krakow = Kraków
+newtab-clock-city-jp-tokyo = Tokyo
+newtab-clock-city-jp-osaka = Osaka
+newtab-clock-city-mx-mexico-city = Mexico City
+newtab-clock-city-mx-guadalajara = Guadalajara
+newtab-clock-city-it-rome = Rome
+newtab-clock-city-it-milan = Milan
+newtab-clock-city-ru-moscow = Moscow
+newtab-clock-city-ru-saint-petersburg = Saint Petersburg
+newtab-clock-city-gb-london = London
+newtab-clock-city-gb-birmingham = Birmingham
+newtab-clock-city-es-madrid = Madrid
+newtab-clock-city-es-barcelona = Barcelona
+newtab-clock-city-nl-amsterdam = Amsterdam
+newtab-clock-city-ch-zurich = Zurich
+newtab-clock-city-at-vienna = Vienna
+newtab-clock-city-cz-prague = Prague
+newtab-clock-city-ar-buenos-aires = Buenos Aires
+newtab-clock-city-gr-athens = Athens
+newtab-clock-city-hu-budapest = Budapest
+newtab-clock-city-be-brussels = Brussels
+newtab-clock-city-ua-kyiv = Kyiv
+newtab-clock-city-fi-helsinki = Helsinki
+newtab-clock-city-co-bogota = Bogotá
+newtab-clock-city-ph-manila = Manila
+newtab-clock-city-tr-istanbul = Istanbul
+newtab-clock-city-my-kuala-lumpur = Kuala Lumpur
+newtab-clock-city-eg-cairo = Cairo
+newtab-clock-city-se-stockholm = Stockholm
+newtab-clock-city-ro-bucharest = Bucharest
+newtab-clock-city-th-bangkok = Bangkok
+newtab-clock-city-ng-lagos = Lagos
+newtab-clock-city-tw-taipei = Taipei
+newtab-clock-city-za-johannesburg = Johannesburg
+newtab-clock-city-cl-santiago = Santiago
+newtab-clock-city-pk-karachi = Karachi
+newtab-clock-city-bg-sofia = Sofia
+newtab-clock-city-sg-singapore = Singapore
+newtab-clock-city-hk-hong-kong = Hong Kong
+newtab-clock-city-sa-riyadh = Riyadh
+newtab-clock-city-dk-copenhagen = Copenhagen
+newtab-clock-city-pe-lima = Lima
+newtab-clock-city-ke-nairobi = Nairobi
+newtab-clock-city-nz-auckland = Auckland
+newtab-clock-city-kr-seoul = Seoul
+newtab-clock-city-lt-vilnius = Vilnius
+newtab-clock-city-ie-dublin = Dublin
+newtab-clock-city-ae-dubai = Dubai
+newtab-clock-city-lv-riga = Riga
+newtab-clock-city-pt-lisbon = Lisbon
+newtab-clock-city-ir-tehran = Tehran
+newtab-clock-city-bd-dhaka = Dhaka
+newtab-clock-city-ec-guayaquil = Guayaquil
+newtab-clock-city-vn-ho-chi-minh-city = Ho Chi Minh City
+newtab-clock-city-np-kathmandu = Kathmandu
+newtab-clock-city-mm-yangon = Yangon
+
 ##
 
 newtab-card-dismiss-button =
     .title = Dismiss
     .aria-label = Dismiss
-
-## Strings for "Homepage" and "Firefox Home" sections of about:settings#home.
-## Homepage panel
-
-home-homepage-title =
-    .label = Homepage
-
-home-homepage-new-windows =
-    .label = New windows
-
-home-homepage-new-tabs =
-    .label = New tabs
-
-# This option leads to the "Custom Homepage" subpage
-home-homepage-custom-homepage-button =
-    .label = Choose a specific site
-
-## Custom URLs subpage
-
-# Subheader on the Custom Homepage subpage. Followed by a form to enter URLs and a list of URLs already saved, if any.
-home-custom-homepage-card-header =
-    .label = Website address(es)
-
-home-custom-homepage-address =
-    .placeholder = Enter address
-home-custom-homepage-address-button =
-    .label = Add address
-
-# Shown when no custom websites/URLs to use as a homepage have been added yet
-home-custom-homepage-no-results =
-    .label = No websites added yet.
-
-home-custom-homepage-delete-address-button =
-    .aria-label = Delete address
-    .title = Delete address
-
-# Further options to use when setting the home page. Two action buttons are placed in line with this prompt
-# to replace the current home page with a currently open page or bookmark.
-home-custom-homepage-replace-with-prompt =
-    .label = Replace with
-
-# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
-home-custom-homepage-current-pages-button =
-    .label = Current opened pages
-
-# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with-prompt)
-home-custom-homepage-bookmarks-button =
-    .label = Bookmarks…
 
 ## Firefox Home content
 
@@ -1303,6 +1418,10 @@ home-prefs-clocks-header =
 home-prefs-privacy-header =
     .label = Privacy
 
+# Crossword is a widget on New Tab that shows a daily crossword puzzle.
+home-prefs-crossword-widget-header =
+    .label = Crossword
+
 # Stocks is a widget on New Tab that shows stock ticker prices.
 home-prefs-stocks-header =
     .label = Stocks
@@ -1337,12 +1456,6 @@ home-prefs-sections-rows-option-srd =
             [one] { $num } row
            *[other] { $num } rows
         }
-
-# Dropdown option shown when an extension replaces the contents of new windows or tabs.
-# Variables:
-#   $extension (string) - Name of the extension
-home-prefs-homepage-extension-option =
-    .label = Extension ({ $extension })
 
 home-restore-defaults-srd =
     .label = Restore Defaults
@@ -1397,22 +1510,221 @@ home-prefs-mission-message-learn-more-link-srd = Find out how
 # Context menu item linking to more information about the Privacy widget.
 newtab-privacy-menu-learn-more = Learn more
 
+## Privacy widget — count readout
+
+# Label shown under the large tracker-count number, appearing like:
+# Line 1: 86
+# Line 2: Trackers blocked today
+# Translations can be adjusted to "Today's blocked trackers" or something
+# similar if this fixed order causes issues.
+# Variables:
+#   $count (number) - Number of trackers blocked today
+newtab-privacy-trackers-blocked-today =
+    { $count ->
+        [one] Tracker blocked today
+       *[other] Trackers blocked today
+    }
+
+# Second line of the readout, under the large number and "Trackers blocked
+# today". Counts the sites those trackers were blocked on. The English is
+# shortened from "Blocked across { $count } sites" — translate it that fuller way
+# if the short fragment doesn't work in your language.
+# Variables:
+#   $count (number) - Number of sites where trackers were blocked
+newtab-privacy-across-sites =
+    { $count ->
+        [one] Across { $count } site
+       *[other] Across { $count } sites
+    }
+
+## Privacy widget — empty state
+
+# Shown when no trackers have been blocked yet today.
+newtab-privacy-empty = { -brand-short-name } blocks trackers as you browse. You’ll see them here.
+
+## Privacy widget — informational messages
+##
+## Rotating "info" secondary messages. Each message has a body plus a matched
+## "-cta" button label sharing the same id stem (the CTA button isn't rendered
+## yet; the labels are authored so the pairing is ready).
+
+newtab-privacy-message-info-1 = { -brand-short-name } blocks trackers automatically as you browse.
+newtab-privacy-message-info-1-cta = View protections
+newtab-privacy-message-info-2 = Tracker blocking helps stop companies from following you online.
+newtab-privacy-message-info-2-cta = View protections
+newtab-privacy-message-info-3 = Many sites have trackers so companies you’ve never visited may follow you online.
+newtab-privacy-message-info-3-cta = View protections
+newtab-privacy-message-info-4 = Choosing { -brand-short-name } means choosing protection by default.
+newtab-privacy-message-info-4-cta = View protections
+newtab-privacy-message-info-5 = Blocked trackers means fewer companies can follow you across sites.
+newtab-privacy-message-info-5-cta = View protections
+newtab-privacy-message-info-6 = Keep your data with { -brand-short-name }. We never sell it, but other browsers might.
+newtab-privacy-message-info-6-cta = Learn more
+newtab-privacy-message-info-7 = See which trackers { -brand-short-name } blocked.
+newtab-privacy-message-info-7-cta = View protections
+newtab-privacy-message-info-8 = Browsing with { -brand-short-name } supports { -vendor-short-name }’s mission to build a better web.
+newtab-privacy-message-info-8-cta = Learn more
+newtab-privacy-message-info-9 = Make { -brand-short-name } your go-to browser for built-in privacy.
+newtab-privacy-message-info-9-cta = Make default
+newtab-privacy-message-info-10 = Save passwords in { -brand-short-name } to use strong, unique logins everywhere.
+newtab-privacy-message-info-10-cta = Go to passwords
+newtab-privacy-message-info-11 = Find out how { -brand-short-name } helps keep your browsing more private.
+newtab-privacy-message-info-11-cta = Learn more
+newtab-privacy-message-info-12 = Blocking trackers can help save bandwidth on limited data plans.
+newtab-privacy-message-info-12-cta = View protections
+newtab-privacy-message-info-13 = { -brand-short-name } blocks trackers, freeing up bandwidth for smoother streaming.
+newtab-privacy-message-info-13-cta = View protections
+
+## Privacy widget — promotional messages
+##
+## Rotating "promo" secondary messages suggesting another Firefox feature. Each
+## has a body plus a matched "-cta" button label.
+
+newtab-privacy-message-promo-monitor-1 = Find out if your personal info shows up in a data breach.
+newtab-privacy-message-promo-monitor-1-cta = Learn more
+newtab-privacy-message-promo-monitor-2 = Protect your info with free data breach monitoring, for up to 20 emails.
+newtab-privacy-message-promo-monitor-2-cta = Learn more
+newtab-privacy-message-promo-signin-1 = Keep bookmarks, passwords, and tabs encrypted across devices with your { -vendor-short-name } account.
+newtab-privacy-message-promo-signin-1-cta = Sign in
+newtab-privacy-message-promo-vpn-1 = Shopping on public Wi-Fi? Turn on built-in VPN for extra protection.
+newtab-privacy-message-promo-vpn-1-cta = Open VPN
+newtab-privacy-message-promo-vpn-2 = Using airport Wi-Fi? Protect your browsing by turning on built-in VPN.
+newtab-privacy-message-promo-vpn-2-cta = Open VPN
+newtab-privacy-message-promo-vpn-3 = Turn on built-in VPN to help keep your location more private.
+newtab-privacy-message-promo-vpn-3-cta = Open VPN
+newtab-privacy-message-promo-private-window-1 = Try a private window to browse more privately when using a shared computer.
+newtab-privacy-message-promo-private-window-1-cta = Open private window
+newtab-privacy-message-promo-relay-1 = Save your real email for people you trust; use an email mask for sign-ups.
+newtab-privacy-message-promo-relay-1-cta = Get masks
+newtab-privacy-message-promo-relay-2 = Protect your inbox from spam with free email masking.
+newtab-privacy-message-promo-relay-2-cta = Get masks
+newtab-privacy-message-promo-relay-3 = Get 50 free email masks to help keep your real email private.
+newtab-privacy-message-promo-relay-3-cta = Get masks
+
+## Privacy widget — celebration messages
+##
+## Earned "celebration" moments (milestones, daily cap, streak, first
+## protection). Count-bearing ones interpolate { $count }.
+
+# Variables:
+#   $count (number) - Trackers blocked this week
+newtab-privacy-message-milestone-week =
+    { $count ->
+        [one] { $count } tracker blocked this week. See what { -brand-short-name } is keeping out of your way
+       *[other] { $count } trackers blocked this week. See what { -brand-short-name } is keeping out of your way
+    }
+newtab-privacy-message-milestone-week-cta = View protections
+
+# Variables:
+#   $count (number) - Trackers blocked this month
+newtab-privacy-message-milestone-month =
+    { $count ->
+        [one] { $count } tracker blocked this month. One small step for privacy. One big step for peace of mind.
+       *[other] { $count } trackers blocked this month. One small step for privacy. One big step for peace of mind.
+    }
+newtab-privacy-message-milestone-month-cta = View protections
+
+# Variables:
+#   $count (number) - Trackers blocked this year
+newtab-privacy-message-milestone-year =
+    { $count ->
+        [one] { $count } tracker blocked this year. That’s a powerful year of protecting your privacy.
+       *[other] { $count } trackers blocked this year. That’s a powerful year of protecting your privacy.
+    }
+newtab-privacy-message-milestone-year-cta = View protections
+
+# Variables:
+#   $count (number) - Trackers blocked all-time
+newtab-privacy-message-milestone-total =
+    { $count ->
+        [one] { $count } tracker blocked. That’s major progress towards privacy on your terms.
+       *[other] { $count } trackers blocked. That’s major progress towards privacy on your terms.
+    }
+newtab-privacy-message-milestone-total-cta = View protections
+
+# Shown when today's blocked-tracker count reaches the display cap ("100+").
+newtab-privacy-message-daily-cap = (100+ trackers blocked today.) Fewer trackers means more privacy.
+newtab-privacy-message-daily-cap-cta = View protections
+
+# Variables:
+#   $count (number) - Consecutive days the user has had trackers blocked
+newtab-privacy-message-streak =
+    { $count ->
+        [one] You’ve been protected { $count } day in a row.
+       *[other] You’ve been protected { $count } days in a row.
+    }
+newtab-privacy-message-streak-cta = View protections
+
+# Shown the first time the tracker count goes above zero.
+newtab-privacy-message-first-protection = Keep browsing, { -brand-short-name } will keep blocking.
+newtab-privacy-message-first-protection-cta = View protections
+
 ## Strings for the Stocks widget
+
+# Heading for the Stocks widget.
+newtab-stocks-widget-title = Stocks
 
 # Context menu item for searching stock ticker symbols.
 newtab-stocks-menu-search = Search ticker symbols
 
-# Context menu item that hides the Stocks widget.
-newtab-stocks-menu-hide = Hide stocks
-
 # Context menu item linking to more information about the Stocks widget.
 newtab-stocks-menu-learn-more = Learn more
 
+# Shown in the Stocks widget when its data could not be loaded.
+newtab-stocks-error-not-available = Stock data is not available.
+
+# "Stocks widget options" is an icon-only button in the widget toolbar — the
+# attributes are consumed as tooltip/screen-reader label only. The button
+# never renders visible text.
+newtab-stocks-widget-menu-button =
+    .title = Stocks widget options
+    .aria-label = Stocks widget options
+
+## Screen-reader summary of a stock ticker.
+## Variables:
+##   $name (String) - the full fund/ETF name, e.g. "SPDR S&P 500 ETF Trust".
+##   $change (String) - the day's percentage change, e.g. "+2.1%".
+##   $price (String) - the last price, e.g. "$559.44".
+
+# Stock increased (went up) during the day
+newtab-stocks-ticker-status-up = { $name }, up { $change }, { $price }
+
+# Stock decreased (went down) during the day
+newtab-stocks-ticker-status-down = { $name }, down { $change }, { $price }
+
+# Stock didn't change during the day
+newtab-stocks-ticker-status-flat = { $name }, no change, { $change }, { $price }
+
 ## Strings for the Picture of the Day widget
 
-# Eyebrow shown at the top of the widget. Wikimedia Commons is a brand name and
-# should not be translated.
+# Title shown at the top of the widget, with the source name appended.
+# "Wikimedia Commons" is a brand name and should not be translated.
 newtab-picture-header = Picture of the day · Wikimedia Commons
+
+# Shorter title shown at the top of the widget, without the source name.
+newtab-picture-header-main = Picture of the day
+
+# Attribution line shown under the title once a picture loads: an author
+# credit, a link to the picture's source page, and a link to its license.
+# "©" is the copyright symbol.
+# $author (string) - the name of the image's author.
+newtab-picture-attribution-author = © { $author }
+
+# Link to the picture's source page (its Wikimedia Commons file page).
+# "Wikimedia Commons" is a brand name and should not be translated.
+newtab-picture-attribution-source-link = Wikimedia Commons
+
+# Screen-reader label for the license link; the visible text is the license
+# name (for example "CC BY-SA 4.0") provided with the picture.
+# $license (string) - the name of the license.
+newtab-picture-attribution-license =
+    .aria-label = View the { $license } license
+
+# Tooltip and screen-reader label for the icon-only button that opens the
+# widget's context menu. The button never renders visible text.
+newtab-picture-widget-menu-button =
+    .title = Picture of the day options
+    .aria-label = Picture of the day options
 
 # Button that sets the current picture as the New Tab background wallpaper. The
 # button collapses to an icon when not hovered/focused, so .title is its tooltip.

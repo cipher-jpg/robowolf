@@ -133,6 +133,7 @@ export class BaseContent extends React.PureComponent {
     this.toggleSectionsMgmtPanel = this.toggleSectionsMgmtPanel.bind(this);
     this.toggleWidgetsManagementPanel =
       this.toggleWidgetsManagementPanel.bind(this);
+    this.toggleThemesPanel = this.toggleThemesPanel.bind(this);
     this.openWidgetsPanel = this.openWidgetsPanel.bind(this);
     this.attachSearchSentinel = this.attachSearchSentinel.bind(this);
     this.onSearchSentinelIntersect = this.onSearchSentinelIntersect.bind(this);
@@ -147,6 +148,7 @@ export class BaseContent extends React.PureComponent {
       visible: false,
       showSectionsMgmtPanel: false,
       showWidgetsManagementPanel: false,
+      showThemesPanel: false,
     };
     this.spocPlaceholderStartTime = null;
   }
@@ -624,6 +626,8 @@ export class BaseContent extends React.PureComponent {
 
   async updateWallpaper() {
     const prefs = this.props.Prefs.values;
+    // Bump every call so a newer selection supersedes an in-flight decode.
+    const applyToken = this.nextWallpaperToken();
     const novaEnabled = prefs[PREF_NOVA_ENABLED];
     const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
     const wallpapersUserEnabled = prefs["newtabWallpapers.user.enabled"];
@@ -653,6 +657,11 @@ export class BaseContent extends React.PureComponent {
         "--newtab-wallpaper-backgroundPosition"
       );
       global.document?.body.classList.remove("lightWallpaper", "darkWallpaper");
+      return;
+    }
+
+    // Keep the current background until the custom wallpaper's URL hydrates.
+    if (selectedWallpaper === "custom" && !uploadedWallpaperUrl) {
       return;
     }
 
@@ -689,6 +698,18 @@ export class BaseContent extends React.PureComponent {
         }
       }
     }
+
+    // Decode a replacement before swapping so the current wallpaper stays up
+    // until it's ready; initial renders (nothing painted) apply synchronously.
+    if (
+      selectedWallpaper === "custom" &&
+      url &&
+      global.document?.body.style.getPropertyValue("--newtab-wallpaper") &&
+      !(await this.decodeWallpaper(url, applyToken))
+    ) {
+      return;
+    }
+
     global.document?.body.style.setProperty(
       "--newtab-wallpaper",
       `url(${url})`
@@ -706,6 +727,25 @@ export class BaseContent extends React.PureComponent {
     global.document?.body.classList.add(
       newTheme === "dark" ? "darkWallpaper" : "lightWallpaper"
     );
+  }
+
+  // Monotonic token to detect if a newer updateWallpaper ran mid-decode.
+  nextWallpaperToken() {
+    this._wallpaperApplyToken = (this._wallpaperApplyToken ?? 0) + 1;
+    return this._wallpaperApplyToken;
+  }
+
+  // Returns false if decode fails or a newer update supersedes this one, so the
+  // current wallpaper stays painted.
+  async decodeWallpaper(url, applyToken) {
+    try {
+      const image = new global.Image();
+      image.src = url;
+      await image.decode();
+    } catch {
+      return false;
+    }
+    return applyToken === this._wallpaperApplyToken;
   }
 
   toggleDownloadHighlight() {
@@ -764,6 +804,12 @@ export class BaseContent extends React.PureComponent {
   toggleWidgetsManagementPanel() {
     this.setState(prevState => ({
       showWidgetsManagementPanel: !prevState.showWidgetsManagementPanel,
+    }));
+  }
+
+  toggleThemesPanel() {
+    this.setState(prevState => ({
+      showThemesPanel: !prevState.showThemesPanel,
     }));
   }
 
@@ -863,6 +909,7 @@ export class BaseContent extends React.PureComponent {
       showInferredPersonalizationEnabled:
         prefs[PREF_INFERRED_PERSONALIZATION_USER],
       topSitesRowsCount: prefs.topSitesRows,
+      webNotificationsEnabled: prefs.showWebNotifications,
       weatherEnabled: novaEnabled
         ? prefs["widgets.weather.enabled"]
         : prefs.showWeather,
@@ -878,6 +925,7 @@ export class BaseContent extends React.PureComponent {
       prefs["system.showWeather"] ||
       prefs.trainhopConfig?.weather?.enabled ||
       prefs.trainhopConfig?.widgetsSettings?.weatherVisible;
+    const mayHaveWebNotifications = prefs["system.showWebNotifications"];
     const supportUrl = prefs["support.url"];
 
     // Widget toggle visibility is resolved by the shared registry helpers, which
@@ -896,6 +944,7 @@ export class BaseContent extends React.PureComponent {
     const mayHavePrivacyWidget = widgetVisibleById("privacy");
     const mayHaveCrosswordWidget = widgetVisibleById("crossword");
     const mayHaveStocksWidget = widgetVisibleById("stocks");
+    const mayHavePictureOfTheDayWidget = widgetVisibleById("pictureOfTheDay");
 
     // These prefs set the initial values on the Customize panel toggle switches
     const enabledWidgets = {
@@ -909,6 +958,7 @@ export class BaseContent extends React.PureComponent {
       privacyEnabled: prefs["widgets.privacy.enabled"],
       crosswordEnabled: prefs["widgets.crossword.enabled"],
       stocksEnabled: prefs["widgets.stocks.enabled"],
+      pictureOfTheDayEnabled: prefs["widgets.pictureOfTheDay.enabled"],
       widgetsMaximized: prefs["widgets.maximized"],
       widgetsMayBeMaximized: prefs["widgets.system.maximized"],
     };
@@ -1185,6 +1235,7 @@ export class BaseContent extends React.PureComponent {
                 mayHaveTopicSections={mayHavePersonalizedTopicSections}
                 mayHaveInferredPersonalization={mayHaveInferredPersonalization}
                 mayHaveWeather={mayHaveWeather}
+                mayHaveWebNotifications={mayHaveWebNotifications}
                 mayHaveWidgets={mayHaveWidgets}
                 mayHaveTimerWidget={mayHaveTimerWidget}
                 mayHaveListsWidget={mayHaveListsWidget}
@@ -1193,6 +1244,7 @@ export class BaseContent extends React.PureComponent {
                 mayHavePrivacyWidget={mayHavePrivacyWidget}
                 mayHaveCrosswordWidget={mayHaveCrosswordWidget}
                 mayHaveStocksWidget={mayHaveStocksWidget}
+                mayHavePictureOfTheDayWidget={mayHavePictureOfTheDayWidget}
                 mayHaveWeatherForecast={
                   prefs["widgets.system.weatherForecast.enabled"]
                 }
@@ -1204,6 +1256,8 @@ export class BaseContent extends React.PureComponent {
                   this.state.showWidgetsManagementPanel
                 }
                 toggleWidgetsManagementPanel={this.toggleWidgetsManagementPanel}
+                toggleThemesPanel={this.toggleThemesPanel}
+                showThemesPanel={this.state.showThemesPanel}
                 widgetsEnabled={prefs["widgets.enabled"]}
                 dispatch={this.props.dispatch}
               />
@@ -1360,6 +1414,7 @@ export class BaseContent extends React.PureComponent {
               mayHaveTopicSections={mayHavePersonalizedTopicSections}
               mayHaveInferredPersonalization={mayHaveInferredPersonalization}
               mayHaveWeather={mayHaveWeather}
+              mayHaveWebNotifications={mayHaveWebNotifications}
               mayHaveWidgets={mayHaveWidgets}
               mayHaveTimerWidget={mayHaveTimerWidget}
               mayHaveListsWidget={mayHaveListsWidget}
@@ -1368,6 +1423,7 @@ export class BaseContent extends React.PureComponent {
               mayHavePrivacyWidget={mayHavePrivacyWidget}
               mayHaveCrosswordWidget={mayHaveCrosswordWidget}
               mayHaveStocksWidget={mayHaveStocksWidget}
+              mayHavePictureOfTheDayWidget={mayHavePictureOfTheDayWidget}
               mayHaveWeatherForecast={
                 prefs["widgets.system.weatherForecast.enabled"]
               }
@@ -1375,6 +1431,8 @@ export class BaseContent extends React.PureComponent {
               showing={customizeMenuVisible}
               toggleSectionsMgmtPanel={this.toggleSectionsMgmtPanel}
               showSectionsMgmtPanel={this.state.showSectionsMgmtPanel}
+              toggleThemesPanel={this.toggleThemesPanel}
+              showThemesPanel={this.state.showThemesPanel}
             />
             {shouldShowOMCHighlight(
               this.props.Messages,

@@ -4,15 +4,15 @@
 
 #include "GLBlitHelper.h"
 
-#include "gfxEnv.h"
-#include "gfxUtils.h"
 #include "GLContext.h"
 #include "GLScreenBuffer.h"
+#include "GLUploadHelpers.h"
 #include "GPUVideoImage.h"
 #include "HeapCopyOfStackArray.h"
 #include "ImageContainer.h"
 #include "ScopedGLHelpers.h"
-#include "GLUploadHelpers.h"
+#include "gfxEnv.h"
+#include "gfxUtils.h"
 #include "mozilla/Casting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_gfx.h"
@@ -36,14 +36,14 @@
 
 #ifdef XP_WIN
 #  include "mozilla/layers/D3D11ShareHandleImage.h"
-#  include "mozilla/layers/D3D11ZeroCopyTextureImage.h"
 #  include "mozilla/layers/D3D11YCbCrImage.h"
+#  include "mozilla/layers/D3D11ZeroCopyTextureImage.h"
 #endif
 
 #ifdef MOZ_WIDGET_GTK
 #  include "mozilla/layers/DMABUFSurfaceImage.h"
-#  include "mozilla/widget/DMABufSurface.h"
 #  include "mozilla/widget/DMABufDevice.h"
+#  include "mozilla/widget/DMABufSurface.h"
 #endif
 
 using mozilla::layers::PlanarYCbCrData;
@@ -1415,7 +1415,7 @@ bool GLBlitHelper::BlitImage(MacIOSurface* const iosurf,
       return false;
   }
 
-  const GLenum texTarget = MacIOSurface::GetTextureTarget(mGL);
+  const GLenum texTarget = mGL->GetPreferredMacIOSurfaceTextureTarget();
   const ScopedSaveMultiTex saveTex(mGL, planes, texTarget);
   Maybe<ScopedTexture> texs[3];
 
@@ -1583,10 +1583,7 @@ bool GLBlitHelper::BlitImage(layers::GPUVideoImage* const srcImage,
                              const gfx::IntRect& destRect,
                              const OriginPos destOrigin,
                              const gfx::IntSize& fbSize) const {
-  const auto& data = srcImage->GetData();
-  if (!data) return false;
-
-  const auto& desc = data->SD();
+  const auto& desc = srcImage->SD();
 
   MOZ_ASSERT(
       desc.type() ==

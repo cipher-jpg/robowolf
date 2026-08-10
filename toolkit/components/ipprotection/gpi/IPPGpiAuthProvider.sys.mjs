@@ -12,6 +12,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   EventDispatcher: "resource://gre/modules/Messaging.sys.mjs",
+  IPProtectionActivator:
+    "moz-src:///toolkit/components/ipprotection/IPProtectionActivator.sys.mjs",
   IPProtectionService:
     "moz-src:///toolkit/components/ipprotection/IPProtectionService.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
@@ -23,6 +25,29 @@ const AUTH_JWT_EXPIRES_AT_PREF = "browser.ipProtection.gpi.authJwtExpiresAt";
 const AUTH_JWT_RENEW_AFTER_PREF = "browser.ipProtection.gpi.authJwtRenewAfter";
 const GUARDIAN_ENDPOINT_PREF = "browser.ipProtection.guardian.endpoint";
 const GUARDIAN_ENDPOINT_DEFAULT = "https://vpn.mozilla.com";
+
+/**
+ * Maps a Guardian error body to a reason category for telemetry.
+ *
+ * @param {string} bodyText
+ * @returns {string}
+ */
+function categorizeEnrollmentReason(bodyText) {
+  let serverReason = "";
+  try {
+    serverReason = JSON.parse(bodyText)?.reason ?? "";
+  } catch {
+    // non-JSON: return http_error_other.
+  }
+  switch (serverReason) {
+    case "missing-package-name":
+      return "missing_package_name";
+    case "integrity-api-error":
+      return "integrity_api_error";
+    default:
+      return "http_error_other";
+  }
+}
 
 /**
  * Google Play Integrity implementation of IPPAuthProvider.
@@ -38,7 +63,15 @@ class IPPGpiAuthProviderSingleton extends IPPAuthProvider {
   }
 
   init() {
-    this.#listener = { onEvent: () => this._onGpiWarmUpCompleted() };
+    this.#listener = {
+      onEvent: event => {
+        if (event === "GeckoView:IPProtection:GPI:WarmUpCompleted") {
+          this._onGpiWarmUpCompleted();
+        } else {
+          this._onGpiWarmUpFailed();
+        }
+      },
+    };
     this._registerGpiListener(this.#listener);
     this._dispatchGpiWarmUp();
 
@@ -64,20 +97,29 @@ class IPPGpiAuthProviderSingleton extends IPPAuthProvider {
     lazy.IPProtectionService.updateState();
   }
 
+  _onGpiWarmUpFailed() {
+    lazy.IPProtectionActivator.reinitWithFallback();
+  }
+
   _registerGpiListener(listener) {
     lazy.EventDispatcher.instance.registerListener(listener, [
-      "GPI:WarmUpCompleted",
+      "GeckoView:IPProtection:GPI:WarmUpCompleted",
+      "GeckoView:IPProtection:GPI:WarmUpFailed",
     ]);
   }
 
   _unregisterGpiListener(listener) {
     lazy.EventDispatcher.instance.unregisterListener(listener, [
-      "GPI:WarmUpCompleted",
+      "GeckoView:IPProtection:GPI:WarmUpCompleted",
+      "GeckoView:IPProtection:GPI:WarmUpFailed",
     ]);
   }
 
   _dispatchGpiWarmUp() {
-    lazy.EventDispatcher.instance.dispatch("GPI:WarmUp", {});
+    lazy.EventDispatcher.instance.dispatch(
+      "GeckoView:IPProtection:GPI:WarmUp",
+      {}
+    );
   }
 
   #scheduleRenewal() {
@@ -171,6 +213,11 @@ class IPPGpiAuthProviderSingleton extends IPPAuthProvider {
 
     const gpiToken = await this._fetchGpiToken(abortSignal);
     if (!gpiToken) {
+      Glean.ipprotection.gpiEnrollment.record({
+        reason: "no_gpi_token",
+        httpStatus: 0,
+        hadPreviousJwt: !!Services.prefs.getCharPref(AUTH_JWT_PREF, ""),
+      });
       this.#clearAuthJwt();
       this.#enrollPromise = null;
       resolve(null);
@@ -213,7 +260,7 @@ class IPPGpiAuthProviderSingleton extends IPPAuthProvider {
     try {
       const tasks = [
         lazy.EventDispatcher.instance.sendRequestForResult(
-          "GPI:RequestToken",
+          "GeckoView:IPProtection:GPI:RequestToken",
           {}
         ),
       ];
@@ -256,26 +303,49 @@ class IPPGpiAuthProviderSingleton extends IPPAuthProvider {
       headers.Authorization = `Bearer ${previousJwt}`;
     }
 
+    const packageName = Services.env.get("MOZ_ANDROID_PACKAGE_NAME");
+
     let response;
     try {
       response = await fetch(url.href, {
         method: "POST",
         headers,
-        body: JSON.stringify({ integrityToken: gpiToken }),
+        body: JSON.stringify({ integrityToken: gpiToken, packageName }),
       });
     } catch {
+      Glean.ipprotection.gpiEnrollment.record({
+        reason: "network_error",
+        httpStatus: 0,
+        hadPreviousJwt: !!previousJwt,
+      });
       return null;
     }
 
     if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      Glean.ipprotection.gpiEnrollment.record({
+        reason: categorizeEnrollmentReason(text),
+        httpStatus: response.status,
+        hadPreviousJwt: !!previousJwt,
+      });
       return null;
     }
 
     try {
       const data = await response.json();
       const { deviceSessionJwt: jwt, expiresAt, renewAfter } = data ?? {};
+      Glean.ipprotection.gpiEnrollment.record({
+        reason: jwt ? "ok" : "bad_response",
+        httpStatus: response.status,
+        hadPreviousJwt: !!previousJwt,
+      });
       return jwt ? { jwt, expiresAt, renewAfter } : null;
     } catch {
+      Glean.ipprotection.gpiEnrollment.record({
+        reason: "bad_response",
+        httpStatus: response.status,
+        hadPreviousJwt: !!previousJwt,
+      });
       return null;
     }
   }

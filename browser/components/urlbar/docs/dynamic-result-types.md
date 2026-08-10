@@ -357,13 +357,13 @@ build a general DOM structure appropriate for all results of a particular
 dynamic result type. View update objects are used to fill in that structure for
 a specific result.
 
-When a result is shown in the view, first the view asks the result's provider
-for a view template by calling ``getViewTemplate``. It uses the view template
-to build a DOM subtree. Next, the view requests a view update object for the
-result from its provider. The view update object tells the view which
-result-specific attributes to set on which elements, result-specific text
-content to set on elements, and so on. View update objects cannot create new
-elements or otherwise modify the structure of the result's DOM subtree.
+When a result is shown in the view, the view builds a DOM subtree from the view
+template the result's provider returned from ``getViewTemplate``. Next, the
+view requests a view update object for the result from its provider. The view
+update object tells the view which result-specific attributes to set on which
+elements, result-specific text content to set on elements, and so on. View
+update objects cannot create new elements or otherwise modify the structure
+of the result's DOM subtree.
 
 Typically the view update object is based on the result's payload.
 
@@ -549,7 +549,7 @@ Highlighting for dynamic result types is a fairly automated process. The text
 that you want to highlight must be present as a property in your result
 payload. Instead of setting the property to a string value as you normally
 would, set it to an array with two elements, where the first element is the text
-and the second element is a `UrlbarUtils.HIGHLIGHT` value, like the `title`
+and the second element is a `UrlbarShared.HIGHLIGHT` value, like the `title`
 payload property in the following example:
 
 ```javascript
@@ -559,7 +559,7 @@ let result = new UrlbarResult({
   payload: {
     title: [
       "Some result title",
-      UrlbarUtils.HIGHLIGHT.TYPED,
+      UrlbarShared.HIGHLIGHT.TYPED,
     ],
     // *more payload properties*
   }
@@ -591,15 +591,15 @@ automatically find the elements corresponding to the payload property, set their
 `textContent` to the text value in the array, and apply the appropriate
 highlighting, as described next.
 
-There are two possible `UrlbarUtils.HIGHLIGHT` values. Each controls how
+There are two possible `UrlbarShared.HIGHLIGHT` values. Each controls how
 highlighting is performed:
 
-`UrlbarUtils.HIGHLIGHT.TYPED`
+`UrlbarShared.HIGHLIGHT.TYPED`
 
 : Substrings in the payload text that match the user's search string will be
   emphasized.
 
-`UrlbarUtils.HIGHLIGHT.SUGGESTED`
+`UrlbarShared.HIGHLIGHT.SUGGESTED`
 
 : If the user's search string appears in the payload text, then the remainder of
   the text following the matching substring will be emphasized.

@@ -29,10 +29,17 @@ describe("PrefsFeed", () => {
         getStringPref: sinon.spy(),
         getIntPref: sinon.spy(),
         getBoolPref: sinon.spy(),
+        addObserver: sinon.spy(),
+        removeObserver: sinon.spy(),
       },
       obs: {
         removeObserver: sinon.spy(),
         addObserver: sinon.spy(),
+      },
+      // Version comparator for the theme-picker backward-compat gate; default to
+      // a supported (>= 155) host so existing browserNovaEnabled assertions hold.
+      vc: {
+        compare: sinon.stub().returns(0),
       },
     };
     SelectableProfileServiceStub = {
@@ -236,6 +243,45 @@ describe("PrefsFeed", () => {
       ServicesStub.obs.removeObserver,
       feed,
       global.Region.REGION_TOPIC
+    );
+  });
+  it("should add a browser.nova.enabled observer on init", () => {
+    feed.init();
+    assert.calledWith(
+      ServicesStub.prefs.addObserver,
+      "browser.nova.enabled",
+      feed
+    );
+  });
+  it("should remove the browser.nova.enabled observer on uninit", () => {
+    feed.uninit();
+    assert.calledWith(
+      ServicesStub.prefs.removeObserver,
+      "browser.nova.enabled",
+      feed
+    );
+  });
+  it("should broadcast browserNovaEnabled when browser.nova.enabled changes", () => {
+    ServicesStub.prefs.getBoolPref = sinon.stub().returns(true);
+    feed.observe(null, "nsPref:changed", "browser.nova.enabled");
+    assert.calledWith(
+      feed.store.dispatch,
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: { name: "browserNovaEnabled", value: true },
+      })
+    );
+  });
+  it("keeps browserNovaEnabled false on hosts older than 155 even when the pref is on", () => {
+    ServicesStub.prefs.getBoolPref = sinon.stub().returns(true);
+    ServicesStub.vc.compare = sinon.stub().returns(-1);
+    feed.observe(null, "nsPref:changed", "browser.nova.enabled");
+    assert.calledWith(
+      feed.store.dispatch,
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: { name: "browserNovaEnabled", value: false },
+      })
     );
   });
   it("should send a PREF_CHANGED action when onPrefChanged is called", () => {
@@ -564,6 +610,127 @@ describe("PrefsFeed", () => {
       assert.neverCalledWith(
         setBoolPref,
         "widgets.clocks.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should write widgetPictureOfTheDay.enabled to the user pref default branch, not the system pref", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetPictureOfTheDay",
+          payload: {
+            enabled: true,
+            setAsWallpaperEnabled: true,
+            size: "large",
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      // `enabled` overrides the user-facing enabled pref's default; `visible`
+      // (not present here) would reveal the widget separately; size and
+      // setAsWallpaperEnabled are read directly from trainhopConfig.
+      assert.calledWith(setBoolPref, "widgets.pictureOfTheDay.enabled", true);
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.system.pictureOfTheDay.enabled",
+        sinon.match.any
+      );
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.pictureOfTheDay.setAsWallpaper.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should not write the POTD enabled default when widgetPictureOfTheDay.enabled is absent", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetPictureOfTheDay",
+          payload: { size: "large" },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.pictureOfTheDay.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should write widgetCrossword.enabled to the user pref default branch, not the system pref", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetCrossword",
+          payload: {
+            enabled: true,
+            endpoint: "https://example.com/crossword/index.html",
+            size: "large",
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      // `enabled` overrides the user-facing enabled pref's default; `visible`
+      // (not present here) would reveal the widget separately; size and
+      // endpoint are read directly from trainhopConfig.
+      assert.calledWith(setBoolPref, "widgets.crossword.enabled", true);
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.system.crossword.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should not write the crossword enabled default when widgetCrossword.enabled is absent", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetCrossword",
+          payload: { size: "large" },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.crossword.enabled",
         sinon.match.any
       );
     });

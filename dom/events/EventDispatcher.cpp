@@ -16,6 +16,7 @@
 #include "DeviceMotionEvent.h"
 #include "DragEvent.h"
 #include "KeyboardEvent.h"
+#include "mozilla/Array.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentEvents.h"
@@ -304,31 +305,32 @@ class EventTargetChainItem {
 
   /**
    * Resets aVisitor object and calls GetEventTargetParent.
-   * Copies mItemFlags and mItemData to the current EventTargetChainItem.
+   * Copies mItemFlags to the current EventTargetChainItem.
    */
   void GetEventTargetParent(EventChainPreVisitor& aVisitor);
 
   /**
-   * Copies mItemFlags, mItemData to aVisitor,
-   * calls LegacyPreActivationBehavior and copies both members back
-   * to this EventTargetChainitem.
+   * Copies mItemFlags to aVisitor.
+   * Calls LegacyPreActivationBehavior, copies mItemFlags and moves mItemData
+   * to this EventTargetChainItem.
    */
   void LegacyPreActivationBehavior(EventChainVisitor& aVisitor);
 
   /**
-   * Copies mItemFlags and mItemData to aVisitor and calls ActivationBehavior.
+   * Copies mItemFlags and moves mItemData to aVisitor.
+   * Calls ActivationBehavior.
    */
   MOZ_CAN_RUN_SCRIPT
   void ActivationBehavior(EventChainPostVisitor& aVisitor);
 
   /**
-   * Copies mItemFlags and mItemData to aVisitor and
-   * calls LegacyCanceledActivationBehavior.
+   * Copies mItemFlags and moves mItemData to aVisitor.
+   * Calls LegacyCanceledActivationBehavior.
    */
   void LegacyCanceledActivationBehavior(EventChainPostVisitor& aVisitor);
 
   /**
-   * Copies mItemFlags and mItemData to aVisitor.
+   * Copies mItemFlags to aVisitor.
    * Calls PreHandleEvent for those items which called SetWantsPreHandleEvent.
    */
   MOZ_CAN_RUN_SCRIPT void PreHandleEvent(EventChainVisitor& aVisitor);
@@ -371,7 +373,7 @@ class EventTargetChainItem {
   }
 
   /**
-   * Copies mItemFlags and mItemData to aVisitor and calls PostHandleEvent.
+   * Copies mItemFlags to aVisitor and calls PostHandleEvent.
    */
   MOZ_CAN_RUN_SCRIPT void PostHandleEvent(EventChainPostVisitor& aVisitor);
 
@@ -441,16 +443,15 @@ void EventTargetChainItem::GetEventTargetParent(
   SetRetargetedRelatedTarget(aVisitor.mRetargetedRelatedTarget);
   SetRetargetedTouchTarget(std::move(aVisitor.mRetargetedTouchTargets));
   mItemFlags = aVisitor.mItemFlags;
-  mItemData = aVisitor.mItemData;
+  MOZ_ASSERT(!aVisitor.mItemData, "Should not be set by target at this time");
 }
 
 void EventTargetChainItem::LegacyPreActivationBehavior(
     EventChainVisitor& aVisitor) {
   aVisitor.mItemFlags = mItemFlags;
-  aVisitor.mItemData = mItemData;
   mTarget->LegacyPreActivationBehavior(aVisitor);
   mItemFlags = aVisitor.mItemFlags;
-  mItemData = aVisitor.mItemData;
+  mItemData = aVisitor.mItemData.forget();
 }
 
 void EventTargetChainItem::PreHandleEvent(EventChainVisitor& aVisitor) {
@@ -458,35 +459,33 @@ void EventTargetChainItem::PreHandleEvent(EventChainVisitor& aVisitor) {
     return;
   }
   aVisitor.mItemFlags = mItemFlags;
-  aVisitor.mItemData = mItemData;
   (void)mTarget->PreHandleEvent(aVisitor);
   MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
-  MOZ_ASSERT(mItemData == aVisitor.mItemData);
+  MOZ_ASSERT(!aVisitor.mItemData, "Should not be set by target at this time");
 }
 
 void EventTargetChainItem::ActivationBehavior(EventChainPostVisitor& aVisitor) {
   aVisitor.mItemFlags = mItemFlags;
-  aVisitor.mItemData = mItemData;
+  // We're at the end of dispatch, no need to keep mItemData.
+  aVisitor.mItemData = mItemData.forget();
   mTarget->ActivationBehavior(aVisitor);
   MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
-  MOZ_ASSERT(mItemData == aVisitor.mItemData);
 }
 
 void EventTargetChainItem::LegacyCanceledActivationBehavior(
     EventChainPostVisitor& aVisitor) {
   aVisitor.mItemFlags = mItemFlags;
-  aVisitor.mItemData = mItemData;
+  // We're at the end of dispatch, no need to keep mItemData.
+  aVisitor.mItemData = mItemData.forget();
   mTarget->LegacyCanceledActivationBehavior(aVisitor);
   MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
-  MOZ_ASSERT(mItemData == aVisitor.mItemData);
 }
 
 void EventTargetChainItem::PostHandleEvent(EventChainPostVisitor& aVisitor) {
   aVisitor.mItemFlags = mItemFlags;
-  aVisitor.mItemData = mItemData;
   mTarget->PostHandleEvent(aVisitor);
   MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
-  MOZ_ASSERT(mItemData == aVisitor.mItemData);
+  MOZ_ASSERT(!aVisitor.mItemData, "Should not be set by target at this time");
 }
 
 void EventTargetChainItem::HandleEventTargetChain(
@@ -694,14 +693,15 @@ void EventTargetChainItem::HandleEventTargetChain(
   }
 }
 
-// There are often 2 nested event dispatches ongoing at the same time, so
-// have 2 separate caches.
+// There are often several nested event dispatches ongoing at the same time
+// (for example a click's activation behavior dispatches a change event, whose
+// listener dispatches a further composed event), so keep a small pool of
+// caches rather than reallocating the chain storage for the deeper levels.
 static const uint32_t kCachedMainThreadChainSize = 128;
-struct CachedChains {
-  nsTArray<EventTargetChainItem> mChain1;
-  nsTArray<EventTargetChainItem> mChain2;
-};
-static CachedChains* sCachedMainThreadChains = nullptr;
+static const uint32_t kNumCachedMainThreadChains = 4;
+using CachedMainThreadChains =
+    mozilla::Array<nsTArray<EventTargetChainItem>, kNumCachedMainThreadChains>;
+static CachedMainThreadChains* sCachedMainThreadChains = nullptr;
 
 /* static */
 void EventDispatcher::Shutdown() {
@@ -1078,16 +1078,21 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
   nsTArray<EventTargetChainItem> chain;
   if (cd.IsMainThread()) {
     if (!sCachedMainThreadChains) {
-      sCachedMainThreadChains = new CachedChains();
+      sCachedMainThreadChains = new CachedMainThreadChains();
     }
 
-    if (sCachedMainThreadChains->mChain1.Capacity() ==
-        kCachedMainThreadChainSize) {
-      chain = std::move(sCachedMainThreadChains->mChain1);
-    } else if (sCachedMainThreadChains->mChain2.Capacity() ==
-               kCachedMainThreadChainSize) {
-      chain = std::move(sCachedMainThreadChains->mChain2);
-    } else {
+    // Reuse the first cached chain whose storage is still allocated. If every
+    // slot is checked out by an outer (nested) dispatch, allocate fresh
+    // storage; it is donated back to the pool on the way out.
+    bool reused = false;
+    for (auto& cached : *sCachedMainThreadChains) {
+      if (cached.Capacity() == kCachedMainThreadChainSize) {
+        chain = std::move(cached);
+        reused = true;
+        break;
+      }
+    }
+    if (!reused) {
       chain.SetCapacity(kCachedMainThreadChainSize);
     }
   }
@@ -1455,14 +1460,13 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
 
   if (cd.IsMainThread() && chain.Capacity() == kCachedMainThreadChainSize &&
       sCachedMainThreadChains) {
-    if (sCachedMainThreadChains->mChain1.Capacity() !=
-        kCachedMainThreadChainSize) {
-      chain.ClearAndRetainStorage();
-      chain.SwapElements(sCachedMainThreadChains->mChain1);
-    } else if (sCachedMainThreadChains->mChain2.Capacity() !=
-               kCachedMainThreadChainSize) {
-      chain.ClearAndRetainStorage();
-      chain.SwapElements(sCachedMainThreadChains->mChain2);
+    // Return the storage to the first free slot in the pool.
+    for (auto& cached : *sCachedMainThreadChains) {
+      if (cached.Capacity() != kCachedMainThreadChainSize) {
+        chain.ClearAndRetainStorage();
+        chain.SwapElements(cached);
+        break;
+      }
     }
   }
 

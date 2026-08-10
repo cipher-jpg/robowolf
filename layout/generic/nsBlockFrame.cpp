@@ -405,7 +405,7 @@ static void RecordReflowStatus(bool aChildIsBlock,
 
 NS_DECLARE_FRAME_PROPERTY_WITH_DTOR_NEVER_CALLED(OverflowLinesProperty,
                                                  nsBlockFrame::FrameLines)
-NS_DECLARE_FRAME_PROPERTY_FRAMELIST(OverflowOutOfFlowsProperty)
+NS_DECLARE_FRAME_PROPERTY_FRAMELIST(OverflowFloatsProperty)
 NS_DECLARE_FRAME_PROPERTY_FRAMELIST(FloatsProperty)
 NS_DECLARE_FRAME_PROPERTY_FRAMELIST(PushedFloatsProperty)
 NS_DECLARE_FRAME_PROPERTY_FRAMELIST(OutsideMarkerProperty)
@@ -463,10 +463,9 @@ void nsBlockFrame::Destroy(DestroyContext& aContext) {
     delete overflowLines;
   }
 
-  if (HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS)) {
-    SafelyDestroyFrameListProp(aContext, presShell,
-                               OverflowOutOfFlowsProperty());
-    RemoveStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS);
+  if (HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_FLOATS)) {
+    SafelyDestroyFrameListProp(aContext, presShell, OverflowFloatsProperty());
+    RemoveStateBits(NS_BLOCK_HAS_OVERFLOW_FLOATS);
   }
 
   if (HasMarker()) {
@@ -582,8 +581,29 @@ Maybe<nscoord> nsBlockFrame::GetBaselineBOffset(
                  (std::is_same_v<LineIteratorType, ConstReverseLineIterator> &&
                   aBaselineGroup == BaselineSharingGroup::Last),
              "Iterator direction must match baseline sharing group.");
+
+  // If we are happen to contain the line clamp ellipsis, the last baseline
+  // search should skip lineboxes that are clamped away.
+  //
+  // Note the that we don't care about this for GetFirstLineBaseline. While it's
+  // technically viable for the first baseline search to reach the clamped line,
+  // as per spec [1], the clamp point exists between two line boxes that will
+  // have a baseline. Even if the line gets displaced by the ellipsis, it
+  // provides a strut. As a result, the last unclamped line will always have a
+  // baseline.
+  // [1]: https://drafts.csswg.org/css-overflow-4/#line-clamp-containers
+  const bool isLineClamped =
+      aBaselineGroup == BaselineSharingGroup::Last &&
+      (HasLineClampEllipsis() || HasLineClampEllipsisDescendant());
+  bool hitLineClampEllipsis = false;
+
   for (auto line = aStart; line != aEnd; ++line) {
+    hitLineClampEllipsis = hitLineClampEllipsis || line->HasLineClampEllipsis();
     if (!line->IsBlock()) {
+      if (isLineClamped && !hitLineClampEllipsis) {
+        // This is clamped away, skip.
+        continue;
+      }
       // XXX Is this the right test?  We have some bogus empty lines
       // floating around, but IsEmpty is perhaps too weak.
       if (line->BSize() != 0 || !line->IsEmpty()) {
@@ -602,6 +622,11 @@ Maybe<nscoord> nsBlockFrame::GetBaselineBOffset(
     if (aExportContext == BaselineExportContext::LineLayout &&
         kid->IsTableWrapperFrame()) {
       // `<table>` in inline-block context does not export any baseline.
+      continue;
+    }
+    if (isLineClamped && !hitLineClampEllipsis &&
+        !HasLineClampEllipsisDescendant()) {
+      // This is clamped away, skip.
       continue;
     }
     const auto kidBaselineGroup =
@@ -684,8 +709,8 @@ const nsFrameList& nsBlockFrame::GetChildList(ChildListID aListID) const {
       FrameLines* overflowLines = GetOverflowLines();
       return overflowLines ? overflowLines->mFrames : nsFrameList::EmptyList();
     }
-    case FrameChildListID::OverflowOutOfFlow: {
-      const nsFrameList* list = GetOverflowOutOfFlows();
+    case FrameChildListID::OverflowFloats: {
+      const nsFrameList* list = GetOverflowFloats();
       return list ? *list : nsFrameList::EmptyList();
     }
     case FrameChildListID::Float: {
@@ -711,8 +736,8 @@ void nsBlockFrame::GetChildLists(nsTArray<ChildList>* aLists) const {
   if (overflowLines) {
     overflowLines->mFrames.AppendIfNonempty(aLists, FrameChildListID::Overflow);
   }
-  if (const nsFrameList* list = GetOverflowOutOfFlows()) {
-    list->AppendIfNonempty(aLists, FrameChildListID::OverflowOutOfFlow);
+  if (const nsFrameList* list = GetOverflowFloats()) {
+    list->AppendIfNonempty(aLists, FrameChildListID::OverflowFloats);
   }
   if (const nsFrameList* list = GetOutsideMarkerList()) {
     list->AppendIfNonempty(aLists, FrameChildListID::Marker);
@@ -1094,8 +1119,15 @@ static nsBlockFrame* GetAsLineClampDescendant(nsIFrame* aFrame) {
       GetAsLineClampDescendant(const_cast<const nsIFrame*>(aFrame)));
 }
 
+static uint32_t GetLineClampMaxLines(const StyleLineClamp& aLineClamp) {
+  if (aLineClamp.max_lines.lines.IsSome()) {
+    return static_cast<uint32_t>(aLineClamp.max_lines.lines.AsSome());
+  }
+  return 0;
+}
+
 static bool IsLineClampRoot(const nsBlockFrame* aFrame) {
-  if (!aFrame->StyleDisplay()->mWebkitLineClamp) {
+  if (!GetLineClampMaxLines(aFrame->StyleDisplay()->mWebkitLineClamp)) {
     return false;
   }
 
@@ -1103,7 +1135,8 @@ static bool IsLineClampRoot(const nsBlockFrame* aFrame) {
     return false;
   }
 
-  if (StaticPrefs::layout_css_webkit_line_clamp_block_enabled() ||
+  if (!aFrame->StyleDisplay()->mWebkitLineClamp.webkit_legacy ||
+      StaticPrefs::layout_css_webkit_line_clamp_block_enabled() ||
       aFrame->PresContext()->Document()->ChromeRulesEnabled()) {
     return true;
   }
@@ -1130,6 +1163,13 @@ static bool IsLineClampRoot(const nsBlockFrame* aFrame) {
   return origDisplay.Inside() == StyleDisplayInside::WebkitBox;
 }
 
+const mozilla::StyleBlockEllipsis* nsBlockFrame::GetLineClampBlockEllipsis()
+    const {
+  const auto* root = GetLineClampRoot();
+  return root ? &root->StyleDisplay()->mWebkitLineClamp.block_ellipsis
+              : nullptr;
+}
+
 nsBlockFrame* nsBlockFrame::GetLineClampRoot() const {
   if (IsLineClampRoot(this)) {
     return const_cast<nsBlockFrame*>(this);
@@ -1147,16 +1187,8 @@ nsBlockFrame* nsBlockFrame::GetLineClampRoot() const {
   return nullptr;
 }
 
-bool nsBlockFrame::MaybeHasFloats() const {
-  if (HasFloats()) {
-    return true;
-  }
-  if (HasPushedFloats()) {
-    return true;
-  }
-  // For the OverflowOutOfFlowsProperty I think we do enforce that, but it's
-  // a mix of out-of-flow frames, so that's why the method name has "Maybe".
-  return HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS);
+bool nsBlockFrame::HasAnyFloats() const {
+  return HasFloats() || HasPushedFloats() || HasOverflowFloats();
 }
 
 /**
@@ -1710,15 +1742,16 @@ void nsBlockFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
   // `balanceStep` is the increment to adjust it by for the next iteration.
   nscoord balanceStep = 0;
 
-  // text-wrap: balance loop, executed only once if balancing is not required.
   nsReflowStatus reflowStatus;
+  nsFloatManager::SavedState floatManagerState;
   TrialReflowState trialState(consumedBSize, effectiveContentBoxBSize,
                               needFloatManager);
+
+  // text-wrap: balance loop, executed only once if balancing is not required.
   while (true) {
     // Save the initial floatManager state for repeated trial reflows.
     // We'll restore (and re-save) the initial state each time we repeat the
     // reflow.
-    nsFloatManager::SavedState floatManagerState;
     aReflowInput.mFloatManager->PushState(&floatManagerState);
 
     aMetrics = ReflowOutput(aMetrics.GetWritingMode());
@@ -1751,7 +1784,8 @@ void nsBlockFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
       // number of lines in the block.
       if (StaticPrefs::layout_css_text_wrap_balance_after_clamp_enabled() &&
           IsLineClampRoot(this)) {
-        uint32_t lineClampCount = aReflowInput.mStyleDisplay->mWebkitLineClamp;
+        uint32_t lineClampCount =
+            GetLineClampMaxLines(aReflowInput.mStyleDisplay->mWebkitLineClamp);
         if (uint32_t(balanceTarget.mOffset) > lineClampCount) {
           auto t = getClampPosition(lineClampCount);
           if (t.mContent) {
@@ -1772,7 +1806,8 @@ void nsBlockFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
         return false;
       }
       if (balanceTarget.mContent) {
-        auto t = getClampPosition(aReflowInput.mStyleDisplay->mWebkitLineClamp);
+        auto t = getClampPosition(
+            GetLineClampMaxLines(aReflowInput.mStyleDisplay->mWebkitLineClamp));
         return t == balanceTarget;
       }
       int32_t numLines =
@@ -1813,6 +1848,16 @@ void nsBlockFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
     // going to keep. So the saved state is just dropped.
     break;
   }  // End of text-wrap: balance retry loop
+
+  // Handle the text-box-trim end retry, if the frame requested a second pass
+  // in order to properly trim a line at a fragment boundary.
+  if (aMetrics.mNeedsTextBoxTrimAtFragmentEndRetry) {
+    trialState.Reset();
+    aReflowInput.mFloatManager->PopState(&floatManagerState);
+    aMetrics = ReflowOutput(aMetrics.GetWritingMode());
+    reflowStatus =
+        TrialReflow(aPresContext, aMetrics, aReflowInput, trialState);
+  }
 
   // If the block direction is right-to-left, we need to update the bounds of
   // lines that were placed relative to mContainerSize during reflow, as
@@ -2202,6 +2247,11 @@ nsReflowStatus nsBlockFrame::TrialReflow(nsPresContext* aPresContext,
 
   CheckFloats(state);
 
+  // If this block frame indicated that it needs to be reflowed to apply
+  // text-box-trim on the trim-end side, propagate that signal up to the parent.
+  aMetrics.mNeedsTextBoxTrimAtFragmentEndRetry =
+      state.mNeedsTextBoxTrimAtFragmentEndRetry;
+
   // Compute our final size (for this trial layout)
   aTrialState.mBlockEndEdgeOfChildren =
       ComputeFinalSize(aReflowInput, state, aMetrics);
@@ -2227,7 +2277,7 @@ bool nsBlockFrame::CheckForCollapsedBEndMarginFromClearanceLine() {
 
 std::pair<nsBlockFrame*, nsLineBox*> FindLineClampTarget(
     nsBlockFrame* const aRootFrame, const nsBlockFrame* const aStopAtFrame,
-    StyleLineClamp aLineNumber) {
+    uint32_t aLineNumber) {
   MOZ_ASSERT(aLineNumber > 0);
 
   nsLineBox* targetLine = nullptr;
@@ -2284,7 +2334,7 @@ nscoord nsBlockFrame::ApplyLineClamp(nscoord aContentBlockEndEdge) {
     return aContentBlockEndEdge;
   }
 
-  auto lineClamp = root->StyleDisplay()->mWebkitLineClamp;
+  auto lineClamp = GetLineClampMaxLines(root->StyleDisplay()->mWebkitLineClamp);
   auto [target, line] = FindLineClampTarget(root, this, lineClamp);
   if (!line) {
     // The number of lines did not exceed the -webkit-line-clamp value.
@@ -3370,11 +3420,7 @@ bool nsBlockFrame::ReflowDirtyLines(BlockReflowState& aState) {
 
     if (!line->IsDirty()) {
       const bool isPaginated =
-          // Last column can be reflowed unconstrained during column balancing.
-          // Hence the additional NS_FRAME_HAS_MULTI_COLUMN_ANCESTOR bit check
-          // as a fail-safe fallback.
-          aState.mReflowInput.AvailableBSize() != NS_UNCONSTRAINEDSIZE ||
-          HasAnyStateBits(NS_FRAME_HAS_MULTI_COLUMN_ANCESTOR) ||
+          aState.mReflowInput.IsInFragmentedContext() ||
           // Table can also be reflowed unconstrained during printing.
           aState.mPresContext->IsPaginated();
       if (isPaginated) {
@@ -4016,11 +4062,6 @@ bool nsBlockFrame::ReflowLine(BlockReflowState& aState, LineIterator aLine,
     return false;
   }
 
-  // Clear the trim-start flag if the line is not the first formatted line
-  if (aState.mFlags.mShouldApplyTextBoxTrimStart && aState.mLineNumber > 0) {
-    aState.mFlags.mShouldApplyTextBoxTrimStart = false;
-  }
-
   // Now that we know what kind of line we have, reflow it
   bool usedOverflowWrap = false;
   if (aLine->IsBlock()) {
@@ -4057,7 +4098,8 @@ bool nsBlockFrame::ReflowLine(BlockReflowState& aState, LineIterator aLine,
     aState.mFlags.mShouldApplyTextBoxTrimStart = false;
   }
   if (aLine->TextBoxTrimEndApplied()) {
-    aState.mFlags.mShouldApplyTextBoxTrimEnd = false;
+    aState.mFlags.mShouldApplyTextBoxTrimAtBlockEnd = false;
+    aState.mFlags.mShouldApplyTextBoxTrimAtFragmentEnd = false;
   }
 
   return usedOverflowWrap;
@@ -4351,6 +4393,34 @@ bool nsBlockFrame::ShouldApplyBStartMargin(BlockReflowState& aState,
   // block. Therefore its block-start margin will be collapsed by the
   // generational collapsing logic with its parent (us).
   return false;
+}
+
+static bool IsFirstNonEmptyColumnSetOrSpanner(nsIFrame* aFrame) {
+  MOZ_ASSERT(aFrame->IsColumnSetFrame() || aFrame->IsColumnSpan());
+  if (aFrame->IsEmpty()) {
+    return false;
+  }
+  nsIFrame* curr = aFrame;
+  while ((curr = curr->GetPrevSibling())) {
+    if (!curr->IsEmpty()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool IsLastNonEmptyColumnSetOrSpanner(nsIFrame* aFrame) {
+  MOZ_ASSERT(aFrame->IsColumnSetFrame() || aFrame->IsColumnSpan());
+  if (aFrame->IsEmpty()) {
+    return false;
+  }
+  nsIFrame* curr = aFrame;
+  while ((curr = curr->GetNextSibling())) {
+    if (!curr->IsEmpty()) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void nsBlockFrame::ReflowBlockFrame(BlockReflowState& aState,
@@ -4665,16 +4735,36 @@ void nsBlockFrame::ReflowBlockFrame(BlockReflowState& aState,
     // Propagate requested text-box-trim sides down to the reflowing child.
     // Any intervening border and padding on the corresponding trim side
     // prevents application of trimming.
-    // https://drafts.csswg.org/css-inline-3/#text-box-trim
     const WritingMode childWM = frame->GetWritingMode();
     const LogicalMargin childBP =
         childReflowInput->ComputedLogicalBorderPadding(childWM);
+
+    // Note, if the current block establishes a new block formatting context,
+    // then any ancestor's trimming request does not propagate into the block,
+    // *unless* it's a multi-column container, which explicitly propagates to
+    // each column. https://drafts.csswg.org/css-inline-3/#text-box-trim
+    //
+    // TODO(Bug 2049484) - Clarify BFC propagation in the specification/WPTs.
+    const bool shouldPropagateTextBoxTrim =
+        !frame->HasAnyStateBits(NS_BLOCK_BFC) || IsColumnSetWrapperFrame() ||
+        IsColumnSpan();
+
     childReflowInput->mFlags.mShouldApplyTextBoxTrimStart =
+        shouldPropagateTextBoxTrim &&
         aState.mFlags.mShouldApplyTextBoxTrimStart &&
-        childBP.BStart(childWM) == 0 && aState.mLineNumber == 0;
-    childReflowInput->mFlags.mShouldApplyTextBoxTrimEnd =
-        aState.mFlags.mShouldApplyTextBoxTrimEnd &&
-        childBP.BEnd(childWM) == 0 && IsLastFormattedLine(aLine);
+        childBP.BStart(childWM) == 0 &&
+        (IsColumnSetWrapperFrame() ? IsFirstNonEmptyColumnSetOrSpanner(frame)
+                                   : aState.mLineNumber == 0);
+    childReflowInput->mFlags.mShouldApplyTextBoxTrimAtBlockEnd =
+        shouldPropagateTextBoxTrim &&
+        aState.mFlags.mShouldApplyTextBoxTrimAtBlockEnd &&
+        childBP.BEnd(childWM) == 0 &&
+        (IsColumnSetWrapperFrame() ? IsLastNonEmptyColumnSetOrSpanner(frame)
+                                   : IsLastFormattedLine(aLine));
+    childReflowInput->mFlags.mShouldApplyTextBoxTrimAtFragmentEnd =
+        (IsColumnSetWrapperFrame() && IsLastNonEmptyColumnSetOrSpanner(frame) &&
+         aState.mFlags.mShouldApplyTextBoxTrimAtBlockEnd) ||
+        aState.mFlags.mShouldApplyTextBoxTrimAtFragmentEnd;
 
     if (aLine->MovedFragments()) {
       // We only need to set this the first reflow, since if we reflow
@@ -5770,8 +5860,8 @@ bool nsBlockFrame::PlaceLine(BlockReflowState& aState,
   // Determines if the current line is the last formatted line of the block.
   // As this is required only for text-box-trim, this value is only meaningful
   // when the block is requesting trimming on the block end side.
-  bool isLastFormattedLine =
-      aState.mFlags.mShouldApplyTextBoxTrimEnd && IsLastFormattedLine(aLine);
+  bool isLastFormattedLine = aState.mFlags.mShouldApplyTextBoxTrimAtBlockEnd &&
+                             IsLastFormattedLine(aLine);
   aLineLayout.VerticalAlignLine(&aFlowArea, isLastFormattedLine);
 
   // We want to consider the floats in the current line when determining
@@ -5935,6 +6025,23 @@ bool nsBlockFrame::PlaceLine(BlockReflowState& aState,
       aState.ContentBSize() != NS_UNCONSTRAINEDSIZE &&
       newBCoord > aState.ContentBEnd()) {
     NS_ASSERTION(aState.mCurrentLine == aLine, "oops");
+
+    // If the line doesn't fit, but this block should be trimmed on the
+    // block-end side at this fragment boundary, determine if trimming
+    // would have made the line fit. If so, request a retry with that
+    // line forced to trim; otherwise, the previous line was the last
+    // formatted line of this fragment and should be trimmed.
+    if (aState.mFlags.mShouldApplyTextBoxTrimAtFragmentEnd &&
+        !aLine->TextBoxTrimEndApplied()) {
+      const nscoord potentialTrimEndAmount =
+          aLineLayout.PotentialTextBoxTrimEndAmount();
+      const bool doesLineFitWithTrimEnd =
+          newBCoord - potentialTrimEndAmount <= aState.ContentBEnd();
+      nsLineBox* targetLine = doesLineFitWithTrimEnd ? aLine : aLine.prev();
+      targetLine->SetTextBoxTrimEndForced();
+      aState.mNeedsTextBoxTrimAtFragmentEndRetry = true;
+    }
+
     if (ShouldAvoidBreakInside(aState.mReflowInput)) {
       // All our content doesn't fit, start on the next page.
       SetBreakBeforeStatusBeforeLine(aState, aLine, aKeepReflowGoing);
@@ -6021,8 +6128,8 @@ void nsBlockFrame::PushLines(BlockReflowState& aState,
                    "CollectFloats should've removed that bit");
       }
 #endif
-      // Push the floats onto the front of the overflow out-of-flows list
-      nsAutoOOFFrameList oofs(this);
+      // Push the floats onto the front of the overflow floats list
+      AutoOverflowFloatsList oofs(this);
       oofs.mList.InsertFrames(nullptr, nullptr, std::move(floats));
     }
 
@@ -6138,8 +6245,8 @@ bool nsBlockFrame::DrainOverflowLines() {
         }
       }
 
-      // Make the overflow out-of-flow frames mine too.
-      nsAutoOOFFrameList oofs(prevBlock);
+      // Make the overflow floats mine too.
+      AutoOverflowFloatsList oofs(prevBlock);
       if (oofs.mList.NotEmpty()) {
         // In case we own any next-in-flows of any of the drained frames, then
         // move those to the PushedFloat list.
@@ -6191,7 +6298,7 @@ bool nsBlockFrame::DrainSelfOverflowList() {
   // already ours. But we should put overflow floats back in our floats list.
   // (explicit scope to remove the OOF list before VerifyOverflowSituation)
   {
-    nsAutoOOFFrameList oofs(this);
+    AutoOverflowFloatsList oofs(this);
     if (oofs.mList.NotEmpty()) {
 #ifdef DEBUG
       for (nsIFrame* f : oofs.mList) {
@@ -6361,38 +6468,45 @@ void nsBlockFrame::SetOverflowLines(FrameLines* aOverflowLines) {
   AddStateBits(NS_BLOCK_HAS_OVERFLOW_LINES);
 }
 
-nsFrameList* nsBlockFrame::GetOverflowOutOfFlows() const {
-  if (!HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS)) {
+bool nsBlockFrame::HasOverflowFloats() const {
+  const bool isStateBitSet = HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_FLOATS);
+  MOZ_ASSERT(
+      isStateBitSet == HasProperty(OverflowFloatsProperty()),
+      "State bit should accurately reflect presence/absence of the property!");
+  return isStateBitSet;
+}
+
+nsFrameList* nsBlockFrame::GetOverflowFloats() const {
+  if (!HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_FLOATS)) {
     return nullptr;
   }
-  nsFrameList* result = GetProperty(OverflowOutOfFlowsProperty());
+  nsFrameList* result = GetProperty(OverflowFloatsProperty());
   NS_ASSERTION(result, "value should always be non-empty when state set");
   return result;
 }
 
-void nsBlockFrame::SetOverflowOutOfFlows(nsFrameList&& aList,
-                                         nsFrameList* aPropValue) {
-  MOZ_ASSERT(
-      HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS) == !!aPropValue,
-      "state does not match value");
+void nsBlockFrame::SetOverflowFloats(nsFrameList&& aList,
+                                     nsFrameList* aPropValue) {
+  MOZ_ASSERT(HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_FLOATS) == !!aPropValue,
+             "state does not match value");
 
   if (aList.IsEmpty()) {
-    if (!HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS)) {
+    if (!HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_FLOATS)) {
       return;
     }
-    nsFrameList* list = TakeProperty(OverflowOutOfFlowsProperty());
+    nsFrameList* list = TakeProperty(OverflowFloatsProperty());
     NS_ASSERTION(aPropValue == list, "prop value mismatch");
     list->Clear();
     list->Delete(PresShell());
-    RemoveStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS);
-  } else if (HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS)) {
-    NS_ASSERTION(aPropValue == GetProperty(OverflowOutOfFlowsProperty()),
+    RemoveStateBits(NS_BLOCK_HAS_OVERFLOW_FLOATS);
+  } else if (HasAnyStateBits(NS_BLOCK_HAS_OVERFLOW_FLOATS)) {
+    NS_ASSERTION(aPropValue == GetProperty(OverflowFloatsProperty()),
                  "prop value mismatch");
     *aPropValue = std::move(aList);
   } else {
-    SetProperty(OverflowOutOfFlowsProperty(),
+    SetProperty(OverflowFloatsProperty(),
                 new (PresShell()) nsFrameList(std::move(aList)));
-    AddStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS);
+    AddStateBits(NS_BLOCK_HAS_OVERFLOW_FLOATS);
   }
 }
 
@@ -6843,13 +6957,11 @@ void nsBlockFrame::RemoveFloatFromFloatCache(nsIFrame* aFloat) {
 void nsBlockFrame::RemoveFloat(nsIFrame* aFloat) {
   MOZ_ASSERT(aFloat);
 
-  // Floats live in floats list, pushed floats list, or overflow out-of-flow
-  // list.
+  // Floats live in floats list, pushed floats list, or overflow floats list.
   MOZ_ASSERT(
       GetChildList(FrameChildListID::Float).ContainsFrame(aFloat) ||
           GetChildList(FrameChildListID::PushedFloats).ContainsFrame(aFloat) ||
-          GetChildList(FrameChildListID::OverflowOutOfFlow)
-              .ContainsFrame(aFloat),
+          GetChildList(FrameChildListID::OverflowFloats).ContainsFrame(aFloat),
       "aFloat is not our child or on an unexpected frame list");
 
   bool didStartRemovingFloat = false;
@@ -6880,7 +6992,7 @@ void nsBlockFrame::RemoveFloat(nsIFrame* aFloat) {
   }
 
   {
-    nsAutoOOFFrameList oofs(this);
+    AutoOverflowFloatsList oofs(this);
     if (didStartRemovingFloat ? oofs.mList.ContinueRemoveFrame(aFloat)
                               : oofs.mList.StartRemoveFrame(aFloat)) {
       return;
@@ -7049,12 +7161,15 @@ void nsBlockFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
 
   const bool isBFC = EstablishesBFC(this);
   if (HasAnyStateBits(NS_BLOCK_BFC) != isBFC) {
-    if (MaybeHasFloats()) {
+    if (HasAnyFloats()) {
       // If the frame contains floats, this update may change their float
       // manager. Be safe by dirtying all descendant lines of the nearest
       // ancestor's float manager.
       RemoveStateBits(NS_BLOCK_BFC);
       MarkSameFloatManagerLinesDirty(this);
+    }
+    if (isBFC && !IsLineClampRoot(this)) {
+      ClearLineClampEllipsis();
     }
     AddOrRemoveStateBits(NS_BLOCK_BFC, isBFC);
   }
@@ -8750,7 +8865,7 @@ void nsBlockFrame::CheckFloats(BlockReflowState& aState) {
   }
 #endif
 
-  const nsFrameList* oofs = GetOverflowOutOfFlows();
+  const nsFrameList* oofs = GetOverflowFloats();
   if (oofs && oofs->NotEmpty()) {
     // Floats that were pushed should be removed from our float
     // manager.  Otherwise the float manager's YMost or XMost might
@@ -9200,27 +9315,20 @@ void nsBlockFrame::VerifyLines(bool aFinalCheckOK) {
 }
 
 void nsBlockFrame::VerifyOverflowSituation() {
-  // Overflow out-of-flows must not have a next-in-flow in floats list or
-  // mFrames.
-  nsFrameList* oofs = GetOverflowOutOfFlows();
-  if (oofs) {
-    for (nsIFrame* f : *oofs) {
-      nsIFrame* nif = f->GetNextInFlow();
-      MOZ_ASSERT(!nif ||
-                 (!GetChildList(FrameChildListID::Float).ContainsFrame(nif) &&
-                  !mFrames.ContainsFrame(nif)));
-    }
+  // Overflow floats must not have a next-in-flow in floats list or mFrames.
+  for (nsIFrame* f : GetChildList(FrameChildListID::OverflowFloats)) {
+    nsIFrame* nif = f->GetNextInFlow();
+    MOZ_ASSERT(!nif ||
+               (!GetChildList(FrameChildListID::Float).ContainsFrame(nif) &&
+                !mFrames.ContainsFrame(nif)));
   }
 
   // Pushed floats must not have a next-in-flow in floats list or mFrames.
-  oofs = GetPushedFloats();
-  if (oofs) {
-    for (nsIFrame* f : *oofs) {
-      nsIFrame* nif = f->GetNextInFlow();
-      MOZ_ASSERT(!nif ||
-                 (!GetChildList(FrameChildListID::Float).ContainsFrame(nif) &&
-                  !mFrames.ContainsFrame(nif)));
-    }
+  for (nsIFrame* f : GetChildList(FrameChildListID::PushedFloats)) {
+    nsIFrame* nif = f->GetNextInFlow();
+    MOZ_ASSERT(!nif ||
+               (!GetChildList(FrameChildListID::Float).ContainsFrame(nif) &&
+                !mFrames.ContainsFrame(nif)));
   }
 
   // A child float next-in-flow's parent must be |this| or a next-in-flow of

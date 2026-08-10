@@ -22,8 +22,17 @@ internal class GeckoIPProtectionHandler(
 
     private val logger = Logger("IPP:GeckoHandler")
 
-    override fun activate(onResult: (Throwable?) -> Unit) {
-        runtime.ipProtectionController.activate().then(
+    override fun activate(
+        countryCode: String?,
+        onResult: (Throwable?) -> Unit,
+    ) {
+        // `userAction` differentiates between user and system initiated actions, `false` is used by
+        // the toolkit code internally; we are reporting `true`.
+        // Both fields are used for toolkit telemetry, and since projects track telemetry independently,
+        // defaulting `inPrivateBrowsing` to `false` for android is fine.
+        val userAction = true
+        val inPrivateBrowsing = false
+        runtime.ipProtectionController.activate(userAction, inPrivateBrowsing, countryCode).then(
             {
                 onResult(null)
                 GeckoResult.fromValue(null)
@@ -99,13 +108,17 @@ internal class GeckoIPProtectionHandler(
         )
     }
 
+    override fun updateCountryList() {
+        runtime.ipProtectionController.getCountryList()
+    }
+
     override fun setAuthProvider(
         provider: IPProtectionHandler.AuthProvider?,
     ) {
         logger.debug("setAuthProvider")
         runtime.ipProtectionController.setAuthProvider(
             object : IPProtectionController.AuthProvider {
-                override fun getToken(): GeckoResult<String?> {
+                override fun onTokenRequest(): GeckoResult<String?> {
                     val result = GeckoResult<String?>()
                     provider?.getToken { token ->
                         logger.info("Retrieved access token.")
@@ -119,5 +132,37 @@ internal class GeckoIPProtectionHandler(
 
     override fun notifyAccountStatus(signedIn: Boolean) {
         runtime.ipProtectionController.notifySignInStateChanged(signedIn)
+    }
+
+    override fun setGpiProvider(provider: IPProtectionHandler.GpiProvider?) {
+        if (provider == null) {
+            runtime.ipProtectionController.setGpiProvider(null)
+            return
+        }
+        runtime.ipProtectionController.setGpiProvider(object : IPProtectionController.GpiProvider {
+            override fun warmUp(): GeckoResult<Void> {
+                val result = GeckoResult<Void>()
+                provider.warmUp { success ->
+                    if (success) {
+                        result.complete(null)
+                    } else {
+                        result.completeExceptionally(RuntimeException("gpi-warm-up-failed"))
+                    }
+                }
+                return result
+            }
+
+            override fun onTokenRequest(): GeckoResult<String> {
+                val result = GeckoResult<String>()
+                provider.getToken { token ->
+                    if (token != null) {
+                        result.complete(token)
+                    } else {
+                        result.completeExceptionally(RuntimeException("no-gpi-token"))
+                    }
+                }
+                return result
+            }
+        })
     }
 }

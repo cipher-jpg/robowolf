@@ -21,6 +21,7 @@
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/BrowserHost.h"
 #include "mozilla/dom/BrowserParent.h"
@@ -29,6 +30,7 @@
 #include "mozilla/dom/ChromeUtils.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientInfo.h"
+#include "mozilla/dom/ClientValidation.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMException.h"
@@ -46,6 +48,9 @@
 #include "mozilla/dom/NavigatorLogin.h"
 #include "mozilla/dom/PBackgroundSessionStorageCache.h"
 #include "mozilla/dom/ParentProcessChannelHandle.h"
+#include "mozilla/dom/PrefetchLog.h"
+#include "mozilla/dom/PrefetchMatchWaiter.h"
+#include "mozilla/dom/PrefetchRecordParent.h"
 #include "mozilla/dom/SerialManagerParent.h"
 #include "mozilla/dom/UseCounterMetrics.h"
 #include "mozilla/dom/WebAuthnTransactionParent.h"
@@ -126,7 +131,8 @@ WindowGlobalParent::WindowGlobalParent(
       mDocumentHasLoaded(false),
       mDocumentHasUserInteracted(false),
       mBlockAllMixedContent(false),
-      mUpgradeInsecureRequests(false) {
+      mUpgradeInsecureRequests(false),
+      mPartitionStoragePrincipal(false) {
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(), "Parent process only");
 }
 
@@ -144,30 +150,34 @@ already_AddRefed<WindowGlobalParent> WindowGlobalParent::CreateDisconnected(
       GetByInnerWindowId(aInit.context().mInnerWindowId);
   MOZ_RELEASE_ASSERT(!wgp, "Creating duplicate WindowGlobalParent");
 
+  MOZ_RELEASE_ASSERT(VerifyPartitionedPrincipalMatchesDocumentPrincipal(
+                         aInit.principal(), aInit.partitionedPrincipal()),
+                     "Invalid partitioned principal from content");
+
   FieldValues fields(aInit.context().mFields);
   wgp =
       new WindowGlobalParent(browsingContext, aInit.context().mInnerWindowId,
                              aInit.context().mOuterWindowId, std::move(fields));
   wgp->mDocumentPrincipal = aInit.principal();
+  wgp->mDocumentPartitionedPrincipal = aInit.partitionedPrincipal();
   wgp->mDocumentURI = aInit.documentURI();
+  if (aInit.isVideoDocument() && wgp->mDocumentURI) {
+    wgp->RecordSubsequentNoCorsRequestState(wgp->mDocumentURI);
+  }
   wgp->mStaticCloneOf = aInit.staticCloneOf().get_canonical();
   wgp->mIsInitialDocument = Some(aInit.isInitialDocument());
   wgp->mIsUncommittedInitialDocument = aInit.isUncommittedInitialDocument();
   wgp->mBlockAllMixedContent = aInit.blockAllMixedContent();
   wgp->mUpgradeInsecureRequests = aInit.upgradeInsecureRequests();
+  wgp->mPartitionStoragePrincipal = aInit.partitionStoragePrincipal();
   wgp->mSandboxFlags = aInit.sandboxFlags();
   wgp->mHttpsOnlyStatus = aInit.httpsOnlyStatus();
   net::CookieJarSettings::Deserialize(aInit.cookieJarSettings(),
                                       getter_AddRefs(wgp->mCookieJarSettings));
-  MOZ_RELEASE_ASSERT(wgp->mDocumentPrincipal, "Must have a valid principal");
   MOZ_RELEASE_ASSERT(
       !aForProcess || !wgp->mStaticCloneOf ||
           wgp->mStaticCloneOf->GetContentParent() == aForProcess,
       "Cannot static clone from a document in a different process!");
-
-  nsresult rv = wgp->SetDocumentStoragePrincipal(aInit.storagePrincipal());
-  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv),
-                     "Must succeed in setting storage principal");
 
   if (aInit.documentChannelHandle()) {
     auto result = aInit.documentChannelHandle()->GetChannel(
@@ -207,9 +217,6 @@ void WindowGlobalParent::Init() {
   if (!IsInProcess()) {
     cp = static_cast<ContentParent*>(Manager()->Manager());
     processId = cp->ChildID();
-
-    // Ensure the content process has permissions for this principal.
-    cp->TransmitPermissionsForPrincipal(mDocumentPrincipal);
   }
 
   MOZ_DIAGNOSTIC_ASSERT(
@@ -485,57 +492,41 @@ IPCResult WindowGlobalParent::RecvUpdateDocumentURI(NotNull<nsIURI*> aURI) {
   return IPC_OK();
 }
 
-nsresult WindowGlobalParent::SetDocumentStoragePrincipal(
-    nsIPrincipal* aNewDocumentStoragePrincipal) {
-  if (mDocumentPrincipal->Equals(aNewDocumentStoragePrincipal)) {
-    mDocumentStoragePrincipal = mDocumentPrincipal;
-    return NS_OK;
-  }
-
-  // Compare originNoSuffix to ensure it's equal.
-  nsCString noSuffix;
-  nsresult rv = mDocumentPrincipal->GetOriginNoSuffix(noSuffix);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCString storageNoSuffix;
-  rv = aNewDocumentStoragePrincipal->GetOriginNoSuffix(storageNoSuffix);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  if (noSuffix != storageNoSuffix) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (!mDocumentPrincipal->OriginAttributesRef().EqualsIgnoringPartitionKey(
-          aNewDocumentStoragePrincipal->OriginAttributesRef())) {
-    return NS_ERROR_FAILURE;
-  }
-
-  mDocumentStoragePrincipal = aNewDocumentStoragePrincipal;
-  return NS_OK;
-}
-
 IPCResult WindowGlobalParent::RecvUpdateDocumentPrincipal(
     nsIPrincipal* aNewDocumentPrincipal,
-    nsIPrincipal* aNewDocumentStoragePrincipal) {
+    nsIPrincipal* aNewDocumentPartitionedPrincipal) {
   if (!mDocumentPrincipal->Equals(aNewDocumentPrincipal)) {
     return IPC_FAIL(this,
                     "Trying to reuse WindowGlobalParent but the principal of "
                     "the new document does not match the old one");
   }
-  mDocumentPrincipal = aNewDocumentPrincipal;
+  // NOTE: Unfortunately, we cannot check ->Equals for our old & new partitioned
+  // principals, as the partition key for an initial about:blank document may
+  // not match the partition key of the load which replaces it.
+  if (!VerifyPartitionedPrincipalMatchesDocumentPrincipal(
+          aNewDocumentPrincipal, aNewDocumentPartitionedPrincipal)) {
+    return IPC_FAIL(
+        this, "Invalid PartitionedPrincipal when re-using WindowGlobalParent");
+  }
 
-  if (NS_FAILED(SetDocumentStoragePrincipal(aNewDocumentStoragePrincipal))) {
-    return IPC_FAIL(this,
-                    "Trying to reuse WindowGlobalParent but the principal of "
-                    "the new document does not match the storage principal");
+  mDocumentPrincipal = aNewDocumentPrincipal;
+  if (mDocumentPrincipal->Equals(aNewDocumentPartitionedPrincipal)) {
+    // Keep only one copy of the principal around if we don't have a partition
+    // key.
+    mDocumentPartitionedPrincipal = mDocumentPrincipal;
+  } else {
+    mDocumentPartitionedPrincipal = aNewDocumentPartitionedPrincipal;
   }
 
   return IPC_OK();
 }
+
+mozilla::ipc::IPCResult WindowGlobalParent::RecvUpdatePrincipalPartitioning(
+    bool aPartitionStoragePrincipal) {
+  mPartitionStoragePrincipal = aPartitionStoragePrincipal;
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult WindowGlobalParent::RecvUpdateDocumentTitle(
     const nsString& aTitle) {
   if (mDocumentTitle.isSome() && mDocumentTitle.value() == aTitle) {
@@ -573,6 +564,42 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvUpdateHttpsOnlyStatus(
   return IPC_OK();
 }
 
+already_AddRefed<Promise> WindowGlobalParent::RequestDocumentLanguageMetadata(
+    const DocumentLanguageMetadataRequestOptions& aOptions, ErrorResult& aRv) {
+  nsIGlobalObject* global = GetParentObject();
+  RefPtr<Promise> domPromise = Promise::Create(global, aRv);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
+
+  MOZ_ASSERT(aOptions.mTextSampleMinCodeUnits <=
+             aOptions.mTextSampleTargetCodeUnits);
+
+  if (!IsCurrentGlobal()) {
+    domPromise->MaybeResolve(JS::NullHandleValue);
+    return domPromise.forget();
+  }
+
+  auto ipcPromise = SendRequestDocumentLanguageMetadata(
+      aOptions.mTextSampleMinCodeUnits, aOptions.mTextSampleTargetCodeUnits);
+  ipcPromise->Then(
+      GetMainThreadSerialEventTarget(), __func__,
+      [domPromise,
+       self = RefPtr{this}](const Maybe<DocumentLanguageMetadata>& aMetadata) {
+        if (!self->IsCurrentGlobal() || aMetadata.isNothing()) {
+          domPromise->MaybeResolve(JS::NullHandleValue);
+          return;
+        }
+
+        domPromise->MaybeResolve(*aMetadata);
+      },
+      [domPromise](ResponseRejectReason&&) {
+        domPromise->MaybeResolve(JS::NullHandleValue);
+      });
+
+  return domPromise.forget();
+}
+
 IPCResult WindowGlobalParent::RecvUpdateDocumentHasLoaded(
     bool aDocumentHasLoaded) {
   mDocumentHasLoaded = aDocumentHasLoaded;
@@ -599,6 +626,11 @@ IPCResult WindowGlobalParent::RecvUpdateDocumentCspSettings(
 
 mozilla::ipc::IPCResult WindowGlobalParent::RecvSetClientInfo(
     const IPCClientInfo& aIPCClientInfo) {
+  if (!ClientIsValidPrincipalInfo(
+          aIPCClientInfo.principalInfo(),
+          GetContentParent() ? GetContentParent()->LoadedOrigins() : nullptr)) {
+    return IPC_FAIL(this, "SetClientInfo principal not valid for remote type");
+  }
   mClientInfo = Some(ClientInfo(aIPCClientInfo));
   return IPC_OK();
 }
@@ -849,6 +881,22 @@ already_AddRefed<nsIChannel> WindowGlobalParent::GetFailedChannel() {
     return do_AddRef(doc->GetFailedChannel());
   }
   return nullptr;
+}
+
+dom::NoCorsMediaRequestState WindowGlobalParent::NoCorsMediaRequestState(
+    nsIURI* aURI) const {
+  nsCString uri;
+  return (NS_SUCCEEDED(aURI->GetSpecIgnoringRef(uri)) &&
+          mNoCorsMediaRequestURIs.Contains(uri))
+             ? dom::NoCorsMediaRequestState::Subsequent
+             : dom::NoCorsMediaRequestState::Initial;
+}
+
+void WindowGlobalParent::RecordSubsequentNoCorsRequestState(nsIURI* aURI) {
+  nsCString uri;
+  if (NS_SUCCEEDED(aURI->GetSpecIgnoringRef(uri)) && !uri.IsEmpty()) {
+    mNoCorsMediaRequestURIs.PutEntry(uri);
+  }
 }
 
 mozilla::ipc::IPCResult WindowGlobalParent::RecvShare(
@@ -1206,7 +1254,7 @@ void WindowGlobalParent::PermitUnloadChildNavigables(
 
 already_AddRefed<mozilla::dom::Promise> WindowGlobalParent::DrawSnapshot(
     const DOMRect* aRect, double aScale, const nsACString& aBackgroundColor,
-    bool aResetScrollPosition, mozilla::ErrorResult& aRv) {
+    const DrawSnapshotOptions& aOptions, mozilla::ErrorResult& aRv) {
   nsIGlobalObject* global = GetParentObject();
   RefPtr<Promise> promise = Promise::Create(global, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
@@ -1223,10 +1271,10 @@ already_AddRefed<mozilla::dom::Promise> WindowGlobalParent::DrawSnapshot(
 
   gfx::CrossProcessPaintFlags flags =
       gfx::CrossProcessPaintFlags::UseHighQualityScaling;
-  if (!aRect) {
+  if (!aRect || aOptions.mDrawView) {
     // If no explicit Rect was passed, we want the currently visible viewport.
     flags |= gfx::CrossProcessPaintFlags::DrawView;
-  } else if (aResetScrollPosition) {
+  } else if (aOptions.mResetScrollPosition) {
     flags |= gfx::CrossProcessPaintFlags::ResetScrollPosition;
   }
 
@@ -2154,6 +2202,230 @@ WindowGlobalParent::AllocPWebIdentityParent() {
 already_AddRefed<PDigitalCredentialParent>
 WindowGlobalParent::AllocPDigitalCredentialParent() {
   return MakeAndAddRef<DigitalCredentialParent>();
+}
+
+already_AddRefed<PPrefetchRecordParent>
+WindowGlobalParent::AllocPPrefetchRecordParent(
+    const SpeculativePrefetchArgs& aArgs) {
+  RefPtr<PrefetchRecordParent> actor = MakeRefPtr<PrefetchRecordParent>();
+  actor->Init(this, aArgs);
+  return actor.forget();
+}
+
+RefPtr<PrefetchMatchPromise> WindowGlobalParent::WaitForMatchingPrefetchRecord(
+    nsIURI* aURI, TimeDuration aTimeout) {
+  // Implements "wait for a matching prefetch record". The full algorithm
+  // runs "in parallel" and loops until a match completes, no ongoing record
+  // could still satisfy the navigation, or aTimeout elapses. Since a
+  // navigation can only be delayed by prefetches that are still ongoing
+  // *right now*, we only need to register a waiter (below) when such a
+  // record exists; otherwise the loop's first iteration already resolves
+  // synchronously.
+  // Spec:
+  // https://wicg.github.io/nav-speculation/prefetch.html#wait-for-a-matching-prefetch-record
+
+  // Steps 5.1.1-5.1.2: "Let completeRecord be the result of finding a
+  // matching complete prefetch record ... If completeRecord is not null,
+  // return completeRecord."
+  if (PrefetchRecordParent* match = FindMatchingPrefetchRecord(aURI)) {
+    LOG_SPECRULES(
+        ("WindowGlobalParent::WaitForMatchingPrefetchRecord: "
+         "this=%p fast match rec=%p",
+         this, match));
+    return PrefetchMatchPromise::CreateAndResolve(RefPtr{match}, __func__);
+  }
+
+  // Steps 5.1.3-5.1.5: build potentialRecords (ongoing records that could
+  // still satisfy aURI) and, "if potentialRecords is empty, return null"
+  // without ever registering a waiter.
+  if (!HasPotentialPrefetchMatch(aURI)) {
+    LOG_SPECRULES(
+        ("WindowGlobalParent::WaitForMatchingPrefetchRecord: "
+         "this=%p no potential records, resolving nullptr",
+         this));
+    return PrefetchMatchPromise::CreateAndResolve(nullptr, __func__);
+  }
+
+  // Otherwise "wait until the state of any element of ... prefetch records
+  // changes" and re-run the loop: PrefetchMatchWaiter re-checks for a match
+  // (or gives up) each time NotifyPrefetchStateChanged fires, until aTimeout.
+  RefPtr<PrefetchMatchWaiter> waiter =
+      PrefetchMatchWaiter::Create(this, aURI, aTimeout);
+  mPrefetchWaiters.AppendElement(waiter);
+  LOG_SPECRULES(
+      ("WindowGlobalParent::WaitForMatchingPrefetchRecord: "
+       "this=%p registered waiter=%p",
+       this, waiter.get()));
+  return waiter->Promise();
+}
+
+bool WindowGlobalParent::HasPotentialPrefetchMatch(nsIURI* aURI) {
+  // Implements step 5.1.4 of "wait for a matching prefetch record": true if
+  // some ongoing record could still, once it completes, be a matching
+  // prefetch record for aURI.
+  // Spec:
+  // https://wicg.github.io/nav-speculation/prefetch.html#wait-for-a-matching-prefetch-record
+  nsTArray<PPrefetchRecordParent*> managed;
+  ManagedPPrefetchRecordParent(managed);
+  for (auto* p : managed) {
+    auto* rec = static_cast<PrefetchRecordParent*>(p);
+    if (rec->State() == PrefetchState::Ongoing &&
+        rec->IsExpectedToMatch(aURI)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void WindowGlobalParent::RemoveWaiter(PrefetchMatchWaiter* aWaiter) {
+  mPrefetchWaiters.RemoveElement(aWaiter);
+  LOG_SPECRULES(
+      ("WindowGlobalParent::RemoveWaiter: this=%p waiter=%p "
+       "remaining=%zu",
+       this, aWaiter, mPrefetchWaiters.Length()));
+}
+
+void WindowGlobalParent::NotifyPrefetchStateChanged(
+    PrefetchRecordParent* aRec) {
+  // Drives "wait for a matching prefetch record" waiters when a record's state
+  // changes.
+  // Spec:
+  // https://wicg.github.io/nav-speculation/prefetch.html#wait-for-a-matching-prefetch-record
+  for (RefPtr<PrefetchMatchWaiter>& waiter : mPrefetchWaiters.Clone()) {
+    waiter->OnRecordStateChanged(aRec);
+  }
+}
+
+// Cross-site privacy gate: whether conflicting credentials exist for an
+// exchange.
+// Spec:
+// https://wicg.github.io/nav-speculation/prefetch.html#conflicting-credentials-exist
+static bool ConflictingCredentialsExist(const ExchangeRecord& aExchange,
+                                        const nsString& aSourcePartitionKey) {
+  OriginAttributes attrs;
+  if (aExchange.mRequestURI) {
+    attrs.SetPartitionKey(aExchange.mRequestURI, false);
+  }
+  // Same-site: no conflict possible.
+  if (attrs.mPartitionKey == aSourcePartitionKey) {
+    return false;
+  }
+  // M1: same_origin_only gate prevents cross-site hops (see the cross-site
+  // redirect check in PrefetchRecordParent::AsyncOnChannelRedirect).
+  // M2: implement cookie presence check via nsICookieManager.
+  return false;
+}
+
+PrefetchRecordParent* WindowGlobalParent::FindMatchingPrefetchRecord(
+    nsIURI* aURI) {
+  // Implements "find a matching complete prefetch record".
+  // Spec:
+  // https://wicg.github.io/nav-speculation/prefetch.html#find-a-matching-complete-prefetch-record
+  // Steps 1-2: "Let exactRecord be null. Let inexactRecord be null."
+  nsTArray<PPrefetchRecordParent*> managed;
+  ManagedPPrefetchRecordParent(managed);
+
+  PrefetchRecordParent* exact = nullptr;
+  PrefetchRecordParent* inexact = nullptr;
+
+  // Step 3: "For each record of sourceSnapshotParams's prefetch records:"
+  for (auto* p : managed) {
+    auto* rec = static_cast<PrefetchRecordParent*>(p);
+    // Step 3a: "If record's state is not "completed", then continue."
+    if (rec->State() != PrefetchState::Completed) {
+      continue;
+    }
+
+    bool urlEquals = false;
+    if (rec->URL()) {
+      rec->URL()->Equals(aURI, &urlEquals);
+    }
+    // Step 3b: "If record's URL is equal to url: Set exactRecord to record.
+    // Break."
+    if (urlEquals) {
+      exact = rec;
+      break;
+    }
+
+    // Step 3c: "If inexactRecord is null and record matches a URL given url:
+    // Set inexactRecord to record."
+    if (!inexact && rec->MatchesURL(aURI)) {
+      inexact = rec;
+    }
+  }
+
+  // Step 4: "Let recordToUse be exactRecord if exactRecord is not null,
+  // otherwise inexactRecord."
+  PrefetchRecordParent* toUse = exact ? exact : inexact;
+  // Step 6: "Return null." (reached when recordToUse is null, so step 5's
+  // "If recordToUse is not null" guard doesn't apply.)
+  if (!toUse) {
+    return nullptr;  // Step 6: no match
+  }
+
+  // Step 5b: "If recordToUse's expiry time is less than currentTime: Trigger
+  // a prefetch status updated event ... "failure" status. Return null."
+  if (toUse->ExpiryTime() < TimeStamp::Now()) {
+    LOG_SPECRULES(
+        ("WindowGlobalParent::FindMatchingPrefetchRecord: "
+         "this=%p rec=%p expired",
+         this, toUse));
+    toUse->FirePrefetchStatusUpdated(false);
+    return nullptr;
+  }
+
+  // Step 5c: "For each exchangeRecord of recordToUse's redirect chain: If
+  // conflicting credentials exist ...: Trigger a prefetch status updated
+  // event ... "failure" status. Return null."
+  for (const auto& xr : toUse->RedirectChain()) {
+    if (ConflictingCredentialsExist(xr, toUse->SourcePartitionKey())) {
+      LOG_SPECRULES(
+          ("WindowGlobalParent::FindMatchingPrefetchRecord: "
+           "this=%p rec=%p credential conflict",
+           this, toUse));
+      toUse->FirePrefetchStatusUpdated(false);
+      return nullptr;
+    }
+  }
+
+  // Step 5d: "Return recordToUse."
+  LOG_SPECRULES(
+      ("WindowGlobalParent::FindMatchingPrefetchRecord: this=%p found rec=%p",
+       this, toUse));
+  return toUse;
+}
+
+void WindowGlobalParent::DedupePrefetchRecords(
+    PrefetchRecordParent* aJustCompleted) {
+  // Implements "complete a prefetch record" step 4: remove all other completed
+  // records with the same URL.
+  // Spec:
+  // https://wicg.github.io/nav-speculation/prefetch.html#prefetch-record-complete
+  // Note: parent cannot send __delete__ (parent: async __delete__() is
+  // child-initiated). Old records are marked Canceled so navigation matching
+  // skips them; DOM GC handles actor cleanup.
+  nsTArray<PPrefetchRecordParent*> managed;
+  ManagedPPrefetchRecordParent(managed);
+  for (auto* p : managed) {
+    auto* rec = static_cast<PrefetchRecordParent*>(p);
+    if (rec == aJustCompleted) {
+      continue;
+    }
+    if (rec->State() != PrefetchState::Completed) {
+      continue;
+    }
+    bool urlEquals = false;
+    if (rec->URL() && aJustCompleted->URL()) {
+      rec->URL()->Equals(aJustCompleted->URL(), &urlEquals);
+    }
+    if (urlEquals) {
+      LOG_SPECRULES(
+          ("WindowGlobalParent::DedupePrefetchRecords: this=%p evicting "
+           "older rec=%p",
+           this, rec));
+      rec->MarkCanceled();
+    }
+  }
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(WindowGlobalParent)

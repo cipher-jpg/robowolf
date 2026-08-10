@@ -582,6 +582,24 @@ class Raptor(
                 },
             ],
             [
+                ["--samply-profile"],
+                {
+                    "action": "store_true",
+                    "dest": "samply_profile",
+                    "default": False,
+                    "help": ("Enable Samply profiling (macOS only)."),
+                },
+            ],
+            [
+                ["--perf-profile"],
+                {
+                    "action": "store_true",
+                    "dest": "perf_profile",
+                    "default": False,
+                    "help": ("Enable perf profiling (Linux only)."),
+                },
+            ],
+            [
                 ["--extra-summary-methods"],
                 {
                     "action": "append",
@@ -674,6 +692,8 @@ class Raptor(
                 "download-and-extract",
                 "populate-webroot",
                 "create-virtualenv",
+                "start-emulator",
+                "verify-device",
                 "install-chrome-android",
                 "install-chromium-android",
                 "install-chromium-distribution",
@@ -696,6 +716,9 @@ class Raptor(
         )
         kwargs.setdefault("config", {})
         super().__init__(**kwargs)
+
+        if not self.device_serial and self.config.get("device_serial"):
+            self.device_serial = self.config["device_serial"]
 
         # Convenience
         self.workdir = self.query_abs_dirs()["abs_work_dir"]
@@ -835,6 +858,18 @@ class Raptor(
         abs_dirs["abs_test_install_dir"] = os.path.join(
             abs_dirs["abs_work_dir"], "tests"
         )
+
+        # When running on an emulator, AndroidMixin.start_emulator / adb_path
+        # expect the SDK and AVD directories in abs_dirs; these are not part of
+        # the default raptor (hardware) layout, so derive them from the fetches.
+        if self.is_emulator:
+            work_dir = os.environ.get("MOZ_FETCHES_DIR") or abs_dirs["abs_work_dir"]
+            abs_dirs["abs_sdk_dir"] = os.path.join(
+                work_dir, self.config.get("sdk_dir_name", "android-sdk-linux")
+            )
+            abs_dirs["abs_avds_dir"] = os.path.join(
+                work_dir, self.config.get("avds_dir_name", "android-device")
+            )
 
         self.abs_dirs = abs_dirs
         return self.abs_dirs
@@ -1121,12 +1156,20 @@ class Raptor(
             options.extend([f"--browser-cycles={self.config.get('browser_cycles')}"])
         if self.config.get("test_bytecode_cache", False):
             options.extend(["--test-bytecode-cache"])
-        if self.config.get("collect_perfstats", False):
+        # Also opt in on try via `mach try --env MOZ_RAPTOR_COLLECT_PERFSTATS=1`.
+        if (
+            self.config.get("collect_perfstats", False)
+            or os.environ.get("MOZ_RAPTOR_COLLECT_PERFSTATS") == "1"
+        ):
             options.extend(["--collect-perfstats"])
         if self.config.get("simpleperf", False):
             options.extend(["--simpleperf"])
         if self.config.get("etw_profile", False):
             options.extend(["--etw-profile"])
+        if self.config.get("samply_profile", False):
+            options.extend(["--samply-profile"])
+        if self.config.get("perf_profile", False):
+            options.extend(["--perf-profile"])
         if self.config.get("extra_summary_methods"):
             options.extend([
                 f"--extra-summary-methods={method}"
@@ -1338,6 +1381,21 @@ class Raptor(
             )
 
     def install(self):
+        if self.app in self.android_browsers:
+            # Clear app data/cache so leftover state (e.g. a profile written
+            # under the wrong storage path on a previous iteration) doesn't
+            # carry over into the next run. Done even when --no-install is
+            # set since stale data is what we're trying to flush.
+            if not self.device.confirm_clear_app_data(self.binary_path):
+                raise Exception("Abort: Declined to clear app data, can't run tests.")
+            try:
+                self.device.shell_output(f"pm clear {self.binary_path}")
+            except Exception as e:
+                self.info(
+                    f"pm clear {self.binary_path} failed "
+                    f"(app may not be installed yet): {e}"
+                )
+
         if not self.config.get("no_install", False):
             if self.app in self.firefox_android_browsers:
                 self.device.uninstall_app(self.binary_path)

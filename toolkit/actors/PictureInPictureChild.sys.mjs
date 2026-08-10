@@ -7,12 +7,14 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ContentDOMReference: "resource://gre/modules/ContentDOMReference.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
-  KEYBOARD_CONTROLS: "resource://gre/modules/PictureInPictureControls.sys.mjs",
+  KEYBOARD_CONTROLS:
+    "moz-src:///toolkit/components/pictureinpicture/PictureInPictureControls.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   Rect: "resource://gre/modules/Geometry.sys.mjs",
-  TOGGLE_POLICIES: "resource://gre/modules/PictureInPictureControls.sys.mjs",
+  TOGGLE_POLICIES:
+    "moz-src:///toolkit/components/pictureinpicture/PictureInPictureControls.sys.mjs",
   TOGGLE_POLICY_STRINGS:
-    "resource://gre/modules/PictureInPictureControls.sys.mjs",
+    "moz-src:///toolkit/components/pictureinpicture/PictureInPictureControls.sys.mjs",
 });
 
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
@@ -281,6 +283,7 @@ export class PictureInPictureLauncherChild extends JSWindowActorChild {
       scrubberPosition,
       timestamp,
       volume: PictureInPictureChild.videoWrapper.getVolume(video),
+      playbackRate: PictureInPictureChild.videoWrapper.getPlaybackRate(video),
       autoFocus,
     });
 
@@ -2081,6 +2084,15 @@ export class PictureInPictureChild extends JSWindowActorChild {
         });
         break;
       }
+      case "ratechange": {
+        let video = this.getWeakVideo();
+        if (video === event.target) {
+          this.sendAsyncMessage("PictureInPicture:PlaybackRateChange", {
+            playbackRate: this.videoWrapper.getPlaybackRate(video),
+          });
+        }
+        break;
+      }
       case "resize": {
         let video = event.target;
         if (this.inPictureInPicture(video)) {
@@ -2319,6 +2331,12 @@ export class PictureInPictureChild extends JSWindowActorChild {
         this.videoWrapper.setVolume(video, volume);
         break;
       }
+      case "PictureInPicture:SetPlaybackRate": {
+        const { playbackRate } = message.data;
+        let video = this.getWeakVideo();
+        this.videoWrapper.setPlaybackRate(video, playbackRate);
+        break;
+      }
     }
     return undefined;
   }
@@ -2417,6 +2435,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
       originatingVideo.addEventListener("playing", this);
       originatingVideo.addEventListener("pause", this);
       originatingVideo.addEventListener("volumechange", this);
+      originatingVideo.addEventListener("ratechange", this);
       originatingVideo.addEventListener("resize", this);
       originatingVideo.addEventListener("emptied", this);
       originatingVideo.addEventListener("timeupdate", this);
@@ -2470,6 +2489,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
       originatingVideo.removeEventListener("playing", this);
       originatingVideo.removeEventListener("pause", this);
       originatingVideo.removeEventListener("volumechange", this);
+      originatingVideo.removeEventListener("ratechange", this);
       originatingVideo.removeEventListener("resize", this);
       originatingVideo.removeEventListener("emptied", this);
       originatingVideo.removeEventListener("timeupdate", this);
@@ -3049,7 +3069,10 @@ class PictureInPictureChildVideoWrapper {
     });
 
     try {
-      Services.scriptloader.loadSubScript(wrapperScriptUrl, sandbox);
+      Services.scriptloader.loadSubScriptWithOptions(wrapperScriptUrl, {
+        target: sandbox,
+        allowUnsafeURL: true,
+      });
     } catch (e) {
       Cu.nukeSandbox(sandbox);
       lazy.logConsole.error(
@@ -3331,6 +3354,45 @@ class PictureInPictureChildVideoWrapper {
       args: [video, volume],
       fallback: () => {
         video.volume = volume;
+      },
+      validateRetVal: retVal => retVal == null,
+    });
+  }
+
+  /**
+   * OVERRIDABLE - calls the getPlaybackRate() method defined in the site wrapper script. Runs a fallback
+   * implementation if the method does not exist or if an error is thrown while calling it. This method is
+   * meant to get the playback rate of a video.
+   *
+   * @param {HTMLVideoElement} video
+   *  The originating video source element
+   * @returns {number} Playback rate of the video, where 1 is normal speed
+   */
+  getPlaybackRate(video) {
+    return this.#callWrapperMethod({
+      name: "getPlaybackRate",
+      args: [video],
+      fallback: () => video.playbackRate,
+      validateRetVal: retVal => this.#isNumber(retVal),
+    });
+  }
+
+  /**
+   * OVERRIDABLE - calls the setPlaybackRate() method defined in the site wrapper script. Runs a fallback
+   * implementation if the method does not exist or if an error is thrown while calling it. This method is
+   * meant to set the playback rate of a video.
+   *
+   * @param {HTMLVideoElement} video
+   *  The originating video source element
+   * @param {number} playbackRate
+   *  Playback rate of the video, where 1 is normal speed
+   */
+  setPlaybackRate(video, playbackRate) {
+    return this.#callWrapperMethod({
+      name: "setPlaybackRate",
+      args: [video, playbackRate],
+      fallback: () => {
+        video.playbackRate = playbackRate;
       },
       validateRetVal: retVal => retVal == null,
     });

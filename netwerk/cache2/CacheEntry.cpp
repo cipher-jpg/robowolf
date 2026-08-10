@@ -2,19 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <algorithm>
+#include "CacheEntry.h"
+
 #include <math.h>
 
-#include "CacheEntry.h"
+#include <algorithm>
+#include <numbers>
 
 #include "CacheFileUtils.h"
 #include "CacheIndex.h"
 #include "CacheLog.h"
 #include "CacheObserver.h"
 #include "CacheStorageService.h"
-#include "mozilla/net/NoVarySearchUtils.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/net/NoVarySearchUtils.h"
 #include "mozilla/psm/TransportSecurityInfo.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIAsyncOutputStream.h"
@@ -27,8 +30,6 @@
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsProxyRelease.h"
-#include "mozilla/net/NoVarySearchUtils.h"
-#include "mozilla/StaticPrefs_network.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
@@ -887,13 +888,25 @@ bool CacheEntry::InvokeCallback(Callback& aCallback) MOZ_REQUIRES(mLock) {
       }
 
       if (bypass) {
-        LOG(("  bypassing, entry data still being written"));
-        return false;
+        if (!mBypassWriterLock) {
+          LOG(("  bypassing, entry data still being written"));
+          return false;
+        }
+        // The writer lock is being bypassed because the writer has been
+        // suspended or stalled for too long (see SetBypassWriterLock, armed by
+        // nsHttpChannel's suspend timer).  The entry's data may never be
+        // finished, so instead of parking this consumer forever waiting for a
+        // write that will not complete, hand it the entry as "not wanted" so it
+        // falls back to the network rather than deadlocking.
+        LOG(
+            ("  writer lock bypassed while data still in progress; delivering "
+             "as not-wanted so the consumer goes to the network"));
+        aCallback.mNotWanted = true;
+      } else {
+        // Entry is complete now, do the check+avail call again
+        aCallback.mRecheckAfterWrite = false;
+        return InvokeCallback(aCallback);
       }
-
-      // Entry is complete now, do the check+avail call again
-      aCallback.mRecheckAfterWrite = false;
-      return InvokeCallback(aCallback);
     }
 
     mozilla::MutexAutoUnlock unlock(mLock);
@@ -1958,8 +1971,8 @@ void CacheEntry::BackgroundOp(uint32_t aOperations, bool aForceAsync)
       // Half-life is dynamic, in seconds.
       static double half_life = CacheObserver::HalfLifeSeconds();
       // Must convert from seconds to milliseconds since PR_Now() gives usecs.
-      static double const decay =
-          (M_LN2 / half_life) / static_cast<double>(PR_USEC_PER_SEC);
+      static double const decay = (std::numbers::ln2 / half_life) /
+                                  static_cast<double>(PR_USEC_PER_SEC);
 
       double now_decay = static_cast<double>(PR_Now()) * decay;
 

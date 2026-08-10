@@ -8,11 +8,15 @@ document.addEventListener(
     const lazy = {};
     ChromeUtils.defineESModuleGetters(lazy, {
       ContentSharingUtils:
-        "resource:///modules/contentsharing/ContentSharingUtils.sys.mjs",
+        "moz-src:///browser/components/sharing/ContentSharingUtils.sys.mjs",
       TabMetrics: "moz-src:///browser/components/tabbrowser/TabMetrics.sys.mjs",
       TabNotes: "moz-src:///browser/components/tabnotes/TabNotes.sys.mjs",
     });
     let mainPopupSet = document.getElementById("mainPopupSet");
+    // The trigger node may be a descendant of the tab group row carrying
+    // `data-tab-group-id`, e.g. its label or icon.
+    let getContextTabGroupId = popup =>
+      popup.triggerNode?.closest("[data-tab-group-id]")?.dataset.tabGroupId;
     // eslint-disable-next-line complexity
     mainPopupSet.addEventListener("command", event => {
       switch (event.target.id) {
@@ -83,18 +87,18 @@ document.addEventListener(
           });
           break;
         case "context_pinSelectedTabs":
-          gBrowser.pinMultiSelectedTabs(
-            lazy.TabMetrics.userTriggeredContext(
+          gBrowser.pinMultiSelectedTabs({
+            metricsContext: lazy.TabMetrics.userTriggeredContext(
               lazy.TabMetrics.METRIC_SOURCE.TAB_MENU
-            )
-          );
+            ),
+          });
           break;
         case "context_unpinSelectedTabs":
-          gBrowser.unpinMultiSelectedTabs(
-            lazy.TabMetrics.userTriggeredContext(
+          gBrowser.unpinMultiSelectedTabs({
+            metricsContext: lazy.TabMetrics.userTriggeredContext(
               lazy.TabMetrics.METRIC_SOURCE.TAB_MENU
-            )
-          );
+            ),
+          });
           break;
         case "context_duplicateTab":
           duplicateTabIn(TabContextMenu.contextTab, "tab");
@@ -122,13 +126,25 @@ document.addEventListener(
           );
           break;
         case "context_moveToStart":
-          gBrowser.moveTabsToStart(TabContextMenu.contextTab);
+          gBrowser.moveTabsToStart(TabContextMenu.contextTab, {
+            metricsContext: lazy.TabMetrics.userTriggeredContext(
+              lazy.TabMetrics.METRIC_SOURCE.TAB_MENU
+            ),
+          });
           break;
         case "context_moveToEnd":
-          gBrowser.moveTabsToEnd(TabContextMenu.contextTab);
+          gBrowser.moveTabsToEnd(TabContextMenu.contextTab, {
+            metricsContext: lazy.TabMetrics.userTriggeredContext(
+              lazy.TabMetrics.METRIC_SOURCE.TAB_MENU
+            ),
+          });
           break;
         case "context_openTabInWindow":
-          gBrowser.replaceTabsWithWindow(TabContextMenu.contextTab);
+          gBrowser.replaceTabsWithWindow(TabContextMenu.contextTab, {
+            metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+              gBrowser.TabMetrics.METRIC_SOURCE.TAB_MENU
+            ),
+          });
           break;
         case "context_selectAllTabs":
           gBrowser.selectAllTabs();
@@ -177,14 +193,19 @@ document.addEventListener(
         // == open-tab-group-context-menu ==
         case "open-tab-group-context-menu_moveToNewWindow":
           {
-            let { tabGroupId } = event.target.parentElement.triggerNode.dataset;
+            let tabGroupId = getContextTabGroupId(event.target.parentElement);
             let tabGroup = gBrowser.getTabGroupById(tabGroupId);
-            tabGroup.documentGlobal.gBrowser.replaceGroupWithWindow(tabGroup);
+            tabGroup.documentGlobal.gBrowser.replaceGroupWithWindow(
+              tabGroup,
+              lazy.TabMetrics.userTriggeredContext(
+                lazy.TabMetrics.METRIC_SOURCE.TAB_GROUP_MENU
+              )
+            );
           }
           break;
         case "open-tab-group-context-menu_moveToThisWindow":
           {
-            let { tabGroupId } = event.target.parentElement.triggerNode.dataset;
+            let tabGroupId = getContextTabGroupId(event.target.parentElement);
             let otherTabGroup = gBrowser.getTabGroupById(tabGroupId);
             let adoptedTabGroup = gBrowser.adoptTabGroup(otherTabGroup, {
               tabIndex: gBrowser.tabs.length,
@@ -192,10 +213,25 @@ document.addEventListener(
             adoptedTabGroup.select();
           }
           break;
+        case "open-tab-group-context-menu_share":
+          {
+            let popup = event.target.parentElement;
+            let tabGroupId = getContextTabGroupId(popup);
+            let tabGroup = gBrowser.getTabGroupById(tabGroupId);
+            // Close the panel this context menu was opened from (e.g. the
+            // "List all tabs" panel) so it doesn't overlap the share dialog.
+            popup.triggerNode?.closest("panel")?.hidePopup();
+            lazy.ContentSharingUtils.handleShareTabGroup(tabGroup);
+          }
+          break;
         case "open-tab-group-context-menu_delete":
           {
-            let { tabGroupId } = event.target.parentElement.triggerNode.dataset;
+            let popup = event.target.parentElement;
+            let tabGroupId = getContextTabGroupId(popup);
             let tabGroup = gBrowser.getTabGroupById(tabGroupId);
+            // Unlike the other actions in this menu, deleting the group
+            // doesn't dismiss the containing panel on its own.
+            popup.triggerNode?.closest("panel")?.hidePopup();
             // Tabs need to be removed by their owning `Tabbrowser` or else
             // there are errors.
             tabGroup.documentGlobal.gBrowser.removeTabGroup(tabGroup, {
@@ -209,7 +245,7 @@ document.addEventListener(
         // == saved-tab-group-context-menu ==
         case "saved-tab-group-context-menu_openInThisWindow":
           {
-            let { tabGroupId } = event.target.parentElement.triggerNode.dataset;
+            let tabGroupId = getContextTabGroupId(event.target.parentElement);
             SessionStore.openSavedTabGroup(tabGroupId, window, {
               source: lazy.TabMetrics.METRIC_SOURCE.TAB_OVERFLOW_MENU,
             });
@@ -218,16 +254,23 @@ document.addEventListener(
         case "saved-tab-group-context-menu_openInNewWindow":
           {
             // TODO Bug 1940112: "Open Group in New Window" should directly restore saved tab groups into a new window
-            let { tabGroupId } = event.target.parentElement.triggerNode.dataset;
+            let tabGroupId = getContextTabGroupId(event.target.parentElement);
             let tabGroup = SessionStore.openSavedTabGroup(tabGroupId, window, {
               source: lazy.TabMetrics.METRIC_SOURCE.TAB_OVERFLOW_MENU,
             });
-            gBrowser.replaceGroupWithWindow(tabGroup);
+            gBrowser.replaceGroupWithWindow(
+              tabGroup,
+              lazy.TabMetrics.userTriggeredContext(
+                lazy.TabMetrics.METRIC_SOURCE.TAB_OVERFLOW_MENU
+              )
+            );
           }
           break;
         case "saved-tab-group-context-menu_delete":
           {
-            let { tabGroupId } = event.target.parentElement.triggerNode.dataset;
+            let popup = event.target.parentElement;
+            let tabGroupId = getContextTabGroupId(popup);
+            popup.triggerNode?.closest("panel")?.hidePopup();
             SessionStore.forgetSavedTabGroup(tabGroupId);
           }
           break;
@@ -504,15 +547,22 @@ document.addEventListener(
         TabContextMenu.reopenInContainer(event);
       });
 
-    document
-      .getElementById("context_moveTabToGroupPopupMenu")
-      .addEventListener("command", event => {
+    // when pref browser.tabs.contextmenu.altstructure.enabled is enabled, the
+    // move tab to new group menu item is a child of the #context_moveTabOptions menu
+    for (let menu of [
+      document.getElementById("context_moveTabToGroupPopupMenu"),
+      document.getElementById("context_moveTabOptions"),
+    ]) {
+      menu.addEventListener("command", event => {
         if (event.target.id == "context_moveTabToGroupNewGroup") {
           TabContextMenu.moveTabsToNewGroup();
           return;
         }
 
         const tabGroupId = event.target.getAttribute("tab-group-id");
+        if (!tabGroupId) {
+          return;
+        }
         const group = gBrowser.getTabGroupById(tabGroupId);
         if (group) {
           TabContextMenu.moveTabsToGroup(group);
@@ -522,6 +572,7 @@ document.addEventListener(
           TabContextMenu.addTabsToSavedGroup(tabGroupId);
         }
       });
+    }
 
     document
       .getElementById("backForwardMenu")
@@ -626,7 +677,7 @@ document.addEventListener(
         if (event.target.id == "open-tab-group-context-menu") {
           // Disable "Move Group to This Window" menu option for tab groups
           // that are open in the current window.
-          let { tabGroupId } = event.target.triggerNode.dataset;
+          let tabGroupId = getContextTabGroupId(event.target);
           let tabGroup = gBrowser.getTabGroupById(tabGroupId);
           let tabGroupIsInThisWindow = tabGroup.ownerDocument == document;
           event.target.querySelector(
@@ -641,6 +692,11 @@ document.addEventListener(
           event.target.querySelector(
             "#open-tab-group-context-menu_moveToNewWindow"
           ).disabled = groupAloneInWindow;
+
+          // Only show "Share Group" when content sharing is enabled.
+          event.target.querySelector(
+            "#open-tab-group-context-menu_share"
+          ).hidden = !lazy.ContentSharingUtils.isEnabled;
         }
       });
 

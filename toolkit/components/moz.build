@@ -28,7 +28,6 @@ DIRS += [
     "certviewer",
     "cleardata",
     "clearsitedata",
-    "cookiebanners",
     "commandlines",
     "content-classifier",
     "content-classifier/content_classifier_engine",
@@ -49,6 +48,7 @@ DIRS += [
     "find",
     "forgetaboutsite",
     "gecko-trace",
+    "geolocation",
     "glean",
     "httpsonlyerror",
     "jsoncpp",
@@ -79,6 +79,7 @@ DIRS += [
     "search",
     "sessionstore",
     "shell",
+    "sitecategories",
     "startup",
     "statusfilter",
     "telemetry",
@@ -110,6 +111,12 @@ if CONFIG["MOZ_BUILD_APP"] != "mobile/android":
         "uniffi-bindgen-gecko-js/components",
     ]
 
+    # `output_category="uniffi-target"` dependencies for `mach uniffi generate`.
+    DIRS += [
+        "uniffi-bindgen-gecko-js",
+        "uniffi-bindgen-gecko-js/test-fixtures",
+    ]
+
 if CONFIG["BUILD_CTYPES"]:
     DIRS += ["ctypes"]
 
@@ -118,7 +125,7 @@ DIRS += ["autocomplete", "printingui", "satchel", "captivedetect"]
 if CONFIG["OS_TARGET"] != "Android":
     DIRS += ["terminator"]
 
-if CONFIG["MOZ_UPDATE_AGENT"]:
+if CONFIG["MOZ_BACKGROUNDTASKS"] and CONFIG["OS_TARGET"] in ("WINNT", "Darwin"):
     DIRS += ["taskscheduler"]
 
 DIRS += ["build"]

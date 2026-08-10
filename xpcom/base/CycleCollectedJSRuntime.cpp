@@ -57,15 +57,15 @@
 #include <utility>
 
 #include "js/Debug.h"
-#include "js/RealmOptions.h"
-#include "js/friend/CycleCollector.h"
-#include "js/friend/DumpFunctions.h"  // js::DumpHeap
 #include "js/GCAPI.h"
 #include "js/HeapAPI.h"
 #include "js/Object.h"  // JS::GetClass, JS::GetCompartment, JS::GetPrivate
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
-#include "js/Warnings.h"            // JS::SetWarningReporter
+#include "js/RealmOptions.h"
 #include "js/SliceBudget.h"
+#include "js/Warnings.h"  // JS::SetWarningReporter
+#include "js/friend/CycleCollector.h"
+#include "js/friend/DumpFunctions.h"  // js::DumpHeap
 #include "jsfriendapi.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/CycleCollectedJSContext.h"
@@ -76,7 +76,6 @@
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_javascript.h"
-#include "mozilla/glean/XpcomMetrics.h"
 #include "mozilla/UseCounter.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/DOMJSClass.h"
@@ -85,6 +84,7 @@
 #include "mozilla/dom/PromiseBinding.h"
 #include "mozilla/dom/PromiseDebugging.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/glean/XpcomMetrics.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollectionParticipant.h"
@@ -495,8 +495,6 @@ static void MozCrashWarningReporter(JSContext*, JSErrorReport*) {
   MOZ_CRASH("Why is someone touching JSAPI without an AutoJSAPI?");
 }
 
-JSHolderMap::Entry::Entry() : Entry(nullptr, nullptr, nullptr) {}
-
 JSHolderMap::Entry::Entry(void* aHolder, nsScriptObjectTracer* aTracer,
                           JS::Zone* aZone)
     : mHolder(aHolder),
@@ -560,8 +558,6 @@ void JSHolderMap::Iter::UpdateForRemovals() {
   mIter.Settle();
   Settle();
 }
-
-JSHolderMap::JSHolderMap() : mJSHolderMap(256) {}
 
 bool JSHolderMap::RemoveEntry(EntryVector& aJSHolders, Entry* aEntry) {
   MOZ_ASSERT(aEntry);
@@ -1860,12 +1856,21 @@ void CycleCollectedJSRuntime::DeferredFinalize(
     void* aThing) {
   // Tell the analysis that the function pointers will not GC.
   JS::AutoSuppressGCAnalysis suppress;
+
+  if (aFunc == mLastDeferredFinalizeFunction) {
+    // aAppendFunc returns aData unchanged when it is non-null.
+    aAppendFunc(mLastDeferredFinalizeData, aThing);
+    return;
+  }
+
   mDeferredFinalizerTable.WithEntryHandle(aFunc, [&](auto&& entry) {
     if (entry) {
       aAppendFunc(entry.Data(), aThing);
+      mLastDeferredFinalizeData = entry.Data();
     } else {
-      entry.Insert(aAppendFunc(nullptr, aThing));
+      mLastDeferredFinalizeData = entry.Insert(aAppendFunc(nullptr, aThing));
     }
+    mLastDeferredFinalizeFunction = aFunc;
   });
 }
 
@@ -2022,6 +2027,10 @@ void CycleCollectedJSRuntime::FinalizeDeferredThings(
 
   mFinalizeRunnable =
       new IncrementalFinalizeRunnable(this, mDeferredFinalizerTable);
+
+  // The runnable took every entry, so the memoized one is stale.
+  mLastDeferredFinalizeFunction = nullptr;
+  mLastDeferredFinalizeData = nullptr;
 
   // Everything should be gone now.
   MOZ_ASSERT(mDeferredFinalizerTable.Count() == 0);

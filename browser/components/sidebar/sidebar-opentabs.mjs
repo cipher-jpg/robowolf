@@ -4,11 +4,17 @@
 
 const lazy = {};
 
-import { html, when } from "chrome://global/content/vendor/lit.all.mjs";
+import {
+  classMap,
+  html,
+  when,
+} from "chrome://global/content/vendor/lit.all.mjs";
+import { searchTabList } from "chrome://browser/content/firefoxview/search-helpers.mjs";
 
 import { SidebarPage } from "./sidebar-page.mjs";
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   NonPrivateTabs: "resource:///modules/OpenTabs.sys.mjs",
   OpenTabsController: "resource:///modules/OpenTabsController.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
@@ -22,6 +28,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
 export class SidebarOpenTabs extends SidebarPage {
   static properties = {
     windows: { type: Array },
+    searchQuery: { type: String },
+    sortOption: { type: String },
+  };
+
+  static queries = {
+    searchTextbox: "moz-input-search",
+    menuButton: ".menu-button",
   };
 
   initialWindowsReady = false;
@@ -29,6 +42,12 @@ export class SidebarOpenTabs extends SidebarPage {
   constructor() {
     super();
     this.windows = [];
+    this.searchQuery = "";
+    this.sortOption = Services.prefs.getStringPref(
+      "sidebar.openTabsPanel.sortOption",
+      "tabStripOrder"
+    );
+    this.handlePopupEvent = this.handlePopupEvent.bind(this);
     this.controller = new lazy.OpenTabsController();
     this.treeView = new lazy.SidebarTreeView(this, { multiSelect: false });
   }
@@ -42,10 +61,23 @@ export class SidebarOpenTabs extends SidebarPage {
       this.openTabsTarget = lazy.NonPrivateTabs;
     }
     this.openTabsTarget.addEventListener("TabChange", this);
+    this.openTabsTarget.addEventListener("TabRecencyChange", this);
     lazy.SidebarCollapsedWindows.addEventListener(
       "CollapsedWindowsChanged",
       this
     );
+    this.addSidebarFocusedListeners();
+    this.addContextMenuListeners();
+    const { document: doc } = this.topWindow;
+    this._menu = doc.getElementById("sidebar-opentabs-menu");
+    this._menuSortByOrder = doc.getElementById(
+      "sidebar-opentabs-sort-by-order"
+    );
+    this._menuSortByRecency = doc.getElementById(
+      "sidebar-opentabs-sort-by-recency"
+    );
+    this._menu.addEventListener("command", this);
+    this._menu.addEventListener("popuphidden", this.handlePopupEvent);
     this.openTabsTarget.readyWindowsPromise.finally(() => {
       this.initialWindowsReady = true;
       this.#updateWindowList();
@@ -55,10 +87,15 @@ export class SidebarOpenTabs extends SidebarPage {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.openTabsTarget.removeEventListener("TabChange", this);
+    this.openTabsTarget.removeEventListener("TabRecencyChange", this);
     lazy.SidebarCollapsedWindows.removeEventListener(
       "CollapsedWindowsChanged",
       this
     );
+    this.removeSidebarFocusedListeners();
+    this.removeContextMenuListeners();
+    this._menu.removeEventListener("command", this);
+    this._menu.removeEventListener("popuphidden", this.handlePopupEvent);
   }
 
   shouldUpdate(changedProperties) {
@@ -73,6 +110,7 @@ export class SidebarOpenTabs extends SidebarPage {
       case "TabChange":
         this.#updateWindowList();
         break;
+      case "TabRecencyChange":
       case "CollapsedWindowsChanged":
         this.requestUpdate();
         break;
@@ -82,12 +120,87 @@ export class SidebarOpenTabs extends SidebarPage {
     }
   }
 
+  handleContextMenuEvent(e) {
+    this.triggerNode = this.findTriggerNode(e, "sidebar-tab-row");
+    if (!this.triggerNode) {
+      e.preventDefault();
+      return;
+    }
+    const privateWindowItem = this._contextMenu.querySelector(
+      "#sidebar-opentabs-context-open-in-private-window"
+    );
+    privateWindowItem.hidden = !lazy.PrivateBrowsingUtils.enabled;
+  }
+
+  async handleCommandEvent(e) {
+    switch (e.target.id) {
+      case "sidebar-opentabs-context-close-tab": {
+        const { tabElement } = this.triggerNode;
+        tabElement?.documentGlobal.gBrowser.removeTabs([tabElement]);
+        break;
+      }
+      case "sidebar-opentabs-sort-by-order":
+        this.#changeSortOption("tabStripOrder");
+        break;
+      case "sidebar-opentabs-sort-by-recency":
+        this.#changeSortOption("recency");
+        break;
+      case "sidebar-opentabs-connect-another-device": {
+        const url = await lazy.FxAccounts.config.promisePairingURI({
+          entrypoint: "sidebar",
+        });
+        this.topWindow.openTrustedLinkIn(url, "tab");
+        break;
+      }
+      default:
+        super.handleCommandEvent(e);
+        break;
+    }
+  }
+
+  openMenu(e) {
+    const menuPos = this.sidebarController._positionStart
+      ? "after_start"
+      : "after_end";
+    this._menu.openPopup(e.target, menuPos, 0, 0, false, false, e);
+    this.menuButton.setAttribute("aria-expanded", true);
+  }
+
+  handlePopupEvent(e) {
+    if (e.type == "popuphidden") {
+      this.menuButton.setAttribute("aria-expanded", false);
+    }
+  }
+
+  willUpdate() {
+    this._menuSortByOrder.toggleAttribute(
+      "checked",
+      this.sortOption == "tabStripOrder"
+    );
+    this._menuSortByRecency.toggleAttribute(
+      "checked",
+      this.sortOption == "recency"
+    );
+  }
+
+  #changeSortOption(sortOption) {
+    this.sortOption = sortOption;
+    Services.prefs.setStringPref(
+      "sidebar.openTabsPanel.sortOption",
+      sortOption
+    );
+    this.requestUpdate();
+  }
+
   #updateWindowList() {
     this.windows = [...this.openTabsTarget.currentWindows];
   }
 
   getTabItemsForWindow(win) {
-    const tabs = this.openTabsTarget.getTabsForWindow(win);
+    const tabs = this.openTabsTarget.getTabsForWindow(
+      win,
+      this.sortOption === "recency"
+    );
     return this.controller.getTabListItems(tabs, false).map(item => ({
       ...item,
       secondaryL10nId: "fxviewtabrow-close-tab-button",
@@ -142,9 +255,10 @@ export class SidebarOpenTabs extends SidebarPage {
     } else {
       lazy.SidebarCollapsedWindows.expandWindowById(windowId);
     }
+    this.dispatchEvent(new CustomEvent("folder-toggle"));
   }
 
-  #pinnedTabsTemplate(pinnedTabItems) {
+  #pinnedTabsTemplate(pinnedTabItems, isCurrent) {
     return html`
       <div
         class="pinned-tabs"
@@ -155,6 +269,10 @@ export class SidebarOpenTabs extends SidebarPage {
           item => html`
             <moz-button
               type="icon ghost"
+              class=${classMap({
+                selected: item.tabElement?.selected,
+                inactive: !isCurrent,
+              })}
               .iconSrc=${this.#getPinnedIconSrc(item)}
               title=${item.title}
               @click=${() => this.#activateTab(item.tabElement)}
@@ -166,7 +284,10 @@ export class SidebarOpenTabs extends SidebarPage {
   }
 
   #windowCardTemplate(win, winID, isCurrent) {
-    const items = this.getTabItemsForWindow(win);
+    let items = this.getTabItemsForWindow(win);
+    if (this.searchQuery) {
+      items = searchTabList(this.searchQuery, items);
+    }
     const pinnedTabItems = items.filter(item =>
       item.indicators?.includes("pinned")
     );
@@ -188,14 +309,19 @@ export class SidebarOpenTabs extends SidebarPage {
         data-l10n-id=${headerL10nId}
         data-l10n-args=${JSON.stringify({ winID })}
         @toggle=${this.#onCardToggle}
+        @keydown=${this.keydownHandler}
       >
         ${when(pinnedTabItems.length, () =>
-          this.#pinnedTabsTemplate(pinnedTabItems)
+          this.#pinnedTabsTemplate(pinnedTabItems, isCurrent)
         )}
         <sidebar-tab-list
           maxTabsLength="-1"
           secondaryActionClass="dismiss-button"
           .multiSelect=${false}
+          .searchQuery=${this.searchQuery}
+          .mediumView=${true}
+          .inactiveWindow=${!isCurrent}
+          .dateTimeFormat=${"time"}
           .tabItems=${unpinnedTabItems}
           @fxview-tab-list-primary-action=${this.onPrimaryAction}
           @fxview-tab-list-secondary-action=${this.onSecondaryAction}
@@ -204,13 +330,19 @@ export class SidebarOpenTabs extends SidebarPage {
     `;
   }
 
-  render() {
+  #windowCardsTemplate() {
     const topWindow = this.topWindow;
     let currentCard;
     const otherCards = [];
     let index = 1;
     for (const win of this.windows) {
       const winID = index++;
+      if (
+        this.searchQuery &&
+        !searchTabList(this.searchQuery, this.getTabItemsForWindow(win)).length
+      ) {
+        continue;
+      }
       const isCurrent = win === topWindow;
       const card = this.#windowCardTemplate(win, winID, isCurrent);
       if (isCurrent) {
@@ -219,6 +351,54 @@ export class SidebarOpenTabs extends SidebarPage {
         otherCards.push(card);
       }
     }
+    return html`${currentCard}${otherCards}`;
+  }
+
+  #searchResultsTemplate() {
+    const count = this.windows.reduce(
+      (total, win) =>
+        total +
+        searchTabList(this.searchQuery, this.getTabItemsForWindow(win)).length,
+      0
+    );
+    if (!count) {
+      return html`
+        <moz-card>
+          <p
+            class="no-results"
+            data-l10n-id="firefoxview-search-results-empty"
+            data-l10n-args=${JSON.stringify({ query: this.searchQuery })}
+          ></p>
+        </moz-card>
+      `;
+    }
+    return html`
+      <moz-card
+        data-l10n-id="sidebar-search-results-header"
+        data-l10n-args=${JSON.stringify({ query: this.searchQuery })}
+      >
+        <div>
+          <h3
+            slot="secondary-header"
+            data-l10n-id="firefoxview-search-results-count"
+            data-l10n-args=${JSON.stringify({ count })}
+          ></h3>
+          ${this.#windowCardsTemplate()}
+        </div>
+      </moz-card>
+    `;
+  }
+
+  handleSidebarFocusedEvent() {
+    this.searchTextbox?.focus();
+  }
+
+  onSearchQuery(e) {
+    this.searchQuery = e.detail.query;
+    this.treeView.resetActiveNode();
+  }
+
+  render() {
     return html`
       ${this.stylesheet()}
       <link
@@ -230,9 +410,28 @@ export class SidebarOpenTabs extends SidebarPage {
           data-l10n-id="sidebar-menu-open-tabs-header"
           data-l10n-attrs="heading"
           view="viewOpenTabsSidebar"
-        ></sidebar-panel-header>
+        >
+          <div class="options-container">
+            <moz-input-search
+              data-l10n-id="firefoxview-search-text-box-tabs"
+              data-l10n-attrs="placeholder"
+              @MozInputSearch:search=${this.onSearchQuery}
+            ></moz-input-search>
+            <moz-button
+              class="menu-button"
+              @click=${this.openMenu}
+              data-l10n-id="sidebar-options-menu-button"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              type="icon ghost"
+              iconsrc="chrome://global/skin/icons/more.svg"
+            ></moz-button>
+          </div>
+        </sidebar-panel-header>
         <div class="sidebar-panel-scrollable-content">
-          ${currentCard}${otherCards}
+          ${this.searchQuery
+            ? this.#searchResultsTemplate()
+            : this.#windowCardsTemplate()}
         </div>
       </div>
     `;

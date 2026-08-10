@@ -5,6 +5,8 @@
 #ifndef _nsWindowWayland_h_
 #define _nsWindowWayland_h_
 
+#include "nsWindow.h"
+
 namespace mozilla::widget {
 
 class nsWindowWayland final : public nsWindow {
@@ -47,8 +49,6 @@ class nsWindowWayland final : public nsWindow {
                                             bool aFlippedX, bool aFlippedY);
   void CreateNative() override;
   void DestroyNative() override;
-
-  void ConfigureToplevelWindowNative() override;
 
   bool PIPMove();
   bool PIPResize(GdkWindowEdge aEdge);
@@ -206,6 +206,9 @@ class nsWindowWayland final : public nsWindow {
   void LogPopupAnchorHints(int aHints);
   void LogPopupGravity(GdkGravity aGravity);
 #endif
+
+  void ConfigureToplevelWindowNative() override;
+  void OnMapNative() override;
 
   void NativeShow(bool aAction) override;
 

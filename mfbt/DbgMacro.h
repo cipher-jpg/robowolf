@@ -7,12 +7,13 @@
 
 /* a MOZ_DBG macro that outputs a wrapped value to stderr then returns it */
 
-#include "mozilla/MacroForEach.h"
-#include "mozilla/Span.h"
-
 #include <fmt/format.h>
+
 #include <cstdio>
 #include <sstream>
+
+#include "mozilla/MacroForEach.h"
+#include "mozilla/Span.h"
 
 template <typename T>
 class nsTSubstring;
@@ -105,8 +106,8 @@ std::ostream& operator<<(std::ostream& aOut,
 
 // Don't define this for char[], since operator<<(ostream&, char*) is already
 // defined.
-template <typename T, size_t N>
-  requires(!std::is_same_v<T, char>)
+template <typename T, size_t N,
+          typename = std::enable_if_t<!std::is_same<T, char>::value>>
 std::ostream& operator<<(std::ostream& aOut, const T (&aArray)[N]) {
   return aOut << mozilla::Span(aArray);
 }

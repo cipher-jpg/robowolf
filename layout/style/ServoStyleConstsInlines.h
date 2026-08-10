@@ -328,7 +328,7 @@ inline bool StyleAtom::IsStatic() const { return !!(_0 & 1); }
 
 inline nsAtom* StyleAtom::AsAtom() const {
   if (IsStatic()) {
-    return const_cast<nsStaticAtom*>(&detail::gGkAtoms.mAtoms[_0 >> 1]);
+    return nsGkAtoms::GetAtomByIndex(_0 >> 1);
   }
   return reinterpret_cast<nsAtom*>(_0);
 }
@@ -348,7 +348,7 @@ inline void StyleAtom::Release() {
 inline StyleAtom::StyleAtom(already_AddRefed<nsAtom> aAtom) {
   nsAtom* atom = aAtom.take();
   if (atom->IsStatic()) {
-    size_t index = atom->AsStatic() - &detail::gGkAtoms.mAtoms[0];
+    size_t index = nsGkAtoms::IndexOf(atom->AsStatic());
     _0 = (index << 1) | 1;
   } else {
     _0 = reinterpret_cast<uintptr_t>(atom);
@@ -1134,8 +1134,8 @@ inline void StyleFontWeight::ToString(nsACString& aString) const {
   Servo_FontWeight_ToCss(this, &aString);
 }
 
-inline void StyleFontStretch::ToString(nsACString& aString) const {
-  Servo_FontStretch_ToCss(this, &aString);
+inline void StyleFontWidth::ToString(nsACString& aString) const {
+  Servo_FontWidth_ToCss(this, &aString);
 }
 
 inline void StyleFontStyle::ToString(nsACString& aString) const {
@@ -1159,7 +1159,7 @@ inline float StyleFontStyle::SlantAngle() const {
   return IsNormal() ? 0 : IsItalic() ? DEFAULT_OBLIQUE_DEGREES : ObliqueAngle();
 }
 
-using FontStretch = StyleFontStretch;
+using FontWidth = StyleFontWidth;
 using FontSlantStyle = StyleFontStyle;
 using FontWeight = StyleFontWeight;
 
@@ -1587,6 +1587,22 @@ inline StyleNumericType StyleNumericType::Flex() {
 inline int32_t StyleNumericType::Exponent(
     StyleNumericBaseType aBaseType) const {
   return exponents[static_cast<size_t>(aBaseType)];
+}
+
+inline bool StyleNumericType::MatchesLength() const {
+  return Servo_NumericType_MatchesLength(this);
+}
+
+inline bool StyleNumericType::MatchesAngle() const {
+  return Servo_NumericType_MatchesAngle(this);
+}
+
+inline bool StyleNumericType::MatchesLengthPercentage() const {
+  return Servo_NumericType_MatchesLengthPercentage(this);
+}
+
+inline bool StyleNumericType::MatchesNumber() const {
+  return Servo_NumericType_MatchesNumber(this);
 }
 
 inline bool StyleNumericType::operator==(const StyleNumericType& aOther) const {

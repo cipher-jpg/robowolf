@@ -3,23 +3,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DrawTargetRecording.h"
-#include "DrawTargetSkia.h"
-#include "InlineTranslator.h"
-#include "PathRecording.h"
+
 #include <stdio.h>
 
-#include "ImageContainer.h"
-#include "Logging.h"
-#include "Tools.h"
+#include "DrawTargetSkia.h"
 #include "Filters.h"
+#include "ImageContainer.h"
+#include "InlineTranslator.h"
+#include "Logging.h"
+#include "PathRecording.h"
+#include "RecordedEventImpl.h"
+#include "RecordingTypes.h"
+#include "Tools.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/layers/CanvasDrawEventRecorder.h"
 #include "mozilla/layers/RecordedCanvasEventImpl.h"
 #include "mozilla/layers/SourceSurfaceSharedData.h"
 #include "mozilla/layers/TextureRecorded.h"
 #include "nsXULAppAPI.h"  // for XRE_IsContentProcess()
-#include "RecordingTypes.h"
-#include "RecordedEventImpl.h"
 
 namespace mozilla {
 namespace gfx {
@@ -1053,10 +1054,10 @@ void DrawTargetRecording::EnsurePatternDependenciesStored(
   }
 }
 
-void DrawTargetRecording::AccessibleId(uint64_t aBrowsingContextId,
+void DrawTargetRecording::AccessibleId(uint64_t aInnerWindowId,
                                        uint64_t aAccId) {
   MarkChanged();
-  RecordEventSelf(RecordedAccessibleId(aBrowsingContextId, aAccId));
+  RecordEventSelf(RecordedAccessibleId(aInnerWindowId, aAccId));
 }
 
 }  // namespace gfx

@@ -11,6 +11,121 @@ async function openFirstrunPage() {
   return tab;
 }
 
+function withHomeRegion(region) {
+  const originalRegion = Region.home;
+  Region._setHomeRegion(region, false);
+  registerCleanupFunction(() => {
+    if (originalRegion) {
+      Region._setHomeRegion(originalRegion, false);
+    } else {
+      Services.prefs.clearUserPref("browser.search.region");
+    }
+  });
+}
+
+add_task(async function test_firstrun_europe_promotes_mistral() {
+  withHomeRegion("DE");
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.smartwindow.firstrun.autoAdvanceMS", 0],
+      ["browser.smartwindow.mistralRelease", true],
+      ["browser.smartwindow.firstrun.modelChoice", ""],
+    ],
+  });
+
+  const tab = await openFirstrunPage();
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+    const root = content.document.documentElement;
+
+    await ContentTaskUtils.waitForMutationCondition(
+      root,
+      { childList: true, subtree: true, attributes: true },
+      () => content.document.querySelector(".screen.AI_WINDOW_CHOOSE_MODEL")
+    );
+
+    const firstItem = content.document.querySelectorAll(".select-item")[0];
+    Assert.ok(firstItem, "First model card exists");
+
+    await ContentTaskUtils.waitForCondition(
+      () => firstItem.querySelector(".flair"),
+      "Recommended badge appears on the first (Mistral) card"
+    );
+    Assert.ok(
+      firstItem.querySelector(".flair"),
+      "First card has the Recommended flair badge"
+    );
+
+    const radio = firstItem.querySelector(".input");
+    await ContentTaskUtils.waitForCondition(
+      () => radio.checked,
+      "First (Mistral) card is preselected by default"
+    );
+    Assert.ok(radio.checked, "First card is the default selection");
+  });
+
+  Assert.equal(
+    Services.prefs.getStringPref(
+      "browser.smartwindow.firstrun.modelChoice",
+      ""
+    ),
+    "3",
+    "Promoted Mistral model is committed as the default choice"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_firstrun_non_europe_no_promotion() {
+  // "US" is outside the EEA, so there should be no promoted treatment.
+  withHomeRegion("US");
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.smartwindow.firstrun.autoAdvanceMS", 0],
+      ["browser.smartwindow.mistralRelease", true],
+      ["browser.smartwindow.firstrun.modelChoice", ""],
+    ],
+  });
+
+  const tab = await openFirstrunPage();
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+    const root = content.document.documentElement;
+
+    await ContentTaskUtils.waitForMutationCondition(
+      root,
+      { childList: true, subtree: true, attributes: true },
+      () => content.document.querySelector(".screen.AI_WINDOW_CHOOSE_MODEL")
+    );
+
+    const items = [...content.document.querySelectorAll(".select-item")];
+    Assert.ok(items.length, "Model cards exist");
+    Assert.ok(
+      !items.some(item => item.querySelector(".flair")),
+      "No Recommended badge is shown outside Europe"
+    );
+    Assert.ok(
+      !items.some(item => item.querySelector(".input").checked),
+      "No model is preselected outside Europe"
+    );
+  });
+
+  Assert.equal(
+    Services.prefs.getStringPref(
+      "browser.smartwindow.firstrun.modelChoice",
+      ""
+    ),
+    "",
+    "No default model is committed outside Europe"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
+});
+
 add_task(async function test_firstrun_welcome_screen_renders() {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.smartwindow.firstrun.autoAdvanceMS", 0]],
@@ -314,6 +429,8 @@ add_task(async function test_firstrun_telemetry() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.smartwindow.firstrun.autoAdvanceMS", 0],
+      // TODO: Bug 2053495 - Refactor tests upon pref removal
+      ["browser.smartwindow.mistralRelease", false],
       ["browser.smartwindow.firstrun.modelChoice", ""],
     ],
   });
@@ -513,12 +630,141 @@ add_task(async function test_firstrun_telemetry() {
   await SpecialPowers.popPrefEnv();
 });
 
+add_task(async function test_firstrun_hidden_screen_removed() {
+  Services.fog.testResetFOG();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.smartwindow.firstrun.autoAdvanceMS", 0],
+      ["browser.smartwindow.firstrun.modelChoice", ""],
+      ["browser.smartwindow.firstrun.hasCompleted", false],
+      [
+        "browser.smartwindow.firstrun.hiddenOnboardingScreenIds",
+        "AI_WINDOW_SET_DEFAULT",
+      ],
+    ],
+  });
+
+  // The finish action commits this pref; clear it explicitly so it doesn't leak.
+  registerCleanupFunction(() =>
+    Services.prefs.clearUserPref("browser.smartwindow.firstrun.hasCompleted")
+  );
+
+  const tab = await openFirstrunPage();
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+    const root = content.document.documentElement;
+
+    await ContentTaskUtils.waitForMutationCondition(
+      root,
+      { childList: true, subtree: true, attributes: true },
+      () => content.document.querySelector(".screen.AI_WINDOW_CHOOSE_MODEL")
+    );
+
+    const modelBox = content.document.querySelectorAll(".select-item")[0];
+    const nextButton = content.document.querySelector(
+      ".action-buttons > button"
+    );
+    EventUtils.synthesizeMouseAtCenter(modelBox, {}, content);
+    EventUtils.synthesizeMouseAtCenter(nextButton, {}, content);
+
+    await ContentTaskUtils.waitForMutationCondition(
+      root,
+      { childList: true, subtree: true, attributes: true },
+      () => content.document.querySelector(".screen.AI_WINDOW_MEMORIES")
+    );
+
+    // Memories is now the terminal screen, so its advance button finishes
+    // onboarding instead of navigating to the hidden set default screen.
+    const finishButton = content.document.getElementById("additional_button");
+    Assert.ok(finishButton, "Advance button exists on the memories screen");
+    EventUtils.synthesizeMouseAtCenter(finishButton, {}, content);
+  });
+
+  await TestUtils.waitForCondition(
+    () =>
+      Services.prefs.getBoolPref("browser.smartwindow.firstrun.hasCompleted"),
+    "First run is marked complete by the relabeled memories button"
+  );
+
+  const impressionEvents =
+    Glean.smartWindow.onboardingScreenImpression.testGetValue();
+  Assert.equal(
+    impressionEvents?.length,
+    3,
+    "Only three screens are shown when the set default screen is hidden"
+  );
+  Assert.ok(
+    !impressionEvents.some(event =>
+      event.extra.message_id.includes("AI_WINDOW_SET_DEFAULT")
+    ),
+    "The hidden set default screen is never shown"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_firstrun_non_removable_screens_not_hidden() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.smartwindow.firstrun.autoAdvanceMS", 0],
+      ["browser.smartwindow.firstrun.modelChoice", ""],
+      [
+        "browser.smartwindow.firstrun.hiddenOnboardingScreenIds",
+        "AI_WINDOW_CHOOSE_MODEL,AI_WINDOW_MEMORIES",
+      ],
+    ],
+  });
+
+  const tab = await openFirstrunPage();
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
+    const root = content.document.documentElement;
+
+    // The model choice screen is non-removable, so it renders despite being
+    // listed in hiddenOnboardingScreenIds.
+    await ContentTaskUtils.waitForMutationCondition(
+      root,
+      { childList: true, subtree: true, attributes: true },
+      () => content.document.querySelector(".screen.AI_WINDOW_CHOOSE_MODEL")
+    );
+    Assert.ok(
+      content.document.querySelector(".screen.AI_WINDOW_CHOOSE_MODEL"),
+      "The non-removable model choice screen is shown"
+    );
+
+    const modelBox = content.document.querySelectorAll(".select-item")[0];
+    const nextButton = content.document.querySelector(
+      ".action-buttons > button"
+    );
+    EventUtils.synthesizeMouseAtCenter(modelBox, {}, content);
+    EventUtils.synthesizeMouseAtCenter(nextButton, {}, content);
+
+    // The memories screen is non-removable too, so navigation reaches it.
+    await ContentTaskUtils.waitForMutationCondition(
+      root,
+      { childList: true, subtree: true, attributes: true },
+      () => content.document.querySelector(".screen.AI_WINDOW_MEMORIES")
+    );
+    Assert.ok(
+      content.document.querySelector(".screen.AI_WINDOW_MEMORIES"),
+      "The non-removable memories screen is shown"
+    );
+  });
+
+  BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
+});
+
 add_task(async function test_firstrun_telemetry_unchecked() {
   Services.fog.testResetFOG();
 
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.smartwindow.firstrun.autoAdvanceMS", 0],
+      // TODO: Bug 2053495 - Refactor tests upon pref removal
+      ["browser.smartwindow.mistralRelease", false],
       ["browser.smartwindow.firstrun.modelChoice", ""],
       ["browser.smartwindow.memories.generateFromHistory", true],
       ["browser.smartwindow.memories.generateFromConversation", true],
@@ -696,5 +942,47 @@ add_task(async function test_firstrun_telemetry_unchecked() {
 
   BrowserTestUtils.removeTab(tab);
   win.openLinkIn = originalOpenLinkIn;
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_toggle_interactive_during_firstrun() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.smartwindow.firstrun.hasCompleted", false]],
+  });
+
+  const win = await openAIWindow({ waitForTabURL: FIRSTRUN_URL });
+
+  await TestUtils.waitForCondition(
+    () => win.document.documentElement.hasAttribute("aiwindow-first-run"),
+    "Root should enter first-run immersive state"
+  );
+
+  const toggle = win.document.getElementById("ai-window-toggle");
+  Assert.ok(
+    toggle.closest("#TabsToolbar-customization-target"),
+    "Toggle should live in the tabstrip in horizontal tabs mode"
+  );
+
+  const toggleStyle = win.getComputedStyle(toggle);
+  Assert.notEqual(
+    toggleStyle.pointerEvents,
+    "none",
+    "Toggle must stay clickable during first run (regression guard)"
+  );
+  Assert.equal(
+    toggleStyle.opacity,
+    "1",
+    "Toggle must not be dimmed during first run"
+  );
+
+  const tabs = win.document.getElementById("tabbrowser-tabs");
+  const tabsStyle = win.getComputedStyle(tabs);
+  Assert.equal(
+    tabsStyle.pointerEvents,
+    "none",
+    "Other tabstrip items remain dimmed during first run"
+  );
+
+  await BrowserTestUtils.closeWindow(win);
   await SpecialPowers.popPrefEnv();
 });

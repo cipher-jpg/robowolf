@@ -15,6 +15,8 @@ import org.mozilla.fenix.Config
 import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.GleanMetrics.GleanBuildInfo
 import org.mozilla.fenix.GleanMetrics.Pings
+import org.mozilla.fenix.debugsettings.gleandebugtools.DefaultGleanDebugToolsStorage
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getCustomGleanServerUrlIfAvailable
 import org.mozilla.fenix.ext.setCustomEndpointIfAvailable
 import org.mozilla.fenix.nimbus.FxNimbus
@@ -65,4 +67,7 @@ fun initializeGlean(applicationContext: Context, logger: Logger, isTelemetryUplo
         uploadEnabled = effectiveUploadEnabled,
         buildInfo = GleanBuildInfo.buildInfo,
     )
+
+    // Re-apply any debug view tag persisted from a previous run so it survives the restart (Nightly/Debug only).
+    DefaultGleanDebugToolsStorage.restorePersistedDebugViewTag(applicationContext.components.settings)
 }

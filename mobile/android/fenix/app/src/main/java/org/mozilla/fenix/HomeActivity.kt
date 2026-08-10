@@ -31,12 +31,12 @@ import androidx.annotation.IdRes
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.ActionBar
 import androidx.appcompat.widget.Toolbar
-import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.text.layoutDirection
 import androidx.core.view.doOnLayout
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.NavDirections
@@ -97,12 +97,14 @@ import org.mozilla.fenix.GleanMetrics.StartOnHome
 import org.mozilla.fenix.addons.ExtensionsProcessDisabledBackgroundController
 import org.mozilla.fenix.addons.ExtensionsProcessDisabledForegroundController
 import org.mozilla.fenix.bindings.ExternalAppLinkStatusBinding
+import org.mozilla.fenix.bindings.HomepageTabBinding
 import org.mozilla.fenix.bindings.SummarizeToolbarHighlightBinding
 import org.mozilla.fenix.bookmarks.DesktopFolders
 import org.mozilla.fenix.browser.BrowserFragment
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.browser.browsingmode.DefaultBrowsingModeManager
+import org.mozilla.fenix.components.DefaultHomepageAsANewTabPreferenceRepository
 import org.mozilla.fenix.components.DefaultShortcutManagerCompatWrapper
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppAction.ShareAction
@@ -124,6 +126,7 @@ import org.mozilla.fenix.crashes.UnsubmittedCrashDialog
 import org.mozilla.fenix.customtabs.ExternalAppBrowserActivity
 import org.mozilla.fenix.databinding.ActivityHomeBinding
 import org.mozilla.fenix.debugsettings.data.DefaultDebugSettingsRepository
+import org.mozilla.fenix.debugsettings.gleandebugtools.DefaultGleanDebugToolsStorage
 import org.mozilla.fenix.debugsettings.ui.FenixOverlay
 import org.mozilla.fenix.downloads.DownloadSnackbar
 import org.mozilla.fenix.e2e.EdgeToEdgeFragmentLifecycleCallbacks
@@ -183,6 +186,7 @@ import org.mozilla.fenix.splashscreen.SplashScreenOperation
 import org.mozilla.fenix.tabhistory.TabHistoryDialogFragment
 import org.mozilla.fenix.theme.DefaultThemeManager
 import org.mozilla.fenix.theme.StatusBarColorManager
+import org.mozilla.fenix.theme.TabStripStatusBarView
 import org.mozilla.fenix.theme.ThemeManager
 import org.mozilla.fenix.translations.TranslationsAIControllableFeatureRegistrar
 import org.mozilla.fenix.translations.TranslationsEnabledSettings
@@ -206,8 +210,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
     lateinit var browsingModeManager: BrowsingModeManager
 
     private var isVisuallyComplete = false
-
-    var isMicrosurveyPromptDismissed = mutableStateOf(false)
 
     private var privateNotificationObserver: PrivateNotificationFeature<PrivateNotificationService>? =
         null
@@ -286,6 +288,15 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
         AboutHomeBinding(
             browserStore = components.core.store,
             navController = navHost.navController,
+        )
+    }
+
+    private val homepageTabBinding by lazy {
+        HomepageTabBinding(
+            browserStore = components.core.store,
+            browsingModeManager = browsingModeManager,
+            fenixBrowserUseCases = components.useCases.fenixBrowserUseCases,
+            repository = DefaultHomepageAsANewTabPreferenceRepository(components.settings),
         )
     }
 
@@ -441,6 +452,11 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
             super.onCreate(savedInstanceState)
         }
 
+        // Must run after the edge-to-edge capable theme is applied by
+        // `setupTheme` (or installSplashScreen). It must also be run before
+        // the `setContent` starts attaching fragments.
+        EdgeToEdgeFragmentLifecycleCallbacks.register(supportFragmentManager, window)
+
         // Checks if Activity is currently in PiP mode if launched from external intents, then exits it
         checkAndExitPiP()
 
@@ -464,11 +480,17 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
 
         Performance.processIntentIfPerformanceTest(intent, this)
 
+        // Persist or clear a Glean debug view tag across restarts (Nightly/Debug only).
+        DefaultGleanDebugToolsStorage.persistDebugViewTagIfRequested(intent, components.settings)
+
         components.settings.seedOnboardingCompletedTimestampForDebugIfNeeded()
 
         val shouldShowOnboarding = !intent.isAllowedDuringOnboardingIntent(packageName) &&
             with(components) {
-                settings.shouldShowOnboarding(fenixOnboarding.userHasBeenOnboarded())
+                settings.shouldShowOnboarding(
+                    hasUserBeenOnboarded = fenixOnboarding.userHasBeenOnboarded(),
+                    forceOnboardingForBenchmark = intent.getBooleanExtra(EXTRA_FORCE_ONBOARDING, false),
+                )
             }
 
         SplashScreenManager(
@@ -478,9 +500,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
             storage = DefaultSplashScreenStorage(components.settings),
             showSplashScreen = { installSplashScreen().setKeepOnScreenCondition(it) },
             onSplashScreenFinished = { result ->
-                // Before the splashscreen ends the application has a different theme not supporting edge to edge.
-                EdgeToEdgeFragmentLifecycleCallbacks.register(supportFragmentManager, window)
-
                 if (result.sendTelemetry) {
                     SplashScreen.firstLaunchExtended.record(
                         SplashScreen.FirstLaunchExtendedExtra(dataFetched = result.wasDataFetched),
@@ -589,7 +608,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
             extensionsProcessDisabledForegroundController,
             extensionsProcessDisabledBackgroundController,
             serviceWorkerSupport,
-            aboutHomeBinding,
             crashReporterBinding,
             defaultTopSitesBinding,
             TopSitesRefresher(
@@ -606,6 +624,9 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
             translationsAIControllableFeatureRegistrar,
             ipProtectionPrompter,
         )
+
+        addAboutHomeBinding(lifecycle)
+        addHomepageTabBinding(lifecycle)
 
         if (!isCustomTabIntent(intent)) {
             lifecycle.addObserver(webExtensionPromptFeature)
@@ -627,12 +648,21 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
         components.core.requestInterceptor.setNavigationController(navHost.navController)
 
         supportFragmentManager.registerFragmentLifecycleCallbacks(
-            StatusBarColorManager(themeManager, this, components.settings.isTabStripEnabled),
+            StatusBarColorManager(
+                themeManager = themeManager,
+                activity = this,
+                appStore = components.appStore,
+                settings = components.settings,
+                tabStripStatusBarView = TabStripStatusBarView(
+                    rootView = window.decorView as ViewGroup,
+                    lifecycle = lifecycle,
+                ),
+            ),
             true,
         )
 
         if (components.settings.showContileFeature) {
-            components.core.contileTopSitesUpdater.startPeriodicWork()
+            components.core.macTopSitesUpdater.startPeriodicWork()
         }
 
         if (!components.settings.hiddenEnginesRestored) {
@@ -675,7 +705,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
         }
 
         if (components.settings.uninstallSurveyFeatureFlagEnabled) {
-            uninstallSurveyManager.showUninstallSurvey(intent.action, navHost.navController)
+            uninstallSurveyManager.showUninstallSurvey(intent, navHost.navController)
         }
 
         StartupTimeline.onActivityCreateEndHome(this) // DO NOT MOVE ANYTHING BELOW HERE.
@@ -923,7 +953,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
             ),
         )
 
-        components.core.contileTopSitesUpdater.stopPeriodicWork()
+        components.core.macTopSitesUpdater.stopPeriodicWork()
         components.core.pocketStoriesService.stopPeriodicContentRecommendationsRefresh()
         components.core.pocketStoriesService.stopPeriodicSponsoredContentsRefresh()
         privateNotificationObserver?.stop()
@@ -986,19 +1016,11 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
             return
         }
 
+        // Warm-launch path for the Glean debug intent; onCreate handles cold start (Nightly/Debug only).
+        DefaultGleanDebugToolsStorage.persistDebugViewTagIfRequested(intent, components.settings)
+
         if (intent.action == SEND_TO_DEVICES_ACTION) {
-            val url = intent.getStringExtra(SendToDevicesDialogFragment.EXTRA_URL) ?: return
-            val title = intent.getStringExtra(SendToDevicesDialogFragment.EXTRA_TITLE)
-            val isPrivate = intent.getStringExtra(SendToDevicesDialogFragment.EXTRA_PRIVACY) ==
-                SendToDevicesDialogFragment.PRIVACY_PRIVATE
-
-            if (supportFragmentManager.findFragmentByTag(SendToDevicesDialogFragment.TAG) == null) {
-                SendToDevicesDialogFragment.newInstance(url, title, isPrivate).showNow(
-                    supportFragmentManager,
-                    SendToDevicesDialogFragment.TAG,
-                )
-            }
-
+            handleSendToDevicesActionIntent(intent)
             return
         }
 
@@ -1035,6 +1057,21 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
                 ) + externalSourceIntentProcessors
             intentProcessors.forEach { it.process(intent, navHost.navController, this.intent, components.settings) }
             browsingModeManager.updateMode(intent)
+        }
+    }
+
+    private fun handleSendToDevicesActionIntent(intent: Intent) {
+        val urls = intent.getStringArrayListExtra(SendToDevicesDialogFragment.EXTRA_URLS)
+        if (urls.isNullOrEmpty()) return
+        val titles = intent.getStringArrayListExtra(SendToDevicesDialogFragment.EXTRA_TITLES).orEmpty()
+        val isPrivate = intent.getStringExtra(SendToDevicesDialogFragment.EXTRA_PRIVACY) ==
+            SendToDevicesDialogFragment.PRIVACY_PRIVATE
+
+        if (supportFragmentManager.findFragmentByTag(SendToDevicesDialogFragment.TAG) == null) {
+            SendToDevicesDialogFragment.newInstance(urls, titles, isPrivate).showNow(
+                supportFragmentManager,
+                SendToDevicesDialogFragment.TAG,
+            )
         }
     }
 
@@ -1437,6 +1474,16 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
         navController.navigate(NavGraphDirections.actionStartupHome())
     }
 
+    @VisibleForTesting
+    internal open fun addAboutHomeBinding(lifecycle: Lifecycle) {
+        lifecycle.addObserver(aboutHomeBinding)
+    }
+
+    @VisibleForTesting
+    internal open fun addHomepageTabBinding(lifecycle: Lifecycle) {
+        lifecycle.addObserver(homepageTabBinding)
+    }
+
     final override fun attachBaseContext(base: Context) {
         base.components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             super.attachBaseContext(base)
@@ -1661,6 +1708,9 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
         const val OPEN_PASSWORD_MANAGER = "open_password_manager"
         const val UNINSTALL_SURVEY = "uninstall_survey"
         const val APP_ICON = "APP_ICON"
+
+        // Intent extra to force onboarding to show in the benchmark build, where it is otherwise suppressed
+        const val EXTRA_FORCE_ONBOARDING = "EXTRA_FORCE_ONBOARDING"
 
         // PWA must have been used within last 30 days to be considered "recently used" for the
         // telemetry purposes.

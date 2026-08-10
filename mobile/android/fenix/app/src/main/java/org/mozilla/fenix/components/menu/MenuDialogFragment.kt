@@ -55,7 +55,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import mozilla.components.browser.state.selector.findCustomTab
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.SessionState
@@ -128,7 +127,6 @@ import org.mozilla.fenix.utils.exitMenu
 import org.mozilla.fenix.utils.exitSubmenu
 import org.mozilla.fenix.webcompat.DefaultWebCompatReporterMoreInfoSender
 import org.mozilla.fenix.webcompat.middleware.DefaultWebCompatReporterRetrievalService
-import org.mozilla.fenix.webcompat.middleware.WebCompatInfoDeserializer
 import com.google.android.material.R as materialR
 
 private const val EXPANDED_OFFSET = 56
@@ -540,7 +538,6 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                     isBookmarked = isBookmarked,
                                     isDesktopMode = isDesktopMode,
                                     isPdf = isPdf,
-                                    isPrivate = isPrivate,
                                     isReaderViewActive = isReaderViewActive,
                                     isMoreMenuHighlighted = isOpenInAppMenuHighlighted ||
                                             summarizationMenuState.overflowMenuHighlighted,
@@ -565,8 +562,8 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                     onSettingsButtonClick = {
                                         menuStore.dispatch(MenuAction.Navigate.Settings)
                                     },
-                                    onWallpaperButtonClick = {
-                                        menuStore.dispatch(MenuAction.Navigate.Wallpaper)
+                                    onCustomizeHomepageButtonClick = {
+                                        menuStore.dispatch(MenuAction.Navigate.CustomizeHomepage)
                                     },
                                     onBookmarkPageMenuClick = {
                                         menuStore.dispatch(MenuAction.AddBookmark)
@@ -662,6 +659,7 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                             isOpenInAppMenuHighlighted = isOpenInAppMenuHighlighted,
                                             translationInfo = translationInfo,
                                             showShortcuts = settings.showTopSitesFeature,
+                                            showSaveToCollection = settings.collections,
                                             isAndroidAutomotiveAvailable = context.isAndroidAutomotiveAvailable(),
                                             summarizationMenuState = summarizationMenuState,
                                             onWebCompatReporterClick = {
@@ -775,7 +773,6 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                     isPdf = customTab?.content?.isPdf == true,
                                     isDesktopMode = isDesktopMode,
                                     isSandboxCustomTab = args.isSandboxCustomTab,
-                                    isPrivate = isPrivate,
                                     isExtensionsExpanded = isExtensionsExpanded,
                                     isExtensionsProcessDisabled = isExtensionsProcessDisabled,
                                     isAllWebExtensionsDisabled = isAllWebExtensionsDisabled,
@@ -982,12 +979,6 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                 webCompatReporterRetrievalService =
                     DefaultWebCompatReporterRetrievalService(
                         browserStore = browserStore,
-                        webCompatInfoDeserializer = WebCompatInfoDeserializer(
-                            json = Json {
-                                ignoreUnknownKeys = true
-                                useAlternativeNames = false
-                            },
-                        ),
                     ),
             )
 

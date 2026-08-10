@@ -5,6 +5,8 @@
 #ifndef CanvasRenderingContext2D_h
 #define CanvasRenderingContext2D_h
 
+#include <numbers>
+
 #include "FilterDescription.h"
 #include "gfx2DGlue.h"
 #include "gfxFontConstants.h"
@@ -327,10 +329,10 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     }
   }
 
-  CanvasFontStretch FontStretch() { return CurrentState().fontStretch; }
-  void SetFontStretch(const CanvasFontStretch& aFontStretch) {
-    if (CurrentState().fontStretch != aFontStretch) {
-      CurrentState().fontStretch = aFontStretch;
+  CanvasFontStretch FontStretch() { return CurrentState().fontWidth; }
+  void SetFontStretch(const CanvasFontStretch& aFontWidth) {
+    if (CurrentState().fontWidth != aFontWidth) {
+      CurrentState().fontWidth = aFontWidth;
       CurrentState().fontGroup = nullptr;
     }
   }
@@ -1084,7 +1086,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
 
     int32_t ShadowBlurRadius() const {
       static const gfxFloat GAUSSIAN_SCALE_FACTOR =
-          (3 * sqrt(2 * M_PI) / 4) * 1.5;
+          (3 * sqrt(2 * std::numbers::pi) / 4) * 1.5;
       return (int32_t)floor(ShadowBlurSigma() * GAUSSIAN_SCALE_FACTOR + 0.5);
     }
 
@@ -1110,7 +1112,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     CanvasTextBaseline textBaseline = CanvasTextBaseline::Alphabetic;
     CanvasDirection textDirection = CanvasDirection::Inherit;
     CanvasFontKerning fontKerning = CanvasFontKerning::Auto;
-    CanvasFontStretch fontStretch = CanvasFontStretch::Normal;
+    CanvasFontStretch fontWidth = CanvasFontStretch::Normal;
     CanvasFontVariantCaps fontVariantCaps = CanvasFontVariantCaps::Normal;
     CanvasTextRendering textRendering = CanvasTextRendering::Auto;
 

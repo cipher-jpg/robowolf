@@ -12,13 +12,13 @@
 #include "GLImages.h"
 #include "ImageContainer.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/gfx/Types.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/layers/LayersTypes.h"
-#include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Types.h"
+#include "mozilla/layers/LayersSurfaces.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "nsISupportsImpl.h"
 
 struct AHardwareBuffer;
@@ -59,7 +59,8 @@ class AndroidImageReaderImage final : public Image {
 
   void OnSetCurrent() override;
 
-  bool MaybeReleaseFrameToCodec(bool aRender);
+  bool MaybeReleaseFrameToCodec(const MonitorAutoLock& aProofOfLock,
+                                bool aRender);
 
   void RegisterSetCurrentCallback(
       UniquePtr<SurfaceTextureImage::SetCurrentCallback> aCallback) {
@@ -129,6 +130,8 @@ class AndroidImageReader final {
                                   gfx::DataSourceSurface* aSurface,
                                   const gfx::IntSize aSize,
                                   const gfx::SurfaceFormat aFormat);
+
+  void MaybeRenderFirstFrame(AndroidMediaCodecFrameId aFrameId);
 
   bool DoUpdateTexImage(const MonitorAutoLock& aProofOfLock,
                         AndroidMediaCodecFrameId aFrameId)

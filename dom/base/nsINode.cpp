@@ -60,6 +60,7 @@
 #include "mozilla/dom/HTMLDialogElement.h"
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLMediaElement.h"
+#include "mozilla/dom/HTMLSelectElement.h"
 #include "mozilla/dom/HTMLTemplateElement.h"
 #include "mozilla/dom/L10nOverlays.h"
 #include "mozilla/dom/LifecycleCallbackArgs.h"
@@ -375,10 +376,8 @@ class ChildIndexCache {
     return entry->GetChildAt(aParent, aIndex);
   }
 
-  static uint32_t ComputeIndexOf(const nsINode* aParent,
-                                 const nsIContent* aChild) {
-    MOZ_ASSERT(aChild->GetParentNode() == aParent,
-               "Child is not actually a child of parent");
+  static Maybe<uint32_t> ComputeIndexOf(const nsINode* aParent,
+                                        const nsIContent* aChild) {
     Entry* entry = GetOrCreateEntry(aParent);
     return entry->ComputeIndexOf(aParent, aChild);
   }
@@ -454,7 +453,8 @@ class ChildIndexCache {
       return mChildren[aIndex];
     }
 
-    uint32_t ComputeIndexOf(const nsINode* aParent, const nsIContent* aChild) {
+    Maybe<uint32_t> ComputeIndexOf(const nsINode* aParent,
+                                   const nsIContent* aChild) {
       TruncateStaleElements();
 
       // Only grow the hash map if the parent has enough children to make it
@@ -463,7 +463,7 @@ class ChildIndexCache {
       const bool useHashMap = aParent->GetChildCount() >= kHashMapThreshold;
 
       if (auto result = mIndexMap.MaybeGet(aChild)) {
-        return *result;
+        return result;
       }
 
       // Scan the already-populated array portion past the map prefix, building
@@ -474,7 +474,7 @@ class ChildIndexCache {
           mIndexMap.InsertOrUpdate(mChildren[index], index);
         }
         if (mChildren[index] == aChild) {
-          return index;
+          return Some(index);
         }
       }
 
@@ -490,12 +490,11 @@ class ChildIndexCache {
           mIndexMap.InsertOrUpdate(current, index);
         }
         if (current == aChild) {
-          return index;
+          return Some(index);
         }
         current = current->GetNextSibling();
       }
-      MOZ_ASSERT_UNREACHABLE("Child is not actually a child of parent");
-      return 0;
+      return Nothing();
     }
 
    private:
@@ -2148,7 +2147,8 @@ void nsINode::InsertChildBefore(
     return;
   }
 
-  MOZ_ASSERT(!aKid->GetParentNode(), "Inserting node that already has parent");
+  MOZ_DIAGNOSTIC_ASSERT(!aKid->GetParentNode(),
+                        "Inserting node that already has parent");
   MOZ_ASSERT(!IsAttr());
 
   // The id-handling code, and in the future possibly other code, need to
@@ -2387,7 +2387,7 @@ Maybe<uint32_t> nsINode::ComputeIndexOf(const nsINode* aPossibleChild) const {
   const bool isMainThread = NS_IsMainThread();
   if (contentChild && GetChildCount() >= ChildIndexCache::kThreshold &&
       isMainThread) {
-    return Some(ChildIndexCache::ComputeIndexOf(this, contentChild));
+    return ChildIndexCache::ComputeIndexOf(this, contentChild);
   }
 
   if (isMainThread && MaybeCachesComputedIndex()) {
@@ -3979,6 +3979,18 @@ Element* nsINode::GetNearestInclusiveTargetPopoverForInvoker() const {
       if (popover->IsPopoverOpenedInMode(PopoverAttributeState::Auto) ||
           popover->IsPopoverOpenedInMode(PopoverAttributeState::Hint)) {
         return popover;
+      }
+    }
+    if (auto* select = HTMLSelectElement::FromNodeOrNull(el)) {
+      auto* picker = select->GetPickerElement();
+      MOZ_ASSERT(
+          !picker ||
+              (!picker->IsPopoverOpenedInMode(PopoverAttributeState::Hint) &&
+               !picker->IsPopoverOpenedInMode(PopoverAttributeState::Manual)),
+          "Select Picker should only be popover=auto");
+      if (picker &&
+          picker->IsPopoverOpenedInMode(PopoverAttributeState::Auto)) {
+        return picker;
       }
     }
   }

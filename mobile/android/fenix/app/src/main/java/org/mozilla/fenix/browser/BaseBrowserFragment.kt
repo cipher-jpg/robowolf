@@ -27,6 +27,7 @@ import androidx.biometric.BiometricManager
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.viewinterop.AndroidView
@@ -128,6 +129,7 @@ import mozilla.components.feature.webauthn.WebAuthnFeature
 import mozilla.components.lib.state.ext.consumeFlow
 import mozilla.components.lib.state.ext.consumeFrom
 import mozilla.components.lib.state.ext.flowScoped
+import mozilla.components.lib.state.ext.observeAsComposableState
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import mozilla.components.service.sync.autofill.DefaultCreditCardValidationDelegate
 import mozilla.components.service.sync.logins.DefaultLoginValidationDelegate
@@ -176,14 +178,12 @@ import org.mozilla.fenix.browser.store.BrowserScreenStore
 import org.mozilla.fenix.browser.grouptabstrip.GroupTabStripIntegration
 import org.mozilla.fenix.browser.tabstrip.TabStrip
 import org.mozilla.fenix.components.AppStore
-import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.FenixAutocompletePrompt
 import org.mozilla.fenix.components.FenixEmailMaskPrompt
 import org.mozilla.fenix.components.FenixSuggestStrongPasswordPrompt
 import org.mozilla.fenix.components.FindInPageIntegration
 import org.mozilla.fenix.components.accounts.FxaWebChannelIntegration
 import org.mozilla.fenix.components.appstate.AppAction
-import org.mozilla.fenix.components.appstate.AppAction.MessagingAction
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.MicrosurveyAction
 import org.mozilla.fenix.components.share.ShareSource
 import org.mozilla.fenix.components.toolbar.BottomToolbarContainerIntegration
@@ -220,8 +220,6 @@ import org.mozilla.fenix.ext.updateMicrosurveyPromptForConfigurationChange
 import org.mozilla.fenix.messaging.FenixMessageSurfaceId
 import org.mozilla.fenix.messaging.MessagingFeature
 import org.mozilla.fenix.microsurvey.ui.MicrosurveyRequestPrompt
-import org.mozilla.fenix.microsurvey.ui.ext.MicrosurveyUIData
-import org.mozilla.fenix.microsurvey.ui.ext.toMicrosurveyUIData
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.pbmlock.BlackScreenOverlay
 import org.mozilla.fenix.pbmlock.NavigationOrigin
@@ -492,6 +490,7 @@ abstract class BaseBrowserFragment :
             observer = CloseLastSyncedTabObserver(
                 scope = viewLifecycleOwner.lifecycleScope,
                 navController = findNavController(),
+                settings = requireComponents.settings,
             ),
             view = view,
         )
@@ -1294,8 +1293,14 @@ abstract class BaseBrowserFragment :
                 shouldShowDoNotAskAgainCheckBox = context.components.appStore.state.mode != BrowsingMode.Private,
                 store = store,
                 shouldHide = {
-                    val state = requireComponents.appStore.state
-                    state.isPrivateScreenLocked && state.mode.isPrivate
+                    // if the fragment is detached,
+                    // returning true will hide the site permission prompt rather than crash
+                    if (this.context == null) {
+                        true
+                    } else {
+                        val state = requireComponents.appStore.state
+                        state.isPrivateScreenLocked && state.mode.isPrivate
+                    }
                 },
             ),
             owner = this,
@@ -1501,7 +1506,7 @@ abstract class BaseBrowserFragment :
                     } else {
                         findNavController().navigate(
                             NavGraphDirections.actionGlobalHome(
-                                focusOnAddressBar = true,
+                                focusOnAddressBar = !settings.enableHomepageTrendingRecentSearch,
                             ),
                         )
                     }
@@ -1749,15 +1754,17 @@ abstract class BaseBrowserFragment :
         if (context.components.settings.isExperimentationEnabled &&
             context.components.settings.microsurveyFeatureEnabled
         ) {
+            val messagingFeature = MessagingFeature(
+                appStore = requireComponents.appStore,
+                surface = FenixMessageSurfaceId.MICROSURVEY,
+            )
             messagingFeatureMicrosurvey.set(
-                feature = MessagingFeature(
-                    appStore = requireComponents.appStore,
-                    surface = FenixMessageSurfaceId.MICROSURVEY,
-                    runWhenReadyQueue = requireComponents.performance.visualCompletenessQueue,
-                ),
+                feature = messagingFeature,
                 owner = viewLifecycleOwner,
                 view = binding.root,
             )
+
+            viewLifecycleOwner.lifecycle.addObserver(messagingFeature)
         }
     }
 
@@ -1783,35 +1790,32 @@ abstract class BaseBrowserFragment :
             content = {
                 FirefoxTheme {
                     Column {
-                        val activity = requireActivity() as HomeActivity
+                        val microsurveyState by context.components.appStore.observeAsComposableState {
+                            it.microsurvey
+                        }
 
-                        if (!activity.isMicrosurveyPromptDismissed.value) {
-                            currentMicrosurvey?.let {
-                                if (isToolbarAtBottom) {
-                                    removeBottomToolbarDivider()
-                                }
-
-                                HorizontalDivider()
-
-                                MicrosurveyRequestPrompt(
-                                    microsurvey = it,
-                                    onStartSurveyClicked = {
-                                        context.components.appStore.dispatch(MicrosurveyAction.Started(it.id))
-                                        findNavController().nav(
-                                            R.id.browserFragment,
-                                            BrowserFragmentDirections.actionGlobalMicrosurveyDialog(it.id),
-                                        )
-                                    },
-                                    onCloseButtonClicked = {
-                                        context.components.appStore.dispatch(
-                                            MicrosurveyAction.Dismissed(it.id),
-                                        )
-
-                                        context.components.settings.shouldShowMicrosurveyPrompt = false
-                                        activity.isMicrosurveyPromptDismissed.value = true
-                                    },
-                                )
+                        microsurveyState.current?.let {
+                            if (isToolbarAtBottom) {
+                                removeBottomToolbarDivider()
                             }
+
+                            HorizontalDivider()
+
+                            MicrosurveyRequestPrompt(
+                                microsurvey = it,
+                                onStartSurveyClicked = {
+                                    context.components.appStore.dispatch(MicrosurveyAction.Started(it.id))
+                                    findNavController().nav(
+                                        R.id.browserFragment,
+                                        BrowserFragmentDirections.actionGlobalMicrosurveyDialog(it.id),
+                                    )
+                                },
+                                onCloseButtonClicked = {
+                                    context.components.appStore.dispatch(
+                                        MicrosurveyAction.Dismissed(it.id),
+                                    )
+                                },
+                            )
                         }
 
                         if (isToolbarAtBottom) {
@@ -1848,26 +1852,17 @@ abstract class BaseBrowserFragment :
         browserToolbar.layout.elevation = 0.0f
     }
 
-    private var currentMicrosurvey: MicrosurveyUIData? = null
-
     /**
      * Listens for the microsurvey message and initializes the microsurvey prompt if one is available.
      */
     private fun listenForMicrosurveyMessage(context: Context) {
         binding.root.consumeFrom(context.components.appStore, viewLifecycleOwner) { state ->
-            state.messaging.messageToShow[FenixMessageSurfaceId.MICROSURVEY]?.let { message ->
-                if (message.id != currentMicrosurvey?.id) {
-                    message.toMicrosurveyUIData()?.let { microsurvey ->
-                        context.components.settings.shouldShowMicrosurveyPrompt = true
-                        currentMicrosurvey = microsurvey
-
-                        _bottomToolbarContainerView?.toolbarContainerView.let {
-                            binding.browserLayout.removeView(it)
-                        }
-
-                        initializeMicrosurveyPrompt()
-                    }
-                }
+            val isMicrosurveyVisible = state.microsurvey.current != null
+            if (isMicrosurveyVisible != context.components.settings.shouldShowMicrosurveyPrompt) {
+                context.components.settings.shouldShowMicrosurveyPrompt = isMicrosurveyVisible
+            }
+            if (isMicrosurveyVisible && _bottomToolbarContainerView == null) {
+                initializeMicrosurveyPrompt()
             }
         }
     }
@@ -1993,8 +1988,6 @@ abstract class BaseBrowserFragment :
         }
         hideToolbar()
 
-        evaluateMessagesForMicrosurvey(components)
-
         BiometricAuthenticationManager.biometricAuthenticationNeededInfo.shouldShowAuthenticationPrompt =
             true
         BiometricAuthenticationManager.biometricAuthenticationNeededInfo.authenticationStatus =
@@ -2009,9 +2002,6 @@ abstract class BaseBrowserFragment :
             )
         }
     }
-
-    private fun evaluateMessagesForMicrosurvey(components: Components) =
-        components.appStore.dispatch(MessagingAction.Evaluate(FenixMessageSurfaceId.MICROSURVEY))
 
     @CallSuper
     override fun onPause() {
@@ -2212,7 +2202,7 @@ abstract class BaseBrowserFragment :
         return context?.components?.core?.store?.state?.findCustomTabOrSelectedTab(customTabSessionId)
     }
 
-    @VisibleForTesting
+    @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED)
     internal fun getCurrentTab(): SessionState? {
         return requireComponents.core.store.state.findCustomTabOrSelectedTab(customTabSessionId)
     }
@@ -2274,10 +2264,7 @@ abstract class BaseBrowserFragment :
             (activity as? HomeActivity)?.let { homeActivity ->
                 // ExternalAppBrowserActivity exclusively handles it's own theming unless in private mode.
                 if (homeActivity !is ExternalAppBrowserActivity || homeActivity.browsingModeManager.mode.isPrivate) {
-                    homeActivity.themeManager.applyStatusBarTheme(
-                        homeActivity,
-                        requireComponents.settings.isTabStripEnabled,
-                    )
+                    homeActivity.themeManager.applyStatusBarTheme(homeActivity)
                 }
             }
             collapseBrowserView()
@@ -2522,7 +2509,7 @@ abstract class BaseBrowserFragment :
                     sessionId = customTabSessionId,
                     view = findInPageBar,
                     engineView = binding.engineView,
-                    findInPageHeight = requireComponents.settings.browserToolbarHeight,
+                    findInPageHeight = requireComponents.settings.getBrowserToolbarHeight(requireContext()),
                     toolbarsHideCallback = {
                         expandBrowserView()
                     },

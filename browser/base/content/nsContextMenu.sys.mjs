@@ -12,7 +12,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+    "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   GenAI: "resource:///modules/GenAI.sys.mjs",
@@ -1721,14 +1721,23 @@ export class nsContextMenu {
     this.actor.reloadImage(this.targetIdentifier);
   }
 
-  _canvasToBlobURL(targetIdentifier) {
-    return this.actor.canvasToBlobURL(targetIdentifier);
+  async #canvasToBlobURL(targetIdentifier) {
+    let blobURL = await this.actor.canvasToBlobURL(targetIdentifier);
+
+    if (!ChromeUtils.isBlobURLValid(this.principal, blobURL)) {
+      throw new Error("Invalid blob: URL: " + blobURL);
+    }
+
+    return blobURL;
   }
 
   copyCanvasImage() {
-    this.actor.copyCanvasImage(this.targetIdentifier).then(arrayBuffer => {
-      lazy.BrowserUtils.copyImageToClipboard(arrayBuffer);
-    }, console.error);
+    this.actor
+      .canvasToBlob(this.targetIdentifier)
+      .then(blob => blob.arrayBuffer())
+      .then(arrayBuffer => {
+        lazy.BrowserUtils.copyImageToClipboard(arrayBuffer);
+      }, console.error);
   }
 
   // Change current window to the URL of the image, video, or audio.
@@ -1740,7 +1749,7 @@ export class nsContextMenu {
     let referrerInfo = this.contentData.referrerInfo;
     let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
     if (this.onCanvas) {
-      this._canvasToBlobURL(this.targetIdentifier).then(blobURL => {
+      this.#canvasToBlobURL(this.targetIdentifier).then(blobURL => {
         this.window.openLinkIn(blobURL, where, {
           referrerInfo,
           triggeringPrincipal: systemPrincipal,
@@ -2127,14 +2136,14 @@ export class nsContextMenu {
     let cookieJarSettings = this.contentData.cookieJarSettings;
     if (this.onCanvas) {
       // Bypass cache, since it's a data: URL.
-      this._canvasToBlobURL(this.targetIdentifier).then(blobURL => {
+      this.#canvasToBlobURL(this.targetIdentifier).then(blobURL => {
         this.window.internalSave(
           blobURL,
           null, // originalURL
           null, // document
           "canvas.png",
           null, // content disposition
-          "image/png", // _canvasToBlobURL uses image/png by default.
+          "image/png", // #canvasToBlobURL uses image/png by default.
           true, // bypass cache
           "SaveImageTitle",
           null, // chosen data
@@ -2482,7 +2491,8 @@ export class nsContextMenu {
       this.onTextInput &&
       this.onSearchField &&
       !this.isLoginForm() &&
-      (uri.schemeIs("http") || uri.schemeIs("https"))
+      (uri.schemeIs("http") || uri.schemeIs("https")) &&
+      Services.policies.isAllowed("installSearchEngine")
     );
   }
 

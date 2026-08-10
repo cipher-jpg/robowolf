@@ -8,13 +8,14 @@ import { SettingGroupManager } from "chrome://browser/content/preferences/config
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+    "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
 });
 
 const IDENTITY_CHANGE_TOPICS = [
   "contextual-identity-created",
   "contextual-identity-updated",
   "contextual-identity-deleted",
+  "contextual-identity-reordered",
 ];
 
 function openContainerDialog(userContextId) {
@@ -95,6 +96,7 @@ Preferences.addSetting(
           controlAttrs: {
             label: containerName,
             class: `containers-identity-item identity-color-${container.color}`,
+            value: container.userContextId,
           },
           options: [
             {
@@ -121,6 +123,13 @@ Preferences.addSetting(
         };
       });
       return { options: items };
+    }
+
+    /** @param {CustomEvent} event */
+    onUserReorder(event) {
+      const { draggedElement, insertAt } = event.detail;
+      const userContextId = parseInt(draggedElement.getAttribute("value"), 10);
+      lazy.ContextualIdentityService.move([userContextId], insertAt);
     }
 
     async onUserClick(e) {
@@ -173,7 +182,7 @@ SettingGroupManager.registerGroups({
         id: "containers-list",
         control: "moz-box-group",
         controlAttrs: {
-          type: "list",
+          type: "reorderable-list",
         },
       },
       {

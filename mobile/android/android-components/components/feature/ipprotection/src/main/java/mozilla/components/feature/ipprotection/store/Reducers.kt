@@ -11,8 +11,11 @@ import mozilla.components.concept.engine.ipprotection.IPProtectionHandler
 import mozilla.components.concept.engine.ipprotection.ServiceState
 import mozilla.components.feature.ipprotection.store.state.AccountStatus
 import mozilla.components.feature.ipprotection.store.state.Authorized
+import mozilla.components.feature.ipprotection.store.state.Country
 import mozilla.components.feature.ipprotection.store.state.IPProtectionState
+import mozilla.components.feature.ipprotection.store.state.LocationState
 import mozilla.components.feature.ipprotection.store.state.ProxyStatus
+import mozilla.components.feature.ipprotection.store.state.Recommended
 import mozilla.components.feature.ipprotection.store.state.Uninitialized
 
 @Suppress("CognitiveComplexMethod", "LongMethod", "ForbiddenSuppress")
@@ -55,7 +58,7 @@ internal fun iPProtectionReducer(
         // update with the service being READY, before EngineState updates itself with the new
         // account status.
         val newAccountStatus = if (action.info.serviceState == ServiceState.Ready &&
-            state.accountState.status != AccountStatus.Uninitialized
+            state.accountState.status != AccountStatus.NoAccount
         ) {
             AccountStatus.EnrolledAndEntitled
         } else {
@@ -82,6 +85,17 @@ internal fun iPProtectionReducer(
             lastError = action.info.lastError,
             proxyActiveShown = newProxyActiveShown,
             activate = newActivate,
+        )
+    }
+
+    is IPProtectionAction.CountryListChanged -> {
+        state.copy(
+            locationState = LocationState(
+                selectedLocation = state.locationState.selectedLocation,
+                locations = listOf(Recommended()) + action.countries.map {
+                    Country(countryCode = it.code, available = it.available)
+                },
+            ),
         )
     }
 
@@ -122,10 +136,12 @@ internal fun iPProtectionReducer(
 
                 // We need to authenticate first because we haven't done so before or
                 // our account is in a wonky state.
-                if (status == AccountStatus.NeedsAuthentication ||
+                val requiresAuthentication = status == AccountStatus.NeedsAuthentication ||
                     status == AccountStatus.Uninitialized ||
-                    status == AccountStatus.WarmingUp
-                ) {
+                    status == AccountStatus.WarmingUp ||
+                    status == AccountStatus.NoAccount
+
+                if (requiresAuthentication) {
                     return state.copy(
                         accountState = state.accountState.copy(
                             status = AccountStatus.RequestingAuthentication,
@@ -137,6 +153,23 @@ internal fun iPProtectionReducer(
                 // so we need to authorize the service first to get the account ready to request
                 // enrollment keys.
                 if (status == AccountStatus.NeedsAuthorization) {
+                    return state.copy(
+                        accountState = state.accountState.copy(
+                            status = AccountStatus.RequestingAuthorization,
+                        ),
+                    )
+                }
+
+                // It is a bit of an edge case, but if we hit a toggle action while the account
+                // check is still in progress, we do want to move forward with authorization flow.
+                //
+                // An account check can be triggered, that will move the state into either entitled
+                // or needs authorization state. But if the check is taking longer, then the toggle
+                // action should move the state into requesting auth anyway.
+                //
+                // Ideally, we want to have an explicit state transition path for an account check;
+                // for now, that is what we ship with.
+                if (status == AccountStatus.TryAgain) {
                     return state.copy(
                         accountState = state.accountState.copy(
                             status = AccountStatus.RequestingAuthorization,
@@ -158,8 +191,20 @@ internal fun iPProtectionReducer(
     }
 
     is IPProtectionAction.ToggleFailed -> {
+        // There could be a race condition where a signed-in user is able to start the vpn auth flow
+        // while their account manager is still in "warming up" state (e.g. it's still updating fxa
+        // token after those expire). In that case, the user might finish auth flow in "entitled"
+        // account state, but ip service was never informed about an eligible account.
+        val accountState = if (state.accountState.status == AccountStatus.EnrolledAndEntitled &&
+            state.serviceStatus == ServiceState.Unauthenticated
+        ) {
+            state.accountState.copy(status = AccountStatus.TryAgain)
+        } else {
+            state.accountState
+        }
+
         // Reset `activate` so the next Toggle reads as a fresh edge in observeToggle().
-        state.copy(activate = null)
+        state.copy(activate = null, accountState = accountState)
     }
 
     is IPProtectionAction.CheckAccount -> {
@@ -171,6 +216,14 @@ internal fun iPProtectionReducer(
             state
         }
     }
+
+    is IPProtectionAction.LocationChanged -> state.copy(
+        activate = if (state.proxyStatus == Authorized.Active) true else null,
+        locationState = LocationState(
+            selectedLocation = action.location,
+            locations = state.locationState.locations,
+        ),
+    )
 
     is InternalAction -> internalReducer(state, action)
 }
@@ -198,6 +251,7 @@ internal fun internalReducer(
             AccountStatus.EnrolledAndEntitled,
                 -> state
 
+            AccountStatus.Uninitialized,
             AccountStatus.WarmingUp,
             AccountStatus.NeedsAuthentication,
             AccountStatus.NeedsAuthorization,
@@ -216,7 +270,7 @@ internal fun internalReducer(
                 )
             }
 
-            AccountStatus.Uninitialized -> state.clearProfileData(action)
+            AccountStatus.NoAccount -> state.clearProfileData(action)
         }
     }
 
@@ -249,6 +303,7 @@ internal fun internalReducer(
             AccountStatus.AwaitingAuthentication,
             AccountStatus.WarmingUp,
             AccountStatus.Uninitialized,
+            AccountStatus.NoAccount,
                 -> {
                 AccountStatus.NeedsAuthentication
             }

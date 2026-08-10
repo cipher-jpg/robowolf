@@ -17,6 +17,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.Observer
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -24,15 +25,21 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+<<<<<<< HEAD
 import mozilla.components.browser.state.selector.selectedTab
+=======
+import mozilla.components.browser.state.state.CustomTabSessionState
+>>>>>>> upstream/main
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
 import mozilla.components.browser.thumbnails.BrowserThumbnails
 import mozilla.components.concept.engine.HitResult
 import mozilla.components.concept.engine.permission.SitePermissions
+import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.feature.app.links.AppLinksUseCases
 import mozilla.components.feature.contextmenu.ContextMenuCandidate
+import mozilla.components.feature.contextmenu.ContextMenuCandidate.Companion.createOpenInExternalAppCandidate
 import mozilla.components.feature.readerview.ReaderViewFeature
 import mozilla.components.feature.tab.collections.TabCollection
 import mozilla.components.feature.tabs.WindowFeature
@@ -54,6 +61,7 @@ import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
 import org.mozilla.fenix.components.metrics.installSourcePackage
+import org.mozilla.fenix.components.share.isSystemShareSheetSupported
 import org.mozilla.fenix.components.toolbar.gestures.ToolbarHorizontalGesturesHandler
 import org.mozilla.fenix.components.toolbar.gestures.ToolbarVerticalGesturesHandler
 import org.mozilla.fenix.compose.snackbar.Snackbar
@@ -61,6 +69,7 @@ import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.getRectWithScreenLocation
 import org.mozilla.fenix.ext.isGoogleSearchEngine
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.navigateSafe
@@ -72,16 +81,19 @@ import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.onboarding.OnboardingFragmentDirections
 import org.mozilla.fenix.onboarding.OnboardingReason
 import org.mozilla.fenix.onboarding.OnboardingTelemetryRecorder
-import org.mozilla.fenix.onboarding.continuous.ContinuousOnboardingFeatureDefault
-import org.mozilla.fenix.onboarding.continuous.ContinuousOnboardingStageProviderDefault
+import org.mozilla.fenix.onboarding.continuous.ContinuousOnboardingFeature
 import org.mozilla.fenix.settings.downloads.DownloadLocationManager
+<<<<<<< HEAD
 import org.mozilla.fenix.tabgroups.storage.database.StoredTabGroup
 import org.mozilla.fenix.tabstray.data.TabGroupTheme
 import org.mozilla.fenix.settings.quicksettings.protections.cookiebanners.getCookieBannerUIMode
+=======
+>>>>>>> upstream/main
 import org.mozilla.fenix.shortcut.PwaOnboardingObserver
 import org.mozilla.fenix.summarization.SummarizationNavigator
 import org.mozilla.fenix.termsofuse.store.Surface
 import org.mozilla.fenix.utils.Settings
+import mozilla.components.feature.contextmenu.R as contextMenuR
 import org.mozilla.fenix.ipprotection.store.Surface as IPProtectionSurface
 
 /**
@@ -94,6 +106,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
     private val translationsBinding = ViewBoundFeatureWrapper<TranslationsBinding>()
     private val translationsBannerIntegration = ViewBoundFeatureWrapper<TranslationsBannerIntegration>()
     private val ipProtectionOnboardingPrompt = ViewBoundFeatureWrapper<IPProtectionOnboardingPrompt>()
+    private val continuousOnboardingFeature = ViewBoundFeatureWrapper<ContinuousOnboardingFeature>()
     private var qrScanFenixFeature: ViewBoundFeatureWrapper<QrScanFenixFeature>? =
         ViewBoundFeatureWrapper<QrScanFenixFeature>()
     private val qrScanLauncher: ActivityResultLauncher<Intent> =
@@ -123,10 +136,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
 
     private val continuousOnboardingDefaultBrowserLauncher: ActivityResultLauncher<Intent> =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            continuousOnboardingFeature.onDefaultBrowserStepCompleted(
-                activity = requireActivity(),
-                resultCode = result.resultCode,
-            )
+            continuousOnboardingFeature.get()?.onDefaultBrowserStepCompleted(result.resultCode)
         }
 
     private val summarizationNavigator by lazy {
@@ -151,23 +161,6 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
         )
     }
 
-    private val continuousOnboardingFeature by lazy {
-        val settings = requireComponents.settings
-        ContinuousOnboardingFeatureDefault(
-            settings = settings,
-            telemetryRecorder = telemetryRecorder,
-            stageProvider = ContinuousOnboardingStageProviderDefault(settings),
-            navigateToSyncSignIn = {
-                findNavController().nav(
-                    id = R.id.browserFragment,
-                    directions = OnboardingFragmentDirections.actionGlobalTurnOnSync(
-                        entrypoint = FenixFxAEntryPoint.NewUserOnboarding,
-                    ),
-                )
-            },
-        )
-    }
-
     private var pwaOnboardingObserver: PwaOnboardingObserver? = null
 
     override fun initializeUI(view: View, tab: SessionState) {
@@ -182,6 +175,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
         initBrowserToolbarComposableUpdates(view)
         initTranslationsUpdates(context = context, rootView = view)
         initIPProtectionOnboarding(context, view)
+        initContinuousOnboardingFeature()
 
         thumbnailsFeature.set(
             feature = BrowserThumbnails(context, binding.engineView, components.core.store),
@@ -216,11 +210,6 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
         }
 
         setupShakeDetection()
-
-        continuousOnboardingFeature.maybeRunContinuousOnboarding(
-            activity = requireActivity(),
-            launcher = continuousOnboardingDefaultBrowserLauncher,
-        )
     }
 
     private fun setupToolbarSwipeBehavior(settings: Settings, components: Components) {
@@ -230,8 +219,8 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
                     activity = requireActivity(),
                     contentLayout = binding.browserLayout,
                     tabPreview = binding.tabPreview,
-                    toolbarLayout = browserToolbar.layout,
-                    navBarLayout = browserNavigationBar?.layout,
+                    toolbarLayoutRect = { browserToolbar.layout.getRectWithScreenLocation() },
+                    navBarLayoutRect = { browserNavigationBar?.layout?.getRectWithScreenLocation() },
                     store = components.core.store,
                     selectTabUseCase = components.useCases.tabsUseCases.selectTab,
                     onSwipeStarted = {
@@ -360,6 +349,23 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
         )
     }
 
+    private fun initContinuousOnboardingFeature() {
+        ContinuousOnboardingFeature.register(
+            fragment = this,
+            binding = continuousOnboardingFeature,
+            launcher = continuousOnboardingDefaultBrowserLauncher,
+            telemetryRecorder = telemetryRecorder,
+            navigateToSyncSignIn = {
+                findNavController().nav(
+                    id = R.id.browserFragment,
+                    directions = OnboardingFragmentDirections.actionGlobalTurnOnSync(
+                        entrypoint = FenixFxAEntryPoint.NewUserOnboarding,
+                    ),
+                )
+            },
+        )
+    }
+
     private fun openTranslationsDialogFromToolbar() {
         Translations.action.record(Translations.ActionExtra("main_flow_toolbar"))
         requireComponents.appStore.dispatch(SnackbarAction.SnackbarDismissed)
@@ -435,20 +441,13 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
 
     override fun navToQuickSettingsSheet(tab: SessionState, sitePermissions: SitePermissions?) {
         val useCase = requireComponents.useCases.trackingProtectionUseCases
-        FxNimbus.features.cookieBanners.recordExposure()
         useCase.containsException(tab.id) { hasTrackingProtectionException ->
             lifecycleScope.launch {
-                val cookieBannersStorage = requireComponents.core.cookieBannersStorage
-                val cookieBannerUIMode = cookieBannersStorage.getCookieBannerUIMode(
-                    tab = tab,
-                    isFeatureEnabledInPrivateMode = requireComponents.settings.shouldUseCookieBannerPrivateMode,
-                    publicSuffixList = requireComponents.publicSuffixList,
-                )
                 withContext(Dispatchers.Main) {
                     runIfFragmentIsAttached {
                         val isTrackingProtectionEnabled =
                             tab.trackingProtection.enabled && !hasTrackingProtectionException
-                        val directions = if (requireComponents.settings.enableUnifiedTrustPanel) {
+                        val directions =
                             BrowserFragmentDirections.actionBrowserFragmentToTrustPanelFragment(
                                 sessionId = tab.id,
                                 url = tab.content.url,
@@ -459,23 +458,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
                                 certificate = tab.content.securityInfo.certificate,
                                 permissionHighlights = tab.content.permissionHighlights,
                                 isTrackingProtectionEnabled = isTrackingProtectionEnabled,
-                                cookieBannerUIMode = cookieBannerUIMode,
                             )
-                        } else {
-                            BrowserFragmentDirections.actionBrowserFragmentToQuickSettingsSheetDialogFragment(
-                                sessionId = tab.id,
-                                url = tab.content.url,
-                                title = tab.content.title,
-                                isLocalPdf = tab.content.url.isContentUrl(),
-                                isSecured = tab.content.securityInfo.isSecure,
-                                sitePermissions = sitePermissions,
-                                gravity = getAppropriateLayoutGravity(),
-                                certificateName = tab.content.securityInfo.issuer,
-                                permissionHighlights = tab.content.permissionHighlights,
-                                isTrackingProtectionEnabled = isTrackingProtectionEnabled,
-                                cookieBannerUIMode = cookieBannerUIMode,
-                            )
-                        }
                         nav(R.id.browserFragment, directions)
                     }
                 }
@@ -526,19 +509,65 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
             { true },
         )
 
-        return ContextMenuCandidate.defaultCandidates(
-            context = context,
-            tabsUseCases = context.components.useCases.tabsUseCases,
-            contextMenuUseCases = context.components.useCases.contextMenuUseCases,
-            snackBarParentView = view,
-            snackbarDelegate = ContextMenuSnackbarDelegate(),
-            downloadsLocation = {
-                DownloadLocationManager(
-                    requireComponents.settings,
-                    requireContext().contentResolver,
-                ).defaultLocation
-            },
-        ) + ContextMenuCandidate.createOpenInExternalAppCandidate(
+        return if (requireComponents.settings.nativeShareSheetEnabled && isSystemShareSheetSupported) {
+            NativeShareSheetContextMenuCandidate.defaultCandidates(
+                context = context,
+                tabsUseCases = context.components.useCases.tabsUseCases,
+                contextMenuUseCases = context.components.useCases.contextMenuUseCases,
+                shareUseCases = context.components.useCases.shareUseCases,
+                getShareItems = {
+                    listOf(
+                        ShareData(
+                            title = context.getString(contextMenuR.string.mozac_feature_contextmenu_share_link),
+                            text = it,
+                            url = it,
+                        ),
+                    )
+                },
+                snackBarParentView = view,
+                snackbarDelegate = ContextMenuSnackbarDelegate(),
+                downloadsLocation = {
+                    DownloadLocationManager(
+                        requireComponents.settings,
+                        requireContext().contentResolver,
+                    ).defaultLocation
+                },
+                navigateToShareFragment = { currentTab, hitTabUrl ->
+                    val shareData = arrayOf(ShareData(title = hitTabUrl, url = hitTabUrl))
+                    val popUpToId = if (currentTab is CustomTabSessionState) {
+                        R.id.externalAppBrowserFragment
+                    } else {
+                        R.id.browserFragment
+                    }
+
+                    findNavController().nav(
+                        id = R.id.browserFragment,
+                        directions = BrowserFragmentDirections.actionGlobalShareFragment(
+                            sessionId = currentTab.id,
+                            data = shareData,
+                            showPage = true,
+                        ),
+                        navOptions = NavOptions.Builder()
+                            .setPopUpTo(popUpToId, false)
+                            .build(),
+                    )
+                },
+            )
+        } else {
+            ContextMenuCandidate.defaultCandidates(
+                context = context,
+                tabsUseCases = context.components.useCases.tabsUseCases,
+                contextMenuUseCases = context.components.useCases.contextMenuUseCases,
+                snackBarParentView = view,
+                snackbarDelegate = ContextMenuSnackbarDelegate(),
+                downloadsLocation = {
+                    DownloadLocationManager(
+                        requireComponents.settings,
+                        requireContext().contentResolver,
+                    ).defaultLocation
+                },
+            )
+        } + createOpenInExternalAppCandidate(
             requireContext(),
             contextMenuCandidateAppLinksUseCases,
         ) + createOpenWithGoogleLensCandidate(context) +
@@ -631,6 +660,6 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler, SystemIns
      */
     @VisibleForTesting
     internal fun updateLastBrowseActivity() {
-        requireComponents.settings.lastBrowseActivity = System.currentTimeMillis()
+        requireComponents.settings.recordLastBrowseActivity()
     }
 }

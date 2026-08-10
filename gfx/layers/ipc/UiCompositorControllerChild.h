@@ -4,12 +4,11 @@
 #ifndef include_gfx_ipc_UiCompositorControllerChild_h
 #define include_gfx_ipc_UiCompositorControllerChild_h
 
-#include "mozilla/layers/PUiCompositorControllerChild.h"
-
-#include "mozilla/gfx/2D.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/layers/UiCompositorControllerParent.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/layers/PUiCompositorControllerChild.h"
+#include "mozilla/layers/UiCompositorControllerParent.h"
 #include "nsThread.h"
 #ifdef MOZ_WIDGET_ANDROID
 #  include "SurfaceTexture.h"
@@ -81,8 +80,8 @@ class UiCompositorControllerChild final
   void HandleFatalError(const char* aMsg) override;
   mozilla::ipc::IPCResult RecvToolbarAnimatorMessageFromCompositor(
       const int32_t& aMessage);
-  mozilla::ipc::IPCResult RecvNotifyCompositorScrollUpdate(
-      const CompositorScrollUpdate& aUpdate);
+  mozilla::ipc::IPCResult RecvNotifyCompositorScrollUpdates(
+      const nsTArray<mozilla::layers::CompositorScrollUpdate>& aUpdates);
   mozilla::ipc::IPCResult RecvScreenPixels(
       uint64_t aRequestId, bool aSuccess,
       Maybe<ipc::FileDescriptor>&& aAcquireFence);

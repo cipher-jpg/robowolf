@@ -25,6 +25,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 const ENABLED_PREF = "contextualSearch.enabled";
@@ -138,7 +139,7 @@ class ProviderContextualSearch extends ActionsProvider {
 
     let host;
     try {
-      host = UrlbarUtils.stripPrefixAndTrim(browser.currentURI.host, {
+      host = lazy.UrlbarShared.stripPrefixAndTrim(browser.currentURI.host, {
         stripWww: true,
       })[0];
     } catch (e) {
@@ -350,6 +351,7 @@ class ProviderContextualSearch extends ActionsProvider {
     if (
       !queryContext.isPrivate &&
       type != INSTALLED_ENGINE &&
+      Services.policies.isAllowed("installSearchEngine") &&
       (await lazy.SearchService.shouldShowInstallPrompt(engine))
     ) {
       this.#showInstallPrompt(controller, engine);
@@ -363,7 +365,12 @@ class ProviderContextualSearch extends ActionsProvider {
   async #performSearch(engine, search, controller, enterSearchMode) {
     const [url] = UrlbarUtils.getSearchQueryUrl(engine, search);
     if (enterSearchMode) {
-      controller.input.search(search, { searchEngine: engine });
+      // Pass only the fields `search()` reads, as a plain object, so it stays
+      // structured-cloneable when this runs parent-side on the actor message
+      // path (the engine itself can't cross the boundary).
+      controller.input.search(search, {
+        searchEngine: { name: engine.name, aliases: engine.aliases },
+      });
     }
     controller.browserWindow.gBrowser.fixupAndLoadURIString(url, {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),

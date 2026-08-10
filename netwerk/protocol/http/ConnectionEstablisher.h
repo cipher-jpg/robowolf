@@ -6,13 +6,14 @@
 #define ConnectionEstablisher_h_
 
 #include <functional>
+
 #include "ConnectionHandle.h"
+#include "HappyEyeballsTransaction.h"
 #include "mozilla/Result.h"
 #include "mozilla/net/DNS.h"
 #include "nsAHttpConnection.h"
 #include "nsHttpConnection.h"
 #include "nsIAsyncOutputStream.h"
-#include "HappyEyeballsTransaction.h"
 
 class nsIDNSAddrRecord;
 class nsISocketTransport;
@@ -46,7 +47,7 @@ class ConnectionEstablisher : public nsITransportEventSink,
   using LnaCheckCallback = std::function<nsresult(nsISocketTransport*)>;
 
   ConnectionEstablisher(nsHttpConnectionInfo* aConnInfo, const NetAddr& aAddr,
-                        uint32_t aCaps);
+                        uint32_t aCaps, bool aAllow1918);
 
   virtual bool Start(DoneCallback&& aCallback) = 0;
   void SetSecurityCallbacks(nsIInterfaceRequestor* aCallbacks) {
@@ -74,9 +75,13 @@ class ConnectionEstablisher : public nsITransportEventSink,
   HttpConnectionBase* ResultConn() const { return mResultConn; }
   virtual bool IsUDP() const { return false; }
   bool HasConnected() const { return mHasConnected; }
+  bool RefusedForLocalAddress() const { return mRefusedForLocalAddress; }
 
  protected:
   virtual ~ConnectionEstablisher();
+  // Refuse a local (RFC1918) peer when !mAllow1918: sets
+  // mRefusedForLocalAddress and returns true so Start() bails without a socket.
+  bool RefuseIfLocalAddress();
 
   // Common implementation for activating a connection with a transaction
   nsresult ActivateConnectionWithTransaction(
@@ -94,10 +99,14 @@ class ConnectionEstablisher : public nsITransportEventSink,
   NetAddr mAddr;
   nsCOMPtr<nsIDNSAddrRecord> mAddrRecord;
   uint32_t mCaps = 0;
+  // When false, a local (RFC1918) peer is refused; Claim() flips it true once a
+  // real transaction takes over.
+  bool mAllow1918 = false;
   bool mFinished = false;
   bool mWaitingForConnect = false;
   bool mHasConnected = false;
   bool mConnectedOK = false;
+  bool mRefusedForLocalAddress = false;
 
   TimeStamp mConnectStart;
   TimeStamp mTcpConnectEnd;
@@ -135,7 +144,6 @@ class TCPConnectionEstablisher : public ConnectionEstablisher,
 
   TimeStamp mSynStarted;
   bool mSpeculative = false;
-  bool mAllow1918 = false;
 
   nsCOMPtr<nsISocketTransport> mSocketTransport;
   nsCOMPtr<nsIAsyncOutputStream> mStreamOut;

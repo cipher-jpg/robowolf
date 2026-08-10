@@ -42,7 +42,6 @@ import mozilla.components.compose.browser.toolbar.concept.PageOrigin.Companion.P
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
 import mozilla.components.compose.browser.toolbar.store.ProgressBarConfig
-import mozilla.components.concept.engine.cookiehandling.CookieBannersStorage
 import mozilla.components.concept.engine.ipprotection.IPProtectionHandler.StateInfo
 import mozilla.components.concept.engine.ipprotection.ServiceState
 import mozilla.components.concept.engine.permission.SitePermissionsStorage
@@ -119,7 +118,6 @@ class CustomTabBrowserToolbarMiddlewareTest {
     private val appStore: AppStore = mockk()
     private val ipProtectionStore = IPProtectionStore()
     private val permissionsStorage: SitePermissionsStorage = mockk()
-    private val cookieBannersStorage: CookieBannersStorage = mockk()
     private val useCases: CustomTabsUseCases = mockk()
     private val trackingProtectionUseCases: TrackingProtectionUseCases = mockk()
     private val publicSuffixList: PublicSuffixList = mockk {
@@ -393,7 +391,7 @@ class CustomTabBrowserToolbarMiddlewareTest {
         )
         val middleware = buildMiddleware(browserStore)
         val expectedInsecureIndicator = ActionButtonRes(
-            drawableResId = iconsR.drawable.mozac_ic_shield_slash_24,
+            drawableResId = iconsR.drawable.mozac_ic_shield_cross_24,
             contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
             onClick = SiteInfoClicked,
         )
@@ -421,7 +419,7 @@ class CustomTabBrowserToolbarMiddlewareTest {
         )
         val middleware = buildMiddleware(browserStore)
         val expectedInsecureIndicator = ActionButtonRes(
-            drawableResId = iconsR.drawable.mozac_ic_shield_slash_24,
+            drawableResId = iconsR.drawable.mozac_ic_shield_cross_24,
             contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
             onClick = SiteInfoClicked,
         )
@@ -461,7 +459,7 @@ class CustomTabBrowserToolbarMiddlewareTest {
         )
         val middleware = buildMiddleware(browserStore)
         val expectedInsecureIndicator = ActionButtonRes(
-            drawableResId = iconsR.drawable.mozac_ic_shield_slash_24,
+            drawableResId = iconsR.drawable.mozac_ic_shield_cross_24,
             contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
             onClick = SiteInfoClicked,
         )
@@ -483,6 +481,31 @@ class CustomTabBrowserToolbarMiddlewareTest {
         assertEquals(1, toolbarPageActions.size)
         securityIndicator = toolbarPageActions[0]
         assertEquals(expectedInsecureIndicator, securityIndicator)
+    }
+
+    @Test
+    fun `GIVEN ip protection is active WHEN the pill is built THEN proxyActiveShown is not dispatched until the animation starts`() = runTest {
+        val ipProtectionStore = IPProtectionStore(
+            initialState = IPProtectionState(proxyStatus = Authorized.Active),
+        )
+        val customTab = createCustomTab(
+            url = "URL",
+            id = customTabId,
+            trackingProtection = TrackingProtectionState(enabled = true, ignoredOnTrackingProtection = false),
+            securityInfo = SecurityInfo.Secure(),
+        )
+        val browserStore = BrowserStore(BrowserState(customTabs = listOf(customTab)))
+        val middleware = buildMiddleware(browserStore = browserStore, ipProtectionStore = ipProtectionStore)
+        val toolbarStore = buildStore(middleware)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val siteInfo = toolbarStore.state.displayState.pageActionsStart[0] as AnimatedPillActionRes
+        assertFalse(ipProtectionStore.state.proxyActiveShown)
+
+        siteInfo.onAnimationStarted?.invoke()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(ipProtectionStore.state.proxyActiveShown)
     }
 
     @Test
@@ -1135,14 +1158,12 @@ class CustomTabBrowserToolbarMiddlewareTest {
         appStore: AppStore = this.appStore,
         ipProtectionStore: IPProtectionStore = this.ipProtectionStore,
         permissionsStorage: SitePermissionsStorage = this.permissionsStorage,
-        cookieBannersStorage: CookieBannersStorage = this.cookieBannersStorage,
         useCases: CustomTabsUseCases = this.useCases,
         trackingProtectionUseCases: TrackingProtectionUseCases = this.trackingProtectionUseCases,
         publicSuffixList: PublicSuffixList = this.publicSuffixList,
         clipboard: ClipboardHandler = this.clipboard,
         navController: NavController = this.navController,
         closeTabDelegate: () -> Unit = this.closeTabDelegate,
-        settings: Settings = this.settings,
         isSandboxCustomTab: Boolean = false,
     ) = CustomTabBrowserToolbarMiddleware(
         uiContext = testContext,
@@ -1151,14 +1172,12 @@ class CustomTabBrowserToolbarMiddlewareTest {
         appStore = appStore,
         ipProtectionStore = ipProtectionStore,
         permissionsStorage = permissionsStorage,
-        cookieBannersStorage = cookieBannersStorage,
         useCases = useCases,
         trackingProtectionUseCases = trackingProtectionUseCases,
         publicSuffixList = publicSuffixList,
         clipboard = clipboard,
         navController = navController,
         closeTabDelegate = closeTabDelegate,
-        settings = settings,
         scope = testScope,
         isSandboxCustomTab = isSandboxCustomTab,
     )

@@ -9,12 +9,10 @@
 
 #include "gfxPlatformFontList.h"
 #include "gfxPlatformMac.h"
-
 #include "mozilla/FontPropertyTypes.h"
-#include "mozilla/gfx/UnscaledFontMac.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MemoryReporting.h"
-
+#include "mozilla/gfx/UnscaledFontMac.h"
 #include "nsRefPtrHashtable.h"
 #include "nsTArray.h"
 #include "nsUnicharUtils.h"
@@ -34,8 +32,8 @@ class CTFontEntry final : public gfxFontEntry {
 
   // for use with data fonts
   CTFontEntry(const nsACString& aPostscriptName, CGFontRef aFontRef,
-              WeightRange aWeight, StretchRange aStretch,
-              SlantStyleRange aStyle, bool aIsDataUserFont, bool aIsLocal);
+              WeightRange aWeight, WidthRange aWidth, SlantStyleRange aStyle,
+              bool aIsDataUserFont, bool aIsLocal);
 
   gfxFontEntry* Clone() const override;
 
@@ -169,11 +167,11 @@ class CoreTextFontList : public gfxPlatformFontList {
   already_AddRefed<gfxFontEntry> LookupLocalFont(
       FontVisibilityProvider* aFontVisibilityProvider,
       const nsACString& aFontName, WeightRange aWeightForEntry,
-      StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry) override;
+      WidthRange aWidthForEntry, SlantStyleRange aStyleForEntry) override;
 
   already_AddRefed<gfxFontEntry> MakePlatformFont(
       const nsACString& aFontName, WeightRange aWeightForEntry,
-      StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry,
+      WidthRange aWidthForEntry, SlantStyleRange aStyleForEntry,
       const uint8_t* aFontData, uint32_t aLength) override;
 
   bool FindAndAddFamiliesLocked(

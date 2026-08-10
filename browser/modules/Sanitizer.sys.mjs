@@ -12,7 +12,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ChatStore:
     "moz-src:///browser/components/aiwindow/ui/modules/ChatStore.sys.mjs",
   ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+    "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrincipalsCollector: "resource://gre/modules/PrincipalsCollector.sys.mjs",
@@ -518,7 +518,6 @@ export var Sanitizer = {
             progress,
             principalsForShutdownClearing,
             Ci.nsIClearDataService.CLEAR_COOKIES |
-              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
               Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE |
               Ci.nsIClearDataService.CLEAR_BOUNCE_TRACKING_PROTECTION_STATE
           );
@@ -527,7 +526,6 @@ export var Sanitizer = {
           await clearData(
             range,
             Ci.nsIClearDataService.CLEAR_COOKIES |
-              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
               Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE |
               Ci.nsIClearDataService.CLEAR_BOUNCE_TRACKING_PROTECTION_STATE
           );
@@ -549,7 +547,6 @@ export var Sanitizer = {
             progress,
             principalsForShutdownClearing,
             Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
-              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
               Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE
           );
         } else {
@@ -557,7 +554,6 @@ export var Sanitizer = {
           await clearData(
             range,
             Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
-              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
               Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE
           );
         }
@@ -695,7 +691,6 @@ export var Sanitizer = {
             Ci.nsIClearDataService.CLEAR_CLIENT_AUTH_REMEMBER_SERVICE |
             Ci.nsIClearDataService.CLEAR_CERT_EXCEPTIONS |
             Ci.nsIClearDataService.CLEAR_CREDENTIAL_MANAGER_STATE |
-            Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXCEPTION |
             Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE
         );
         Glean.browserSanitizer.sitesettings.stopAndAccumulate(timerId);

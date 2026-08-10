@@ -8,13 +8,13 @@
 # documentation and how to modify this file.
 repo: mozilla-central
 created_at: '2021-10-14T12:50:40.073465'
-updated_at: '2026-06-24T13:35:09.623323+00:00'
+updated_at: '2026-08-05T14:32:47.253074+00:00'
 export:
-  path: ./docs/mots/index.rst
-  format: rst
+  path: ./docs/mots/index.md
+  format: md
   searchfox_enabled: true
 description: |
-  Mozilla operates under a `module ownership governance system <https://www.mozilla.org/hacking/module-ownership.html>`_. A module is a discrete unit of code or activity. An owner is the person in charge of a module or sub-module. A peer is a person whom the owner has appointed to help them. A module may have multiple peers and, very occasionally, multiple owners.
+  Mozilla operates under a [module ownership governance system](https://www.mozilla.org/hacking/module-ownership.html). A module is a discrete unit of code or activity. An owner is the person in charge of a module or sub-module. A peer is a person whom the owner has appointed to help them. A module may have multiple peers and, very occasionally, multiple owners.
 
   The system is overseen by the owner and peers of the Module Ownership module. For the modules that make up Firefox, oversight is provided by the Firefox Technical Leadership module. Owners may add and remove peers from their modules as they wish, without reference to anyone else.
 
@@ -54,6 +54,10 @@ people:
     bmo_id: 693303
     name: Alex Hochheiden
     nick: ahochheiden
+  - &alaskanemily
+    bmo_id: 650458
+    name: Emily McDonough
+    nick: alaskanemily
   - &aleiserson
     bmo_id: 713407
     name: Andy Leiserson
@@ -336,10 +340,6 @@ people:
     bmo_id: 455480
     name: Edgar Chen
     nick: edgar
-  - &edgul
-    bmo_id: 701256
-    name: edgul
-    nick: edgul
   - &eeejay
     bmo_id: 291675
     name: Eitan Isaacson
@@ -997,6 +997,10 @@ people:
     bmo_id: 339062
     name: Luca Greco
     nick: rpl
+  - &rrando
+    bmo_id: 732678
+    name: Rolf Rando
+    nick: rrando
   - &rrelyea
     bmo_id: 11099
     name: Robert Relyea
@@ -1123,6 +1127,10 @@ people:
     bmo_id: 663555
     name: Tarik Eshaq
     nick: teshaq
+  - &tetchart
+    bmo_id: 783580
+    name: Tyler Etchart
+    nick: tetchart
   - &tgiles
     bmo_id: 666930
     name: Tim Giles
@@ -1477,7 +1485,7 @@ modules:
         - Mitchell Hentges
         - *andi
       group: dev-builds
-      url: :ref:`Build System`
+      url: '{ref}`Build System`'
       components:
         - Core::Build Config
     owners:
@@ -1487,9 +1495,9 @@ modules:
       - *sergesanspaille
     submodules:
 
-      - name: 'Core: Build Config - Fennec'
-        description: Submodule of the build config covering Fennec's build system
-          in mobile/android.
+      - name: 'Core: Build Config - Fenix'
+        description: Submodule of the build config covering Fenix's build system in
+          mobile/android.
         meta:
           group: dev-builds
           components:
@@ -1587,18 +1595,19 @@ modules:
         - Honza Bambas
         - Emma Zühlcke
         - Tom Schuster
+        - Ed Guloien
       group: dev-platform
       components:
         - 'Core::Networking: Cookies'
       review_group: cookies
     owners:
-      - *dveditz
       - *timhuang
-      - *valentin
       - *baku
     peers:
-      - *edgul
+      - *manuel
       - *bvandersloot
+      - *valentin
+      - *dveditz
     machine_name: core_cookies
 
   - name: 'Core: Crash reporting'
@@ -1617,7 +1626,7 @@ modules:
         - Aria Beingessner
         - Kris Wright
       group: dev-platform
-      url: :ref:`Crash Reporter`
+      url: '{ref}`Crash Reporter`'
       components:
         - Toolkit::Crash Reporting
     owners:
@@ -1825,7 +1834,7 @@ modules:
       owners_emeritus:
         - Ehsan Akhgari
       group: dev-platform
-      url: :ref:`Editor`
+      url: '{ref}`Editor`'
       components:
         - 'Core::DOM: Editor'
     owners:
@@ -2039,7 +2048,7 @@ modules:
         - Jungshik Shin
         - Simon Montagu
       group: dev-i18n
-      url: :ref:`Internationalization`
+      url: '{ref}`Internationalization`'
       components:
         - Core::Internationalization
     owners:
@@ -2242,6 +2251,7 @@ modules:
       - *emilio
       - *TYLin
       - *jwatt
+      - *alaskanemily
     machine_name: core_layout_engine
 
   - name: 'Core: Legacy HTML Parser'
@@ -2302,19 +2312,58 @@ modules:
   - machine_name: core_machine_learning
     name: 'Core: Machine Learning'
     description: AI services and local inference
-    includes:
-      - browser/components/genai/
-      - toolkit/components/aboutinference/
-      - toolkit/components/ml/
     meta:
-      components:
-        - Core::Machine Learning
-      review_group: firefox-ai-ml-reviewers
+      owners_emeritus:
+        - *tarek
     owners:
       - *Mardak
-      - *tarek
     peers:
       - *gregtatum
+      - *pdahiya
+      - *rrando
+      - *tetchart
+    submodules:
+      - machine_name: core_machine_learning_frontend
+        name: 'Machine Learning: Frontend'
+        includes:
+          - browser/components/aiwindow/
+          - browser/components/genai/
+        meta:
+          components:
+            - 'Core::Machine Learning: Frontend'
+          review_group: ai-frontend-reviewers
+        owners:
+          - *Mardak
+        peers:
+          - *pdahiya
+
+      - machine_name: core_machine_learning_models
+        name: 'Machine Learning: Models'
+        includes:
+          - browser/components/aiwindow/models/
+          - browser/components/aiwindow/services/
+        meta:
+          components:
+            - 'Core::Machine Learning: General'
+          review_group: ai-models-reviewers
+        owners:
+          - *rrando
+          - *tetchart
+
+      - machine_name: core_machine_learning_platform
+        name: 'Machine Learning: Platform'
+        includes:
+          - toolkit/components/aboutinference/
+          - toolkit/components/ml/
+          - toolkit/components/pageextractor/
+        meta:
+          components:
+            - 'Core::Machine Learning: On Device'
+          review_group: ai-platform-reviewers
+        owners:
+          - *gregtatum
+        peers:
+          - *nordzilla
 
   - name: 'Core: MathML'
     description: MathML is a low-level specification for describing mathematics which
@@ -2515,7 +2564,7 @@ modules:
         - Jason Duell
         - Junior Hsu
       group: dev-tech-network
-      url: :ref:`Networking`
+      url: '{ref}`Networking`'
       components:
         - Core::Networking
         - 'Core::Networking: Cache'
@@ -2591,7 +2640,7 @@ modules:
       owners_emeritus:
         - Wan-Teh Chang
       group: dev-tech-nspr
-      url: :ref:`NSPR`
+      url: '{ref}`NSPR`'
       components:
         - NSPR
     owners:
@@ -2831,7 +2880,7 @@ modules:
         - Franziskus Kiefer
         - Kevin Jacobs
       group: dev-tech-crypto
-      url: :ref:`Network Security Services (NSS)`
+      url: '{ref}`Network Security Services (NSS)`'
       components:
         - NSS
         - JSS
@@ -2888,7 +2937,7 @@ modules:
     meta:
       components:
         - 'Core::Security: RLBox'
-  - name: 'Core: Static analysis & rewriting for C++'
+  - name: Static analysis & rewriting for C++
     description: Tools for checking C++ code looking for problems at compile time,
       plus tools for automated rewriting of C++ code.
     includes:
@@ -2903,7 +2952,7 @@ modules:
         - Ehsan Akhgari
       group: dev-platform
       components:
-        - Core::Rewriting & Analysis
+        - Developer Infrastructure::Source Code Analysis
       review_group: static-analysis-reviewers
     owners:
       - *sergesanspaille
@@ -2941,7 +2990,7 @@ modules:
       - xpcom/string/**/*
     meta:
       group: dev-tech-xpcom
-      url: :ref:`String Guide`
+      url: '{ref}`String Guide`'
       components:
         - Core::String
       owners_emeritus:
@@ -2978,6 +3027,7 @@ modules:
       - *dshin
       - *tlouw
       - *zrhoffman
+      - *alaskanemily
     machine_name: core_style_system
 
   - name: 'Core: Supply Chain'
@@ -3041,7 +3091,8 @@ modules:
     description: The View Manager is responsible for handling "heavyweight" rendering
       (some clipping, compositing) and event handling tasks.
     includes:
-      - view/**/*
+      - layout/base/**/*
+      - layout/painting/**/*
     meta:
       owners_emeritus:
         - Robert O'Callahan
@@ -3083,7 +3134,7 @@ modules:
       # TODO: "the display list and layer related methods on nsIFrame and its subclasses"
     meta:
       group: dev-platform
-      url: :ref:`Style system (CSS) & Layout`
+      url: '{ref}`Style system (CSS) & Layout`'
       components:
         - 'Core::Layout: Web Painting'
       owners_emeritus:
@@ -3288,6 +3339,7 @@ modules:
         - Robert O'Callahan
       group: dev-platform
       url: http://www.mozilla.org/ports/gtk/
+      review_group: gtk-reviewers
       components:
         - 'Core::Widget: Gtk'
     owners:
@@ -3435,7 +3487,7 @@ modules:
         - Simon Giesecke
         - *KrisWright
       group: dev-platform
-      url: :ref:`XPCOM`
+      url: '{ref}`XPCOM`'
       components:
         - Core::XPCOM
         - Toolkit::IOUtils and PathUtils
@@ -3485,7 +3537,7 @@ modules:
         - Mike Shaver
         - Josh 'timeless' Soref
       group: dev-tech-xpcom
-      url: :ref:`XPIDL`
+      url: '{ref}`XPIDL`'
     owners:
       - *nika
     peers:
@@ -4550,7 +4602,7 @@ modules:
         - 'Testing :: Performance'
         - 'Testing :: mozperftest'
         - 'Testing :: Condprofile'
-      url: :ref:`Performance Testing`
+      url: '{ref}`Performance Testing`'
       review_group: perftest-reviewers
   - machine_name: testing_reftest
     name: Reftest (+ jsreftest + crashtest)
@@ -4658,7 +4710,7 @@ modules:
           owners_emeritus:
             - Georg Fritzsche
           group: fx-data-dev
-          url: :ref:`Telemetry`
+          url: '{ref}`Telemetry`'
           peers_emeritus:
             - *perrymcmanis
         owners:
@@ -4667,6 +4719,7 @@ modules:
           - *Dexter
           - *janerik
           - *travis
+          - *charlie
         machine_name: telemetry
 
       - name: UI Widgets
@@ -4800,5 +4853,5 @@ modules:
         - Ryan Tilder
       group: dev-platform
 hashes:
-  config: f76af66e70a647591557a42ecc1cd5a1c13e922f
-  export: 26ca53b86692a3584fe24811a6db0cd0e788c65b
+  config: e6a958359235fa7c8d84ef7814b347de385b8ed6
+  export: f6110e8837a07e46ce32248ea6460733a76353f3

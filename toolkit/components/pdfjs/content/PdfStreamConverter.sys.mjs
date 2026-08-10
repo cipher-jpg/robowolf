@@ -16,7 +16,7 @@
 const PDFJS_EVENT_ID = "pdf.js.message";
 const PDF_VIEWER_ORIGIN = "resource://pdf.js";
 const PDF_VIEWER_WEB_PAGE = "resource://pdf.js/web/viewer.html";
-const MAX_NUMBER_OF_PREFS = 50;
+const MAX_NUMBER_OF_PREFS = 60;
 const PDF_CONTENT_TYPE = "application/pdf";
 const SUMO_URL = "https://support.mozilla.org/";
 
@@ -397,6 +397,28 @@ class ChromeActions {
       return;
     }
     sendResponse(await actor.sendQuery("PDFJS:Parent:loadAIEngine", data));
+  }
+
+  async verifyPdfSignature(data, sendResponse) {
+    const actor = getActor(this.domWindow);
+    if (!actor) {
+      sendResponse({ error: "no-actor" });
+      return;
+    }
+    sendResponse(
+      await actor.sendQuery("PDFJS:Parent:verifyPdfSignature", data)
+    );
+  }
+
+  async viewPdfCertificate(data, sendResponse) {
+    const actor = getActor(this.domWindow);
+    if (!actor) {
+      sendResponse(false);
+      return;
+    }
+    sendResponse(
+      await actor.sendQuery("PDFJS:Parent:viewPdfCertificate", data)
+    );
   }
 
   download(data) {

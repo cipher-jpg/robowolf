@@ -3,151 +3,148 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
+#include "nsHttpChannel.h"
 
 #include <inttypes.h>
 
-#include "mozilla/ScopeExit.h"
-#include "mozilla/Sprintf.h"
-#include "mozilla/ToString.h"
-#include "mozilla/dom/nsCSPContext.h"
-#include "mozilla/dom/NavigatorLogin.h"
-#include "mozilla/glean/AntitrackingMetrics.h"
-#include "mozilla/glean/NetwerkMetrics.h"
-#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
-#include "mozilla/net/CaptivePortalService.h"
-#include "mozilla/net/CookieServiceParent.h"
-#include "mozilla/net/NoVarySearchUtils.h"
-#include "mozilla/StoragePrincipalHelper.h"
-
-#include "nsCOMPtr.h"
-#include "nsContentSecurityUtils.h"
-#include "nsHttp.h"
-#include "nsHttpChannel.h"
-#include "nsHttpChannelAuthProvider.h"
-#include "nsHttpConnectionMgr.h"
-#include "nsHttpHandler.h"
-#include "nsIStreamConverter.h"
-#include "nsString.h"
-#include "nsICacheStorageService.h"
-#include "nsICacheStorage.h"
-#include "nsICacheEntry.h"
-#include "nsICookieNotification.h"
-#include "nsICryptoHash.h"
-#include "nsIEffectiveTLDService.h"
-#include "nsIHttpHeaderVisitor.h"
-#include "nsINetworkInterceptController.h"
-#include "nsIStringBundle.h"
-#include "nsIStreamListenerTee.h"
-#include "nsISeekableStream.h"
-#include "nsIProtocolProxyService2.h"
-#include "nsIURLQueryStringStripper.h"
-#include "nsIWebTransport.h"
-#include "nsCRT.h"
-#include "nsMimeTypes.h"
-#include "nsNetCID.h"
-#include "nsNetUtil.h"
-#include "nsIStreamTransportService.h"
-#include "prnetdb.h"
-#include "nsEscape.h"
-#include "nsComponentManagerUtils.h"
-#include "nsStreamUtils.h"
-#include "nsIOService.h"
-#include "nsDNSPrefetch.h"
-#include "nsChannelClassifier.h"
-#include "nsIRedirectResultListener.h"
-#include "mozilla/TimeStamp.h"
-#include "nsError.h"
-#include "nsPrintfCString.h"
-#include "nsQueryObject.h"
-#include "nsThreadUtils.h"
-#include "nsIConsoleService.h"
-#include "nsINetworkErrorLogging.h"
+#include "AlternateServices.h"
+#include "CacheControlParser.h"
+#include "CacheStorageService.h"
+#include "CookieService.h"
+#include "HttpChannelParent.h"
+#include "HttpLog.h"
+#include "HttpTrafficAnalyzer.h"
+#include "HttpTransactionParent.h"
+#include "InterceptedHttpChannel.h"
+#include "LNAPermissionRequest.h"
+#include "LoadContextInfo.h"
+#include "NetworkMarker.h"
+#include "ThirdPartyUtil.h"
 #include "mozilla/AntiTrackingRedirectHeuristic.h"
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/Components.h"
+#include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/FlowMarkers.h"
+#include "mozilla/NullPrincipal.h"
 #include "mozilla/PerfStats.h"
 #include "mozilla/ProfilerDumpOrCrash.h"
 #include "mozilla/ProfilerLabels.h"
-#include "mozilla/FlowMarkers.h"
-#include "mozilla/Components.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/Services.h"
+#include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "sslt.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsContentUtils.h"
-#include "nsContentSecurityManager.h"
-#include "nsIClassOfService.h"
-#include "CookieService.h"
-#include "nsIPrincipal.h"
-#include "nsIScriptError.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsITransportSecurityInfo.h"
-#include "nsIWebProgressListener.h"
-#include "LoadContextInfo.h"
-#include "netCore.h"
-#include "nsHttpTransaction.h"
-#include "nsICancelable.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsIPrompt.h"
-#include "nsInputStreamPump.h"
-#include "nsURLHelper.h"
-#include "nsISiteIntegrityService.h"
-#include "nsISiteSecurityService.h"
-#include "nsISocketTransport.h"
-#include "nsIStreamConverterService.h"
-#include "nsIURIMutator.h"
-#include "nsString.h"
-#include "nsStringStream.h"
-#include "mozilla/dom/PerformanceStorage.h"
-#include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/glean/DomSecurityMetrics.h"
+#include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/Services.h"
-#include "nsISystemInfo.h"
-#include "mozilla/Components.h"
-#include "AlternateServices.h"
-#include "NetworkMarker.h"
-#include "nsIDNSRecord.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/ToString.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/NavigatorLogin.h"
+#include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/dom/PolicyContainer.h"
-#include "nsICompressConvStats.h"
-#include "nsCORSListenerProxy.h"
-#include "nsISocketProvider.h"
-#include "mozilla/extensions/StreamFilterParent.h"
-#include "mozilla/net/SFVService.h"
-#include "mozilla/NullPrincipal.h"
-#include "CacheControlParser.h"
-#include "nsMixedContentBlocker.h"
-#include "CacheStorageService.h"
-#include "HttpChannelParent.h"
-#include "HttpTransactionParent.h"
-#include "ThirdPartyUtil.h"
-#include "InterceptedHttpChannel.h"
-#include "nsINetworkLinkService.h"
-#include "mozilla/ContentBlockingAllowList.h"
+#include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/SecFetch.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
+#include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/nsHTTPSOnlyStreamListener.h"
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
+#include "mozilla/extensions/StreamFilterParent.h"
+#include "mozilla/glean/AntitrackingMetrics.h"
+#include "mozilla/glean/DomSecurityMetrics.h"
+#include "mozilla/glean/NetwerkMetrics.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/net/AsyncUrlChannelClassifier.h"
-#include "mozilla/net/CookieJarSettings.h"
-#include "mozilla/net/NeckoChannelParams.h"
-#include "mozilla/net/OpaqueResponseUtils.h"
+#include "mozilla/net/CaptivePortalService.h"
 #include "mozilla/net/ChannelClassifierUtils.h"
+#include "mozilla/net/CookieJarSettings.h"
+#include "mozilla/net/CookieServiceParent.h"
+#include "mozilla/net/NeckoChannelParams.h"
+#include "mozilla/net/NoVarySearchUtils.h"
+#include "mozilla/net/OpaqueResponseUtils.h"
+#include "mozilla/net/SFVService.h"
+#include "mozilla/net/SocketProcessParent.h"
+#include "mozilla/net/TRRService.h"
 #include "mozilla/net/URLPatternGlue.h"
 #include "mozilla/net/urlpattern_glue.h"
-#include "HttpTrafficAnalyzer.h"
-#include "mozilla/net/SocketProcessParent.h"
-#include "mozilla/dom/SecFetch.h"
-#include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/net/TRRService.h"
-#include "LNAPermissionRequest.h"
+#include "netCore.h"
+#include "nsCOMPtr.h"
+#include "nsCORSListenerProxy.h"
+#include "nsCRT.h"
+#include "nsChannelClassifier.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentSecurityManager.h"
+#include "nsContentSecurityUtils.h"
+#include "nsContentUtils.h"
+#include "nsDNSPrefetch.h"
+#include "nsError.h"
+#include "nsEscape.h"
+#include "nsHttp.h"
+#include "nsHttpChannelAuthProvider.h"
+#include "nsHttpConnectionMgr.h"
+#include "nsHttpHandler.h"
+#include "nsHttpTransaction.h"
+#include "nsICacheEntry.h"
+#include "nsICacheStorage.h"
+#include "nsICacheStorageService.h"
+#include "nsICancelable.h"
+#include "nsIClassOfService.h"
+#include "nsICompressConvStats.h"
+#include "nsIConsoleService.h"
+#include "nsICookieNotification.h"
+#include "nsICryptoHash.h"
+#include "nsIDNSRecord.h"
+#include "nsIEffectiveTLDService.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsIHttpHeaderVisitor.h"
+#include "nsINetworkErrorLogging.h"
+#include "nsINetworkInterceptController.h"
+#include "nsINetworkLinkService.h"
+#include "nsIOService.h"
+#include "nsIPrincipal.h"
+#include "nsIPrompt.h"
+#include "nsIProtocolProxyService2.h"
+#include "nsIRedirectResultListener.h"
+#include "nsIScriptError.h"
+#include "nsIScriptSecurityManager.h"
+#include "nsISeekableStream.h"
+#include "nsISiteIntegrityService.h"
+#include "nsISiteSecurityService.h"
+#include "nsISocketProvider.h"
+#include "nsISocketTransport.h"
+#include "nsIStreamConverter.h"
+#include "nsIStreamConverterService.h"
+#include "nsIStreamListenerTee.h"
+#include "nsIStreamTransportService.h"
+#include "nsIStringBundle.h"
+#include "nsISystemInfo.h"
+#include "nsITransportSecurityInfo.h"
+#include "nsIURIMutator.h"
+#include "nsIURLQueryStringStripper.h"
+#include "nsIWebProgressListener.h"
+#include "nsIWebTransport.h"
+#include "nsInputStreamPump.h"
+#include "nsMimeTypes.h"
+#include "nsMixedContentBlocker.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsPrintfCString.h"
+#include "nsQueryObject.h"
+#include "nsStreamUtils.h"
+#include "nsString.h"
+#include "nsStringStream.h"
+#include "nsThreadUtils.h"
+#include "nsURLHelper.h"
 #include "nsUnknownDecoder.h"
+#include "prnetdb.h"
+#include "sslt.h"
 #ifdef XP_WIN
 #  include "HttpWinUtils.h"
 #endif
@@ -610,8 +607,8 @@ void nsHttpChannel::CancelSuspendOrResumeAfterExamineResponse() {
   if (mSuspendAfterExamineResponse.isNothing()) {
     return;
   }
-  bool oldValue = mSuspendAfterExamineResponse.ref().exchange(false);
-  if (!oldValue) {
+  mSuspendAfterExamineResponse.ref() = false;
+  if (mSuspendedForExamineResponse.exchange(false)) {
     Resume();
   }
 }
@@ -622,6 +619,7 @@ void nsHttpChannel::MaybeSuspendAfterExamineResponse() {
   }
   bool oldValue = mSuspendAfterExamineResponse.ref().exchange(false);
   if (oldValue) {
+    mSuspendedForExamineResponse = true;
     Suspend();
   }
 }
@@ -1499,6 +1497,9 @@ nsresult nsHttpChannel::ConnectOnTailUnblock() {
     LOG(("nsHttpChannel::Connect %p AwaitingCacheCallbacks forces async\n",
          this));
     MOZ_ASSERT(NS_SUCCEEDED(rv), "Unexpected state");
+
+    // Backstop against a wedged cache entry that never delivers its callback.
+    MaybeStartCacheWaitTimer();
 
     if (mNetworkTriggered && mWaitingForProxy) {
       // Someone has called TriggerNetwork(), meaning we are racing the
@@ -2456,7 +2457,7 @@ nsresult nsHttpChannel::CallOnStartRequest() {
       PerformOpaqueResponseSafelistCheckBeforeSniff();
   if (opaqueResponse == OpaqueResponse::Block) {
     SetChannelBlockedByOpaqueResponse();
-    CancelWithReason(NS_BINDING_ABORTED,
+    CancelWithReason(NS_ERROR_DOM_NETWORK_ERR,
                      "OpaqueResponseBlocker::BlockResponse"_ns);
     return NS_BINDING_ABORTED;
   }
@@ -4519,7 +4520,7 @@ bool nsHttpChannel::ResponseWouldVary(nsICacheEntry* entry) {
         // If hash failed, be conservative (the cached hash
         // exists at this point) and claim response would vary
         if (NS_FAILED(rv)) return true;
-        newVal = hash;
+        newVal = std::move(hash);
 
         LOG(
             ("nsHttpChannel::ResponseWouldVary [this=%p] "
@@ -4879,14 +4880,14 @@ void nsHttpChannel::MaybeGenerateNELReport() {
 
   ReportDeliver::ReportData data;
   data.mType = u"network-error"_ns;
-  data.mGroupName = group;
-  data.mURL = url;
+  data.mGroupName = std::move(group);
+  data.mURL = std::move(url);
   data.mFailures = 0;
   data.mCreationTime = TimeStamp::Now();
 
   data.mPrincipal = std::move(channelPrincipal);
-  data.mEndpointURL = endpointURL;
-  data.mReportBodyJSON = body;
+  data.mEndpointURL = std::move(endpointURL);
+  data.mReportBodyJSON = std::move(body);
   nsAutoCString userAgent;
   // XXX(valentin): Should this be the potentially user set value of the header
   // or the current value of user_agent from http handler?
@@ -5052,7 +5053,6 @@ nsresult nsHttpChannel::OpenCacheEntryInternal(bool isHttps) {
   if (!info) {
     return NS_ERROR_FAILURE;
   }
-
   uint32_t cacheEntryOpenFlags;
   bool offline = gIOService->IsOffline();
 
@@ -5568,9 +5568,22 @@ nsHttpChannel::OnCacheEntryAvailable(nsICacheEntry* entry, bool aNew,
        "new=%d status=%" PRIx32 "] for %s",
        this, entry, aNew, static_cast<uint32_t>(status), mSpec.get()));
 
+  // The cache callback arrived (or we're tearing down); the backstop timer is
+  // no longer needed.
+  CancelCacheWaitTimer();
+
   // if the channel's already fired onStopRequest, then we should ignore
   // this event.
   if (!LoadIsPending()) {
+    mCacheInputStream.CloseAndRelease();
+    return NS_OK;
+  }
+
+  // If the backstop already fired we gave up on the cache and raced to the
+  // network; ignore this late callback so we don't reprocess the entry.
+  if (mCacheWaitTimedOut) {
+    LOG(("  cache callback arrived after backstop timeout, ignoring [this=%p]",
+         this));
     mCacheInputStream.CloseAndRelease();
     return NS_OK;
   }
@@ -6018,6 +6031,7 @@ nsresult nsHttpChannel::ReadFromCache(void) {
 }
 
 void nsHttpChannel::CloseCacheEntry(bool doomOnFailure) {
+  CancelCacheWaitTimer();
   mCacheInputStream.CloseAndRelease();
 
   if (!mCacheEntry) return;
@@ -6067,7 +6081,7 @@ void nsHttpChannel::CloseCacheEntry(bool doomOnFailure) {
       nsHttpAtom secPurposeAtom = nsHttp::ResolveAtom("Sec-Purpose"_ns);
       if (secPurposeAtom &&
           NS_SUCCEEDED(mRequestHead.GetHeader(secPurposeAtom, secPurpose)) &&
-          secPurpose.EqualsLiteral("prefetch") &&
+          StringBeginsWith(secPurpose, "prefetch"_ns) &&
           !mResponseHead->MustValidate()) {
         nsAutoCString expires;
         (void)mResponseHead->GetHeader(nsHttp::Expires, expires);
@@ -6288,7 +6302,7 @@ nsresult nsHttpChannel::UpdateCacheEntryHeaders(nsICacheEntry* entry,
               if (NS_FAILED(rv)) {
                 val = "<hash failed>"_ns;
               } else {
-                val = hash;
+                val = std::move(hash);
               }
 
               LOG(("   hashed to %s\n", val.get()));
@@ -6817,7 +6831,7 @@ nsresult nsHttpChannel::AsyncProcessRedirection(uint32_t redirectType) {
   nsAutoCString locationBuf;
   if (NS_EscapeURL(location.get(), -1, esc_OnlyNonASCII | esc_Spaces,
                    locationBuf)) {
-    location = locationBuf;
+    location = std::move(locationBuf);
   }
 
   mRedirectType = redirectType;
@@ -7439,6 +7453,18 @@ nsresult nsHttpChannel::CancelInternal(nsresult status) {
     (void)AsyncAbort(status);
   }
 
+  // If we suspended after examining the response to await asynchronous
+  // tracking-protection annotation (bug 2030021), a cancel while suspended
+  // would otherwise defer the terminal teardown below (CloseCacheEntry /
+  // AsyncAbort) to a Resume() that may never arrive.  For a cache writer that
+  // leaves the entry perpetually "being written" -- its output stream never
+  // closed and the entry never doomed -- wedging every later same-URL
+  // revalidating consumer forever (bug 2052908).  Undo the annotation
+  // suspension now so the cancelled pump delivers OnStopRequest and the
+  // write-only entry is closed/doomed normally.  Safe if we only primed but
+  // never actually suspended.
+  CancelSuspendOrResumeAfterExamineResponse();
+
   // If suspended waiting for dictionary prefetch, unblock it so the channel
   // can proceed to cleanup. The prefetch callback may never fire, so we must
   // not rely on it to call Resume().
@@ -7769,7 +7795,7 @@ nsHttpChannel::AsyncOpen(nsIStreamListener* aListener) {
   if (NS_SUCCEEDED(mRequestHead.GetHeader(nsHttp::Cookie, cookieHeader))) {
     // if this is a cache revalidaing channel (mIsStaleRevalidation), then this
     // represents both user cookies and cookies from cookieService
-    mUserSetCookieHeader = cookieHeader;
+    mUserSetCookieHeader = std::move(cookieHeader);
   }
 
   // Set user agent override, do so before OnOpeningRequest notification
@@ -10593,8 +10619,14 @@ nsresult nsHttpChannel::ContinueOnStopRequest(nsresult aStatus, bool aIsFromNet,
         mLastStatusReported, TimeStamp::Now(), size, mCacheDisposition,
         mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(), this, mStatus,
-        &mTransactionTimings, std::move(mSource), httpVersion, responseStatus,
-        Some(nsDependentCString(contentType.get())));
+        &mTransactionTimings, std::move(mSource),
+        // Skip the version for a cached response: it reflects the original
+        // fetch, not this request's connection.
+        (mCacheDisposition == kCacheHit ||
+         mCacheDisposition == kCacheHitViaReval)
+            ? Nothing()
+            : httpVersion,
+        responseStatus, Some(nsDependentCString(contentType.get())));
   }
 
   if (mAuthRetryPending &&
@@ -12172,9 +12204,67 @@ nsHttpChannel::TimerCallback::Notify(nsITimer* aTimer) {
   if (aTimer == mChannel->mSuspendTimer) {
     return mChannel->OnSuspendTimeout();
   }
+  if (aTimer == mChannel->mCacheWaitTimer) {
+    return mChannel->OnCacheWaitTimeout();
+  }
   MOZ_CRASH("Unknown timer");
 
   return NS_OK;
+}
+
+void nsHttpChannel::MaybeStartCacheWaitTimer() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  uint32_t delay = StaticPrefs::network_cache_entry_wait_timeout_ms();
+  if (!delay || mCacheWaitTimer || mCacheWaitTimedOut || mNetworkTriggered) {
+    return;
+  }
+
+  mCacheWaitTimer = NS_NewTimer();
+  if (mCacheWaitTimer) {
+    RefPtr<TimerCallback> timerCallback = new TimerCallback(this);
+    mCacheWaitTimer->InitWithCallback(timerCallback, delay,
+                                      nsITimer::TYPE_ONE_SHOT);
+    LOG(("nsHttpChannel::MaybeStartCacheWaitTimer [this=%p] fires in %ums",
+         this, delay));
+  }
+}
+
+void nsHttpChannel::CancelCacheWaitTimer() {
+  if (mCacheWaitTimer) {
+    mCacheWaitTimer->Cancel();
+    mCacheWaitTimer = nullptr;
+  }
+}
+
+nsresult nsHttpChannel::OnCacheWaitTimeout() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  LOG(("nsHttpChannel::OnCacheWaitTimeout [this=%p]\n", this));
+  mCacheWaitTimer = nullptr;
+
+  // Backstop for a wedged cache entry: if we're still parked waiting for a
+  // cache entry callback that never arrived (e.g. a writer that was suspended
+  // or cancelled without ever closing its output stream, so the entry stays
+  // perpetually "being written"), stop waiting and race to the network so the
+  // load can make progress instead of hanging forever.
+  if (!LoadIsPending() || !AwaitingCacheCallbacks()) {
+    return NS_OK;
+  }
+
+  LOG(("  cache entry wait timed out, forcing network [this=%p]", this));
+  mCacheWaitTimedOut = true;
+
+  // Stop treating the outstanding cache open as blocking.  A late
+  // OnCacheEntryAvailable will be ignored (see mCacheWaitTimedOut).
+  StoreWaitForCacheEntry(LoadWaitForCacheEntry() & ~WAIT_FOR_CACHE_ENTRY);
+
+  nsresult rv = TriggerNetwork();
+  if (NS_FAILED(rv)) {
+    CloseCacheEntry(false);
+    (void)AsyncAbort(rv);
+  }
+  return rv;
 }
 
 bool nsHttpChannel::EligibleForTailing() {
@@ -12309,14 +12399,10 @@ void nsHttpChannel::DisableIsOpaqueResponseAllowedAfterSniffCheck(
       // Step 8
       MOZ_ASSERT(mLoadInfo);
 
-      bool isMediaRequest;
-      mLoadInfo->GetIsMediaRequest(&isMediaRequest);
-      if (isMediaRequest) {
-        bool isInitialRequest;
-        mLoadInfo->GetIsMediaInitialRequest(&isInitialRequest);
-        MOZ_ASSERT(isInitialRequest);
-
-        if (!isInitialRequest) {
+      auto noCorsMediaRequestState = NoCorsMediaRequestState();
+      if (noCorsMediaRequestState !=
+          dom::NoCorsMediaRequestState::NotAvailable) {
+        if (noCorsMediaRequestState != dom::NoCorsMediaRequestState::Initial) {
           // Step 8.1
           BlockOpaqueResponseAfterSniff(
               u"media request after sniffing, but not initial request"_ns,
@@ -12331,6 +12417,11 @@ void nsHttpChannel::DisableIsOpaqueResponseAllowedAfterSniffCheck(
               OpaqueResponseBlockedTelemetryReason::eMediaIncorrectResp);
           return;
         }
+
+        // At this point we've checked that the requested resource is media and
+        // that the sniff passes. Any following requests for this resource
+        // should be considered to be subsequent.
+        RecordSubsequentNoCorsRequestState();
       }
     }
 

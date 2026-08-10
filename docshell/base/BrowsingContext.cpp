@@ -29,7 +29,6 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentPictureInPicture.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/Geolocation.h"
 #include "mozilla/dom/HTMLEmbedElement.h"
 #include "mozilla/dom/HTMLIFrameElement.h"
 #include "mozilla/dom/Location.h"
@@ -60,6 +59,7 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Components.h"
+#include "mozilla/GeolocationService.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MediaFeatureChange.h"
 #include "mozilla/Services.h"
@@ -77,6 +77,7 @@
 #include "nsIXULRuntime.h"
 
 #include "mozilla/dom/WorkerCommon.h"
+#include "nsExternalHelperAppService.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
 #include "nsFocusManager.h"
@@ -287,7 +288,13 @@ already_AddRefed<BrowsingContext> BrowsingContext::Get(uint64_t aId) {
 /* static */
 already_AddRefed<BrowsingContext> BrowsingContext::GetCurrentTopByBrowserId(
     uint64_t aBrowserId) {
-  return do_AddRef(sCurrentTopByBrowserId->Get(aBrowserId));
+  // The map is cleared on shutdown but callers may still run afterwards (e.g.
+  // during cycle collector teardown), so mirror Get() and null-check it.
+  if (sCurrentTopByBrowserId) {
+    return do_AddRef(sCurrentTopByBrowserId->Get(aBrowserId));
+  }
+
+  return nullptr;
 }
 
 /* static */
@@ -2336,8 +2343,6 @@ nsresult BrowsingContext::LoadURI(nsDocShellLoadState* aLoadState,
       // is created.
       Canonical()->AttemptSpeculativeLoadInParent(aLoadState);
 
-      cp->TransmitBlobDataIfBlobURL(aLoadState->URI(), mOriginAttributes);
-
 #ifdef ANDROID
       uint32_t appLinkLaunchType = aLoadState->GetAppLinkLaunchType();
       Canonical()->SetAndroidAppLinkLaunchType(appLinkLaunchType);
@@ -2587,6 +2592,16 @@ void BrowsingContext::Navigate(
     WindowContext* context = source->GetWindowContext();
     loadState->SetHasValidUserGestureActivation(
         context && context->HasValidTransientUserGestureActivation());
+
+    // For protocols that would launch without a prompt (e.g. mailto), consume
+    // the transient user gesture activation so a single gesture can't chain
+    // multiple launches. The pre-consume value is already recorded on the load
+    // state above. See bug 299116.
+    nsAutoCString scheme;
+    if (NS_SUCCEEDED(aURI->GetScheme(scheme))) {
+      nsExternalHelperAppService::MaybeConsumeUserActivationForExternalScheme(
+          context, loadState->TriggeringPrincipal(), scheme);
+    }
   };
 
   // aSourceDocument is used for snapshot params and "allowed by sandboxing to
@@ -3797,7 +3812,7 @@ void BrowsingContext::SetWatchedByDevTools(bool aWatchedByDevTools,
   SetWatchedByDevToolsInternal(aWatchedByDevTools, aRv);
 }
 
-RefPtr<nsGeolocationService> BrowsingContext::GetGeolocationServiceOverride() {
+RefPtr<GeolocationService> BrowsingContext::GetGeolocationServiceOverride() {
   // Override can be set only to the top-level browsing context,
   // but when the geolocation coordinates are requested for iframe,
   // we should return the override which is set for its top-level context.
@@ -3811,15 +3826,15 @@ void BrowsingContext::SetGeolocationServiceOverride(
       "Should only set GeolocationServiceOverride in the top browsing context");
   if (aGeolocationOverride.WasPassed()) {
     if (!mGeolocationServiceOverride) {
-      mGeolocationServiceOverride = MakeRefPtr<nsGeolocationService>();
+      mGeolocationServiceOverride = MakeRefPtr<GeolocationService>();
       mGeolocationServiceOverride->Init();
     }
     mGeolocationServiceOverride->Update(aGeolocationOverride.Value());
-  } else if (RefPtr<nsGeolocationService> serviceOverride =
+  } else if (RefPtr<GeolocationService> serviceOverride =
                  mGeolocationServiceOverride.forget()) {
     // Create an original service and move the locators.
-    RefPtr<nsGeolocationService> service =
-        nsGeolocationService::GetGeolocationService();
+    RefPtr<GeolocationService> service =
+        GeolocationService::GetGeolocationService();
     serviceOverride->MoveLocators(service);
   }
 }
@@ -4234,11 +4249,17 @@ bool BrowsingContext::CanSet(
   return XRE_IsParentProcess() && !aSource && IsTop();
 }
 
-bool BrowsingContext::CanSet(FieldIndex<IDX_BrowserId>, const uint32_t& aValue,
+bool BrowsingContext::CanSet(FieldIndex<IDX_BrowserId>, const uint64_t& aValue,
                              ContentParent* aSource) {
-  // We should only be able to set this for toplevel contexts which don't have
-  // an ID yet.
-  return GetBrowserId() == 0 && IsTop() && Children().IsEmpty();
+  if (XRE_IsParentProcess() && !aSource) {
+    return true;
+  }
+
+  if (aSource && !Canonical()->IsOwnedByProcess(aSource->ChildID())) {
+    return false;
+  }
+
+  return GetBrowserId() == 0 && Children().IsEmpty();
 }
 
 bool BrowsingContext::CanSet(FieldIndex<IDX_PendingInitialization>,

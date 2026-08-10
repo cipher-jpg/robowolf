@@ -13,6 +13,11 @@ const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
 );
 
+import {
+  SET_DEFAULT_OS_PROMPT_ENABLED,
+  WIN_OS_PIN_PROMPT_ENABLED,
+} from "resource:///modules/asrouter/MessagingTargetingConstants.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -247,8 +252,8 @@ const MR_ABOUT_WELCOME_DEFAULT = {
       },
     },
     {
-      id: "AW_SMART_WINDOW_NEEDS_DEFAULT_AND_PIN",
-      targeting: `isSmartWindowOnboarding && doesAppNeedPin && (unhandledCampaignAction != 'SET_DEFAULT_BROWSER') && (unhandledCampaignAction != 'PIN_FIREFOX_TO_TASKBAR') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && 'browser.shell.checkDefaultBrowser'|preferenceValue && !isDefaultBrowser`,
+      id: "AW_SMART_WINDOW",
+      targeting: "isSmartWindowOnboarding",
       force_hide_steps_indicator: true,
       content: {
         fullscreen: true,
@@ -274,6 +279,8 @@ const MR_ABOUT_WELCOME_DEFAULT = {
             {
               id: "checkbox-1",
               defaultValue: true,
+              targeting:
+                "(unhandledCampaignAction != 'SET_DEFAULT_BROWSER') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && 'browser.shell.checkDefaultBrowser'|preferenceValue && !isDefaultBrowser",
               label: {
                 string_id:
                   "mr2022-onboarding-easy-setup-set-default-checkbox-label",
@@ -285,6 +292,8 @@ const MR_ABOUT_WELCOME_DEFAULT = {
             {
               id: "checkbox-2",
               defaultValue: true,
+              targeting:
+                "doesAppNeedPin && (unhandledCampaignAction != 'PIN_FIREFOX_TO_TASKBAR') && (unhandledCampaignAction != 'PIN_AND_DEFAULT')",
               label: {
                 string_id: isMSIX
                   ? "mr2022-onboarding-pin-primary-button-label-msix"
@@ -357,243 +366,8 @@ const MR_ABOUT_WELCOME_DEFAULT = {
       },
     },
     {
-      id: "AW_SMART_WINDOW_NEEDS_DEFAULT",
-      targeting: `isSmartWindowOnboarding && (!doesAppNeedPin || (unhandledCampaignAction == 'PIN_FIREFOX_TO_TASKBAR')) && (unhandledCampaignAction != 'SET_DEFAULT_BROWSER') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && 'browser.shell.checkDefaultBrowser'|preferenceValue && !isDefaultBrowser`,
-      force_hide_steps_indicator: true,
-      content: {
-        fullscreen: true,
-        position: "split",
-        split_narrow_bkg_position: "-60px",
-        image_alt_text: {
-          string_id: "smartwindow-onboarding-image-alt",
-        },
-        background:
-          "url('chrome://activity-stream/content/data/content/assets/mr-kit-smart-window.svg') var(--mr-secondary-position) no-repeat",
-        progress_bar: true,
-        hide_secondary_section: "responsive",
-        logo: {},
-        title: {
-          string_id: "smartwindow-onboarding-title",
-        },
-        subtitle: {
-          string_id: "smartwindow-onboarding-subtitle",
-        },
-        tiles: {
-          type: "multiselect",
-          data: [
-            {
-              id: "checkbox-1",
-              defaultValue: true,
-              label: {
-                string_id:
-                  "mr2022-onboarding-easy-setup-set-default-checkbox-label",
-              },
-              action: {
-                type: "SET_DEFAULT_BROWSER",
-              },
-            },
-          ],
-        },
-        primary_button: {
-          label: {
-            string_id: "smartwindow-onboarding-primary-button",
-          },
-          action: {
-            type: "MULTI_ACTION",
-            collectSelect: true,
-            navigate: true,
-            data: {
-              actions: [
-                {
-                  type: "OPEN_ABOUT_PAGE",
-                  data: {
-                    args: "newtab",
-                    where: "current",
-                  },
-                },
-                {
-                  type: "FXA_AIWINDOW_SIGNIN_FLOW",
-                },
-              ],
-            },
-          },
-        },
-        secondary_button: {
-          label: {
-            string_id: "mr2022-onboarding-secondary-skip-button-label",
-          },
-          action: {
-            type: "MULTI_ACTION",
-            navigate: true,
-            data: {
-              actions: [
-                {
-                  type: "OPEN_ABOUT_PAGE",
-                  data: {
-                    args: "newtab",
-                    where: "current",
-                  },
-                },
-                {
-                  type: "FXA_AIWINDOW_SIGNIN_FLOW",
-                },
-              ],
-            },
-          },
-          has_arrow_icon: true,
-        },
-      },
-    },
-    {
-      id: "AW_SMART_WINDOW_NEEDS_PIN",
-      targeting: `isSmartWindowOnboarding && doesAppNeedPin && (unhandledCampaignAction != 'PIN_FIREFOX_TO_TASKBAR') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && (!'browser.shell.checkDefaultBrowser'|preferenceValue || isDefaultBrowser || (unhandledCampaignAction == 'SET_DEFAULT_BROWSER'))`,
-      force_hide_steps_indicator: true,
-      content: {
-        fullscreen: true,
-        position: "split",
-        split_narrow_bkg_position: "-60px",
-        image_alt_text: {
-          string_id: "smartwindow-onboarding-image-alt",
-        },
-        background:
-          "url('chrome://activity-stream/content/data/content/assets/mr-kit-smart-window.svg') var(--mr-secondary-position) no-repeat",
-        progress_bar: true,
-        hide_secondary_section: "responsive",
-        logo: {},
-        title: {
-          string_id: "smartwindow-onboarding-title",
-        },
-        subtitle: {
-          string_id: "smartwindow-onboarding-subtitle",
-        },
-        tiles: {
-          type: "multiselect",
-          data: [
-            {
-              id: "checkbox-1",
-              defaultValue: true,
-              label: {
-                string_id: isMSIX
-                  ? "mr2022-onboarding-pin-primary-button-label-msix"
-                  : "mr2022-onboarding-pin-primary-button-label",
-              },
-              action: {
-                type: "MULTI_ACTION",
-                data: {
-                  actions: [
-                    {
-                      type: "PIN_FIREFOX_TO_TASKBAR",
-                    },
-                    {
-                      type: "PIN_FIREFOX_TO_START_MENU",
-                    },
-                  ],
-                },
-              },
-            },
-          ],
-        },
-        primary_button: {
-          label: {
-            string_id: "smartwindow-onboarding-primary-button",
-          },
-          action: {
-            type: "MULTI_ACTION",
-            collectSelect: true,
-            navigate: true,
-            data: {
-              actions: [
-                {
-                  type: "OPEN_ABOUT_PAGE",
-                  data: {
-                    args: "newtab",
-                    where: "current",
-                  },
-                },
-                {
-                  type: "FXA_AIWINDOW_SIGNIN_FLOW",
-                },
-              ],
-            },
-          },
-        },
-        secondary_button: {
-          label: {
-            string_id: "mr2022-onboarding-secondary-skip-button-label",
-          },
-          action: {
-            type: "MULTI_ACTION",
-            navigate: true,
-            data: {
-              actions: [
-                {
-                  type: "OPEN_ABOUT_PAGE",
-                  data: {
-                    args: "newtab",
-                    where: "current",
-                  },
-                },
-                {
-                  type: "FXA_AIWINDOW_SIGNIN_FLOW",
-                },
-              ],
-            },
-          },
-          has_arrow_icon: true,
-        },
-      },
-    },
-    {
-      id: "AW_SMART_WINDOW_NO_CHECKBOXES",
-      targeting: `isSmartWindowOnboarding && (!doesAppNeedPin || (unhandledCampaignAction == 'PIN_FIREFOX_TO_TASKBAR') || (unhandledCampaignAction == 'PIN_AND_DEFAULT')) && (!'browser.shell.checkDefaultBrowser'|preferenceValue || isDefaultBrowser || (unhandledCampaignAction == 'SET_DEFAULT_BROWSER') || (unhandledCampaignAction == 'PIN_AND_DEFAULT'))`,
-      force_hide_steps_indicator: true,
-      content: {
-        fullscreen: true,
-        position: "split",
-        split_narrow_bkg_position: "-60px",
-        image_alt_text: {
-          string_id: "smartwindow-onboarding-image-alt",
-        },
-        background:
-          "url('chrome://activity-stream/content/data/content/assets/mr-kit-smart-window.svg') var(--mr-secondary-position) no-repeat",
-        progress_bar: true,
-        hide_secondary_section: "responsive",
-        logo: {},
-        title: {
-          string_id: "smartwindow-onboarding-title",
-        },
-        subtitle: {
-          string_id: "smartwindow-onboarding-subtitle",
-        },
-        primary_button: {
-          label: {
-            string_id: "smartwindow-onboarding-primary-button",
-          },
-          action: {
-            type: "MULTI_ACTION",
-            navigate: true,
-            data: {
-              actions: [
-                {
-                  type: "OPEN_ABOUT_PAGE",
-                  data: {
-                    args: "newtab",
-                    where: "current",
-                  },
-                },
-                {
-                  type: "FXA_AIWINDOW_SIGNIN_FLOW",
-                },
-              ],
-            },
-          },
-        },
-      },
-    },
-    {
-      id: "AW_EASY_SETUP_NEEDS_DEFAULT_AND_PIN",
-      targeting:
-        "doesAppNeedPin && (unhandledCampaignAction != 'SET_DEFAULT_BROWSER') && (unhandledCampaignAction != 'PIN_FIREFOX_TO_TASKBAR') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && 'browser.shell.checkDefaultBrowser'|preferenceValue && !isDefaultBrowser",
+      id: "AW_EASY_SETUP",
+      targeting: `doesAppNeedPin && !${WIN_OS_PIN_PROMPT_ENABLED} && (unhandledCampaignAction != 'PIN_FIREFOX_TO_TASKBAR') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') || ((!doesAppNeedPin || ${WIN_OS_PIN_PROMPT_ENABLED}) && !${SET_DEFAULT_OS_PROMPT_ENABLED} && (unhandledCampaignAction != 'SET_DEFAULT_BROWSER') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && 'browser.shell.checkDefaultBrowser'|preferenceValue && !isDefaultBrowser)`,
       content: {
         fullscreen: true,
         position: "split",
@@ -618,6 +392,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
             {
               id: "checkbox-1",
               defaultValue: true,
+              targeting: `doesAppNeedPin && !${WIN_OS_PIN_PROMPT_ENABLED} && (unhandledCampaignAction != 'PIN_FIREFOX_TO_TASKBAR') && (unhandledCampaignAction != 'PIN_AND_DEFAULT')`,
               label: {
                 string_id: isMSIX
                   ? "mr2022-onboarding-pin-primary-button-label-msix"
@@ -640,6 +415,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
             {
               id: "checkbox-2",
               defaultValue: true,
+              targeting: `!${SET_DEFAULT_OS_PROMPT_ENABLED} && (unhandledCampaignAction != 'SET_DEFAULT_BROWSER') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && 'browser.shell.checkDefaultBrowser'|preferenceValue && !isDefaultBrowser`,
               label: {
                 string_id:
                   "mr2022-onboarding-easy-setup-set-default-checkbox-label",
@@ -674,15 +450,6 @@ const MR_ABOUT_WELCOME_DEFAULT = {
         },
         secondary_button_top: [
           {
-            label: { string_id: "mr1-onboarding-sign-in-button-label" },
-            action: {
-              data: { entrypoint: "activity-stream-firstrun", where: "tab" },
-              type: "SHOW_FIREFOX_ACCOUNTS",
-              addFlowParams: true,
-            },
-            targeting: "!isFxASignedIn",
-          },
-          {
             label: { string_id: "restore-from-backup-secondary-top-button" },
             action: {
               type: "SET_PREF",
@@ -693,69 +460,6 @@ const MR_ABOUT_WELCOME_DEFAULT = {
             },
             targeting: "backupRestoreEnabled",
           },
-        ],
-      },
-    },
-    {
-      id: "AW_EASY_SETUP_NEEDS_DEFAULT",
-      targeting:
-        "!doesAppNeedPin && (unhandledCampaignAction != 'SET_DEFAULT_BROWSER') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && 'browser.shell.checkDefaultBrowser'|preferenceValue && !isDefaultBrowser",
-      content: {
-        fullscreen: true,
-        position: "split",
-        split_narrow_bkg_position: "-60px",
-        image_alt_text: {
-          string_id: "mr2022-onboarding-default-image-alt",
-        },
-        background:
-          "url('chrome://activity-stream/content/data/content/assets/br-set-default-fox-heart.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
-        progress_bar: true,
-        logo: {},
-        title: {
-          string_id: "onboarding-refresh-pin-set-default-title",
-        },
-        subtitle: {
-          string_id: "onboarding-refresh-pin-set-default-subtitle",
-        },
-        tiles: {
-          type: "multiselect",
-          data: [
-            {
-              id: "checkbox-1",
-              defaultValue: true,
-              label: {
-                string_id:
-                  "mr2022-onboarding-easy-setup-set-default-checkbox-label",
-              },
-              action: {
-                type: "SET_DEFAULT_BROWSER",
-              },
-            },
-          ],
-        },
-        primary_button: {
-          label: {
-            string_id: "mr2022-onboarding-easy-setup-primary-button-label",
-          },
-          action: {
-            type: "MULTI_ACTION",
-            collectSelect: true,
-            navigate: true,
-            data: {
-              actions: [],
-            },
-          },
-        },
-        secondary_button: {
-          label: {
-            string_id: "mr2022-onboarding-secondary-skip-button-label",
-          },
-          action: {
-            navigate: true,
-          },
-          has_arrow_icon: true,
-        },
-        secondary_button_top: [
           {
             label: { string_id: "mr1-onboarding-sign-in-button-label" },
             action: {
@@ -764,111 +468,6 @@ const MR_ABOUT_WELCOME_DEFAULT = {
               addFlowParams: true,
             },
             targeting: "!isFxASignedIn",
-          },
-          {
-            label: { string_id: "restore-from-backup-secondary-top-button" },
-            action: {
-              type: "SET_PREF",
-              data: {
-                pref: { name: "showRestoreFromBackup", value: true },
-              },
-              navigate: true,
-            },
-            targeting: "backupRestoreEnabled",
-          },
-        ],
-      },
-    },
-    {
-      id: "AW_EASY_SETUP_NEEDS_PIN",
-      targeting:
-        "(unhandledCampaignAction != 'PIN_FIREFOX_TO_TASKBAR') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && doesAppNeedPin && (!'browser.shell.checkDefaultBrowser'|preferenceValue || isDefaultBrowser || (unhandledCampaignAction == 'SET_DEFAULT_BROWSER'))",
-      content: {
-        fullscreen: true,
-        position: "split",
-        split_narrow_bkg_position: "-60px",
-        image_alt_text: {
-          string_id: "mr2022-onboarding-default-image-alt",
-        },
-        background:
-          "url('chrome://activity-stream/content/data/content/assets/br-set-default-fox-heart.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
-        progress_bar: true,
-        logo: {},
-        title: {
-          string_id: "onboarding-refresh-pin-set-default-title",
-        },
-        subtitle: {
-          string_id: "onboarding-refresh-pin-set-default-subtitle",
-        },
-        tiles: {
-          type: "multiselect",
-          data: [
-            {
-              id: "checkbox-1",
-              defaultValue: true,
-              label: {
-                string_id: isMSIX
-                  ? "mr2022-onboarding-pin-primary-button-label-msix"
-                  : "mr2022-onboarding-pin-primary-button-label",
-              },
-              action: {
-                type: "MULTI_ACTION",
-                data: {
-                  actions: [
-                    {
-                      type: "PIN_FIREFOX_TO_TASKBAR",
-                    },
-                    {
-                      type: "PIN_FIREFOX_TO_START_MENU",
-                    },
-                  ],
-                },
-              },
-            },
-          ],
-        },
-        primary_button: {
-          label: {
-            string_id: "mr2022-onboarding-easy-setup-primary-button-label",
-          },
-          action: {
-            type: "MULTI_ACTION",
-            collectSelect: true,
-            navigate: true,
-            data: {
-              actions: [],
-            },
-          },
-        },
-        secondary_button: {
-          label: {
-            string_id: "mr2022-onboarding-secondary-skip-button-label",
-          },
-          action: {
-            navigate: true,
-          },
-          has_arrow_icon: true,
-        },
-        secondary_button_top: [
-          {
-            label: { string_id: "mr1-onboarding-sign-in-button-label" },
-            action: {
-              data: { entrypoint: "activity-stream-firstrun", where: "tab" },
-              type: "SHOW_FIREFOX_ACCOUNTS",
-              addFlowParams: true,
-            },
-            targeting: "!isFxASignedIn",
-          },
-          {
-            label: { string_id: "restore-from-backup-secondary-top-button" },
-            action: {
-              type: "SET_PREF",
-              data: {
-                pref: { name: "showRestoreFromBackup", value: true },
-              },
-              navigate: true,
-            },
-            targeting: "backupRestoreEnabled",
           },
         ],
       },
@@ -994,6 +593,18 @@ const MR_ABOUT_WELCOME_DEFAULT = {
         },
         secondary_button_top: [
           {
+            label: { string_id: "restore-from-backup-secondary-top-button" },
+            action: {
+              type: "SET_PREF",
+              data: {
+                pref: { name: "showRestoreFromBackup", value: true },
+              },
+              navigate: true,
+            },
+            targeting:
+              "backupRestoreEnabled && isDefaultBrowser && !doesAppNeedPin",
+          },
+          {
             label: {
               string_id: "mr1-onboarding-sign-in-button-label",
             },
@@ -1007,19 +618,43 @@ const MR_ABOUT_WELCOME_DEFAULT = {
             },
             targeting: "!isFxASignedIn",
           },
-          {
-            label: { string_id: "restore-from-backup-secondary-top-button" },
-            action: {
-              type: "SET_PREF",
-              data: {
-                pref: { name: "showRestoreFromBackup", value: true },
-              },
-              navigate: true,
-            },
-            targeting:
-              "backupRestoreEnabled && isDefaultBrowser && !doesAppNeedPin",
-          },
         ],
+      },
+    },
+    {
+      id: "AW_THEME_PICKER",
+      targeting: "'browser.nova.enabled'|preferenceValue",
+      content: {
+        fullscreen: true,
+        position: "split",
+        tiles: { type: "theme-picker" },
+        title: {
+          string_id: "onboarding-theme-picker-title",
+        },
+        subtitle: {
+          string_id: "onboarding-theme-picker-subtitle",
+        },
+        background:
+          "url('chrome://activity-stream/content/data/content/assets/br-amo-fox-paint.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+        progress_bar: true,
+        hide_secondary_section: "responsive",
+        primary_button: {
+          label: {
+            string_id: "onboarding-theme-picker-button-label",
+          },
+          action: {
+            navigate: true,
+          },
+        },
+        secondary_button: {
+          label: {
+            string_id: "mr2022-onboarding-secondary-skip-button-label",
+          },
+          action: {
+            navigate: true,
+          },
+          has_arrow_icon: true,
+        },
       },
     },
     {

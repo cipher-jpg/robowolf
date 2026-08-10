@@ -18,6 +18,7 @@
     --header-text-color: transparent;
     /* TODO: Bug 2033070 - desaturated tokens only exist in Nova, remove after it becomes default */
     --card-text-color: light-dark(var(--color-violet-desaturated-90, #180e30), var(--color-violet-desaturated-0, #f2f0f8));
+    --card-text-color-selected: light-dark(var(--color-violet-desaturated-90, #180e30), var(--color-violet-desaturated-0, #f2f0f8));
     --card-subtitle-text-color: light-dark(var(--color-violet-60), var(--color-violet-20));
     --card-icon-bg: light-dark(var(--color-violet-0), var(--color-white-alpha-10));
     --button-icon-color: var(--card-text-color);
@@ -56,6 +57,7 @@
   @media (forced-colors) {
     --header-text-color: CanvasText;
     --card-text-color: CanvasText;
+    --button-icon-color: CanvasText;
     --card-subtitle-text-color: CanvasText;
     --card-icon-bg: transparent;
     --card-bg: Canvas;
@@ -63,6 +65,7 @@
     --card-border-color: CanvasText;
     --card-border-color-hover: SelectedItem;
     --card-border-color-gradient: SelectedItem;
+    --card-text-color-selected: SelectedItemText;
   }
 
   .main-content,
@@ -127,6 +130,7 @@
 
 .onboardingContainer .screen[pos="center"] {
   background-color: transparent;
+  border-radius: 0;
   min-width: 100%;
 }
 
@@ -394,15 +398,17 @@
     width: 100%;
 
     /* TODO: Bug 2033070 - remove these media queries after Nova launch */
-    @media not (-moz-pref("browser.nova.enabled")) {
+    @media not -moz-pref("browser.nova.enabled") {
       /* outline color is the button background color, which is a gradient for MVP
       and doesn't work on outline */
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/no-has-selector */
       &:has(.input:focus-visible) {
         outline: var(--focus-outline-width) solid var(--focus-outline-color);
         outline-offset: var(--focus-outline-offset);
       }
     }
 
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/no-has-selector */
     &:hover:not(:has(.selected)) {
       /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
       background-color: var(--card-bg-hover);
@@ -411,6 +417,7 @@
       box-shadow: var(--box-shadow-level-2);
     }
 
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/no-has-selector */
     &:has(.selected) {
       /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
       background:
@@ -419,6 +426,7 @@
       /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
       border: calc(2 * var(--border-width)) solid var(--border-color-transparent);
       box-shadow: var(--box-shadow-level-4);
+      color: var(--card-text-color-selected);
       padding: var(--space-large);
     }
 
@@ -427,15 +435,15 @@
       margin-bottom: 0;
       margin-top: 0;
       line-height: normal;
+      text-align: start;
     }
 
     .body-text {
-      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-      color: var(--card-text-color);
       font-size: var(--font-size-small);
       grid-area: description;
       line-height: normal;
       margin: 0;
+      text-align: start;
     }
 
     .subtitle-text {
@@ -456,6 +464,33 @@
       height: var(--size-image-small);
       grid-area: icon;
       width: var(--size-image-small);
+    }
+
+    /* Render the "Recommended" badge as an inline pill in the right column,
+       vertically centered, rather than the shared top-corner banner. */
+    .flair {
+      --flair-background-color: light-dark(
+        var(--color-violet-desaturated-0, var(--color-violet-0)),
+        var(--color-violet-desaturated-50, var(--color-violet-50))
+      );
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      background-color: var(--flair-background-color);
+      border-radius: var(--border-radius-xlarge, var(--border-radius-large));
+      color: var(--text-color);
+      font-size: var(--font-size-small);
+      grid-area: model;
+      height: auto;
+      inset: unset;
+      line-height: normal;
+      padding: var(--space-xxsmall) var(--space-small);
+      position: static;
+      width: fit-content;
+    }
+
+    /* The recommended card shows the badge in place of the model subtitle. */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/no-has-selector */
+    &:has(.flair) .subtitle-text {
+      display: none;
     }
   }
 }

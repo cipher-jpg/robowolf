@@ -55,6 +55,34 @@ Services.ppmm.addMessageListener("AutoComplete:SelectBy", message => {
   }
 });
 
+Services.ppmm.addMessageListener(
+  "AutoComplete:NavigateSecondaryAction",
+  message => {
+    if (compareContext(message)) {
+      let actor = currentActor;
+      if (actor && actor.openedPopup) {
+        return actor.openedPopup.navigateSecondaryAction(message.data.reverse);
+      }
+    }
+
+    return false;
+  }
+);
+
+Services.ppmm.addMessageListener(
+  "AutoComplete:MaybeActivateSecondaryAction",
+  message => {
+    if (compareContext(message)) {
+      let actor = currentActor;
+      if (actor && actor.openedPopup) {
+        return actor.openedPopup.maybeActivateSecondaryAction();
+      }
+    }
+
+    return false;
+  }
+);
+
 // AutoCompleteResultView is an abstraction around a list of results.
 // It implements enough of nsIAutoCompleteController and
 // nsIAutoCompleteInput to make the richlistbox popup work. Since only
@@ -364,6 +392,17 @@ export class AutoCompleteParent extends JSWindowActorParent {
   }
 
   async receiveMessage(message) {
+    // Handled before the browser/popup guard below because the delegated
+    // GeckoView prompt must be torn down even when its document (and browser)
+    // is going away. Only sent on GeckoView (see the actor registration).
+    if (
+      AppConstants.MOZ_GECKOVIEW &&
+      message.name == "AutoComplete:DocumentHidden"
+    ) {
+      lazy.GeckoViewAutocomplete.reset(this.manager?.innerWindowId);
+      return false;
+    }
+
     let browser = this.browsingContext.top.embedderElement;
 
     if (

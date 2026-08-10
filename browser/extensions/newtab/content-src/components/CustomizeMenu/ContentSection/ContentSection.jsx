@@ -6,9 +6,20 @@ import React from "react";
 import { batch } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { SectionsMgmtPanel } from "../SectionsMgmtPanel/SectionsMgmtPanel";
+import { ThemesManagementPanel } from "../ThemesManagementPanel/ThemesManagementPanel";
 import { WallpaperCategories } from "../../WallpaperCategories/WallpaperCategories";
 // @nova-cleanup(move-directory): Update import path after WidgetsManagementPanel moves to components/CustomizeMenu/
 import { WidgetsManagementPanel } from "content-src/components/Nova/CustomizeMenu/WidgetsManagementPanel/WidgetsManagementPanel";
+
+// `theme-picker` is imported lazily, so it may still be an undefined custom element
+// when React renders it. In that state React sets props as attributes, and the lit
+// `showLabels` boolean (default true) can't be turned off via an attribute — so set the
+// property directly via a ref; lit preserves it across element upgrade.
+function hideThemePickerLabels(el) {
+  if (el) {
+    el.showLabels = false;
+  }
+}
 
 export class ContentSection extends React.PureComponent {
   constructor(props) {
@@ -57,6 +68,9 @@ export class ContentSection extends React.PureComponent {
         case "WIDGET_STOCKS":
           widgetName = "stocks";
           break;
+        case "WIDGET_PICTURE_OF_THE_DAY":
+          widgetName = "picture_of_the_day";
+          break;
       }
 
       if (widgetName) {
@@ -102,7 +116,10 @@ export class ContentSection extends React.PureComponent {
     let value;
     if (e.target.nodeName === "MOZ-SELECT") {
       value = parseInt(e.target.value, 10);
-    } else if (e.target.nodeName === "INPUT") {
+    } else if (
+      e.target.nodeName === "INPUT" ||
+      e.target.nodeName === "MOZ-CHECKBOX"
+    ) {
       value = e.target.checked;
       if (eventSource) {
         this.inputUserEvent(eventSource, value);
@@ -176,6 +193,7 @@ export class ContentSection extends React.PureComponent {
       pocketRegion,
       mayHaveInferredPersonalization,
       mayHaveWeather,
+      mayHaveWebNotifications,
       mayHaveWidgets,
       mayHaveTimerWidget,
       mayHaveListsWidget,
@@ -184,6 +202,7 @@ export class ContentSection extends React.PureComponent {
       mayHavePrivacyWidget,
       mayHaveCrosswordWidget,
       mayHaveStocksWidget,
+      mayHavePictureOfTheDayWidget,
       mayHaveWeatherForecast,
       openPreferences,
       wallpapersUserEnabled,
@@ -197,6 +216,9 @@ export class ContentSection extends React.PureComponent {
       showSectionsMgmtPanel,
       // @nova-cleanup(remove-conditional): Remove novaEnabled
       novaEnabled,
+      browserNovaEnabled,
+      toggleThemesPanel,
+      showThemesPanel,
       wallpapersEnabled,
       toggleWidgetsManagementPanel,
       showWidgetsManagementPanel,
@@ -208,6 +230,7 @@ export class ContentSection extends React.PureComponent {
       weatherEnabled,
       showInferredPersonalizationEnabled,
       topSitesRowsCount,
+      webNotificationsEnabled,
     } = enabledSections;
     const {
       timerEnabled,
@@ -216,6 +239,7 @@ export class ContentSection extends React.PureComponent {
       privacyEnabled,
       crosswordEnabled,
       stocksEnabled,
+      pictureOfTheDayEnabled,
     } = enabledWidgets;
 
     // @nova-cleanup(remove-conditional): Remove novaEnabled check and newtab-custom-stories-toggle, default to newtab-recommended-stories-toggle
@@ -232,6 +256,21 @@ export class ContentSection extends React.PureComponent {
     return (
       <>
         <div className="home-section">
+          {browserNovaEnabled && (
+            <div className="appearance-section section">
+              <h2 data-l10n-id="newtab-custom-appearance-section-title"></h2>
+              <theme-picker
+                ref={hideThemePickerLabels}
+                layout="compact"
+                installsource="about:newtab"
+              ></theme-picker>
+              <ThemesManagementPanel
+                onSubpanelToggle={onSubpanelToggle}
+                togglePanel={toggleThemesPanel}
+                showPanel={showThemesPanel}
+              />
+            </div>
+          )}
           {wallpapersEnabled && (
             <>
               <div className="wallpapers-section">
@@ -360,6 +399,19 @@ export class ContentSection extends React.PureComponent {
                     />
                   </div>
                 )}
+                {/* Picture of the day */}
+                {mayHavePictureOfTheDayWidget && (
+                  <div id="picture-widget-section" className="section">
+                    <moz-toggle
+                      id="picture-toggle"
+                      pressed={pictureOfTheDayEnabled || null}
+                      ontoggle={this.onPreferenceSelect}
+                      data-preference="widgets.pictureOfTheDay.enabled"
+                      data-event-source="WIDGET_PICTURE_OF_THE_DAY"
+                      data-l10n-id="newtab-custom-widget-picture-toggle"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -437,6 +489,17 @@ export class ContentSection extends React.PureComponent {
                         )}
                       </moz-select>
                     </div>
+                    {mayHaveWebNotifications && (
+                      <div className="more-information">
+                        <moz-toggle
+                          id="web-notifications-toggle"
+                          pressed={webNotificationsEnabled || null}
+                          ontoggle={this.onPreferenceSelect}
+                          data-preference="showWebNotifications"
+                          data-l10n-id="newtab-custom-web-notifications-toggle"
+                        ></moz-toggle>
+                      </div>
+                    )}
                   </div>
                 </div>
               </moz-toggle>
@@ -477,6 +540,9 @@ export class ContentSection extends React.PureComponent {
                             mayHavePrivacyWidget={mayHavePrivacyWidget}
                             mayHaveCrosswordWidget={mayHaveCrosswordWidget}
                             mayHaveStocksWidget={mayHaveStocksWidget}
+                            mayHavePictureOfTheDayWidget={
+                              mayHavePictureOfTheDayWidget
+                            }
                             mayHaveWeatherForecast={mayHaveWeatherForecast}
                             weatherDisplay={weatherDisplay}
                             setPref={setPref}
@@ -519,23 +585,16 @@ export class ContentSection extends React.PureComponent {
                           ref={this.pocketDrawerRef}
                         >
                           {mayHaveInferredPersonalization && (
-                            <div className="check-wrapper" role="presentation">
-                              <input
-                                id="inferred-personalization"
-                                className="customize-menu-checkbox"
-                                disabled={!pocketEnabled}
-                                checked={showInferredPersonalizationEnabled}
-                                type="checkbox"
-                                onChange={this.onPreferenceSelect}
-                                data-preference="discoverystream.sections.personalization.inferred.user.enabled"
-                                data-event-source="INFERRED_PERSONALIZATION"
-                              />
-                              <label
-                                className="customize-menu-checkbox-label"
-                                htmlFor="inferred-personalization"
-                                data-l10n-id="newtab-custom-stories-personalized-checkbox-label"
-                              />
-                            </div>
+                            <moz-checkbox
+                              id="inferred-personalization"
+                              className="customize-menu-checkbox"
+                              disabled={!pocketEnabled}
+                              checked={showInferredPersonalizationEnabled}
+                              onChange={this.onPreferenceSelect}
+                              data-preference="discoverystream.sections.personalization.inferred.user.enabled"
+                              data-event-source="INFERRED_PERSONALIZATION"
+                              data-l10n-id="newtab-custom-stories-personalized-checkbox"
+                            />
                           )}
                           {mayHaveTopicSections && (
                             <SectionsMgmtPanel

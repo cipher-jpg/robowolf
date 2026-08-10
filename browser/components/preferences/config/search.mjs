@@ -20,7 +20,7 @@ const lazy = XPCOMUtils.declareLazy({
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 /**
@@ -718,6 +718,9 @@ function EngineListItemSetting(settingId, engine) {
 
 Preferences.addSetting({
   id: "addEngineButton",
+  visible() {
+    return Services.policies.isAllowed("installSearchEngine");
+  },
   onUserClick() {
     window.gSubDialog.open(
       "chrome://browser/content/search/addEngine.xhtml",
@@ -790,11 +793,27 @@ Preferences.addSetting(
      */
     #localShortcutL10nNames = null;
 
+    /**
+     * @type {Set<string>}
+     *   List of names of search engines that are disabled by enterprise policies.
+     */
+    #enterpriseDisabledEngineNames = null;
+
     setup() {
       Services.obs.addObserver(
         this.emitChange,
         "browser-search-engine-modified"
       );
+
+      if (Services.policies?.status == Ci.nsIEnterprisePolicies.ACTIVE) {
+        let activePolicies = Services.policies.getActivePolicies();
+        if (activePolicies.SearchEngines?.Remove) {
+          this.#enterpriseDisabledEngineNames = new Set(
+            activePolicies.SearchEngines?.Remove
+          );
+        }
+      }
+
       return () =>
         Services.obs.removeObserver(
           this.emitChange,
@@ -812,8 +831,8 @@ Preferences.addSetting(
       this.#localShortcutL10nNames = new Map();
 
       let getIDs = (suffix = "") =>
-        lazy.UrlbarUtils.LOCAL_SEARCH_MODES.map(mode => {
-          let sourceName = lazy.UrlbarUtils.getResultSourceName(mode.source);
+        lazy.UrlbarShared.LOCAL_SEARCH_MODES.map(mode => {
+          let sourceName = lazy.UrlbarShared.getResultSourceName(mode.source);
           return { id: `urlbar-search-mode-${sourceName}${suffix}` };
         });
 
@@ -827,7 +846,7 @@ Preferences.addSetting(
         let localizedNames = await document.l10n.formatValues(localizedIDs);
         let englishNames = await englishSearchStrings.formatValues(englishIDs);
 
-        lazy.UrlbarUtils.LOCAL_SEARCH_MODES.forEach(({ source }, index) => {
+        lazy.UrlbarShared.LOCAL_SEARCH_MODES.forEach(({ source }, index) => {
           let localizedName = localizedNames[index];
           let englishName = englishNames[index];
 
@@ -922,6 +941,12 @@ Preferences.addSetting(
       /** @type {SettingControlConfig[]} */
       let configs = [];
       for (let engine of await lazy.SearchService.getEngines()) {
+        // If this engine has been excluded by enterprise policies, then don't
+        // display it.
+        if (this.#enterpriseDisabledEngineNames?.has(engine.name)) {
+          continue;
+        }
+
         let settingId = `engineList-${engine.id}`;
         let editId = `editEngine-${engine.id}`;
         let outlinkId = `outlink-${engine.id}`;
@@ -1004,7 +1029,7 @@ Preferences.addSetting(
 
       /** @type {SettingControlConfig[]} */
       let configs = [];
-      for (let searchMode of lazy.UrlbarUtils.LOCAL_SEARCH_MODES) {
+      for (let searchMode of lazy.UrlbarShared.LOCAL_SEARCH_MODES) {
         let id = `searchmode-${searchMode.telemetryLabel}`;
         maybeMakeSetting({ id });
 
@@ -1045,7 +1070,11 @@ Preferences.addSetting(
       if (!draggedEngine) {
         return;
       }
-      await lazy.SearchService.moveEngine(draggedEngine, insertAt);
+      await lazy.SearchService.moveEngine(
+        draggedEngine,
+        insertAt,
+        this.#enterpriseDisabledEngineNames
+      );
     }
     async getControlConfig() {
       /** @type {Partial<SettingControlConfig>} */

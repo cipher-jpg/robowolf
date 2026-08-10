@@ -137,6 +137,15 @@ async function doOptInTest(useKeyboard) {
     "The allow button should be primary"
   );
 
+  // The opt-in engagement runs parent-side and restarts the query, so on the
+  // message path the new query begins after the pick returns. Wait for it to
+  // finish; promiseSearchComplete alone can observe the query that already
+  // completed, since it only follows lastQueryContextPromise as it changes.
+  let promiseNewQuery = UrlbarTestUtils.promiseControllerNotification(
+    window,
+    "onQueryFinished"
+  );
+
   if (!useKeyboard) {
     info("Picking allow button with mouse");
     EventUtils.synthesizeMouseAtCenter(allowButton, {});
@@ -156,6 +165,7 @@ async function doOptInTest(useKeyboard) {
     EventUtils.synthesizeKey("KEY_Enter");
   }
 
+  await promiseNewQuery;
   await UrlbarTestUtils.promiseSearchComplete(window);
   let { result: merinoResult } = await UrlbarTestUtils.getDetailsOfResultAt(
     window,
@@ -429,7 +439,7 @@ add_task(async function not_interested() {
   let { element } = await openRealtimeSuggestion({ input: "stock" });
 
   const popup = gURLBar.view.resultMenu;
-  const onPopupShown = BrowserTestUtils.waitForEvent(popup, "popupshown");
+  const onPopupShown = BrowserTestUtils.waitForEvent(popup, "shown");
   const dropmarker = element.row.querySelector(
     ".urlbarView-splitbutton-dropmarker"
   );
@@ -437,15 +447,9 @@ add_task(async function not_interested() {
   await onPopupShown;
 
   info("Activate the not_interested item");
-  const onPopupHidden = BrowserTestUtils.waitForEvent(popup, "popuphidden");
-  const targetMenuItem = popup.querySelector("menuitem");
-  if (AppConstants.platform == "macosx") {
-    // Synthesized clicks don't work in the native Mac menu.
-    targetMenuItem.doCommand();
-    popup.hidePopup(true);
-  } else {
-    EventUtils.synthesizeMouseAtCenter(targetMenuItem, {});
-  }
+  const onPopupHidden = BrowserTestUtils.waitForEvent(popup, "hidden");
+  const targetMenuItem = popup.querySelector("panel-item");
+  EventUtils.synthesizeMouseAtCenter(targetMenuItem, {});
   await onPopupHidden;
   await TestUtils.waitForCondition(
     () => !UrlbarPrefs.get("suggest.realtimeOptIn"),

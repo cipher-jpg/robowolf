@@ -191,6 +191,8 @@ export const MultiStageProtonScreen = props => {
       setActiveSingleSelectSelection={props.setActiveSingleSelectSelection}
       textInputs={props.textInputs}
       setTextInput={props.setTextInput}
+      pinnedSites={props.pinnedSites}
+      setPinnedSite={props.setPinnedSite}
       contentToggleChecked={props.contentToggleChecked}
       setContentToggleChecked={props.setContentToggleChecked}
       totalNumberOfScreens={props.totalNumberOfScreens}
@@ -233,6 +235,7 @@ export const ProtonScreenActionButtons = props => {
     activeMultiSelect,
     activeSingleSelectSelections,
     textInputs,
+    pinnedSites,
     installedAddons,
   } = props;
   const defaultValue = content.checkbox?.defaultValue;
@@ -297,6 +300,10 @@ export const ProtonScreenActionButtons = props => {
       return Object.values(textInputs).every(
         input => !input.isValid || input.value.trim().length === 0
       );
+    }
+    // Disables the primary button until the user has pinned at least one site.
+    if (disabledValue === "hasPinnedSite") {
+      return !pinnedSites;
     }
     return disabledValue;
   };
@@ -632,6 +639,21 @@ export class ProtonScreen extends React.PureComponent {
   }
 
   getEffectiveBackground(content) {
+    if (content.position !== "split") {
+      const combinedBackground =
+        content.background && content.zap_border
+          ? `linear-gradient(96deg, #B89CFF 20.68%, #FF9565 79.34%) border-box border-area, image(${content.background}) padding-box`
+          : content.background;
+
+      const combinedBackgroundStatic =
+        content.background_static && content.zap_border
+          ? `linear-gradient(96deg, #B89CFF 20.68%, #FF9565 79.34%) border-box border-area, image(${content.background_static}) padding-box`
+          : content.background_static;
+
+      return this.props.animationsPaused && content.background_static
+        ? combinedBackgroundStatic
+        : combinedBackground;
+    }
     return this.props.animationsPaused && content.background_static
       ? content.background_static
       : content.background;
@@ -858,6 +880,7 @@ export class ProtonScreen extends React.PureComponent {
         activeMultiSelect={this.props.activeMultiSelect}
         activeSingleSelectSelections={this.props.activeSingleSelectSelections}
         textInputs={this.props.textInputs}
+        pinnedSites={this.props.pinnedSites}
       />
     ) : null;
   }
@@ -915,7 +938,6 @@ export class ProtonScreen extends React.PureComponent {
           MultiStageUtils.getValidStyle(content.screen_style, [
             "overflow",
             "display",
-            "height",
           ])
         }
         role={ariaRole ?? "alertdialog"}
@@ -945,6 +967,7 @@ export class ProtonScreen extends React.PureComponent {
             MultiStageUtils.getValidStyle(content.screen_style, [
               "width",
               "padding",
+              "height",
             ])
           }
         >

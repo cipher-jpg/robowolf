@@ -119,6 +119,9 @@ class RetAddrEntry {
     // A callVM for the over-recursion check on function entry.
     StackCheck,
 
+    // A callVM for the over-recursion check on the generator resume path.
+    ResumeStackCheck,
+
     // A callVM for an interrupt check.
     InterruptCheck,
 
@@ -188,7 +191,7 @@ class alignas(uintptr_t) BaselineScript final
     : public TrailingArray<BaselineScript> {
  private:
   // Code pointer containing the actual method.
-  HeapPtr<JitCode*> method_{nullptr};
+  GCPtr<JitCode*> method_{nullptr};
 
   // An ion compilation that is ready, but isn't linked yet.
   MainThreadData<IonCompileTask*> pendingIonCompileTask_{nullptr};

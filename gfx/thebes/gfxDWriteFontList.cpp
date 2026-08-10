@@ -2,38 +2,36 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/FontPropertyTypes.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/intl/OSPreferences.h"
-
 #include "gfxDWriteFontList.h"
-#include "gfxDWriteFonts.h"
+
+#include "../2d/AutoHelpersWin.h"
+#include "SharedFontList-impl.h"
 #include "gfxDWriteCommon.h"
-#include "nsUnicharUtils.h"
-#include "nsPresContext.h"
-#include "nsServiceManagerUtils.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/gfx/Logging.h"
+#include "gfxDWriteFonts.h"
+#include "gfxRect.h"
+#include "harfbuzz/hb.h"
 #include "mozilla/EndianUtils.h"
+#include "mozilla/FontPropertyTypes.h"
 #include "mozilla/LookAndFeel.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/glean/GfxMetrics.h"
-#include "mozilla/WindowsProcessMitigations.h"
 #include "mozilla/Utf16.h"
-#include "nsDirectoryServiceUtils.h"
-#include "nsDirectoryServiceDefs.h"
+#include "mozilla/WindowsProcessMitigations.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/gfx/Logging.h"
+#include "mozilla/glean/GfxMetrics.h"
+#include "mozilla/intl/OSPreferences.h"
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsDirectoryServiceUtils.h"
+#include "nsPresContext.h"
+#include "nsServiceManagerUtils.h"
+#include "nsUnicharUtils.h"
 #include "nsWindowsHelpers.h"
-
-#include "../2d/AutoHelpersWin.h"
-#include "gfxRect.h"
-#include "SharedFontList-impl.h"
-
-#include "harfbuzz/hb.h"
 
 #define StandardFonts
 #include "StandardFonts-win10.inc"
@@ -232,11 +230,11 @@ void gfxDWriteFontFamily::FindStyleVariationsLocked(
       fe->Weight().ToString(weightString);
       LOG_FONTLIST(
           ("(fontlist) added (%s) to family (%s)"
-           " with style: %s weight: %s stretch: %d psname: %s fullname: %s",
+           " with style: %s weight: %s width: %d psname: %s fullname: %s",
            fe->Name().get(), Name().get(),
            (fe->IsItalic()) ? "italic"
                             : (fe->IsOblique() ? "oblique" : "normal"),
-           weightString.get(), fe->Stretch().AsScalar(), psname.get(),
+           weightString.get(), fe->Width().AsScalar(), psname.get(),
            fullname.get()));
     }
   }
@@ -382,7 +380,7 @@ gfxFontEntry* gfxDWriteFontEntry::Clone() const {
   MOZ_ASSERT(!IsUserFont(), "we can only clone installed fonts!");
   gfxDWriteFontEntry* fe = new gfxDWriteFontEntry(Name(), mFont);
   fe->mWeightRange = mWeightRange;
-  fe->mStretchRange = mStretchRange;
+  fe->mWidthRange = mWidthRange;
   fe->mStyleRange = mStyleRange;
   return fe;
 }
@@ -708,7 +706,11 @@ gfxFont* gfxDWriteFontEntry::CreateFontInstance(
       useBoldSim ? DWRITE_FONT_SIMULATIONS_BOLD : DWRITE_FONT_SIMULATIONS_NONE;
   ThreadSafeWeakPtr<UnscaledFontDWrite>& unscaledFontPtr =
       useBoldSim ? mUnscaledFontBold : mUnscaledFont;
-  RefPtr<UnscaledFontDWrite> unscaledFont(unscaledFontPtr);
+  RefPtr<UnscaledFontDWrite> unscaledFont;
+  {
+    AutoReadLock lock(mLock);
+    unscaledFont = RefPtr<UnscaledFontDWrite>(unscaledFontPtr);
+  }
   if (!unscaledFont) {
     RefPtr<IDWriteFontFace> fontFace;
     nsresult rv =
@@ -716,6 +718,7 @@ gfxFont* gfxDWriteFontEntry::CreateFontInstance(
     if (NS_FAILED(rv)) {
       return nullptr;
     }
+    AutoWriteLock lock(mLock);
     // Only pass in the underlying IDWriteFont if the unscaled font doesn't
     // reflect a data font. This signals whether or not we can safely query
     // a descriptor to represent the font for various transport use-cases.
@@ -972,12 +975,12 @@ FontFamily gfxDWriteFontList::GetDefaultFontForPlatform(
 already_AddRefed<gfxFontEntry> gfxDWriteFontList::LookupLocalFont(
     FontVisibilityProvider* aFontVisibilityProvider,
     const nsACString& aFontName, WeightRange aWeightForEntry,
-    StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry) {
+    WidthRange aWidthForEntry, SlantStyleRange aStyleForEntry) {
   AutoLock lock(mLock);
 
   if (SharedFontList()) {
     return LookupInSharedFaceNameList(aFontVisibilityProvider, aFontName,
-                                      aWeightForEntry, aStretchForEntry,
+                                      aWeightForEntry, aWidthForEntry,
                                       aStyleForEntry);
   }
 
@@ -990,7 +993,7 @@ already_AddRefed<gfxFontEntry> gfxDWriteFontList::LookupLocalFont(
 
   gfxDWriteFontEntry* dwriteLookup = static_cast<gfxDWriteFontEntry*>(lookup);
   RefPtr fe = MakeRefPtr<gfxDWriteFontEntry>(
-      lookup->Name(), dwriteLookup->mFont, aWeightForEntry, aStretchForEntry,
+      lookup->Name(), dwriteLookup->mFont, aWeightForEntry, aWidthForEntry,
       aStyleForEntry);
   fe->SetForceGDIClassic(dwriteLookup->GetForceGDIClassic());
   return fe.forget();
@@ -998,7 +1001,7 @@ already_AddRefed<gfxFontEntry> gfxDWriteFontList::LookupLocalFont(
 
 already_AddRefed<gfxFontEntry> gfxDWriteFontList::MakePlatformFont(
     const nsACString& aFontName, WeightRange aWeightForEntry,
-    StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry,
+    WidthRange aWidthForEntry, SlantStyleRange aStyleForEntry,
     const uint8_t* aFontData, uint32_t aLength) {
   RefPtr<gfxDWriteFontFileStream> fontFileStream;
   RefPtr<IDWriteFontFile> fontFile;
@@ -1024,7 +1027,7 @@ already_AddRefed<gfxFontEntry> gfxDWriteFontList::MakePlatformFont(
 
   RefPtr entry = MakeRefPtr<gfxDWriteFontEntry>(
       NS_ConvertUTF16toUTF8(uniqueName), fontFile, fontFileStream,
-      aWeightForEntry, aStretchForEntry, aStyleForEntry);
+      aWeightForEntry, aWidthForEntry, aStyleForEntry);
 
   hr = fontFile->Analyze(&isSupported, &fileType, &entry->mFaceType, &numFaces);
   NS_ASSERTION(SUCCEEDED(hr), "IDWriteFontFile::Analyze failed");
@@ -1365,7 +1368,7 @@ void gfxDWriteFontList::GetFacesInitDataForFamily(
       continue;
     }
     WeightRange weight(FontWeight::FromInt(dwFont->GetWeight()));
-    StretchRange stretch(FontStretchFromDWriteStretch(dwFont->GetStretch()));
+    WidthRange width(FontWidthFromDWriteStretch(dwFont->GetStretch()));
     // Try to read PSName as a unique face identifier; if this fails we'll get
     // it directly from the 'name' table, and if that also fails we consider
     // the face unusable.
@@ -1408,7 +1411,7 @@ void gfxDWriteFontList::GetFacesInitDataForFamily(
           : dwstyle == DWRITE_FONT_STYLE_ITALIC ? FontSlantStyle::ITALIC
                                                 : FontSlantStyle::OBLIQUE);
       aFaces.AppendElement(fontlist::Face::InitData{
-          name, uint16_t(i), false, weight, stretch, slant, charmap});
+          name, uint16_t(i), false, weight, width, slant, charmap});
     }
     MOZ_SEH_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
       // Exception (e.g. disk i/o error) occurred when DirectWrite tried to use
@@ -1802,11 +1805,11 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
           face->Weight().ToString(weightString);
           LOG_FONTLIST(
               ("(fontlist) moved (%s) to family (%s)"
-               " with style: %s weight: %s stretch: %d",
+               " with style: %s weight: %s width: %d",
                face->Name().get(), gillSansMTFamily->Name().get(),
                (face->IsItalic()) ? "italic"
                                   : (face->IsOblique() ? "oblique" : "normal"),
-               weightString.get(), face->Stretch().AsScalar()));
+               weightString.get(), face->Width().AsScalar()));
         }
       }
       gillSansFamily->ReadUnlock();

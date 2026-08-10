@@ -5,19 +5,18 @@
 #ifndef mozilla_widget_IMEData_h_
 #define mozilla_widget_IMEData_h_
 
+#include "Units.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/EnumTypeTraits.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/NativeKeyBindingsType.h"
-
 #include "nsCOMPtr.h"
 #include "nsIURI.h"
 #include "nsPoint.h"
 #include "nsRect.h"
 #include "nsString.h"
 #include "nsXULAppAPI.h"
-#include "Units.h"
 
 class nsIWidget;
 
@@ -43,6 +42,9 @@ class MOZ_STACK_CLASS PrintStringDetail : public nsAutoCString {
   template <typename StringType>
   explicit PrintStringDetail(const Maybe<StringType>& aMaybeString,
                              uint32_t aMaxLength = UINT32_MAX);
+
+  friend std::string format_as(const PrintStringDetail&);
+  friend std::ostream& operator<<(std::ostream&, const PrintStringDetail&);
 
  private:
   static nsCString PrintCharData(char32_t aChar);

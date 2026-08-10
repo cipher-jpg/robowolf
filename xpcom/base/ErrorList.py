@@ -92,6 +92,7 @@ modules["WIN32"] = Mod(44)
 modules["WDBA"] = Mod(45)
 modules["DOM_QM"] = Mod(46)
 modules["CLIPBOARD"] = Mod(47)
+modules["DOM_SERIAL"] = Mod(48)
 
 # NS_ERROR_MODULE_GENERAL should be used by modules that do not
 # care if return code values overlap. Callers of methods that
@@ -364,6 +365,14 @@ with modules["NETWORK"]:
     # Used to indicate cases where we need to fall back from HTTP/2
     # to HTTP/1.1.
     errors["NS_ERROR_HTTP2_FALLBACK_TO_HTTP1"] = FAILURE(94)
+    # The connection was blocked by the OS itself because this app lacks the
+    # platform-level local-network permission (e.g. Android 16+'s Local
+    # Network Protection, gated on ACCESS_LOCAL_NETWORK/NEARBY_DEVICES).
+    # Distinct from NS_ERROR_LOCAL_NETWORK_ACCESS_DENIED, which is Firefox's
+    # own site-permission decision made after a successful connect -- this
+    # error means the connect itself never had a chance to succeed, so it
+    # must not be routed through that (unrelated) content-permission flow.
+    errors["NS_ERROR_OS_LOCAL_NETWORK_ACCESS_DENIED"] = FAILURE(95)
 
     # XXX really need to better rationalize these error codes.  are consumers of
     # necko really expected to know how to discern the meaning of these??
@@ -384,6 +393,12 @@ with modules["NETWORK"]:
     # The request occurred in docshell that lacks a treeowner, so it is
     # probably in the process of being torn down.
     errors["NS_ERROR_DOCSHELL_DYING"] = FAILURE(78)
+    # A document channel opened in the parent process to make a process
+    # selection decision was canceled because the parent channel was never
+    # linked up with a channel in the selected content process (which instead
+    # opened its own independent channel, e.g. for about: documents). This is an
+    # expected outcome rather than a real load failure.
+    errors["NS_ERROR_DOCUMENT_LOAD_LISTENER_NO_PARENT_CHANNEL"] = FAILURE(79)
 
     # DNS specific error codes:
 
@@ -1260,6 +1275,13 @@ with modules["DOM_QM"]:
 # =======================================================================
 with modules["CLIPBOARD"]:
     errors["NS_ERROR_CLIPBOARD_TOO_BIG"] = FAILURE(1)
+
+# =======================================================================
+# 48: NS_ERROR_MODULE_DOM_SERIAL
+# =======================================================================
+with modules["DOM_SERIAL"]:
+    # Web Serial receive errors, surfaced on the readable stream.
+    errors["NS_ERROR_DOM_SERIAL_PARITY_ERROR"] = FAILURE(1)
 
 # =======================================================================
 # 51: NS_ERROR_MODULE_GENERAL

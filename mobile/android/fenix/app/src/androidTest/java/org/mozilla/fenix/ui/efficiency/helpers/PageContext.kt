@@ -6,16 +6,20 @@ package org.mozilla.fenix.ui.efficiency.helpers
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
+import org.mozilla.fenix.ui.efficiency.pageObjects.AddToHomeScreenComponent
 import org.mozilla.fenix.ui.efficiency.pageObjects.BookmarkSearchPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.BookmarksPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.BrowserPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.CollectionsPage
+import org.mozilla.fenix.ui.efficiency.pageObjects.CustomTabsPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.DownloadsPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.FindInPagePage
 import org.mozilla.fenix.ui.efficiency.pageObjects.HistoryPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.HomePage
 import org.mozilla.fenix.ui.efficiency.pageObjects.MainMenuPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.MicrosurveysPage
+import org.mozilla.fenix.ui.efficiency.pageObjects.NotificationPage
+import org.mozilla.fenix.ui.efficiency.pageObjects.OnboardingPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.RecentlyClosedTabsPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.SearchBarComponent
 import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsAboutPage
@@ -48,22 +52,33 @@ import org.mozilla.fenix.ui.efficiency.pageObjects.SettingsTurnOnSyncPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.ShareOverlayPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.ShortcutsPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.TabDrawerPage
+import org.mozilla.fenix.ui.efficiency.pageObjects.TabHistoryPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.ToolbarComponent
 import org.mozilla.fenix.ui.efficiency.pageObjects.UnifiedTrustPanelPage
+import org.mozilla.fenix.ui.efficiency.pageObjects.WebCompatReporterPage
 import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 class PageContext(val composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule, *>) {
     // Let's make sure we have them in a lexicographic order
+    val addToHomescreen = AddToHomeScreenComponent(composeRule)
     val bookmarkSearch = BookmarkSearchPage(composeRule)
     val bookmarks = BookmarksPage(composeRule)
     val browserPage = BrowserPage(composeRule)
     val collections = CollectionsPage(composeRule)
+    val customTabs = CustomTabsPage(composeRule)
     val downloads = DownloadsPage(composeRule)
     val findInPage = FindInPagePage(composeRule)
     val history = HistoryPage(composeRule)
     val home = HomePage(composeRule)
     val mainMenu = MainMenuPage(composeRule)
     val microsurveys = MicrosurveysPage(composeRule)
+    val notification = NotificationPage(composeRule)
+    val onboarding = OnboardingPage(composeRule)
+
+    // ReaderViewPage is intentionally NOT registered here. The reader-view appearance controls are a
+    // transient overlay reachable only on a reader-capable page via the toolbar toggle + Customize
+    // Reader View menu item, which the navigation graph cannot express. Registering it would make the
+    // reachability suite fail. Tests drive that sequence explicitly and instantiate ReaderViewPage locally.
     val recentlyClosedTabs = RecentlyClosedTabsPage(composeRule)
     val searchBar = SearchBarComponent(composeRule)
     val settings = SettingsPage(composeRule)
@@ -96,8 +111,10 @@ class PageContext(val composeRule: AndroidComposeTestRule<HomeActivityIntentTest
     val shareOverlay = ShareOverlayPage(composeRule)
     val shortcuts = ShortcutsPage(composeRule)
     val tabDrawer = TabDrawerPage(composeRule)
+    val tabHistory = TabHistoryPage(composeRule)
     val toolbar = ToolbarComponent(composeRule)
     val unifiedTrustPanel = UnifiedTrustPanelPage(composeRule)
+    val webCompatReporter = WebCompatReporterPage(composeRule)
 
     fun initTestRule(
         skipOnboarding: Boolean = true,

@@ -11,6 +11,7 @@ const KEY_NAMES_TO_CODES = {
   ArrowLeft: "VK_LEFT",
   ArrowRight: "VK_RIGHT",
   ArrowUp: "VK_UP",
+  Enter: "VK_RETURN",
 };
 
 /**
@@ -30,6 +31,7 @@ export class CustomKeysParent extends JSWindowActorParent {
           ? ShortcutUtils.prettifyShortcut(keyEl)
           : "",
       isCustomized: !!CustomKeys.getDefaultKey(id),
+      internal: keyEl.getAttribute("internal") == "true",
     };
   }
 
@@ -196,16 +198,26 @@ export class CustomKeysParent extends JSWindowActorParent {
         return this.getKeyData(id);
       }
       case "CustomKeys:Confirm": {
+        let flags = Ci.nsIPromptService.BUTTON_POS_0_DEFAULT;
+        if (message.data.buttonConfirm) {
+          flags |=
+            (Ci.nsIPromptService.BUTTON_TITLE_IS_STRING *
+              Ci.nsIPromptService.BUTTON_POS_0) |
+            (Ci.nsIPromptService.BUTTON_TITLE_IS_STRING *
+              Ci.nsIPromptService.BUTTON_POS_1);
+        } else {
+          // If buttonConfirm and buttonCancel aren't specified, just display
+          // an OK button.
+          flags |=
+            Ci.nsIPromptService.BUTTON_POS_0 *
+            Ci.nsIPromptService.BUTTON_TITLE_OK;
+        }
         const result = await Services.prompt.asyncConfirmEx(
           this.browsingContext,
           Ci.nsIPrompt.MODAL_TYPE_CONTENT,
           message.data.title,
           message.data.body,
-          Ci.nsIPromptService.BUTTON_POS_0_DEFAULT |
-            (Ci.nsIPromptService.BUTTON_TITLE_IS_STRING *
-              Ci.nsIPromptService.BUTTON_POS_0) |
-            (Ci.nsIPromptService.BUTTON_TITLE_IS_STRING *
-              Ci.nsIPromptService.BUTTON_POS_1),
+          flags,
           message.data.buttonConfirm,
           message.data.buttonCancel,
           null,
@@ -284,7 +296,13 @@ export class CustomKeysParent extends JSWindowActorParent {
         data.keycode =
           KEY_NAMES_TO_CODES[event.key] ??
           ShortcutUtils.getKeycodeAttribute(event.key);
-        if (event.key == "Backspace") {
+        if (
+          event.key == "Backspace" ||
+          (!isMac &&
+            event.key == "F10" &&
+            (!modifiers.length || (modifiers.length == 1 && event.ctrlKey))) ||
+          (event.key == "Enter" && !modifiers.length)
+        ) {
           data.isValid = false;
         }
       }

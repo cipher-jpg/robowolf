@@ -67,7 +67,6 @@
       this.arrowScrollbox = document.getElementById(
         "tabbrowser-arrowscrollbox"
       );
-      this.arrowScrollbox.addEventListener("wheel", this, true);
       this.arrowScrollbox.addEventListener("underflow", this);
       this.arrowScrollbox.addEventListener("overflow", this);
       this.pinnedTabsContainer = document.getElementById(
@@ -186,6 +185,9 @@
         "browser.tabs.closeTabByDblclick",
         false
       );
+
+      // The base class set these up before we had the arrowscrollbox.
+      this.updateWheelListeners();
 
       XPCOMUtils.defineLazyPreferenceGetter(
         this,
@@ -517,11 +519,18 @@
         let tab = event.target?.closest("tab");
         if (tab) {
           if (tab.multiselected) {
-            gBrowser.removeMultiSelectedTabs();
+            gBrowser.removeMultiSelectedTabs({
+              metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+                gBrowser.TabMetrics.METRIC_SOURCE.MIDDLE_CLICK
+              ),
+            });
           } else {
             gBrowser.removeTab(tab, {
               animate: true,
               triggeringEvent: event,
+              metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+                gBrowser.TabMetrics.METRIC_SOURCE.MIDDLE_CLICK
+              ),
             });
           }
         } else if (isTabGroupLabel(event.target)) {
@@ -588,32 +597,37 @@
           }
         }
       } else if (keyComboForMove) {
+        let moveOptions = {
+          metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+            gBrowser.TabMetrics.METRIC_SOURCE.KEYBOARD
+          ),
+        };
         switch (event.keyCode) {
           case KeyEvent.DOM_VK_UP:
-            gBrowser.moveTabBackward();
+            gBrowser.moveTabBackward(moveOptions);
             break;
           case KeyEvent.DOM_VK_DOWN:
-            gBrowser.moveTabForward();
+            gBrowser.moveTabForward(moveOptions);
             break;
           case KeyEvent.DOM_VK_RIGHT:
             if (RTL_UI) {
-              gBrowser.moveTabBackward();
+              gBrowser.moveTabBackward(moveOptions);
             } else {
-              gBrowser.moveTabForward();
+              gBrowser.moveTabForward(moveOptions);
             }
             break;
           case KeyEvent.DOM_VK_LEFT:
             if (RTL_UI) {
-              gBrowser.moveTabForward();
+              gBrowser.moveTabForward(moveOptions);
             } else {
-              gBrowser.moveTabBackward();
+              gBrowser.moveTabBackward(moveOptions);
             }
             break;
           case KeyEvent.DOM_VK_HOME:
-            gBrowser.moveTabToStart();
+            gBrowser.moveTabToStart(undefined, moveOptions);
             break;
           case KeyEvent.DOM_VK_END:
-            gBrowser.moveTabToEnd();
+            gBrowser.moveTabToEnd(undefined, moveOptions);
             break;
           default:
             // Consume the keydown event for the above keyboard
@@ -737,11 +751,27 @@
       this.tabDragAndDrop.handle_dragleave(event);
     }
 
+    /**
+     * Only reached while switching tabs by scrolling is enabled, since that's
+     * when the listener exists.
+     */
     on_wheel(event) {
-      if (
-        Services.prefs.getBoolPref("toolkit.tabbox.switchByScrolling", false)
-      ) {
-        event.stopImmediatePropagation();
+      // The tabs are switched from the legacy scroll event in tabbox.js. Keep
+      // the arrowscrollbox from scrolling on top of that.
+      event.stopImmediatePropagation();
+    }
+
+    updateWheelListeners() {
+      super.updateWheelListeners();
+
+      if (!this.arrowScrollbox) {
+        // Called from the base class constructor, before init().
+        return;
+      }
+      if (this.switchByScrolling) {
+        this.arrowScrollbox.addEventListener("wheel", this, true);
+      } else {
+        this.arrowScrollbox.removeEventListener("wheel", this, true);
       }
     }
 
@@ -1090,6 +1120,25 @@
     }
 
     /**
+     * @override
+     * @param {-1|1} aDir
+     * @param {boolean} aWrap
+     * @param {Event} [aEvent] The DOM event that triggered this call.
+     */
+    advanceSelectedTab(aDir, aWrap, aEvent) {
+      let prevTab = gBrowser.selectedTab;
+      super.advanceSelectedTab(aDir, aWrap, aEvent);
+      if (gBrowser.selectedTab !== prevTab) {
+        gBrowser.recordTabMetrics(
+          gBrowser.TabMetrics.METRIC_ACTION.ACTIVATE,
+          gBrowser.TabMetrics.userTriggeredContext(
+            gBrowser.TabMetrics.sourceForEvent(aEvent)
+          )
+        );
+      }
+    }
+
+    /**
      * Changes the selected tab or tab group label on the tab strip
      * relative to the ARIA-focused tab strip element or the active tab. This
      * is intended for traversing the tab strip visually, e.g by using keyboard
@@ -1145,7 +1194,16 @@
       // group label.
       let newItem = ariaFocusableItems[newItemIndex];
       if (isTab(newItem)) {
+        let prevTab = gBrowser.selectedTab;
         this._selectNewTab(newItem, aDir, aWrap);
+        if (gBrowser.selectedTab !== prevTab) {
+          gBrowser.recordTabMetrics(
+            gBrowser.TabMetrics.METRIC_ACTION.ACTIVATE,
+            gBrowser.TabMetrics.userTriggeredContext(
+              gBrowser.TabMetrics.METRIC_SOURCE.KEYBOARD
+            )
+          );
+        }
       }
       this.ariaFocusedItem = newItem;
 
@@ -1730,6 +1788,7 @@
         Services.prefs.removeObserver("privacy.userContext", this.boundObserve);
       }
       CustomizableUI.removeListener(this);
+      this.previewPanel?.forceReset();
     }
 
     updateTabSoundLabel(tab) {

@@ -15,6 +15,7 @@ import mozilla.components.browser.state.action.RestoreCompleteAction
 import mozilla.components.browser.state.action.TabGroupAction
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.action.TabListAction.RestoreAction.RestoreLocation
+import mozilla.components.browser.state.action.TranslationsAction
 import mozilla.components.browser.state.action.UndoAction
 import mozilla.components.browser.state.selector.findNormalOrPrivateTabByUrl
 import mozilla.components.browser.state.selector.findNormalOrPrivateTabByUrlIgnoringFragment
@@ -320,6 +321,7 @@ class TabsUseCases(
         private val selectTab: SelectTabUseCase,
         private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
         private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        private val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
     ) {
         /**
          * Restores the given list of [RecoverableTab]s.
@@ -355,6 +357,9 @@ class TabsUseCases(
             state: RecoverableBrowserState,
             restoreLocation: RestoreLocation = RestoreLocation.END,
         ) {
+            state.isTranslationsEngineSupported?.let { isEngineSupported ->
+                store.dispatch(TranslationsAction.SetEngineSupportedAction(isEngineSupported))
+            }
             invoke(
                 tabs = state.tabs,
                 tabPartitions = state.tabPartitions,
@@ -376,7 +381,7 @@ class TabsUseCases(
             storage: SessionStorage,
             tabTimeoutInMs: Long = Long.MAX_VALUE,
         ) = withContext(ioDispatcher) {
-            val now = System.currentTimeMillis()
+            val now = currentTimeMillis()
             val state = storage.restore {
                 val lastActiveTime = maxOf(it.state.lastAccess, it.state.createdAt)
                 now - lastActiveTime <= tabTimeoutInMs

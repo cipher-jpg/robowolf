@@ -54,6 +54,7 @@ class BookmarksTest {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833690
     @Converted(
         replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.BookmarksTest#deleteBookmarkFoldersTest"],
+        bug = 2043198,
         since = "2026-05",
     )
     @SmokeTest
@@ -135,6 +136,7 @@ class BookmarksTest {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833693
     @Converted(
         replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.BookmarksTest#shareBookmarkTest"],
+        bug = 2043198,
         since = "2026-05",
     )
     @SmokeTest
@@ -162,6 +164,7 @@ class BookmarksTest {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833702
     @Converted(
         replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.BookmarksTest#openMultipleSelectedBookmarksInANewTabTest"],
+        bug = 2043198,
         since = "2026-05",
     )
     @SmokeTest
@@ -196,6 +199,7 @@ class BookmarksTest {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833704
     @Converted(
         replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.BookmarksTest#deleteMultipleSelectedBookmarksTest"],
+        bug = 2043198,
         since = "2026-05",
     )
     @SmokeTest
@@ -246,6 +250,7 @@ class BookmarksTest {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833712
     @Converted(
         replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.BookmarksTest#verifySearchForBookmarkedItemsTest"],
+        bug = 2043198,
         since = "2026-05",
     )
     @SmokeTest
@@ -263,13 +268,13 @@ class BookmarksTest {
         }.clickBookmarksButton {
         }.clickSearchButton {
             // Search for a valid term
-            typeSearch(firstWebPage.title)
-            verifySearchSuggestionsAreDisplayed(firstWebPage.url.toString())
-            verifySuggestionsAreNotDisplayed(secondWebPage.url.toString())
+            typeBookmarkSearch(firstWebPage.title)
+            verifyBookmarkSearchSuggestionsAreDisplayed(firstWebPage.url.toString())
+            verifyBookmarkSuggestionsAreNotDisplayed(secondWebPage.url.toString())
             // Search for invalid term
-            typeSearch("Android")
-            verifySuggestionsAreNotDisplayed(firstWebPage.url.toString())
-            verifySuggestionsAreNotDisplayed(secondWebPage.url.toString())
+            typeBookmarkSearch("Android")
+            verifyBookmarkSuggestionsAreNotDisplayed(firstWebPage.url.toString())
+            verifyBookmarkSuggestionsAreNotDisplayed(secondWebPage.url.toString())
         }
     }
 
@@ -285,13 +290,11 @@ class BookmarksTest {
         }.clickBookmarksButton {
         }.clickSearchButton {
             verifySearchToolbar(true)
-            verifySearchSelectorButton()
-            verifySearchEngineIcon("Bookmarks")
-            verifySearchBarPlaceholder("Search bookmarks")
-            verifySearchBarPosition()
-            tapOutsideToDismissSearchBar(defaultWebPage.url.toString())
+            verifyBookmarkSearchBarPlaceholder()
+            pressBack()
             verifySearchToolbar(false)
         }
+
         composeBookmarksMenu(composeTestRule) {
         }.goBackToBrowserScreen {
         }.openThreeDotMenu {
@@ -307,8 +310,6 @@ class BookmarksTest {
         }.clickBookmarksButton {
         }.clickSearchButton {
             verifySearchToolbar(true)
-            verifySearchEngineIcon("Bookmarks")
-            verifySearchBarPosition()
             pressBack()
             verifySearchToolbar(false)
         }

@@ -5,29 +5,30 @@
 #ifndef MOZILLA_LAYERS_WEBRENDERAPI_H
 #define MOZILLA_LAYERS_WEBRENDERAPI_H
 
-#include <queue>
 #include <stdint.h>
-#include <vector>
-#include <unordered_map>
 
+#include <queue>
+#include <unordered_map>
+#include <vector>
+
+#include "GLTypes.h"
+#include "Units.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/gfx/CompositorHitTestInfo.h"
-#include "mozilla/layers/AsyncImagePipelineOp.h"
-#include "mozilla/layers/IpcResourceUpdateQueue.h"
-#include "mozilla/layers/RemoteTextureMap.h"
-#include "mozilla/layers/ScrollableLayerGuid.h"
-#include "mozilla/layers/SyncObject.h"
-#include "mozilla/layers/CompositionRecorder.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Range.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/VsyncDispatcher.h"
-#include "mozilla/webrender/webrender_ffi.h"
+#include "mozilla/gfx/CompositorHitTestInfo.h"
+#include "mozilla/layers/AsyncImagePipelineOp.h"
+#include "mozilla/layers/CompositionRecorder.h"
+#include "mozilla/layers/IpcResourceUpdateQueue.h"
+#include "mozilla/layers/RemoteTextureMap.h"
+#include "mozilla/layers/ScrollableLayerGuid.h"
+#include "mozilla/layers/SyncObject.h"
 #include "mozilla/webrender/WebRenderTypes.h"
+#include "mozilla/webrender/webrender_ffi.h"
 #include "nsString.h"
-#include "GLTypes.h"
-#include "Units.h"
 
 class gfxContext;
 
@@ -76,6 +77,21 @@ struct Line {
   wr::LineStyle style;
 };
 
+struct WebRenderCapabilities {
+  layers::WebRenderBackend mBackendType = layers::WebRenderBackend::HARDWARE;
+  layers::WebRenderCompositor mCompositorType =
+      layers::WebRenderCompositor::DRAW;
+  int32_t mMaxTextureSize = 0;
+  bool mUseANGLE = false;
+  bool mUseDComp = false;
+  bool mUseLayerCompositor = false;
+  bool mUseTripleBuffering = false;
+  bool mSupportsExternalBufferTextures = false;
+#ifdef XP_DARWIN
+  wr::ImageBufferKind mIOSurfaceImageKind = wr::ImageBufferKind::Texture2D;
+#endif
+};
+
 /// A handler that can be bundled into a transaction and notified at specific
 /// points in the rendering pipeline, such as after scene building or after
 /// frame building.
@@ -120,12 +136,17 @@ class TransactionBuilder final {
 
   void RemovePipeline(PipelineId aPipelineId);
 
-  void SetDisplayList(Epoch aEpoch, wr::WrPipelineId pipeline_id,
+  // aIdNamespace is the namespace whose resources the display list is allowed
+  // to reference. It must be supplied by the compositor-side owner of the
+  // pipeline.
+  void SetDisplayList(Epoch aEpoch, wr::IdNamespace aIdNamespace,
+                      wr::WrPipelineId pipeline_id,
                       wr::BuiltDisplayListDescriptor dl_descriptor,
                       wr::Vec<uint8_t>& dl_items_data,
                       wr::Vec<uint8_t>& dl_spatial_tree);
 
-  void ClearDisplayList(Epoch aEpoch, wr::WrPipelineId aPipeline);
+  void ClearDisplayList(Epoch aEpoch, wr::IdNamespace aIdNamespace,
+                        wr::WrPipelineId aPipeline);
 
   void GenerateFrame(const VsyncId& aVsyncId, bool aPresent, bool aTracked,
                      wr::RenderReasons aReasons);
@@ -212,7 +233,7 @@ class TransactionBuilder final {
   Transaction* Take();
 
   bool UseSceneBuilderThread() const { return mUseSceneBuilderThread; }
-  layers::WebRenderBackend GetBackendType() { return mApiBackend; }
+  const WebRenderCapabilities& GetCapabilities() const { return mCapabilities; }
   Transaction* Raw() const { return mTxn; }
 
   const RefPtr<layers::RemoteTextureTxnScheduler> mRemoteTextureTxnScheduler;
@@ -221,7 +242,7 @@ class TransactionBuilder final {
  protected:
   Transaction* mTxn;
   bool mUseSceneBuilderThread;
-  layers::WebRenderBackend mApiBackend;
+  WebRenderCapabilities mCapabilities;
   bool mOwnsData;
 };
 
@@ -296,16 +317,7 @@ class WebRenderAPI final {
   void AccumulateMemoryReport(wr::MemoryReport*);
 
   wr::WrIdNamespace GetNamespace();
-  layers::WebRenderBackend GetBackendType() { return mBackend; }
-  layers::WebRenderCompositor GetCompositorType() { return mCompositor; }
-  uint32_t GetMaxTextureSize() const { return mMaxTextureSize; }
-  bool GetUseANGLE() const { return mUseANGLE; }
-  bool GetUseDComp() const { return mUseDComp; }
-  bool GetUseLayerCompositor() const { return mUseLayerCompositor; }
-  bool GetUseTripleBuffering() const { return mUseTripleBuffering; }
-  bool SupportsExternalBufferTextures() const {
-    return mSupportsExternalBufferTextures;
-  }
+  const WebRenderCapabilities& GetCapabilities() const { return mCapabilities; }
   layers::SyncHandle GetSyncHandle() const { return mSyncHandle; }
 
   void Capture();
@@ -344,11 +356,7 @@ class WebRenderAPI final {
 
  protected:
   WebRenderAPI(wr::DocumentHandle* aHandle, wr::WindowId aId,
-               layers::WebRenderBackend aBackend,
-               layers::WebRenderCompositor aCompositor,
-               uint32_t aMaxTextureSize, bool aUseANGLE, bool aUseDComp,
-               bool aUseLayerCompositor, bool aUseTripleBuffering,
-               bool aSupportsExternalBufferTextures,
+               WebRenderCapabilities aCapabilities,
                layers::SyncHandle aSyncHandle,
                wr::WebRenderAPI* aRootApi = nullptr,
                wr::WebRenderAPI* aRootDocumentApi = nullptr);
@@ -485,14 +493,7 @@ class WebRenderAPI final {
 
   wr::DocumentHandle* mDocHandle;
   wr::WindowId mId;
-  layers::WebRenderBackend mBackend;
-  layers::WebRenderCompositor mCompositor;
-  int32_t mMaxTextureSize;
-  bool mUseANGLE;
-  bool mUseDComp;
-  bool mUseLayerCompositor;
-  bool mUseTripleBuffering;
-  bool mSupportsExternalBufferTextures;
+  const WebRenderCapabilities mCapabilities;
   bool mCaptureSequence;
   layers::SyncHandle mSyncHandle;
   bool mRendererDestroyed;
@@ -597,7 +598,15 @@ class DisplayListBuilder final {
              const Maybe<usize>& aEnd);
   void DumpSerializedDisplayList();
 
-  void Begin();
+  /// aAppUnitsPerDevPixel is the grid this display list's coordinates are
+  /// authored on (nsPresContext::AppUnitsPerDevPixel). WebRender normalizes
+  /// items by their accumulated external scroll offset in whole app units on
+  /// that grid, which is exact; doing it in floats lets positions drift with
+  /// the scroll offset and churn interning and invalidation (bug 2059570). It
+  /// is taken per display list because it changes with device scale and full
+  /// zoom, and differs between chrome and content within one WebRender
+  /// document.
+  void Begin(int32_t aAppUnitsPerDevPixel);
   void End(wr::BuiltDisplayList& aOutDisplayList);
   void End(layers::DisplayListData& aOutTransaction);
 
@@ -757,11 +766,13 @@ class DisplayListBuilder final {
 
   // XXX WrBorderSides are passed with Range.
   // It is just to bypass compiler bug. See Bug 1357734.
-  void PushBorder(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
-                  bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths,
-                  const Range<const wr::BorderSide>& aSides,
-                  const wr::BorderRadius& aRadius,
-                  wr::AntialiasBorder = wr::AntialiasBorder::Yes);
+  void PushBorder(
+      const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+      bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths,
+      const Range<const wr::BorderSide>& aSides,
+      const wr::BorderRadius& aRadius,
+      const wr::LayoutSideOffsets& aInset = EmptyLayoutSideOffsets(),
+      wr::AntialiasBorder = wr::AntialiasBorder::Yes);
 
   void PushBorderImage(const wr::LayoutRect& aBounds,
                        const wr::LayoutRect& aClip, bool aIsBackfaceVisible,

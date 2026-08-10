@@ -3,45 +3,44 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDNSService2.h"
-#include "nsIDNSRecord.h"
-#include "nsIDNSListener.h"
-#include "nsIDNSByTypeRecord.h"
-#include "nsICancelable.h"
-#include "nsIPrefBranch.h"
-#include "nsIOService.h"
-#include "nsIXPConnect.h"
-#include "nsProxyRelease.h"
-#include "nsReadableUtils.h"
-#include "nsString.h"
-#include "nsCRT.h"
-#include "nsNetCID.h"
-#include "nsError.h"
-#include "nsDNSPrefetch.h"
-#include "nsThreadUtils.h"
-#include "nsIProtocolProxyService.h"
-#include "nsIObliviousHttp.h"
-#include "prsystem.h"
-#include "prnetdb.h"
-#include "prmon.h"
-#include "prio.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsNetAddr.h"
-#include "nsNetUtil.h"
-#include "nsProxyRelease.h"
-#include "nsQueryObject.h"
-#include "nsIObserverService.h"
-#include "nsINetworkLinkService.h"
+
 #include "DNSAdditionalInfo.h"
 #include "TRRService.h"
-
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/net/NeckoCommon.h"
-#include "mozilla/net/ChildDNSService.h"
-#include "mozilla/net/DNSListenerProxy.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/SyncRunnable.h"
+#include "mozilla/net/ChildDNSService.h"
+#include "mozilla/net/DNSListenerProxy.h"
+#include "mozilla/net/NeckoCommon.h"
+#include "nsCRT.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsDNSPrefetch.h"
+#include "nsError.h"
+#include "nsICancelable.h"
+#include "nsIDNSByTypeRecord.h"
+#include "nsIDNSListener.h"
+#include "nsIDNSRecord.h"
+#include "nsINetworkLinkService.h"
+#include "nsIOService.h"
+#include "nsIObliviousHttp.h"
+#include "nsIObserverService.h"
+#include "nsIPrefBranch.h"
+#include "nsIProtocolProxyService.h"
+#include "nsIXPConnect.h"
+#include "nsNetAddr.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsProxyRelease.h"
+#include "nsQueryObject.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
+#include "nsThreadUtils.h"
+#include "prio.h"
+#include "prmon.h"
+#include "prnetdb.h"
+#include "prsystem.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
 
@@ -849,7 +848,7 @@ void nsDNSService::ReadPrefs(const char* name) {
     } else {
       mHasMockHTTPSRRDomainSet = true;
       MutexAutoLock lock(mLock);
-      mMockHTTPSRRDomain = mockHTTPSRRDomain;
+      mMockHTTPSRRDomain = std::move(mockHTTPSRRDomain);
     }
   }
 }
@@ -1697,6 +1696,7 @@ nsresult GetTRRSkipReasonName(TRRSkippedReason aReason, nsACString& aName) {
   static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_NRPT == 47);
   static_assert(TRRSkippedReason::TRR_BAD_URL == 48);
   static_assert(TRRSkippedReason::TRR_SYSTEM_SLEEP_MODE == 49);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_PRIVATE_DNS == 50);
 
   switch (aReason) {
     case TRRSkippedReason::TRR_UNSET:
@@ -1848,6 +1848,9 @@ nsresult GetTRRSkipReasonName(TRRSkippedReason aReason, nsACString& aName) {
       break;
     case TRRSkippedReason::TRR_SYSTEM_SLEEP_MODE:
       aName = "TRR_SYSTEM_SLEEP_MODE"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_PRIVATE_DNS:
+      aName = "TRR_HEURISTIC_TRIPPED_PRIVATE_DNS"_ns;
       break;
     default:
       MOZ_ASSERT(false, "Unknown value");

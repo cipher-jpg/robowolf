@@ -9,10 +9,12 @@
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/dom/Animation.h"
+#include "mozilla/dom/CSSKeywordValue.h"
 #include "mozilla/dom/CSSUnitValue.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/ElementInlines.h"
+#include "mozilla/dom/TimelineName.h"
 #include "mozilla/dom/ViewTimelineBinding.h"
 #include "nsComputedDOMStyle.h"
 #include "nsLayoutUtils.h"
@@ -56,31 +58,40 @@ JSObject* ViewTimeline::WrapObject(JSContext* aCx,
   return ViewTimeline_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-static MOZ_CAN_RUN_SCRIPT Maybe<StyleViewTimelineInset>
-ParseAndComputeInsetString(const nsACString& aInsetString, Element* aSubject,
-                           const Document* aDocument) {
-  if (!aSubject) {
-    // Use default.
-    return Some(StyleViewTimelineInset());
+static Maybe<StyleLengthPercentageOrAuto> ComputeStartOrEndInset(
+    const OwningUTF8StringOrCSSKeywordValueOrCSSNumericValue& aValue,
+    ErrorResult& aRv) {
+  // Note: This is a CSSKeywordish, so we don't expect to accept a length or
+  // percentage for this string.
+  // Note: We compare the string case-insensitively to make the behavior
+  // consistent with ServoCSSParser::ParseViewTimelineInset().
+  // https://github.com/w3c/csswg-drafts/issues/9584
+  if (aValue.IsUTF8String()) {
+    const nsCString& s = aValue.GetAsUTF8String();
+    if (!s.LowerCaseEqualsLiteral("auto")) {
+      aRv.ThrowTypeError("Invalid inset keyword");
+      return Nothing();
+    }
+    return Some(StyleLengthPercentageOrAuto::Auto());
+  } else if (aValue.IsCSSKeywordValue()) {
+    nsAutoCString s;
+    aValue.GetAsCSSKeywordValue()->GetValue(s);
+    if (!s.LowerCaseEqualsLiteral("auto")) {
+      aRv.ThrowTypeError("Invalid inset keyword");
+      return Nothing();
+    }
+    return Some(StyleLengthPercentageOrAuto::Auto());
   }
 
-  // We flush and get the computed style to compute the insets. The flush is not
-  // spec'ed but other browsers agree with this now so we follow them.
-  // https://github.com/w3c/csswg-drafts/issues/13852
-  //
-  // Note: ViewTimeline.subject doesn't allow pseudo-element per spec.
-  // Note: |style| could be null. We handle the null case in
-  // Servo_ParseAndComputeViewTimelineInset().
-  RefPtr<const ComputedStyle> style = nsComputedDOMStyle::GetComputedStyle(
-      aSubject, PseudoStyleRequest::NotPseudo());
-  const StylePerDocumentStyleData* rawData =
-      aDocument->EnsureStyleSet().RawData();
-  StyleViewTimelineInset inset;
-  if (!ServoCSSParser::ParseAndComputeViewTimelineInset(
-          aInsetString, aSubject, style, rawData, inset)) {
+  nsAutoCString s;
+  const CSSNumericValue& numeric = aValue.GetAsCSSNumericValue();
+  numeric.Stringify(s);
+  StyleLengthPercentage result;
+  if (!ServoCSSParser::ParseLengthPercentageForAbsoluteLengths(s, result)) {
+    aRv.ThrowTypeError("Invalid inset value");
     return Nothing();
   }
-  return Some(std::move(inset));
+  return Some(StyleLengthPercentageOrAuto::LengthPercentage(result));
 }
 
 /* static */
@@ -96,8 +107,7 @@ already_AddRefed<ViewTimeline> ViewTimeline::Constructor(
 
   // The spec doesn't provide the default value for element, so we use null
   // subject to align the behavior with other browsers.
-  RefPtr<Element> subject =
-      aOptions.mSubject.WasPassed() ? &aOptions.mSubject.Value() : nullptr;
+  RefPtr<Element> subject = aOptions.mSubject;
 
   StyleScrollAxis axis;
   switch (aOptions.mAxis) {
@@ -119,15 +129,13 @@ already_AddRefed<ViewTimeline> ViewTimeline::Constructor(
   if (aOptions.mInset.IsUTF8String()) {
     // If a DOMString value is provided as an inset, parse it as a
     // <'view-timeline-inset'> value;
-    Maybe<StyleViewTimelineInset> value = ParseAndComputeInsetString(
-        aOptions.mInset.GetAsUTF8String(), subject, doc);
-    if (!value) {
+    if (!ServoCSSParser::ParseViewTimelineInset(
+            aOptions.mInset.GetAsUTF8String(), inset)) {
       // We throw TypeError for the invalid inset, including DOMString, just
       // like the invalid sequence case per spec.
       aRv.ThrowTypeError("Invalid inset string");
       return nullptr;
     }
-    inset = std::move(*value);
   } else {
     if (!StaticPrefs::layout_css_typed_om_enabled()) {
       // CSSKeywordValue and CSSNumericValue are disabled.
@@ -139,10 +147,24 @@ already_AddRefed<ViewTimeline> ViewTimeline::Constructor(
     // value, it is duplicated. If it has zero values or more than two values,
     // or if it contains a CSSKeywordValue whose value is not "auto", throw a
     // TypeError.
-    // FIXME: Bug 2016880. Handle the sequence of CSSNumericValue and
-    // CSSKeywordValue.
-    aRv.ThrowTypeError("Unsupported");
-    return nullptr;
+    const auto& sequence =
+        aOptions.mInset
+            .GetAsUTF8StringOrCSSKeywordValueOrCSSNumericValueSequence();
+    if (sequence.Length() == 0 || sequence.Length() > 2) {
+      aRv.ThrowTypeError("Invalid inset sequence");
+      return nullptr;
+    }
+    auto start = ComputeStartOrEndInset(sequence[0], aRv);
+    if (!start) {
+      return nullptr;
+    }
+    auto end = sequence.Length() == 2 ? ComputeStartOrEndInset(sequence[1], aRv)
+                                      : start;
+    if (!end) {
+      return nullptr;
+    }
+    inset.start = std::move(*start);
+    inset.end = std::move(*end);
   }
 
   // Set the source of timeline to the subject’s nearest ancestor scroll
@@ -155,6 +177,11 @@ already_AddRefed<ViewTimeline> ViewTimeline::Constructor(
   RefPtr<ViewTimeline> result = MakeAndAddRef<ViewTimeline>(
       doc, scroller, axis, subject, PseudoStyleType::NotPseudo, inset);
   if (subject) {
+    // The values of subject, source, and currentTime are all computed when any
+    // of them is requested or updated, per spec.
+    if (Document* doc = subject->GetComposedDoc()) {
+      doc->FlushPendingNotifications(FlushType::Layout);
+    }
     // Maybe our nearested scroller already exists, try to compute the current
     // time.
     result->UpdateCachedCurrentTime();
@@ -197,7 +224,7 @@ already_AddRefed<CSSNumericValue> ViewTimeline::GetEndOffset(
 
 void ViewTimeline::ReplacePropertiesWith(
     Element* aSubjectElement, const PseudoStyleRequest& aPseudoRequest,
-    nsAtom* aName, StyleScrollAxis aAxis,
+    const dom::ScopedTimelineName& aName, StyleScrollAxis aAxis,
     const StyleViewTimelineInset& aInset) {
   mSubject = aSubjectElement;
   mSubjectPseudoType = aPseudoRequest.mType;
@@ -254,18 +281,16 @@ bool ViewTimeline::UpdateCachedCurrentTime() {
 
   mCachedCurrentTime.reset();
 
-  const auto state = GetState();
-  // If no layout box, this timeline is inactive.
-  if (const auto* e = state.mSource.mElement; !e || !e->GetPrimaryFrame()) {
+  mCachedStateSnapshot = Some(ComputeSnapshot());
+  // The timeline is inactive if it has no principal box or its source is not a
+  // scroll container.
+  if (!mCachedStateSnapshot->IsActive()) {
     return prevCachedCurrentTime.isSome();
   }
 
-  // if this is not a scroller container, this timeline is inactive.
   const ScrollContainerFrame* scrollContainerFrame =
-      state.GetScrollContainerFrame();
-  if (!scrollContainerFrame) {
-    return prevCachedCurrentTime.isSome();
-  }
+      mCachedStateSnapshot->GetScrollContainerFrame();
+  MOZ_ASSERT(scrollContainerFrame);
 
   // Don't try to update against a frame that hasn't been laid out yet.
   if (scrollContainerFrame->HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
@@ -312,7 +337,7 @@ bool ViewTimeline::UpdateCachedCurrentTime() {
   // (i.e. the box of the scrollport), where as |startOffset| refers to the
   // start of the timeline, and similarly for end side/offset. [1]
   // https://drafts.csswg.org/css-writing-modes-4/#css-start
-  const auto orientation = state.Axis();
+  const auto orientation = mCachedStateSnapshot->Axis();
   const auto sideInsets =
       ComputeInsets(scrollContainerFrame, orientation, mAxis, mInset);
 

@@ -55,8 +55,6 @@ typedef struct _REPARSE_DATA_BUFFER {
 } REPARSE_DATA_BUFFER, *PREPARSE_DATA_BUFFER;
 #endif
 
-UpdateLog::UpdateLog() : logFP(nullptr) {}
-
 void UpdateLog::Init(NS_tchar* logFilePath) {
   if (logFP) {
     return;
@@ -216,7 +214,7 @@ FILE* CreateAndOpenFile(NS_tchar* filePath, bool binary) {
 #else
   LogToOS(NS_T("Opening logfile"));
   NS_tchar* lastSeperator = NS_tstrrchr(filePath, '/');
-  if (lastSeperator == NULL) {
+  if (lastSeperator == nullptr) {
     // No separator, disable logging.
     return nullptr;
   }

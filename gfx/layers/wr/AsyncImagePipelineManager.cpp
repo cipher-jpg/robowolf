@@ -47,7 +47,7 @@ AsyncImagePipelineManager::AsyncImagePipelineManager(
     : mApi(aApi),
       mUseCompositorWnd(aUseCompositorWnd),
       mIdNamespace(mApi->GetNamespace()),
-      mUseTripleBuffering(mApi->GetUseTripleBuffering()),
+      mUseTripleBuffering(mApi->GetCapabilities().mUseTripleBuffering),
       mResourceId(0),
       mAsyncImageEpoch{0},
       mWillGenerateFrame(false),
@@ -169,7 +169,7 @@ void AsyncImagePipelineManager::AddAsyncImagePipeline(
 
   MOZ_ASSERT(!mAsyncImagePipelines.Contains(id));
   auto holder = MakeUnique<AsyncImagePipeline>(
-      aPipelineId, mApi->GetBackendType(), aImageHost);
+      aPipelineId, mApi->GetCapabilities().mBackendType, aImageHost);
   mAsyncImagePipelines.InsertOrUpdate(id, std::move(holder));
   AddPipeline(aPipelineId, /* aWrBridge */ nullptr);
 }
@@ -191,7 +191,7 @@ void AsyncImagePipelineManager::RemoveAsyncImagePipeline(
   if (auto entry = mAsyncImagePipelines.Lookup(id)) {
     const auto& holder = entry.Data();
     wr::Epoch epoch = GetNextImageEpoch();
-    aTxn.ClearDisplayList(epoch, aPipelineId);
+    aTxn.ClearDisplayList(epoch, mIdNamespace, aPipelineId);
     for (wr::ImageKey key : holder->mKeys) {
       aTxn.DeleteImage(key);
     }
@@ -262,7 +262,7 @@ Maybe<TextureHost::ResourceUpdateOp> AsyncImagePipelineManager::UpdateImageKeys(
 
   // If we already had a texture and the format hasn't changed, better to reuse
   // the image keys than create new ones.
-  auto backend = aSceneBuilderTxn.GetBackendType();
+  auto backend = aSceneBuilderTxn.GetCapabilities().mBackendType;
 
   bool videoOverlayDisabled = false;
   RefPtr<wr::RenderTextureHostUsageInfo> usageInfo;
@@ -452,7 +452,8 @@ void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
   }
 
   aPipeline->mIsChanged = false;
-  aPipeline->mDLBuilder.Begin();
+  // A single image at integral coordinates: no normalization to be exact about.
+  aPipeline->mDLBuilder.Begin(AppUnitsPerCSSPixel());
 
   float opacity = 1.0f;
   wr::StackingContextParams params;
@@ -496,7 +497,7 @@ void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
         flags +=
             TextureHost::PushDisplayItemFlag::EXTERNAL_COMPOSITING_DISABLED;
       }
-      if (mApi->SupportsExternalBufferTextures()) {
+      if (mApi->GetCapabilities().mSupportsExternalBufferTextures) {
         flags +=
             TextureHost::PushDisplayItemFlag::SUPPORTS_EXTERNAL_BUFFER_TEXTURES;
       }
@@ -517,8 +518,9 @@ void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
 
   wr::BuiltDisplayList dl;
   aPipeline->mDLBuilder.End(dl);
-  aSceneBuilderTxn.SetDisplayList(aEpoch, aPipelineId, dl.dl_desc, dl.dl_items,
-                                  dl.dl_spatial_tree);
+
+  aSceneBuilderTxn.SetDisplayList(aEpoch, mIdNamespace, aPipelineId, dl.dl_desc,
+                                  dl.dl_items, dl.dl_spatial_tree);
 }
 
 void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
@@ -605,12 +607,14 @@ void AsyncImagePipelineManager::SetEmptyDisplayList(
   auto& txn = pipeline->mImageHost->GetAsyncRef() ? aTxnForImageBridge : aTxn;
 
   wr::Epoch epoch = GetNextImageEpoch();
-  wr::DisplayListBuilder builder(aPipelineId, mApi->GetBackendType());
-  builder.Begin();
+  wr::DisplayListBuilder builder(aPipelineId,
+                                 mApi->GetCapabilities().mBackendType);
+  // As above: nothing here is normalized by a scroll offset.
+  builder.Begin(AppUnitsPerCSSPixel());
 
   wr::BuiltDisplayList dl;
   builder.End(dl);
-  txn.SetDisplayList(epoch, aPipelineId, dl.dl_desc, dl.dl_items,
+  txn.SetDisplayList(epoch, mIdNamespace, aPipelineId, dl.dl_desc, dl.dl_items,
                      dl.dl_spatial_tree);
 }
 

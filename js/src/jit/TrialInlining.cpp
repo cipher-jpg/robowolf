@@ -137,7 +137,7 @@ bool TrialInliner::replaceICStub(ICEntry& entry, ICFallbackStub* fallback,
   MOZ_ASSERT(fallback->trialInliningState() == TrialInliningState::Candidate);
   writer.setTrialInliningState(TrialInliningState::Inlined);
 
-  fallback->discardStubs(cx()->zone(), &entry);
+  fallback->discardStubs(cx()->zone(), &entry, lock_);
 
   // Note: AttachBaselineCacheIRStub never throws an exception.
   ICAttachResult result = AttachBaselineCacheIRStubLocked(
@@ -549,6 +549,10 @@ bool TrialInliner::canInline(JSContext* cx, JSScript* script,
   }
   if (script->uninlineable()) {
     JitSpew(JitSpew_WarpTrialInlining, "SKIP: uninlineable flag");
+    return false;
+  }
+  if (script->isGenerator() || script->isAsync()) {
+    JitSpew(JitSpew_WarpTrialInlining, "SKIP: generator or async function");
     return false;
   }
   if (!script->canIonCompile()) {

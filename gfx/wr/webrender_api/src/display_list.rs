@@ -213,6 +213,13 @@ pub struct BuiltDisplayListDescriptor {
     total_clip_nodes: usize,
     /// The amount of spatial nodes created while building this display list.
     total_spatial_nodes: usize,
+    /// Coordinates in this display list that were not whole app units on the grid
+    /// the builder was given. Normalization by the accumulated external scroll
+    /// offset is exact only for coordinates on that grid, so a non-zero value here
+    /// means some of this list's positions will drift with the scroll offset.
+    /// Reported as a profiler counter rather than asserted, since it is a producer
+    /// bug rather than a WebRender one. See bug 2059570.
+    pub off_grid_coords: u32,
 }
 
 
@@ -321,12 +328,10 @@ impl<'de> Deserialize<'de> for BuiltDisplayList {
                 Debug::RadialGradient(v) => Real::RadialGradient(v),
                 Debug::ConicGradient(v) => Real::ConicGradient(v),
                 Debug::PushStackingContext(v) => Real::PushStackingContext(v),
-                Debug::PushShadow(v) => Real::PushShadow(v),
                 Debug::BackdropFilter(v) => Real::BackdropFilter(v),
 
                 Debug::PopStackingContext => Real::PopStackingContext,
                 Debug::PopReferenceFrame => Real::PopReferenceFrame,
-                Debug::PopAllShadows => Real::PopAllShadows,
                 Debug::DebugMarker(val) => Real::DebugMarker(val),
             };
             poke_into_vec(&item, &mut items_data);
@@ -534,6 +539,11 @@ impl BuiltDisplayList {
         self.descriptor.total_spatial_nodes
     }
 
+    /// See `BuiltDisplayListDescriptor::off_grid_coords`.
+    pub fn off_grid_coords(&self) -> u32 {
+        self.descriptor.off_grid_coords
+    }
+
     pub fn iter(&self) -> BuiltDisplayListIter {
         BuiltDisplayListIter::new(self.items_data())
     }
@@ -610,12 +620,10 @@ impl BuiltDisplayList {
                 Real::Iframe(v) => Debug::Iframe(v),
                 Real::PushReferenceFrame(v) => Debug::PushReferenceFrame(v),
                 Real::PushStackingContext(v) => Debug::PushStackingContext(v),
-                Real::PushShadow(v) => Debug::PushShadow(v),
                 Real::BackdropFilter(v) => Debug::BackdropFilter(v),
 
                 Real::PopReferenceFrame => Debug::PopReferenceFrame,
                 Real::PopStackingContext => Debug::PopStackingContext,
-                Real::PopAllShadows => Debug::PopAllShadows,
                 Real::DebugMarker(val) => Debug::DebugMarker(val),
             };
             debug_items.push(serial_di);
@@ -881,12 +889,126 @@ pub struct SaveState {
     next_clip_index: usize,
     next_spatial_index: usize,
     next_clip_chain_id: u64,
+    shadow_capture_len: usize,
+    pending_shadows_len: usize,
 }
 
 /// DisplayListSection determines the target buffer for the display items.
 pub enum DisplayListSection {
     /// The main/default buffer: contains item data.
     Data,
+}
+
+/// Normalizing an item by its accumulated external scroll offset has to be exact,
+/// or the coordinates WebRender interns drift with the scroll position even though
+/// nothing moved. Doing it as `p + S` in f32 is not exact: Gecko's coordinate is
+/// `p_au / appUnitsPerDevPixel`, which is generally not a binary fraction, so both
+/// the conversion and the addition round.
+///
+/// Quantizing to a finer grid does not fix this, because quantization is not
+/// additive - `Q(x + S) - Q(S) != Q(x)` - so it merely trades one scroll-dependent
+/// residue for another (measured: quantizing the offsets alone nearly doubled the
+/// drift). The addition has to happen in the domain the subtraction happened in.
+/// Gecko computed `p_au = x_au - S_au` in *integer* app units, so re-adding `S_au`
+/// as an integer recovers `x_au` exactly.
+///
+/// Hence `AuOffset`: accumulated offsets are carried as whole app units and added
+/// to app-unit coordinates, never as f32 layout pixels. See bug 2059570.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+struct AuOffset {
+    x: i32,
+    y: i32,
+}
+
+impl AuOffset {
+    const ZERO: Self = AuOffset { x: 0, y: 0 };
+
+    fn is_zero(&self) -> bool {
+        self.x == 0 && self.y == 0
+    }
+}
+
+impl std::ops::Add for AuOffset {
+    type Output = Self;
+    fn add(self, o: Self) -> Self {
+        AuOffset { x: self.x + o.x, y: self.y + o.y }
+    }
+}
+
+impl std::ops::Sub for AuOffset {
+    type Output = Self;
+    fn sub(self, o: Self) -> Self {
+        AuOffset { x: self.x - o.x, y: self.y - o.y }
+    }
+}
+
+/// Beyond this many app units an f32 can no longer hold a whole app unit, so the
+/// exact path is meaningless. Sentinel geometry (`LayoutRect::max_rect`) is far
+/// past it and carries no position to preserve.
+const MAX_EXACT_AU: f64 = (1i64 << 24) as f64;
+
+/// Grid state for one display list: app units per device pixel, as
+/// `nsPresContext::AppUnitsPerDevPixel`. Not a constant 60 - Gecko emits
+/// LayoutDevicePixels, and the divisor is `max(1, lround(60 / dpr))` further
+/// divided by full zoom, so 60 at dpr 1.0, 48 at 1.25, 45 at 1.3333, 30 at dpr 2.
+/// It also differs *within* one WebRender document, since full zoom applies to
+/// content but not chrome, which is why it is per display list rather than global.
+#[derive(Copy, Clone, Debug)]
+pub struct AuGrid {
+    per_px: f32,
+    per_px_f64: f64,
+}
+
+impl AuGrid {
+    pub fn new(au_per_dev_px: f32) -> Self {
+        assert!(au_per_dev_px > 0.0, "app units per device pixel must be positive");
+        AuGrid { per_px: au_per_dev_px, per_px_f64: au_per_dev_px as f64 }
+    }
+
+    /// Convert a coordinate to whole app units. Rounding is exact recovery for
+    /// coordinates Gecko authored, which are already whole app units on this grid;
+    /// `off_grid` counts any that are not.
+    fn to_au(&self, v: f32, off_grid: &mut u32) -> f64 {
+        let scaled = v as f64 * self.per_px_f64;
+        let rounded = scaled.round();
+        if (scaled - rounded).abs() > 1.0e-3 {
+            *off_grid += 1;
+        }
+        rounded
+    }
+
+    fn from_au(&self, au: f64) -> f32 {
+        if au.abs() <= MAX_EXACT_AU {
+            // Match Gecko's own NSAppUnitsToFloatPixels, which divides in f32, so
+            // the result is bit-identical to the coordinate we were handed.
+            au as f32 / self.per_px
+        } else {
+            (au / self.per_px_f64) as f32
+        }
+    }
+
+    fn add(&self, v: f32, off_au: i32, off_grid: &mut u32) -> f32 {
+        self.from_au(self.to_au(v, off_grid) + off_au as f64)
+    }
+
+    fn point(&self, p: LayoutPoint, off: AuOffset, off_grid: &mut u32) -> LayoutPoint {
+        LayoutPoint::new(self.add(p.x, off.x, off_grid), self.add(p.y, off.y, off_grid))
+    }
+
+    fn rect(&self, r: LayoutRect, off: AuOffset, off_grid: &mut u32) -> LayoutRect {
+        LayoutRect {
+            min: self.point(r.min, off, off_grid),
+            max: self.point(r.max, off, off_grid),
+        }
+    }
+
+    /// Convert a vector Gecko supplied (a scroll offset) to whole app units.
+    fn vec_to_au(&self, v: LayoutVector2D, off_grid: &mut u32) -> AuOffset {
+        AuOffset {
+            x: self.to_au(v.x, off_grid) as i32,
+            y: self.to_au(v.y, off_grid) as i32,
+        }
+    }
 }
 
 pub struct DisplayListBuilder {
@@ -909,14 +1031,43 @@ pub struct DisplayListBuilder {
     /// frames subtract their `previously_applied_offset`, reference frames
     /// reset to zero. The offset fields are still sent so WebRender can keep
     /// applying them at frame time (APZ reconciliation, sticky math).
-    spatial_offsets: HashMap<di::SpatialId, LayoutVector2D>,
+    spatial_offsets: HashMap<di::SpatialId, AuOffset>,
     /// Single-entry cache for `spatial_offsets`. Items are typically emitted
     /// grouped by spatial node, so consecutive lookups hit this and skip
     /// hashing (mirrors the scene builder's `ScrollOffsetMapper`).
-    last_scroll_offset: Option<(di::SpatialId, LayoutVector2D)>,
+    last_scroll_offset: Option<(di::SpatialId, AuOffset)>,
+    /// App units per device pixel for the display list being built, set by
+    /// `begin`. Normalization is exact only on the grid the coordinates were
+    /// authored on, so this is per display list: it changes with device scale and
+    /// full zoom, and differs between chrome and content in one document.
+    au_grid: AuGrid,
+    /// Coordinates seen that were not whole app units on `au_grid`. Reported as a
+    /// profiler counter; a non-zero value means some producer is emitting
+    /// coordinates off the grid it declared, so normalization is not exact for
+    /// them.
+    off_grid_coords: u32,
     /// Reused buffer for normalized glyph positions, to avoid a per-text-run
     /// allocation when shifting glyphs by the external scroll offset.
     glyph_scratch: Vec<GlyphInstance>,
+    /// While a shadow scope is open (between `push_shadow` and
+    /// `pop_all_shadows`), the items pushed within it are captured here instead
+    /// of being written straight to `payload.items_data`, so `pop_all_shadows`
+    /// can desugar them. The buffer is cleared and reused across shadow scopes
+    /// rather than reallocated. A scope is open exactly when `pending_shadows`
+    /// is non-empty.
+    shadow_capture: Vec<u8>,
+    /// The shadows declared by `push_shadow` in the current scope, in order.
+    /// Held as typed descriptors (not captured markers) and consumed by
+    /// `pop_all_shadows`, which desugars them into blur stacking contexts.
+    pending_shadows: Vec<PendingShadow>,
+}
+
+/// A shadow declared by `push_shadow`, awaiting desugaring at `pop_all_shadows`.
+#[derive(Clone)]
+struct PendingShadow {
+    space_and_clip: di::SpaceAndClipInfo,
+    shadow: di::Shadow,
+    should_inflate: bool,
 }
 
 #[repr(C)]
@@ -949,7 +1100,12 @@ impl DisplayListBuilder {
             state: BuildState::Idle,
             spatial_offsets: HashMap::new(),
             last_scroll_offset: None,
+            // Replaced by `begin`; 60 is the dpr 1.0 value.
+            au_grid: AuGrid::new(60.0),
+            off_grid_coords: 0,
             glyph_scratch: Vec::new(),
+            shadow_capture: Vec::new(),
+            pending_shadows: Vec::new(),
         }
     }
 
@@ -964,6 +1120,9 @@ impl DisplayListBuilder {
         self.serialized_content_buffer = None;
         self.spatial_offsets.clear();
         self.last_scroll_offset = None;
+        self.off_grid_coords = 0;
+        self.shadow_capture.clear();
+        self.pending_shadows.clear();
     }
 
     /// Saves the current display list state, so it may be `restore()`'d.
@@ -981,6 +1140,8 @@ impl DisplayListBuilder {
             next_clip_index: self.next_clip_index,
             next_spatial_index: self.next_spatial_index,
             next_clip_chain_id: self.next_clip_chain_id,
+            shadow_capture_len: self.shadow_capture.len(),
+            pending_shadows_len: self.pending_shadows.len(),
         });
     }
 
@@ -992,6 +1153,14 @@ impl DisplayListBuilder {
         self.next_clip_index = state.next_clip_index;
         self.next_spatial_index = state.next_spatial_index;
         self.next_clip_chain_id = state.next_clip_chain_id;
+
+        // Roll back any shadow scope opened since the save. Both buffers are
+        // append-only within a scope, so truncating to their save-time lengths
+        // discards exactly the speculative shadow state (the pre-desugar
+        // machinery kept this state in `items_data`, which the truncate above
+        // already handled).
+        self.shadow_capture.truncate(state.shadow_capture_len);
+        self.pending_shadows.truncate(state.pending_shadows_len);
 
         // Drop offsets recorded for spatial nodes defined after the save point;
         // those ids will be reused, so the single-entry cache could be stale.
@@ -1068,7 +1237,16 @@ impl DisplayListBuilder {
         section: DisplayListSection
     ) -> &mut Vec<u8> {
         match section {
-            DisplayListSection::Data => &mut self.payload.items_data,
+            // While a shadow scope is open (a shadow has been pushed but not yet
+            // popped), divert item and aux-array writes into the capture buffer
+            // so `pop_all_shadows` can desugar them. The capture uses relative
+            // sizes/counts (see `push_iter_impl`), so it stays valid when
+            // appended back into `items_data`.
+            DisplayListSection::Data => if self.pending_shadows.is_empty() {
+                &mut self.payload.items_data
+            } else {
+                &mut self.shadow_capture
+            },
         }
     }
 
@@ -1158,7 +1336,7 @@ impl DisplayListBuilder {
         let item = di::DisplayItem::Rectangle(di::RectangleDisplayItem {
             common,
             color: PropertyBinding::Value(color),
-            bounds: bounds.translate(offset),
+            bounds: self.shift_rect(bounds, offset),
         });
         self.push_item(&item);
     }
@@ -1173,7 +1351,7 @@ impl DisplayListBuilder {
         let item = di::DisplayItem::Rectangle(di::RectangleDisplayItem {
             common,
             color,
-            bounds: bounds.translate(offset),
+            bounds: self.shift_rect(bounds, offset),
         });
         self.push_item(&item);
     }
@@ -1206,7 +1384,7 @@ impl DisplayListBuilder {
         style: di::LineStyle,
     ) {
         let (common, offset) = self.normalize_common(common);
-        let area = area.translate(offset);
+        let area = self.shift_rect(*area, offset);
 
         let item = di::DisplayItem::Line(di::LineDisplayItem {
             common,
@@ -1232,7 +1410,7 @@ impl DisplayListBuilder {
         let (common, offset) = self.normalize_common(common);
         let item = di::DisplayItem::Image(di::ImageDisplayItem {
             common,
-            bounds: bounds.translate(offset),
+            bounds: self.shift_rect(bounds, offset),
             image_key: key,
             image_rendering,
             alpha_type,
@@ -1256,7 +1434,7 @@ impl DisplayListBuilder {
         let (common, offset) = self.normalize_common(common);
         let item = di::DisplayItem::RepeatingImage(di::RepeatingImageDisplayItem {
             common,
-            bounds: bounds.translate(offset),
+            bounds: self.shift_rect(bounds, offset),
             image_key: key,
             stretch_size,
             tile_spacing,
@@ -1282,7 +1460,7 @@ impl DisplayListBuilder {
         let (common, offset) = self.normalize_common(common);
         let item = di::DisplayItem::YuvImage(di::YuvImageDisplayItem {
             common,
-            bounds: bounds.translate(offset),
+            bounds: self.shift_rect(bounds, offset),
             yuv_data,
             color_depth,
             color_space,
@@ -1304,29 +1482,35 @@ impl DisplayListBuilder {
         let (common, offset) = self.normalize_common(common);
         let item = di::DisplayItem::Text(di::TextDisplayItem {
             common,
-            bounds: bounds.translate(offset),
+            bounds: self.shift_rect(bounds, offset),
             color,
             font_key,
             glyph_options,
+            shadow: di::GlyphShadowMode::None,
         });
+
+        // Store glyph pen positions relative to the (pre-normalization) bounds
+        // origin. This difference is scroll-invariant - both the glyph points
+        // and the bounds come from the same local space - so it subsumes the
+        // external scroll offset removal that `normalize_common` applies to
+        // other coordinates, and it lets a shadow copy be produced by
+        // translating just the bounds (the glyphs follow the prim origin at
+        // build time). The scene builder previously did this relativization; it
+        // now happens here at record time.
+        let bounds_origin = bounds.min.to_vector();
 
         // Take the scratch buffer out so we can hold it while also borrowing
         // `self` mutably for `push_item`/`push_iter`; put it back afterwards to
-        // retain its capacity across text runs. A no-op (empty Vec swap) when
-        // the offset is zero or the prototype is disabled.
+        // retain its capacity across text runs.
         let mut scratch = mem::take(&mut self.glyph_scratch);
         for split_glyphs in glyphs.chunks(MAX_TEXT_RUN_LENGTH) {
             self.push_item(&item);
-            if offset != LayoutVector2D::zero() {
-                scratch.clear();
-                scratch.extend(split_glyphs.iter().map(|g| GlyphInstance {
-                    index: g.index,
-                    point: g.point + offset,
-                }));
-                self.push_iter(&scratch);
-            } else {
-                self.push_iter(split_glyphs);
-            }
+            scratch.clear();
+            scratch.extend(split_glyphs.iter().map(|g| GlyphInstance {
+                index: g.index,
+                point: g.point - bounds_origin,
+            }));
+            self.push_iter(&scratch);
         }
         self.glyph_scratch = scratch;
     }
@@ -1386,7 +1570,7 @@ impl DisplayListBuilder {
         let (common, offset) = self.normalize_common(common);
         let item = di::DisplayItem::Border(di::BorderDisplayItem {
             common,
-            bounds: bounds.translate(offset),
+            bounds: self.shift_rect(bounds, offset),
             details,
             widths,
         });
@@ -1406,10 +1590,28 @@ impl DisplayListBuilder {
         shadow_radius: di::BorderRadius,
         clip_mode: di::BoxShadowClipMode,
     ) {
+        // Zero-blur box-shadows desugar into a plain rectangle shaped by a
+        // ClipOut/Clip rounded-rect pair, so the scene builder sees only
+        // ordinary items instead of expanding a BoxShadow via extra clips.
+        // Box-shadows with a real blur still use the quad/blur-cache path.
+        if blur_radius == 0.0 {
+            self.push_zero_blur_box_shadow(
+                common,
+                box_bounds,
+                offset,
+                color,
+                spread_radius,
+                border_radius,
+                shadow_radius,
+                clip_mode,
+            );
+            return;
+        }
+
         let (common, eso_offset) = self.normalize_common(common);
         let item = di::DisplayItem::BoxShadow(di::BoxShadowDisplayItem {
             common,
-            box_bounds: box_bounds.translate(eso_offset),
+            box_bounds: self.shift_rect(box_bounds, eso_offset),
             offset,
             color,
             blur_radius,
@@ -1420,6 +1622,134 @@ impl DisplayListBuilder {
         });
 
         self.push_item(&item);
+    }
+
+    /// Desugar a zero-blur box-shadow into a filled rectangle bounded by a
+    /// rounded-rect `Clip` and (for the fake-border ring) carved out by an inner
+    /// rounded-rect `ClipOut`. This replaces the scene builder's zero-blur fast
+    /// path. Rects are left in the caller's layout space; each `define_*`/
+    /// `push_rect` call applies the same scroll-offset normalization for
+    /// `spatial_id`, so they stay aligned. The inner ClipOut carries the spread
+    /// as its snap outset to keep the ring width even under motion (bug 2052033).
+    fn push_zero_blur_box_shadow(
+        &mut self,
+        common: &di::CommonItemProperties,
+        box_bounds: LayoutRect,
+        offset: LayoutVector2D,
+        color: ColorF,
+        spread_radius: f32,
+        border_radius: di::BorderRadius,
+        shadow_radius: di::BorderRadius,
+        clip_mode: di::BoxShadowClipMode,
+    ) {
+        use di::{BoxShadowClipMode, ClipMode, ComplexClipRegion};
+
+        if color.a == 0.0 {
+            return;
+        }
+
+        // Inset shadows get smaller as spread radius increases.
+        let spread_amount = match clip_mode {
+            BoxShadowClipMode::Outset => spread_radius,
+            BoxShadowClipMode::Inset => -spread_radius,
+        };
+
+        // Trivial reject of box-shadows that are not visible.
+        if offset == LayoutVector2D::zero() && spread_amount == 0.0 {
+            return;
+        }
+
+        let shadow_rect = box_bounds
+            .translate(offset)
+            .inflate(spread_amount, spread_amount);
+        let spatial_id = common.spatial_id;
+
+        // A box-shadow's shape is a plain rounded rect, so its radii take the
+        // css-backgrounds-3 5.5 overlap reduction. Spread shrinks the rect by
+        // twice what it takes off the radii, so a negative spread routinely
+        // leaves radii that no longer fit and must be scaled back.
+        //
+        // Do it here, at the producer. The rounded-rect clips these desugar to
+        // are otherwise indistinguishable from the ones `background-clip`
+        // produces, and those must *not* be reduced: they trace the inner
+        // border edge, which css-backgrounds-3 4.4 defines as concentric with
+        // the outer edge (bug 1830603). Chrome draws the same distinction.
+        let normalized = |rect: &LayoutRect, radii: di::BorderRadius| {
+            let mut radii = radii;
+            crate::key_types::ensure_no_corner_overlap(&mut radii, rect.size());
+            radii
+        };
+        let border_radius = normalized(&box_bounds, border_radius);
+        let shadow_radius = normalized(&shadow_rect, shadow_radius);
+
+        let shadow_inset = LayoutSideOffsets::new_all_same(-spread_amount);
+
+        let mut clips: Vec<di::ClipId> = Vec::with_capacity(2);
+        let (final_prim_rect, clip_radius, clip_inset) = match clip_mode {
+            BoxShadowClipMode::Outset => {
+                if shadow_rect.is_empty() {
+                    return;
+                }
+
+                clips.push(self.define_clip_rounded_rect_impl(
+                    spatial_id,
+                    ComplexClipRegion {
+                        rect: box_bounds,
+                        radii: border_radius,
+                        inset: LayoutSideOffsets::zero(),
+                        mode: ClipMode::ClipOut,
+                    },
+                    spread_radius,
+                ));
+
+                (shadow_rect, shadow_radius, shadow_inset)
+            }
+            BoxShadowClipMode::Inset => {
+                if !shadow_rect.is_empty() {
+                    clips.push(self.define_clip_rounded_rect_impl(
+                        spatial_id,
+                        ComplexClipRegion {
+                            rect: shadow_rect,
+                            radii: shadow_radius,
+                            inset: shadow_inset,
+                            mode: ClipMode::ClipOut,
+                        },
+                        spread_radius,
+                    ));
+                }
+
+                (box_bounds, border_radius, LayoutSideOffsets::zero())
+            }
+        };
+
+        // Outer Clip matches the rectangle and snaps normally (outset 0).
+        clips.push(self.define_clip_rounded_rect_impl(
+            spatial_id,
+            ComplexClipRegion {
+                rect: final_prim_rect,
+                radii: clip_radius,
+                inset: clip_inset,
+                mode: ClipMode::Clip,
+            },
+            0.0,
+        ));
+
+        // Chain the shaping clips on top of the item's own clip chain.
+        let parent = (common.clip_chain_id != di::ClipChainId::INVALID)
+            .then_some(common.clip_chain_id);
+        let clip_chain_id = self.define_clip_chain(parent, clips);
+
+        let rect_common = di::CommonItemProperties {
+            clip_rect: common.clip_rect,
+            clip_chain_id,
+            spatial_id,
+            flags: common.flags,
+        };
+        self.push_rect_with_animation(
+            &rect_common,
+            final_prim_rect,
+            PropertyBinding::Value(color),
+        );
     }
 
     /// Pushes a linear gradient to be displayed.
@@ -1447,7 +1777,7 @@ impl DisplayListBuilder {
         let (common, offset) = self.normalize_common(common);
         let item = di::DisplayItem::Gradient(di::GradientDisplayItem {
             common,
-            bounds: bounds.translate(offset),
+            bounds: self.shift_rect(bounds, offset),
             gradient,
             tile_size,
             tile_spacing,
@@ -1470,7 +1800,7 @@ impl DisplayListBuilder {
         let (common, offset) = self.normalize_common(common);
         let item = di::DisplayItem::RadialGradient(di::RadialGradientDisplayItem {
             common,
-            bounds: bounds.translate(offset),
+            bounds: self.shift_rect(bounds, offset),
             gradient,
             tile_size,
             tile_spacing,
@@ -1493,7 +1823,7 @@ impl DisplayListBuilder {
         let (common, offset) = self.normalize_common(common);
         let item = di::DisplayItem::ConicGradient(di::ConicGradientDisplayItem {
             common,
-            bounds: bounds.translate(offset),
+            bounds: self.shift_rect(bounds, offset),
             gradient,
             tile_size,
             tile_spacing,
@@ -1515,7 +1845,7 @@ impl DisplayListBuilder {
 
         let descriptor = di::SpatialTreeItem::ReferenceFrame(di::ReferenceFrameDescriptor {
             parent_spatial_id,
-            origin: origin + parent_offset,
+            origin: self.shift_point(origin, parent_offset),
             reference_frame: di::ReferenceFrame {
                 transform_style,
                 transform: di::ReferenceTransformBinding::Static {
@@ -1527,7 +1857,7 @@ impl DisplayListBuilder {
         });
         self.push_spatial_tree_item(&descriptor);
         // External scroll offset does not propagate across reference frames.
-        self.record_scroll_offset(id, LayoutVector2D::zero());
+        self.record_scroll_offset(id, AuOffset::ZERO);
 
         let item = di::DisplayItem::PushReferenceFrame(di::ReferenceFrameDisplayListItem {
         });
@@ -1549,7 +1879,7 @@ impl DisplayListBuilder {
 
         let descriptor = di::SpatialTreeItem::ReferenceFrame(di::ReferenceFrameDescriptor {
             parent_spatial_id,
-            origin: origin + parent_offset,
+            origin: self.shift_point(origin, parent_offset),
             reference_frame: di::ReferenceFrame {
                 transform_style: di::TransformStyle::Flat,
                 transform: di::ReferenceTransformBinding::Computed {
@@ -1561,14 +1891,13 @@ impl DisplayListBuilder {
                     is_2d_scale_translation: false,
                     should_snap: false,
                     paired_with_perspective: false,
-                    is_offset_only: false,
                 },
                 id,
             },
         });
         self.push_spatial_tree_item(&descriptor);
         // External scroll offset does not propagate across reference frames.
-        self.record_scroll_offset(id, LayoutVector2D::zero());
+        self.record_scroll_offset(id, AuOffset::ZERO);
 
         let item = di::DisplayItem::PushReferenceFrame(di::ReferenceFrameDisplayListItem {
         });
@@ -1691,15 +2020,17 @@ impl DisplayListBuilder {
         spatial_id: di::SpatialId,
     ) {
         let offset = self.accumulated_scroll_offset(spatial_id);
-        if offset == LayoutVector2D::zero() {
+        if offset.is_zero() {
             self.push_filters(filters, filter_datas);
             return;
         }
 
         let mut filters = filters.to_vec();
+        let grid = self.au_grid;
+        let off_grid = &mut self.off_grid_coords;
         for filter in &mut filters {
             if let Some(node) = filter.svgfe_node_mut() {
-                node.subregion = node.subregion.translate(offset);
+                node.subregion = grid.rect(node.subregion, offset, off_grid);
             }
         }
         self.push_filters(&filters, filter_datas);
@@ -1751,7 +2082,7 @@ impl DisplayListBuilder {
     /// implicit pipeline roots and any untracked node). A single-entry cache
     /// short-circuits the common case of consecutive items sharing a spatial
     /// node, avoiding a hash per item.
-    fn accumulated_scroll_offset(&mut self, spatial_id: di::SpatialId) -> LayoutVector2D {
+    fn accumulated_scroll_offset(&mut self, spatial_id: di::SpatialId) -> AuOffset {
         if let Some((cached_id, cached_offset)) = self.last_scroll_offset {
             if cached_id == spatial_id {
                 return cached_offset;
@@ -1760,14 +2091,14 @@ impl DisplayListBuilder {
         let offset = self.spatial_offsets
             .get(&spatial_id)
             .copied()
-            .unwrap_or_else(LayoutVector2D::zero);
+            .unwrap_or(AuOffset::ZERO);
         self.last_scroll_offset = Some((spatial_id, offset));
         offset
     }
 
     /// Record the accumulated external scroll offset for a freshly-defined
     /// spatial node.
-    fn record_scroll_offset(&mut self, spatial_id: di::SpatialId, offset: LayoutVector2D) {
+    fn record_scroll_offset(&mut self, spatial_id: di::SpatialId, offset: AuOffset) {
         self.spatial_offsets.insert(spatial_id, offset);
     }
 
@@ -1775,7 +2106,25 @@ impl DisplayListBuilder {
     /// the normalized, scroll-invariant space WebRender interns in, by adding
     /// the accumulated external scroll offset for `spatial_id`.
     fn normalize_rect(&mut self, rect: LayoutRect, spatial_id: di::SpatialId) -> LayoutRect {
-        rect.translate(self.accumulated_scroll_offset(spatial_id))
+        let offset = self.accumulated_scroll_offset(spatial_id);
+        self.shift_rect(rect, offset)
+    }
+
+    /// Apply an accumulated app-unit offset to a rect on this list's grid.
+    fn shift_rect(&mut self, rect: LayoutRect, offset: AuOffset) -> LayoutRect {
+        if offset.is_zero() {
+            return rect;
+        }
+        let grid = self.au_grid;
+        grid.rect(rect, offset, &mut self.off_grid_coords)
+    }
+
+    fn shift_point(&mut self, point: LayoutPoint, offset: AuOffset) -> LayoutPoint {
+        if offset.is_zero() {
+            return point;
+        }
+        let grid = self.au_grid;
+        grid.point(point, offset, &mut self.off_grid_coords)
     }
 
     /// As `normalize_rect`, but for the common-properties chokepoint: returns a
@@ -1784,10 +2133,10 @@ impl DisplayListBuilder {
     fn normalize_common(
         &mut self,
         common: &di::CommonItemProperties,
-    ) -> (di::CommonItemProperties, LayoutVector2D) {
+    ) -> (di::CommonItemProperties, AuOffset) {
         let offset = self.accumulated_scroll_offset(common.spatial_id);
         let mut common = *common;
-        common.clip_rect = common.clip_rect.translate(offset);
+        common.clip_rect = self.shift_rect(common.clip_rect, offset);
         (common, offset)
     }
 
@@ -1803,6 +2152,16 @@ impl DisplayListBuilder {
     ) -> di::SpatialId {
         let parent_offset = self.accumulated_scroll_offset(parent_space);
         let scroll_frame_id = self.generate_spatial_index();
+        // Accumulated in app units so the sum down the spatial tree is integral
+        // and exact. The offset itself is still sent to WebRender verbatim: it is
+        // re-applied at frame time against the *transform*, not against these
+        // coordinates, so it must not be altered here (rounding it is what
+        // apz.rounded_external_scroll_offset did, and it desynchronised the two
+        // halves of the round trip).
+        let eso_au = {
+            let grid = self.au_grid;
+            grid.vec_to_au(external_scroll_offset, &mut self.off_grid_coords)
+        };
 
         // `content_rect`'s origin is discarded by the scene builder (only its
         // size is used), so it needs no normalization.
@@ -1818,7 +2177,7 @@ impl DisplayListBuilder {
         });
 
         self.push_spatial_tree_item(&descriptor);
-        self.record_scroll_offset(scroll_frame_id, parent_offset + external_scroll_offset);
+        self.record_scroll_offset(scroll_frame_id, parent_offset + eso_au);
 
         scroll_frame_id
     }
@@ -1849,7 +2208,7 @@ impl DisplayListBuilder {
         let offset = self.accumulated_scroll_offset(spatial_id);
 
         let mut image_mask = image_mask;
-        image_mask.rect = image_mask.rect.translate(offset);
+        image_mask.rect = self.shift_rect(image_mask.rect, offset);
 
         let item = di::DisplayItem::ImageMaskClip(di::ImageMaskClipDisplayItem {
             id,
@@ -1864,8 +2223,11 @@ impl DisplayListBuilder {
         // zero points when no SetPoints item has been pushed.
         if points.len() >= 3 {
             self.push_item(&di::DisplayItem::SetPoints);
-            if offset != LayoutVector2D::zero() {
-                let shifted: Vec<LayoutPoint> = points.iter().map(|p| *p + offset).collect();
+            if !offset.is_zero() {
+                let grid = self.au_grid;
+                let off_grid = &mut self.off_grid_coords;
+                let shifted: Vec<LayoutPoint> =
+                    points.iter().map(|p| grid.point(*p, offset, off_grid)).collect();
                 self.push_iter(&shifted);
             } else {
                 self.push_iter(points);
@@ -1897,15 +2259,26 @@ impl DisplayListBuilder {
         spatial_id: di::SpatialId,
         clip: di::ComplexClipRegion,
     ) -> di::ClipId {
+        self.define_clip_rounded_rect_impl(spatial_id, clip, 0.0)
+    }
+
+    /// As `define_clip_rounded_rect`, but with a `snap_outset` for the internal
+    /// zero-blur box-shadow desugar (see `RoundedRectClipDisplayItem`).
+    fn define_clip_rounded_rect_impl(
+        &mut self,
+        spatial_id: di::SpatialId,
+        mut clip: di::ComplexClipRegion,
+        snap_outset: f32,
+    ) -> di::ClipId {
         let id = self.generate_clip_index();
 
-        let mut clip = clip;
         clip.rect = self.normalize_rect(clip.rect, spatial_id);
 
         let item = di::DisplayItem::RoundedRectClip(di::RoundedRectClipDisplayItem {
             id,
             spatial_id,
             clip,
+            snap_outset,
         });
 
         self.push_item(&item);
@@ -1929,13 +2302,18 @@ impl DisplayListBuilder {
         // item's natural, unstuck position. WebRender then computes the full
         // sticky offset at frame time and no longer needs the applied offset.
         let parent_offset = self.accumulated_scroll_offset(parent_spatial_id);
-        let node_offset = parent_offset - previously_applied_offset;
+        // Only used for normalization; not sent to WebRender at all any more.
+        let pao_au = {
+            let grid = self.au_grid;
+            grid.vec_to_au(previously_applied_offset, &mut self.off_grid_coords)
+        };
+        let node_offset = parent_offset - pao_au;
         let id = self.generate_spatial_index();
 
         let descriptor = di::SpatialTreeItem::StickyFrame(di::StickyFrameDescriptor {
             parent_spatial_id,
             id,
-            bounds: frame_rect.translate(node_offset),
+            bounds: self.shift_rect(frame_rect, node_offset),
             margins,
             vertical_offset_bounds,
             horizontal_offset_bounds,
@@ -1957,8 +2335,8 @@ impl DisplayListBuilder {
     ) {
         let offset = self.accumulated_scroll_offset(space_and_clip.spatial_id);
         let item = di::DisplayItem::Iframe(di::IframeDisplayItem {
-            bounds: bounds.translate(offset),
-            clip_rect: clip_rect.translate(offset),
+            bounds: self.shift_rect(bounds, offset),
+            clip_rect: self.shift_rect(clip_rect, offset),
             space_and_clip: *space_and_clip,
             pipeline_id,
             ignore_missing_pipeline,
@@ -1972,23 +2350,252 @@ impl DisplayListBuilder {
         shadow: di::Shadow,
         should_inflate: bool,
     ) {
-        let item = di::DisplayItem::PushShadow(di::PushShadowDisplayItem {
+        // Record the shadow as a typed descriptor. The first `push_shadow`
+        // opens the scope (makes `pending_shadows` non-empty), so the shadowed
+        // content that follows is captured until `pop_all_shadows`, which
+        // desugars the shadows into blur stacking contexts. `should_inflate` is
+        // carried through to the emitted blur.
+        self.pending_shadows.push(PendingShadow {
             space_and_clip: *space_and_clip,
             shadow,
             should_inflate,
         });
-        self.push_item(&item);
     }
 
     pub fn pop_all_shadows(&mut self) {
-        self.push_item(&di::DisplayItem::PopAllShadows);
+        assert!(!self.pending_shadows.is_empty(), "pop_all_shadows without a matching push_shadow");
+        self.desugar_shadow_scope();
     }
 
-    pub fn begin(&mut self) {
+    /// Desugar the captured shadow scope into standard display items: a blur
+    /// stacking context per shadow holding offset/recolored copies of the
+    /// shadowable content, followed by the original content unchanged. This
+    /// replaces the scene builder's shadow expansion. Subpixel AA is disabled
+    /// automatically because a blur is a `Filter` picture, which forces
+    /// `SubpixelMode::Deny`, so the stacking context keeps `RasterSpace::Screen`
+    /// like the scene builder's shadow picture did.
+    fn desugar_shadow_scope(&mut self) {
+        // A shadowable/drawable item plus its aux (only text carries glyphs).
+        struct DrawEntry {
+            item: di::DisplayItem,
+            glyphs: Vec<GlyphInstance>,
+        }
+        enum Parsed {
+            // A clip / clip-chain definition. Re-emitted verbatim (preserving
+            // its id, which `define_*` would not) *before* the shadows, so both
+            // the shadow copies and the originals can reference clips that were
+            // defined inside the scope.
+            Definition {
+                item: di::DisplayItem,
+                clip_ids: Vec<di::ClipId>,
+                points: Vec<LayoutPoint>,
+            },
+            Draw(DrawEntry),
+        }
+
+        // Take the shadows and the captured content out so `self` is free for
+        // re-emission. Emptying `pending_shadows` also closes the scope, so the
+        // re-emitted items below go to `items_data` rather than being captured
+        // again. The capture buffer is restored (cleared) afterwards for reuse.
+        let shadows = mem::take(&mut self.pending_shadows);
+        let mut captured = mem::take(&mut self.shadow_capture);
+        ensure_red_zone::<di::DisplayItem>(&mut captured);
+
+        let mut parsed: Vec<Parsed> = Vec::new();
+        {
+            let mut iter = BuiltDisplayListIter::new(&captured);
+            while let Some(item) = iter.next() {
+                parsed.push(match item.item() {
+                    def @ (di::DisplayItem::RectClip(..)
+                    | di::DisplayItem::RoundedRectClip(..)
+                    | di::DisplayItem::ImageMaskClip(..)
+                    | di::DisplayItem::ClipChain(..)) => Parsed::Definition {
+                        item: *def,
+                        clip_ids: item.clip_chain_items().iter().collect(),
+                        points: item.points().iter().collect(),
+                    },
+                    draw => Parsed::Draw(DrawEntry {
+                        item: *draw,
+                        glyphs: match draw {
+                            di::DisplayItem::Text(..) => item.glyphs().iter().collect(),
+                            _ => Vec::new(),
+                        },
+                    }),
+                });
+            }
+        }
+
+        // 1. Clip / clip-chain definitions, verbatim and in order, before the
+        //    shadows so their ids resolve for both copies and originals.
+        for p in &parsed {
+            if let Parsed::Definition { item, clip_ids, points } = p {
+                if !points.is_empty() {
+                    self.push_item(&di::DisplayItem::SetPoints);
+                    self.push_iter(points);
+                }
+                self.push_item(item);
+                if matches!(item, di::DisplayItem::ClipChain(..)) {
+                    self.push_iter(clip_ids);
+                }
+            }
+        }
+
+        // 2. A blur stacking context per shadow, holding offset/recolored copies
+        //    of the drawable content.
+        for shadow in &shadows {
+            let s = &shadow.shadow;
+            let std_deviation = s.blur_radius * 0.5;
+            let blur = [di::FilterOp::Blur(std_deviation, std_deviation, shadow.should_inflate)];
+            let blurred = s.blur_radius > 0.0;
+            let filters: &[di::FilterOp] = if blurred { &blur } else { &[] };
+            let shadow_mode = if blurred {
+                di::GlyphShadowMode::Blurred
+            } else {
+                di::GlyphShadowMode::Unblurred
+            };
+
+            // Clip the blur stacking context (i.e. the picture), not the offset
+            // copies inside it. This mirrors the old scene-builder shadow
+            // expansion, where the shadow's clip applied to the composited blur
+            // picture while the shadowed primitives were rasterized unclipped.
+            // For a blurred shadow this is what produces a hard clip edge:
+            // clipping the copies *before* the blur would let the blur soften
+            // the clip boundary (a coverage seam / bleed), whereas clipping the
+            // picture cuts the already-blurred (locally uniform) result.
+            let sc_clip = shadow.space_and_clip.clip_chain_id;
+            let sc_clip = (sc_clip != di::ClipChainId::INVALID).then_some(sc_clip);
+
+            self.push_stacking_context(
+                shadow.space_and_clip.spatial_id,
+                di::PrimitiveFlags::default(),
+                sc_clip,
+                di::TransformStyle::Flat,
+                di::MixBlendMode::Normal,
+                filters,
+                &[],
+                di::RasterSpace::Screen,
+                di::StackingContextFlags::empty(),
+                None,
+            );
+
+            for p in &parsed {
+                if let Parsed::Draw(entry) = p {
+                    if let Some(copy) = Self::shadow_copy_of_item(
+                        &entry.item,
+                        s.offset,
+                        s.color,
+                        shadow_mode,
+                    ) {
+                        self.push_item(&copy);
+                        if matches!(copy, di::DisplayItem::Text(..)) {
+                            self.push_iter(&entry.glyphs);
+                        }
+                    }
+                }
+            }
+
+            self.pop_stacking_context();
+        }
+
+        // 3. The original (unshadowed) content, drawn on top of the shadows.
+        for p in &parsed {
+            if let Parsed::Draw(entry) = p {
+                self.push_item(&entry.item);
+                if matches!(entry.item, di::DisplayItem::Text(..)) {
+                    self.push_iter(&entry.glyphs);
+                }
+            }
+        }
+
+        captured.clear();
+        self.shadow_capture = captured;
+        // `pending_shadows` was emptied by the take above and is left empty,
+        // which closes the shadow scope.
+    }
+
+    /// Produce the shadow copy of a shadowable display item: geometry
+    /// translated by `offset` and color replaced by `color`. Returns `None` for
+    /// item types that cannot cast a shadow (they are dropped from the shadow),
+    /// mirroring the scene builder's `CreateShadow` impls.
+    ///
+    /// Aux data (e.g. text glyphs) is unchanged and re-emitted separately: text
+    /// glyphs are stored relative to the bounds origin (see `push_text`), so
+    /// they follow the translated bounds without needing to be rewritten here.
+    fn shadow_copy_of_item(
+        item: &di::DisplayItem,
+        offset: LayoutVector2D,
+        color: ColorF,
+        shadow_mode: di::GlyphShadowMode,
+    ) -> Option<di::DisplayItem> {
+        use di::DisplayItem::*;
+
+        // Translate the copy by the shadow offset and drop its clip chain (see
+        // `desugar_shadow_scope`): the shadow's clip is applied to the enclosing
+        // blur picture, so the copy inside must be unclipped, matching the old
+        // scene builder (which rasterized the shadowed primitives unclipped and
+        // clipped the composited picture).
+        let shift = |mut common: di::CommonItemProperties| -> di::CommonItemProperties {
+            common.clip_rect = common.clip_rect.translate(offset);
+            common.clip_chain_id = di::ClipChainId::INVALID;
+            common
+        };
+
+        Some(match item {
+            Rectangle(info) => Rectangle(di::RectangleDisplayItem {
+                common: shift(info.common),
+                bounds: info.bounds.translate(offset),
+                color: PropertyBinding::Value(color),
+            }),
+            Text(info) => Text(di::TextDisplayItem {
+                common: shift(info.common),
+                bounds: info.bounds.translate(offset),
+                color,
+                shadow: shadow_mode,
+                ..*info
+            }),
+            Image(info) => Image(di::ImageDisplayItem {
+                common: shift(info.common),
+                bounds: info.bounds.translate(offset),
+                color,
+                ..*info
+            }),
+            Line(info) => Line(di::LineDisplayItem {
+                common: shift(info.common),
+                area: info.area.translate(offset),
+                color,
+                ..*info
+            }),
+            Border(info) => {
+                // Only normal borders cast a shadow via this path.
+                let details = match info.details {
+                    di::BorderDetails::Normal(border) => {
+                        di::BorderDetails::Normal(border.with_color(color))
+                    }
+                    di::BorderDetails::NinePatch(_) => return None,
+                };
+                Border(di::BorderDisplayItem {
+                    common: shift(info.common),
+                    bounds: info.bounds.translate(offset),
+                    details,
+                    ..*info
+                })
+            }
+            _ => return None,
+        })
+    }
+
+    /// Start a display list. `au_per_dev_px` is the caller's app-units-per-device
+    /// pixel (Gecko: `nsPresContext::AppUnitsPerDevPixel`), the grid its
+    /// coordinates are authored on; scroll offset normalization is done in whole
+    /// app units on that grid so it is exact. Taken here rather than at
+    /// construction because the builder is reused across paints while the grid
+    /// changes with device scale and full zoom.
+    pub fn begin(&mut self, au_per_dev_px: f32) {
         assert_eq!(self.state, BuildState::Idle);
         self.state = BuildState::Build;
         self.builder_start_time = zeitstempel::now();
         self.reset();
+        self.au_grid = AuGrid::new(au_per_dev_px);
     }
 
     pub fn end(&mut self) -> (PipelineId, BuiltDisplayList) {
@@ -2033,6 +2640,7 @@ impl DisplayListBuilder {
                     send_start_time: end_time,
                     total_clip_nodes: self.next_clip_index,
                     total_spatial_nodes: self.next_spatial_index,
+                    off_grid_coords: self.off_grid_coords,
                 },
                 payload,
             },
@@ -2049,4 +2657,3 @@ fn iter_spatial_tree<F>(spatial_tree: &[u8], mut f: F) where F: FnMut(&di::Spati
         f(&item);
     }
 }
-

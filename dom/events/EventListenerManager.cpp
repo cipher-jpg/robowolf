@@ -281,7 +281,13 @@ void EventListenerManager::AddEventListenerInternal(
       aAllEvents ? mListenerMap.GetOrCreateListenersForAllEvents()
                  : mListenerMap.GetOrCreateListenersForType(aTypeAtom);
 
-  for (const Listener& listener : listeners->NonObservingRange()) {
+  // Iterated by raw element rather than by range, because ElementAt()'s
+  // bounds check reloads the array header on every iteration. Nothing in the
+  // loop can mutate the array.
+  const Listener* const elements = listeners->Elements();
+  const size_t length = listeners->Length();
+  for (size_t i = 0; i < length; ++i) {
+    const Listener& listener = elements[i];
     // mListener == aListenerHolder is the last one, since it can be a bit slow.
     if (listener.mListenerIsHandler == aHandler &&
         listener.mFlags.EqualsForAddition(aFlags) &&
@@ -620,44 +626,27 @@ void EventListenerManager::ProcessApzAwareEventListenerAdd(nsAtom* aEvent) {
     return;
   }
 
-  // Try to find a ViewID identifying the scroll container the fast path
-  // signal should apply to:
-  //   - Element listener: nearest scroll container ancestor of its frame.
-  //   - Document/Window/other listener: the document's root scroll
-  //     container (events bubble up to it from anywhere in the document).
+  // Find a ViewID identifying the scroll container the fast path signal should
+  // apply to. If none has one yet, we fall back to scheduling a paint so the
+  // regular slow path (display-list rebuild + WebRender transaction) propagates
+  // eApzAwareListeners.
   //
-  // We deliberately use FindIDFor (not FindOrCreateIDFor): if no ViewID has
-  // been assigned yet to the scroll container's scrolled content, APZ has
-  // no APZC for it either, so a fast-path entry would never match a hit
-  // test. Same reasoning when the Element has no primary frame yet, or no
-  // scroll container ancestor at all. In any of these cases fall back to
-  // scheduling a paint so the regular slow path (display-list rebuild +
-  // WebRender transaction) propagates eApzAwareListeners.
+  // Determine where to start searching for the scroll container:
+  //   - Element listener: the element's own frame; the listener applies to the
+  //     nearest scroll container ancestor.
+  //   - Document/Window/other listener: the document's root scroll container,
+  //     since events bubble up to it from anywhere in the document.
   dom::Element* element = dom::Element::FromNodeOrNull(node);
   nsIFrame* elementFrame = element ? element->GetPrimaryFrame() : nullptr;
+  nsIFrame* searchFrame =
+      element ? elementFrame : presShell->GetRootScrollContainerFrame();
+
+  // The nearest scroll container may not have a ViewID (e.g. an in-process
+  // iframe's root scroll container, for which APZ has no APZC); in that case
+  // the hit test targets an ancestor APZC, so that ancestor's ViewID is the one
+  // we want.
   layers::ScrollableLayerGuid::ViewID scrollId =
-      layers::ScrollableLayerGuid::NULL_SCROLL_ID;
-  ScrollContainerFrame* scrollFrame = nullptr;
-  if (element) {
-    if (elementFrame) {
-      // SCROLLABLE_ONLY_ASYNC_SCROLLABLE is intentionally omitted: this
-      // path can run during frame construction, before an ancestor scroll
-      // container's scrolled child is attached, and WantAsyncScroll would
-      // deref it.
-      scrollFrame = nsLayoutUtils::GetNearestScrollContainerFrame(
-          elementFrame, nsLayoutUtils::SCROLLABLE_ALWAYS_MATCH_ROOT |
-                            nsLayoutUtils::SCROLLABLE_FIXEDPOS_FINDS_ROOT);
-    }
-  } else {
-    scrollFrame = presShell->GetRootScrollContainerFrame();
-  }
-  if (scrollFrame) {
-    if (nsIFrame* scrolled = scrollFrame->GetScrolledFrame()) {
-      if (nsIContent* scrolledContent = scrolled->GetContent()) {
-        nsLayoutUtils::FindIDFor(scrolledContent, &scrollId);
-      }
-    }
-  }
+      nsLayoutUtils::GetNearestScrollIdFor(searchFrame);
 
   if (StaticPrefs::apz_fastpath_apz_aware_listener_enabled()) {
     // Bug 2042628: Eventually we will end up using the fast-path for other
@@ -687,9 +676,8 @@ void EventListenerManager::ProcessApzAwareEventListenerAdd(nsAtom* aEvent) {
     } else {
       MOZ_LOG(sApzFastPathLog, LogLevel::Debug,
               ("ELM: no fast-path send (no scrollId; targetIsElement=%d "
-               "elementHasFrame=%d hasScrollContainerAncestor=%d)",
-               element != nullptr, elementFrame != nullptr,
-               scrollFrame != nullptr));
+               "elementHasFrame=%d)",
+               element != nullptr, elementFrame != nullptr));
     }
   }
 
@@ -848,8 +836,10 @@ void EventListenerManager::RemoveEventListenerInternal(
     uint32_t count = listenerArray.Length();
     for (uint32_t i = 0; i < count; ++i) {
       Listener* listener = &listenerArray.ElementAt(i);
-      if (listener->mListener == aListenerHolder &&
-          listener->mFlags.EqualsForRemoval(aFlags)) {
+      // mListener == aListenerHolder is the last one, since it can be a bit
+      // slow.
+      if (listener->mFlags.EqualsForRemoval(aFlags) &&
+          listener->mListener == aListenerHolder) {
         return Some(i);
       }
     }

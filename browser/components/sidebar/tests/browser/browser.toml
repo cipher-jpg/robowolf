@@ -43,9 +43,8 @@ skip-if = [
 run-if = ["os != 'mac'"] # F11 fullscreen autohide is not used on macOS
 
 ["browser_glean_sidebar.js"]
-skip-if = [
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1972456
-]
+
+["browser_hide_sidebar.js"]
 
 ["browser_hide_sidebar_on_popup.js"]
 skip-if = [
@@ -99,7 +98,7 @@ skip-if = [
 
 ["browser_sidebar_panel_states.js"]
 
-["browser_sidebar_pinned_tabs.js"]
+["browser_sidebar_pinned_tab_promo.js"]
 
 ["browser_sidebar_position.js"]
 
@@ -134,6 +133,8 @@ skip-if = [
 ]
 
 ["browser_vertical_tabs_cui_reset.js"]
+
+["browser_vertical_tabs_fitts.js"]
 
 ["browser_vertical_tabs_stacking_context.js"]
 

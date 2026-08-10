@@ -162,23 +162,33 @@ nsDocShellLoadState::nsDocShellLoadState(
       return;
     }
 
-    if (mURI->SchemeIs("javascript") &&
-        mTriggeringRemoteType != NOT_REMOTE_TYPE) {
-      aActor->FatalError("Illegal cross-process javascript: load attempt");
-      return;
+    if (mTriggeringRemoteType != NOT_REMOTE_TYPE) {
+      if (mURI->SchemeIs("javascript")) {
+        aActor->FatalError("Illegal cross-process javascript: load attempt");
+        return;
+      }
+
+      if (mRemoteTypeOverride.isSome()) {
+        aActor->FatalError("RemoteTypeOverride can only be set by parent");
+        return;
+      }
     }
 
+    // NOTE: Eventually this should probably be called on a LoadedOriginSet, but
+    // we don't track this on the load state yet.
     if (!ValidatePrincipalCouldPotentiallyBeLoadedBy(
             mTriggeringPrincipal, GetEffectiveTriggeringRemoteType(),
             {ValidatePrincipalOptions::AllowExpanded,
-             ValidatePrincipalOptions::AllowSystem})) {
+             ValidatePrincipalOptions::AlwaysAllowSystem,
+             ValidatePrincipalOptions::AllowNotLoadedOrigin})) {
       aActor->FatalError(
           "nsDocShellLoadState with invalid triggering principal");
       return;
     }
     if (!ValidatePrincipalCouldPotentiallyBeLoadedBy(
             mPrincipalToInherit, GetEffectiveTriggeringRemoteType(),
-            {ValidatePrincipalOptions::AllowNullPtr})) {
+            {ValidatePrincipalOptions::AllowNullPtr,
+             ValidatePrincipalOptions::AllowNotLoadedOrigin})) {
       aActor->FatalError("nsDocShellLoadState with invalid principalToInherit");
       return;
     }
@@ -1277,10 +1287,6 @@ void nsDocShellLoadState::CalculateLoadURIFlags() {
     mInternalLoadFlags |= nsDocShell::INTERNAL_LOAD_FLAGS_BYPASS_CLASSIFIER;
   }
 
-  if (mLoadFlags & nsIWebNavigation::LOAD_FLAGS_FORCE_ALLOW_COOKIES) {
-    mInternalLoadFlags |= nsDocShell::INTERNAL_LOAD_FLAGS_FORCE_ALLOW_COOKIES;
-  }
-
   if (mLoadFlags & nsIWebNavigation::LOAD_FLAGS_BYPASS_LOAD_URI_DELEGATE) {
     mInternalLoadFlags |=
         nsDocShell::INTERNAL_LOAD_FLAGS_BYPASS_LOAD_URI_DELEGATE;
@@ -1422,8 +1428,15 @@ const char* nsDocShellLoadState::ValidateWithOriginalState(
   if (!uriEq(mOriginalURI, aOriginalState->mOriginalURI)) {
     return "OriginalURI";
   }
+  if (!uriEq(mResultPrincipalURI, aOriginalState->mResultPrincipalURI)) {
+    return "mResultPrincipalURI";
+  }
   if (!uriEq(mBaseURI, aOriginalState->mBaseURI)) {
     return "BaseURI";
+  }
+
+  if (mSrcdocData != aOriginalState->mSrcdocData) {
+    return "SrcdocData";
   }
 
   if (!mTriggeringPrincipal->Equals(aOriginalState->mTriggeringPrincipal)) {

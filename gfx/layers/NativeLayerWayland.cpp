@@ -21,31 +21,31 @@
 #include "mozilla/layers/NativeLayerWayland.h"
 
 #include <dlfcn.h>
-#include <utility>
-#include <algorithm>
 
-#include "gfxUtils.h"
-#include "nsGtkUtils.h"
-#include "GLContextProvider.h"
+#include <algorithm>
+#include <utility>
+
 #include "GLBlitHelper.h"
+#include "GLContextProvider.h"
+#include "ScopedGLHelpers.h"
+#include "gfxUtils.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/SurfacePoolWayland.h"
-#include "mozilla/StaticPrefs_widget.h"
-#include "mozilla/webrender/RenderThread.h"
 #include "mozilla/webrender/RenderDMABUFTextureHost.h"
+#include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/WaylandSurface.h"
-#include "mozilla/StaticPrefs_widget.h"
-#include "ScopedGLHelpers.h"
+#include "nsGtkUtils.h"
 
 #ifdef MOZ_LOGGING
 #  undef LOG
 #  undef LOGVERBOSE
 #  undef LOG_VSYNC
+#  include "Units.h"
 #  include "mozilla/Logging.h"
 #  include "nsTArray.h"
-#  include "Units.h"
 extern mozilla::LazyLogModule gWidgetCompositorLog;
 extern mozilla::LazyLogModule gWidgetVsync;
 #  define LOG(str, ...)                                     \
@@ -1326,26 +1326,32 @@ void NativeLayerWaylandRender::ReadBackFrontBuffer(
   if (!copyRegion.IsEmpty()) {
     if (mSurfacePoolHandle->gl()) {
       mSurfacePoolHandle->gl()->MakeCurrent();
+      Maybe<GLuint> sourceFB =
+          mSurfacePoolHandle->GetFramebufferForBuffer(mFrontBuffer, false);
+      MOZ_DIAGNOSTIC_ASSERT(sourceFB,
+                            "NativeLayerWaylandRender: Failed to get "
+                            "mFrontBuffer framebuffer!");
+      if (!sourceFB) {
+        return;
+      }
+      Maybe<GLuint> destFB =
+          mSurfacePoolHandle->GetFramebufferForBuffer(mInProgressBuffer, false);
+      MOZ_DIAGNOSTIC_ASSERT(destFB,
+                            "NativeLayerWaylandRender: Failed to get "
+                            "mInProgressBuffer framebuffer!");
+      if (!destFB) {
+        return;
+      }
+
+      mSurfacePoolHandle->gl()->fBindFramebuffer(LOCAL_GL_READ_FRAMEBUFFER,
+                                                 sourceFB.value());
+      mSurfacePoolHandle->gl()->fBindFramebuffer(LOCAL_GL_DRAW_FRAMEBUFFER,
+                                                 destFB.value());
+
       for (auto iter = copyRegion.RectIter(); !iter.Done(); iter.Next()) {
         gfx::IntRect r = iter.Get();
-        Maybe<GLuint> sourceFB =
-            mSurfacePoolHandle->GetFramebufferForBuffer(mFrontBuffer, false);
-        MOZ_DIAGNOSTIC_ASSERT(sourceFB,
-                              "NativeLayerWaylandRender: Failed to get "
-                              "mFrontBuffer framebuffer!");
-        if (!sourceFB) {
-          return;
-        }
-        Maybe<GLuint> destFB = mSurfacePoolHandle->GetFramebufferForBuffer(
-            mInProgressBuffer, false);
-        MOZ_DIAGNOSTIC_ASSERT(destFB,
-                              "NativeLayerWaylandRender: Failed to get "
-                              "mInProgressBuffer framebuffer!");
-        if (!destFB) {
-          return;
-        }
-        mSurfacePoolHandle->gl()->BlitHelper()->BlitFramebufferToFramebuffer(
-            sourceFB.value(), destFB.value(), r, r, LOCAL_GL_NEAREST);
+        mSurfacePoolHandle->gl()->BlitHelper()->BlitFramebuffer(
+            r, r, LOCAL_GL_NEAREST);
       }
     } else {
       RefPtr<gfx::DataSourceSurface> dataSourceSurface =
@@ -1591,7 +1597,7 @@ void NativeLayerRootSnapshotterWayland::UpdateSnapshot(
 
   if (!mSnapshot || mSnapshot->Size() != aSize) {
     mSnapshot = nullptr;
-    auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false);
+    auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false, false);
     if (!fb) {
       return;
     }
@@ -1626,7 +1632,7 @@ already_AddRefed<profiler_screenshots::DownscaleTarget>
 NativeLayerRootSnapshotterWayland::CreateDownscaleTarget(
     const gfx::IntSize& aSize) {
   LOG("NativeLayerRootSnapshotterWayland::CreateDownscaleTarget()");
-  auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false);
+  auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false, false);
   if (!fb) {
     return nullptr;
   }

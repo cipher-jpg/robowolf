@@ -110,7 +110,7 @@ smart-window-restore-success-summary =
         [one] Tab closed, then restored.
        *[other] Tabs closed, then restored.
     }
-smart-window-cancelled-label = Request cancelled.
+smart-window-cancelled-label = Request canceled.
 # Button label - "Group" is a verb (action to group tabs)
 smart-window-confirm-group-tab = Group
 # Button label - "Group" is a verb (action to group tabs)
@@ -118,6 +118,14 @@ smart-window-confirm-group-tabs =
     { $count ->
         [one] Group { $count } tab
        *[other] Group { $count } tabs
+    }
+# Button label - "Open" is a verb (action to open, then group, tabs)
+smart-window-confirm-open-tab = Open
+# Button label - "Open" is a verb (action to open, then group, tabs)
+smart-window-confirm-open-tabs =
+    { $count ->
+        [one] Open { $count } tab
+       *[other] Open { $count } tabs
     }
 
 # Action result labels for grouped tabs
@@ -129,6 +137,10 @@ smart-window-grouped-tabs-label =
        *[other] Grouped { $count } tabs
     }
 
+# Fallback name used in place of $label above when the model didn't provide
+# one for the tab group.
+smart-window-default-tab-group-label = Tab Group
+
 # Variables
 #   $count (number) - Number of tabs grouped
 #   $label (string) - The label of the tab group
@@ -139,6 +151,39 @@ smart-window-grouped-tabs-summary =
     }
 
 smart-window-grouped-tabs-row-label = Grouped tabs
+
+# Action result labels for opened (and grouped) tabs
+# Variables
+#   $count (number) - Number of tabs opened
+smart-window-opened-tabs-label =
+    { $count ->
+        [one] Opened { $count } tab
+       *[other] Opened { $count } tabs
+    }
+
+# Variables
+#   $count (number) - Number of tabs opened
+smart-window-opened-tabs-summary-single =
+    { $count ->
+        [one] Opened { $count } tab.
+       *[other] Opened { $count } tabs.
+    }
+
+# Variables
+#   $count (number) - Number of tabs opened
+#   $label (string) - The label of the tab group
+smart-window-opened-tabs-summary-group =
+    { $count ->
+       *[other] Created the group “{ $label }” and opened { $count } tabs.
+    }
+
+smart-window-opened-tabs-row-label = Opened tabs
+
+# Action result labels for switching to a single already-open tab
+smart-window-switched-tab-label = Switched tabs
+# Variables
+#   $title (String) - Title of the tab switched to
+smart-window-switched-tab-summary = Switched to “{ $title }”.
 
 # Action result labels for ungrouped tabs
 smart-window-grouped-and-ungrouped-label = Tabs ungrouped
@@ -169,9 +214,14 @@ action-log-reading-page = Reading page
 action-log-read-page = Read page content
 action-log-searching-web = Searching the web
 action-log-searched-web = Searched the web
-# Exa is the name of a third-party web search API
-# It is a brand name and should not be translated
-action-log-searched-web-exa = Searched the web with Exa
+# Exa is the name of a third-party web search API and a brand name that
+# should not be translated. The <a> wraps "Exa" as a link to a support
+# article explaining the third-party web search integration.
+action-log-searching-web-with-exa = Searching the web with <a data-l10n-name="exa-link">Exa</a>
+# Exa is the name of a third-party web search API and a brand name that
+# should not be translated. The <a> wraps "Exa" as a link to a support
+# article explaining the third-party web search integration.
+action-log-searched-web-with-exa = Searched the web with <a data-l10n-name="exa-link">Exa</a>
 action-log-checking-memories = Checking memories
 action-log-checked-memories = Checked memories
 action-log-searching-settings = Searching settings
@@ -195,3 +245,10 @@ action-log-completed-steps =
 # current tab on the user’s behalf. Communicates both that the tab’s content
 # changed and that the assistant is reviewing the results before responding.
 smartwindow-search-loader-text = Loaded search results in this tab. Analyzing…
+
+## Citations
+
+# Label for the button that reveals overflowing citation sources.
+# Variables:
+#   $count (Number) - Number of the additional hidden sources
+smartwindow-assistant-citations-more-label = +{ $count } more

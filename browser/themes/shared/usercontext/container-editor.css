@@ -37,6 +37,17 @@
     fill: var(--icon-color);
     background-size: 16px;
   }
+
+  @media -moz-pref("browser.nova.enabled") {
+    .color-swatches .userContext-icon {
+      background-image: none;
+      background-color: var(--identity-stroke-color);
+      border-radius: var(--border-radius-circle);
+      inline-size: var(--size-item-medium);
+      block-size: var(--size-item-medium);
+      margin: auto;
+    }
+  }
 }
 
 /* When the URL-bar container indicator is revealed solely to anchor the

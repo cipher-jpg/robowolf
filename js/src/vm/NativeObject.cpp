@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "vm/NativeObject-inl.h"
-
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Maybe.h"
 
@@ -22,8 +20,10 @@
 #include "vm/PlainObject.h"         // js::PlainObject
 #include "vm/TypedArrayObject.h"
 #include "vm/Watchtower.h"
+
 #include "gc/Nursery-inl.h"
 #include "vm/JSObject-inl.h"
+#include "vm/NativeObject-inl.h"
 #include "vm/Shape-inl.h"
 
 using namespace js;
@@ -135,7 +135,9 @@ bool ObjectElements::FreezeOrSeal(JSContext* cx, Handle<NativeObject*> obj,
   }
 
   if (level == IntegrityLevel::Frozen) {
-    if (!JSObject::setFlag(cx, obj, ObjectFlag::FrozenElements)) {
+    ObjectFlags flags = {ObjectFlag::FrozenElements,
+                         ObjectFlag::NeedsProxyGetSetResultValidation};
+    if (!JSObject::setFlags(cx, obj, flags)) {
       return false;
     }
   }

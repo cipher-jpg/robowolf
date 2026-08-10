@@ -206,7 +206,7 @@ class Completion {
 
   // The JS::Result macros want to assign to an existing variable, so having a
   // default constructor is handy.
-  Completion() : variant(Terminate()) {}
+  Completion() = default;
 
   // Construct a completion from a specific variant.
   //
@@ -280,7 +280,7 @@ class Completion {
   struct BuildValueMatcher;
   struct ToResumeModeMatcher;
 
-  Variant variant;
+  Variant variant{Terminate()};
 };
 
 using WeakGlobalObjectSet =
@@ -565,7 +565,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
     OnNativeCall,
     OnNewGlobalObject,
     OnNewPromise,
-    OnPromiseSettled,
     OnGarbageCollection,
     HookCount
   };
@@ -577,6 +576,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
     JSSLOT_DEBUG_SCRIPT_PROTO,
     JSSLOT_DEBUG_SOURCE_PROTO,
     JSSLOT_DEBUG_MEMORY_PROTO,
+    JSSLOT_DEBUG_PRIVATE_NAME_PROTO,
     JSSLOT_DEBUG_PROTO_STOP,
     JSSLOT_DEBUG_DEBUGGER = JSSLOT_DEBUG_PROTO_STOP,
     JSSLOT_DEBUG_HOOK_START,

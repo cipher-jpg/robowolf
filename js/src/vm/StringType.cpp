@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "vm/StringType-inl.h"
-
 #include "mozilla/DebugOnly.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Latin1.h"
@@ -41,6 +39,7 @@
 
 #include "gc/Marking-inl.h"
 #include "vm/GeckoProfiler-inl.h"
+#include "vm/StringType-inl.h"
 
 using namespace js;
 
@@ -1143,7 +1142,7 @@ JSLinearString* JSRope::flattenInternal(JSRope* root) {
   CharT* pos = wholeChars;
 
   JSRope* parent = nullptr;
-  uint32_t parentFlag = 0;
+  uint32_t parentFlag = StringFlags::FLATTEN_FINISH_NODE;
 
 first_visit_node: {
   MOZ_ASSERT_IF(str != root, parent && parentFlag);
@@ -1152,8 +1151,11 @@ first_visit_node: {
   ropeBarrierDuringFlattening<usingBarrier>(str);
 
   JSString& left = *str->d.s.u2.left;
-  setField(&str->d.s.u2.parent, parent);
   str->setFlagBit(parentFlag);
+#ifdef JS_GC_CONCURRENT_MARKING
+  js::gc::MemoryReleaseFence(str);
+#endif
+  setField(&str->d.s.u2.parent, parent);
   parent = nullptr;
   parentFlag = 0;
 
@@ -1247,7 +1249,7 @@ finish_root:
   }
   root->changeStringType(wholeLength, flags);
   root->setNonInlineChars(wholeChars, hasStringBuffer);
-  root->d.s.u3.capacity = wholeCapacity;
+  setField(&root->d.s.u3.capacity, wholeCapacity);
   AddCellMemory(root, wholeCapacity * sizeof(CharT), MemoryUse::StringContents);
 
   if (reuseLeftmostBuffer) {

@@ -802,6 +802,11 @@ class Pref {
       if (!ValueMatches(PrefValueKind::Default, type, value)) {
         // Type() is PrefType::None if it's a newly added pref. This is ok.
         mDefaultValue.Replace(mHasDefaultValue, Type(), type, value);
+        // Both values share the type tag, so clear a user value of the old
+        // type now, while Clear() still matches how it was stored.
+        if (mHasUserValue && !IsType(type)) {
+          ClearUserValue();
+        }
         SetType(type);
         mHasDefaultValue = true;
         defaultValueChanged = true;
@@ -1449,7 +1454,8 @@ class CallbackNode : public CallbackData {
                bool aIsPrefix)
       : CallbackData(aFunc, aData),
         mDomain(AsVariant(CopyStrippingTrailingDot(aDomain))),
-        mIsPrefix(aIsPrefix) {
+        mIsPrefix(aIsPrefix),
+        mSingleDomainHadTrailingDot(StringEndsWith(aDomain, "."_ns)) {
 #ifdef DEBUG
     mRawDomain = aDomain;
 #endif
@@ -1472,6 +1478,27 @@ class CallbackNode : public CallbackData {
   // Func(), Data(), ClearFunc() are inherited from CallbackData.
 
   bool IsPrefix() const { return mIsPrefix; }
+
+  // Whether this callback matches aPrefName exactly. Called at the terminal
+  // trie node, where the dot-stripped domain already equals the dot-stripped
+  // name: a domain registered with a trailing dot covers the subtree below it,
+  // not the shorter stem name.
+  bool MatchesTerminalPref(const nsACString& aPrefName,
+                           bool aPrefHasTrailingDot) const {
+    if (aPrefHasTrailingDot) {
+      return true;
+    }
+    if (mDomain.is<nsCString>()) {
+      return !mSingleDomainHadTrailingDot;
+    }
+    // Array entries keep their dots, so an exact one still matches.
+    for (const char* const* p = mDomain.as<const char* const*>(); *p; ++p) {
+      if (aPrefName.Equals(*p)) {
+        return true;
+      }
+    }
+    return false;
+  }
 
 #ifdef DEBUG
   // Domain exactly as registered, before trailing-dot stripping (single-string
@@ -1516,6 +1543,8 @@ class CallbackNode : public CallbackData {
   Variant<nsCString, const char* const*> mDomain;
 
   bool mIsPrefix;
+  // Array entries keep their dots in mDomain, so this stays false for them.
+  bool mSingleDomainHadTrailingDot = false;
 };
 
 // Node in the dot-segmented pref callback trie.  Each node represents one
@@ -1532,11 +1561,15 @@ struct CallbackTrieNode {
   nsTArray<Child> mChildren;
   nsTArray<RefPtr<CallbackNode>> mCallbacks;
 
-  // Append this node's live callbacks (skipping dead, null-Func nodes) to aOut
-  // in LIFO order (newest registration first).
-  void AppendAll(nsTArray<RefPtr<CallbackNode>>& aOut) const {
+  // Append this node's live callbacks (skipping dead, null-Func nodes) that
+  // match aPrefName to aOut in LIFO order (newest registration first).
+  void AppendAll(nsTArray<RefPtr<CallbackNode>>& aOut,
+                 const nsACString& aPrefName, bool aPrefHasTrailingDot) const {
     for (const RefPtr<CallbackNode>& node : Reversed(mCallbacks)) {
-      if (node->Func()) aOut.AppendElement(node);
+      if (node->Func() &&
+          node->MatchesTerminalPref(aPrefName, aPrefHasTrailingDot)) {
+        aOut.AppendElement(node);
+      }
     }
   }
 
@@ -1654,13 +1687,17 @@ class CallbackTrie {
   // registration first).
   void CollectMatchingForNotify(const nsCString& aPrefName,
                                 nsTArray<RefPtr<CallbackNode>>& aOut) {
+    const bool prefHasTrailingDot =
+        !aPrefName.IsEmpty() && aPrefName.Last() == '.';
     mRoot.AppendPrefix(aOut);
     Walk(aPrefName,
-         [&aOut](CallbackTrieNode* aNode, const nsACString& aSegment,
-                 bool aIsLast) -> CallbackTrieNode* {
+         [&aOut, &aPrefName, prefHasTrailingDot](
+             CallbackTrieNode* aNode, const nsACString& aSegment,
+             bool aIsLast) -> CallbackTrieNode* {
            CallbackTrieNode* child = aNode->FindChild(aSegment);
            if (!child) return nullptr;
-           aIsLast ? child->AppendAll(aOut) : child->AppendPrefix(aOut);
+           aIsLast ? child->AppendAll(aOut, aPrefName, prefHasTrailingDot)
+                   : child->AppendPrefix(aOut);
            return child;
          });
   }
@@ -1989,6 +2026,11 @@ class PreferencesImpl {
   nsresult MakeBackupPrefFile(nsIFile* aFile);
   // Off main thread is only respected for the default aFile value (nullptr).
   nsresult SavePrefFileInternal(nsIFile* aFile, SaveMethod aSaveMethod);
+  // A non-null aPromise marks this as a backup write: it targets a file other
+  // than the profile prefs.js, carries a filtered pref set via
+  // aPrefOverrideMap, bypasses the shared sPendingWriteData coalescing, and
+  // settles aPromise when done. aPromise is non-null iff this is a backup
+  // write; normal profile prefs.js writes pass no promise.
   nsresult WritePrefFile(
       nsIFile* aFile, SaveMethod aSaveMethod,
       UniquePtr<MozPromiseHolder<WritePrefFilePromise>> aPromise = nullptr,
@@ -3559,9 +3601,13 @@ void nsPrefBranch::NotifyObserver(const char* aNewPref, void* aData) {
   }
 
   // Remove any root this string may contain so as to not confuse the observer
-  // by passing them something other than what they passed us as a topic.
-  uint32_t len = pCallback->GetPrefBranch()->GetRootLength();
-  nsDependentCString suffix(aNewPref + len);
+  // by passing them something other than what they passed us as a topic. The
+  // trie normalizes trailing dots while the root length does not, so clamp to
+  // keep the topic a suffix of the name.
+  nsDependentCString fullPref(aNewPref);
+  uint32_t len = std::min<uint32_t>(pCallback->GetPrefBranch()->GetRootLength(),
+                                    fullPref.Length());
+  const nsDependentCSubstring suffix(Substring(fullPref, len));
 
   observer->Observe(static_cast<nsIPrefBranch*>(pCallback->GetPrefBranch()),
                     NS_PREFBRANCH_PREFCHANGE_TOPIC_ID,
@@ -4085,6 +4131,7 @@ StaticMutex PreferencesWriter::sWritingToFile;
 
 class PWRunnable : public Runnable {
  public:
+  // Consumes sPendingWriteData, writing it to aFile (the profile prefs.js).
   explicit PWRunnable(
       nsIFile* aFile,
       UniquePtr<MozPromiseHolder<PreferencesImpl::WritePrefFilePromise>>
@@ -4093,7 +4140,24 @@ class PWRunnable : public Runnable {
         mFile(aFile),
         mPromiseHolder(std::move(aPromiseHolder)) {}
 
+  // Writes aData to aFile, bypassing sPendingWriteData; used for backups.
+  PWRunnable(nsIFile* aFile, UniquePtr<PrefSaveData> aData,
+             UniquePtr<MozPromiseHolder<PreferencesImpl::WritePrefFilePromise>>
+                 aPromiseHolder)
+      : Runnable("PWRunnableBackup"),
+        mFile(aFile),
+        mData(std::move(aData)),
+        mPromiseHolder(std::move(aPromiseHolder)) {}
+
   NS_IMETHOD Run() override {
+    // Backups carry their own data and bypass the sPendingWriteData coalescing.
+    if (mData) {
+      nsresult rv = PreferencesWriter::Write(mFile, *mData);
+      DispatchWriteComplete(rv, /* aRetryOnFailure */ false);
+      PreferencesWriter::sPendingWriteCount--;
+      return rv;
+    }
+
     // Preference writes are handled a bit strangely, in that a "newer"
     // write is generally regarded as always better. For this reason,
     // sPendingWriteData can be overwritten multiple times before anyone
@@ -4137,34 +4201,45 @@ class PWRunnable : public Runnable {
           PreferencesWriter::sPendingWriteData.exchange(nullptr));
       if (prefs) {
         rv = PreferencesWriter::Write(mFile, *prefs);
-        // Make a copy of these so we can have them in runnable lambda.
-        // nsIFile is only there so that we would never release the
-        // ref counted pointer off main thread.
-        nsresult rvCopy = rv;
-        nsCOMPtr<nsIFile> fileCopy(mFile);
-        SchedulerGroup::Dispatch(NS_NewRunnableFunction(
-            "Preferences::WriterRunnable",
-            [fileCopy, rvCopy, promiseHolder = std::move(mPromiseHolder)] {
-              MOZ_RELEASE_ASSERT(NS_IsMainThread());
-              if (NS_FAILED(rvCopy)) {
-                Preferences::HandleDirty();
-              }
-              if (promiseHolder) {
-                promiseHolder->ResolveIfExists(true, __func__);
-              }
-            }));
+        DispatchWriteComplete(rv, /* aRetryOnFailure */ true);
       }
     }
     // We've completed the write to the best of our abilities, whether
     // we had prefs to write or another runnable got to them first. If
     // PreferencesWriter::Write failed, this is still correct as the
-    // write is no longer outstanding, and the above HandleDirty call
-    // will just start the cycle again.
+    // write is no longer outstanding, and the HandleDirty call that
+    // DispatchWriteComplete makes on failure will just start the cycle
+    // again.
     PreferencesWriter::sPendingWriteCount--;
     return rv;
   }
 
  private:
+  // Dispatches a main-thread runnable that settles mPromiseHolder for a write
+  // that finished with aRv; the captured nsIFile ref keeps mFile alive until it
+  // is released on the main thread. When aRetryOnFailure is true (the coalesced
+  // profile prefs.js write), a failed write is retried via HandleDirty() and
+  // the promise still resolves; otherwise a failed write rejects the promise.
+  void DispatchWriteComplete(nsresult aRv, bool aRetryOnFailure) {
+    nsCOMPtr<nsIFile> fileCopy(mFile);
+    SchedulerGroup::Dispatch(NS_NewRunnableFunction(
+        "Preferences::WriterRunnable",
+        [fileCopy, aRv, aRetryOnFailure,
+         promiseHolder = std::move(mPromiseHolder)] {
+          MOZ_RELEASE_ASSERT(NS_IsMainThread());
+          if (NS_FAILED(aRv) && aRetryOnFailure) {
+            Preferences::HandleDirty();
+          }
+          if (promiseHolder) {
+            if (NS_SUCCEEDED(aRv) || aRetryOnFailure) {
+              promiseHolder->ResolveIfExists(true, __func__);
+            } else {
+              promiseHolder->RejectIfExists(aRv, __func__);
+            }
+          }
+        }));
+  }
+
   ~PWRunnable() {
     if (mPromiseHolder) {
       mPromiseHolder->RejectIfExists(NS_ERROR_ABORT, __func__);
@@ -4173,6 +4248,8 @@ class PWRunnable : public Runnable {
 
  protected:
   nsCOMPtr<nsIFile> mFile;
+  // When set, Run() writes this instead of consuming sPendingWriteData.
+  UniquePtr<PrefSaveData> mData;
   UniquePtr<MozPromiseHolder<PreferencesImpl::WritePrefFilePromise>>
       mPromiseHolder;
 };
@@ -5509,6 +5586,24 @@ nsresult PreferencesImpl::WritePrefFile(
       if (NS_FAILED(rv)) {
         REJECT_IF_PROMISE_HOLDER_EXISTS(rv);
       }
+    }
+
+    // Backups target a different file with a filtered pref set and must settle
+    // their promise, so they can't share the single-slot sPendingWriteData
+    // coalescing. Dispatch a standalone write instead.
+    if (aPromiseHolder) {
+      MOZ_ASSERT(aSaveMethod == SaveMethod::Asynchronous,
+                 "Backup writes are always asynchronous");
+      PreferencesWriter::sPendingWriteCount++;
+      rv = mAsyncTarget->Dispatch(
+          new PWRunnable(aFile, std::move(prefs), std::move(aPromiseHolder)),
+          nsIEventTarget::DISPATCH_EVENT_MAY_BLOCK);
+      if (NS_FAILED(rv)) {
+        PreferencesWriter::sPendingWriteCount--;
+        // The PWRunnable rejected the holder in its destructor.
+        return rv;
+      }
+      return NS_OK;
     }
 
     if (mCurrentFile) {

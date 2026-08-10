@@ -394,8 +394,11 @@ nsresult ChannelMediaResource::OnStopRequest(nsIRequest* aRequest,
   NS_ASSERTION(NS_SUCCEEDED(rv), "GetLoadFlags() failed!");
 
   if (loadFlags & nsIRequest::LOAD_BACKGROUND) {
-    (void)NS_WARN_IF(
-        NS_FAILED(ModifyLoadFlags(loadFlags & ~nsIRequest::LOAD_BACKGROUND)));
+    // Strip LOAD_DOCUMENT_URI to avoid duplicate doStartDocumentLoad() from
+    // nsDocLoader (Bug 2051594).
+    (void)NS_WARN_IF(NS_FAILED(
+        ModifyLoadFlags(loadFlags & ~(nsIRequest::LOAD_BACKGROUND |
+                                      nsIChannel::LOAD_DOCUMENT_URI))));
   }
 
   // Note that aStatus might have succeeded --- this might be a normal close
@@ -579,6 +582,7 @@ nsresult ChannelMediaResource::Open(nsIStreamListener** aStreamListener) {
   mSharedInfo->mResources.AppendElement(this);
 
   mIsLiveStream = streamLength < 0;
+  LOG("Open() streamLength={} mIsLiveStream={}", streamLength, mIsLiveStream);
   mListener = new Listener(this, 0, ++mLoadID);
   *aStreamListener = mListener;
   NS_ADDREF(*aStreamListener);
@@ -949,7 +953,7 @@ void ChannelMediaResource::UpdatePrincipal() {
     if (timedChannel) {
       bool allRedirectsSameOrigin = false;
       mSharedInfo->mHadCrossOriginRedirects =
-          NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOrigin(
+          NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOriginIgnoringInternal(
               &allRedirectsSameOrigin)) &&
           !allRedirectsSameOrigin;
     }

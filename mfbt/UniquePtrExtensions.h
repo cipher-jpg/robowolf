@@ -11,15 +11,16 @@
 #include <type_traits>
 
 #include "mozilla/Attributes.h"
-#include "mozilla/fallible.h"
 #include "mozilla/Types.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/fallible.h"
 
 #ifdef XP_WIN
 #  include <cstdint>
 #endif
 #if defined(XP_DARWIN)
 #  include <mach/mach.h>
+
 #  include "mozilla/Assertions.h"
 #  include "mozilla/DebugOnly.h"
 #endif
@@ -118,19 +119,21 @@ struct FileHandleHelper {
   MOZ_IMPLICIT constexpr FileHandleHelper(std::nullptr_t)
       : mHandle(kInvalidHandle) {}
 
-  bool operator!=(std::nullptr_t) const {
+  static bool IsValid(FileHandleType aHandle) {
 #ifdef XP_WIN
     // Windows uses both nullptr and INVALID_HANDLE_VALUE (-1 cast to
     // HANDLE) in different situations, but nullptr is more reliably
     // null while -1 is also valid input to some calls that take
     // handles.  So class considers both to be null (since neither
     // should be closed) but default-constructs as nullptr.
-    if (mHandle == (void*)-1) {
+    if (aHandle == (void*)-1) {
       return false;
     }
 #endif
-    return mHandle != kInvalidHandle;
+    return aHandle != kInvalidHandle;
   }
+
+  bool operator!=(std::nullptr_t) const { return IsValid(mHandle); }
 
   operator FileHandleType() const { return mHandle; }
 
@@ -243,6 +246,13 @@ inline void SetCloseOnExec(const UniqueFileHandle& aFile) {
 }
 #endif
 
+inline bool FileHandleIsValid(detail::FileHandleType aFile) {
+  return detail::FileHandleHelper::IsValid(aFile);
+}
+inline bool FileHandleIsValid(const UniqueFileHandle& aFile) {
+  return aFile != nullptr;
+}
+
 #if defined(XP_DARWIN)
 // A RAII class for a Mach port that names a send right.
 using UniqueMachSendRight =
@@ -301,8 +311,9 @@ class MOZ_TEMPORARY_CLASS UniquePtrGetterTransfers {
   Receiver& operator*() { return mReceiver; }
 
   // operator void** is conditionally enabled if `Receiver` is a pointer.
-  template <std::same_as<Receiver> U = Receiver>
-    requires std::is_pointer_v<U>
+  template <typename U = Receiver,
+            typename = std::enable_if_t<
+                std::is_pointer_v<U> && std::is_same_v<U, Receiver>, void>>
   operator void**() {
     return reinterpret_cast<void**>(&mReceiver);
   }

@@ -8,7 +8,7 @@
 :root {
   --urlbar-container-min-width: 310px;
 
-  --urlbar-basic-component-size: calc(var(--urlbar-min-height) - 2 * var(--urlbar-input-container-padding));
+  --urlbar-basic-component-size: calc(var(--urlbar-height) - 2 * var(--urlbar-input-container-padding));
   --urlbar-icon-padding: calc((var(--urlbar-basic-component-size) - 16px) / 2);
 
   /* Usually we wouldn't need snapping border widths manually, but we use this
@@ -18,8 +18,8 @@
   --urlbar-input-container-padding: round(nearest, var(--space-xxsmall) + var(--urlbar-input-container-border-width-breakout), 1px);
 
   @media not -moz-pref("browser.nova.enabled") {
-    --urlbar-basic-component-size: calc(var(--urlbar-min-height) - 2 * (var(--urlbar-input-container-border-width) + var(--urlbar-input-container-padding)));
-    --urlbar-icon-padding: calc((var(--urlbar-min-height) - 2px /* border */ - 2px /* padding */ - 16px /* icon */) / 2);
+    --urlbar-basic-component-size: calc(var(--urlbar-height) - 2 * (var(--urlbar-input-container-border-width) + var(--urlbar-input-container-padding)));
+    --urlbar-icon-padding: calc((var(--urlbar-height) - 2px /* border */ - 2px /* padding */ - 16px /* icon */) / 2);
     --urlbar-input-container-padding: round(up, 1px, env(hairline));
   }
   @media (max-width: 770px) {
@@ -65,29 +65,39 @@
   }
 }
 
-/* Variables that make it easier to support both Nova and Proton. These can
-   optionally be replaced with inline definitions when Proton is removed. */
+/**
+ * Variables that make it easier to support both Nova and Proton. These can
+ * optionally be replaced with inline definitions when Proton is removed.
+ * Naming conventions:
+ *
+ * - "breakout" - when `breakout-active` is set and *not* focused
+ * - "breakout-focused" - when `breakout-active` is set and focused
+ * - "focused" - when focused and `breakout-active` is *not* set
+ * - none of the above - when `breakout-active` is not set and not focused
+ */
 .urlbar,
 #searchbar {
-  --urlbar-background-background-color: var(--toolbar-field-background-color);
-  --urlbar-background-background-color-focused: var(--toolbar-field-background-color-focus);
-  --urlbar-background-border: none;
-  --urlbar-background-border-breakout: none;
+  --urlbar-background-border: var(--urlbar-input-container-border-width) solid var(--toolbar-field-border-color);
+  --urlbar-background-border-breakout: var(--urlbar-input-container-border-width) solid transparent;
+  --urlbar-background-border-focused: var(--urlbar-input-container-border-width-breakout) solid var(--toolbar-field-border-color-focus);
   --urlbar-background-border-radius: var(--urlbarview-border-radius);
-  --urlbar-background-border-top-radius-breakout-compact: min(var(--urlbar-background-border-radius), calc(var(--urlbar-min-height) / 2));
+  --urlbar-background-border-top-radius-breakout-compact: min(var(--urlbar-background-border-radius), calc(var(--urlbar-height) / 2));
   --urlbar-background-box-shadow-breakout: 0 0 14px 0 var(--chrome-box-shadow);
   --urlbar-background-box-shadow-breakout-compact: none;
-  --urlbar-background-inset-breakout: calc(var(--urlbar-min-height) / 2 - var(--border-radius-xlarge));
+  --urlbar-background-inset-breakout: calc(var(--urlbar-height) / 2 - var(--urlbarview-border-radius));
   --urlbar-background-inset-breakout-compact: 0;
   --urlbar-background-outline-focused: none;
   --urlbar-input-container-border: var(--urlbar-input-container-border-width) solid var(--toolbar-field-border-color);
+  --urlbar-input-container-outline-breakout: var(--urlbar-input-container-border-width-breakout) solid var(--toolbar-field-border-color);
+  --urlbar-input-container-outline-breakout-focused: var(--urlbar-input-container-border-width-breakout) solid var(--toolbar-field-border-color-focus);
+  --urlbar-input-container-outline-offset-breakout: calc(-1 * var(--urlbar-input-container-border-width-breakout));
   --urlbar-margin-block-start-breakout: calc((var(--urlbar-container-height) - var(--urlbar-height)) / 2);
   --urlbar-searchmode-switcher-panel-list-min-width: 17em;
-  --urlbar-selection-border-radius: var(--border-radius-xsmall);
 
   @media not -moz-pref("browser.nova.enabled") {
     --urlbar-background-border: var(--urlbar-input-container-border-width) solid var(--toolbar-field-border-color);
     --urlbar-background-border-breakout: var(--urlbar-input-container-border-width) solid var(--panel-border-color);
+    --urlbar-background-border-focused: var(--urlbar-background-border);
     --urlbar-background-border-top-radius-breakout-compact: var(--urlbar-background-border-radius);
     --urlbar-background-box-shadow-breakout: 0 2px 14px var(--chrome-box-shadow);
     --urlbar-background-box-shadow-breakout-compact: var(--urlbar-background-box-shadow-breakout);
@@ -97,9 +107,11 @@
        on :root, but LWT themes can override this value. */
     --urlbar-background-outline-focused: var(--focus-outline-width) solid var(--toolbar-field-border-color-focus);
     --urlbar-input-container-border: var(--urlbar-input-container-border-width) solid transparent;
+    --urlbar-input-container-outline-breakout: none;
+    --urlbar-input-container-outline-breakout-focused: none;
+    --urlbar-input-container-outline-offset-breakout: 0px;
     --urlbar-margin-block-start-breakout: 0px;
     --urlbar-searchmode-switcher-panel-list-min-width: auto;
-    --urlbar-selection-border-radius: 0;
   }
 }
 
@@ -168,11 +180,14 @@ toolbar[inactive="true"] .urlbar,
     /* This is technically not needed, because popover takes care of it, but
      * helps for clarity. */
     position: absolute;
-    height: var(--urlbar-height);
     width: var(--urlbar-width);
 
     &[breakout-extend] {
       margin-block-start: var(--urlbar-margin-block-start-breakout);
+    }
+
+    &:popover-open {
+      translate: var(--toolbar-shift-translate, none);
     }
   }
 }
@@ -182,7 +197,7 @@ toolbar[inactive="true"] .urlbar,
   /* Setting a min-width to let the location & search bars maintain a constant
    * width in case they haven't been resized manually. (bug 965772) */
   min-width: 1px;
-  min-height: var(--urlbar-min-height);
+  min-height: var(--urlbar-height);
   text-shadow: none;
   color: var(--toolbar-field-text-color);
 
@@ -213,18 +228,18 @@ toolbar[inactive="true"] .urlbar,
   display: block;
   position: absolute;
   inset: 0;
-  background-color: var(--urlbar-background-background-color);
+  background-color: var(--urlbar-background-color);
   background-clip: border-box;
   border-radius: var(--urlbar-background-border-radius);
   border: var(--urlbar-background-border);
 
   .urlbar:is([focused], [open]) > & {
-    background-color: var(--urlbar-background-background-color-focused);
+    background-color: var(--urlbar-background-color-focus);
   }
 
   .urlbar[focused]:not([suppress-focus-border]) > & {
     outline: var(--urlbar-background-outline-focused);
-    border-color: transparent;
+    border: var(--urlbar-background-border-focused);
   }
 
   .urlbar[breakout-extend] > & {
@@ -259,7 +274,7 @@ toolbar[inactive="true"] .urlbar,
 }
 
 .urlbar-input-container {
-  padding: var(--urlbar-input-container-padding);
+  padding-inline: var(--urlbar-input-container-padding);
   min-width: 0;
   display: flex;
   align-items: center;
@@ -273,9 +288,13 @@ toolbar[inactive="true"] .urlbar,
     height: 100%;
   }
 
-  > :is([urlbar-slot="site-info"]:not(#trust-icon-container):not(#tracking-protection-icon-container)):not([hidden]),
-  &[pageproxystate="invalid"] > .searchmode-switcher:not([offscreen]) {
-    margin-inline-end: var(--urlbar-input-gap);
+  .urlbar[breakout][breakout-extend] > & {
+    outline: var(--urlbar-input-container-outline-breakout);
+    outline-offset: var(--urlbar-input-container-outline-offset-breakout);
+  }
+
+  .urlbar[breakout][breakout-extend][focused] > & {
+    outline: var(--urlbar-input-container-outline-breakout-focused);
   }
 }
 
@@ -285,22 +304,24 @@ toolbar[inactive="true"] .urlbar,
 }
 
 #searchbar {
-  background-color: var(--urlbar-background-background-color);
+  background-color: var(--urlbar-background-color);
   background-clip: border-box;
   border-radius: var(--urlbar-border-radius);
   outline: var(--urlbar-input-container-border);
   outline-offset: calc(-1 * var(--urlbar-input-container-border-width));
   overflow: clip;
+  padding-inline-end: var(--urlbar-input-container-padding);
 
   &:focus-within {
-    background-color: var(--urlbar-background-background-color-focused);
-    outline-color: var(--focus-outline-color);
+    background-color: var(--urlbar-background-color-focus);
+    outline-color: var(--toolbar-field-border-color-focus);
     outline-width: var(--urlbar-input-container-border-width-breakout);
     outline-offset: calc(-1 * var(--urlbar-input-container-border-width-breakout));
   }
 
   @media not -moz-pref("browser.nova.enabled") {
     outline: none;
+    padding-inline-end: 0;
     border: var(--urlbar-input-container-border);
 
     &:focus-within {
@@ -329,9 +350,18 @@ toolbar[inactive="true"] .urlbar,
   outline: none;
 }
 
-.urlbar-input::selection {
-  /* urlbar and searchbar */
-  border-radius: var(--urlbar-selection-border-radius);
+.urlbar-input {
+  /* Make the editable line box span the field's full inner height so clicking
+     anywhere in the field places the caret. The value equals the input's
+     available height so it fills the field without growing it. */
+  line-height: var(--urlbar-height);
+
+  /* Proton's input container has a border on each block edge (the border is
+     transparent, so invisible, but it still occupies layout space), so subtract
+     it to keep the line box within the field's inner height. */
+  @media not -moz-pref("browser.nova.enabled") {
+    line-height: calc(var(--urlbar-height) - 2 * var(--urlbar-input-container-border-width));
+  }
 }
 
 #urlbar-input {
@@ -395,38 +425,6 @@ toolbar[inactive="true"] .urlbar,
   color: var(--toolbar-field-text-color-focus);
 }
 
-@media -moz-pref("browser.nova.enabled") {
-  .urlbar:not(moz-smartbar) {
-    > .urlbar-input-container {
-      outline: var(--urlbar-input-container-border);
-      outline-offset: calc(-1 * var(--urlbar-input-container-border-width));
-    }
-
-    &[breakout] > .urlbar-input-container {
-      height: var(--urlbar-height);
-    }
-
-    &[breakout][breakout-extend] {
-      height: auto;
-    }
-
-    &[focused] > .urlbar-input-container,
-    &[breakout][breakout-extend] > .urlbar-input-container {
-      outline-width: var(--urlbar-input-container-border-width-breakout);
-      outline-offset: calc(-1 * var(--urlbar-input-container-border-width-breakout));
-    }
-
-    &[focused] > .urlbar-input-container {
-      outline-color: var(--focus-outline-color);
-    }
-  }
-}
-
-.urlbar-input::placeholder,
-.searchbar-textbox::placeholder {
-  opacity: 0.69;
-}
-
 #TabsToolbar #searchbar:not(:focus-within) {
   /* The tabs toolbar is usually a different color than the other toolbars, and
      we can't predict it, to avoid a transparent field we enforce a border. */
@@ -477,13 +475,12 @@ toolbar[inactive="true"] .urlbar,
   }
 
   .urlbar[breakout][breakout-extend] {
-    height: auto;
     margin-left: calc(-1 * var(--urlbar-margin-inline));
     width: calc(var(--urlbar-width) + 2 * var(--urlbar-margin-inline));
 
     > .urlbar-input-container {
       height: var(--urlbar-container-height);
-      padding-block: calc((var(--urlbar-container-height) - var(--urlbar-height)) / 2 + var(--urlbar-input-container-padding));
+      padding-block: calc((var(--urlbar-container-height) - var(--urlbar-height)) / 2);
       padding-inline: calc(var(--urlbar-margin-inline) + var(--urlbar-input-container-padding));
     }
 
@@ -507,10 +504,14 @@ toolbar[inactive="true"] .urlbar,
 }
 
 .urlbar-input-box {
+  height: 100%;
+  margin-inline-start: var(--urlbar-input-gap);
+
   #urlbar & {
     /* Show the url scheme in a static box when overflowing to the left */
     position: relative;
     direction: ltr;
+    margin-inline-end: var(--urlbar-input-gap);
   }
 
   :root[customizing] & {
@@ -632,7 +633,6 @@ toolbar[inactive="true"] .urlbar,
   height: var(--urlbar-basic-component-size);
   background-color: var(--urlbar-box-background-color);
   color: var(--urlbar-box-text-color);
-  margin-inline-end: 8px;
   align-items: center;
   border-radius: var(--urlbar-inner-border-radius);
   padding-inline: 8px 6px;
@@ -761,6 +761,7 @@ toolbar[inactive="true"] .urlbar,
 .urlbar-page-action,
 .urlbar-go-button,
 .search-go-button,
+.searchbar-textbox::-moz-search-clear-button,
 .urlbar-input::-moz-search-clear-button {
   width: var(--urlbar-basic-component-size);
   height: var(--urlbar-basic-component-size);
@@ -785,17 +786,25 @@ toolbar[inactive="true"] .urlbar,
   }
 }
 
+.searchbar-textbox:placeholder-shown::-moz-search-clear-button,
+.urlbar-input:placeholder-shown::-moz-search-clear-button {
+  display: none;
+}
+
+.searchbar-textbox::-moz-search-clear-button,
 .urlbar-input::-moz-search-clear-button {
   /* Overrides forms.css */
   padding: 0;
 }
 
+.searchbar-textbox::-moz-search-clear-button:hover,
 .urlbar-input::-moz-search-clear-button:hover {
   background-color: var(--urlbar-box-background-color-hover);
   color: var(--urlbar-box-text-color-hover);
   outline-color: var(--toolbarbutton-outline-color-hover);
 }
 
+.searchbar-textbox::-moz-search-clear-button:hover:active,
 .urlbar-input::-moz-search-clear-button:hover:active {
   background-color: var(--urlbar-box-background-color-active);
   color: var(--urlbar-box-text-color-hover);
@@ -1090,6 +1099,7 @@ toolbar[inactive="true"] .urlbar,
   #translations-button[translationsactive] > & {
     fill: var(--toolbarbutton-icon-fill-attention);
     fill-opacity: 1;
+    margin-inline: var(--space-small);
   }
 }
 
@@ -1099,7 +1109,7 @@ toolbar[inactive="true"] .urlbar,
   list-style-image: url("chrome://global/skin/icons/loading.svg");
   fill: var(--toolbarbutton-icon-fill-attention);
   fill-opacity: 1;
-  margin-inline: 1px;
+  margin-inline-end: var(--space-small);
 }
 
 #translations-button-locale {
@@ -1113,7 +1123,7 @@ toolbar[inactive="true"] .urlbar,
   padding-top: 3px;
   padding-inline: 1px;
   box-sizing: border-box;
-  margin-inline: 2px -2px;
+  margin-inline-end: var(--space-small);
   margin-block: -2px;
 }
 
@@ -1330,6 +1340,11 @@ toolbar[inactive="true"] .urlbar,
   during clicks.*/
   --button-background-color-selected: var(--button-background-color);
 
+  --button-text-color: var(--urlbar-box-text-color);
+  --button-text-color-hover: var(--urlbar-box-text-color-hover);
+  --button-text-color-active: var(--urlbar-box-text-color-hover);
+  --button-text-color-selected: var(--urlbar-box-text-color);
+
   --button-background-color: var(--urlbar-box-background-color);
   @media -moz-pref("browser.urlbar.unifiedSearchButton.always") {
     .urlbar[pageproxystate="valid"] & {
@@ -1365,6 +1380,18 @@ toolbar[inactive="true"] .urlbar,
     @media (not -moz-pref("browser.urlbar.searchModeSwitcher.featureGate")) and (not -moz-pref("browser.urlbar.scotchBonnet.enableOverride")) {
       display: none;
     }
+  }
+
+  &[addengines]::part(button)::after {
+    content: "";
+    position: absolute;
+    width: 11px;
+    height: 11px;
+    inset-block-start: var(--space-xxsmall);
+    inset-inline-start: var(--icon-size);
+    background: url(chrome://browser/skin/search-indicator-badge-add.svg) no-repeat center;
+    background-size: contain;
+    pointer-events: none;
   }
 }
 

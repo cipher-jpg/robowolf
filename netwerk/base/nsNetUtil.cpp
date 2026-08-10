@@ -3,11 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "DecoderDoctorDiagnostics.h"
-#include "HttpLog.h"
-
 #include "nsNetUtil.h"
 
+#include "../mime/nsMIMEHeaderParamImpl.h"
+#include "DecoderDoctorDiagnostics.h"
+#include "DefaultURI.h"
+#include "HttpLog.h"
+#include "mozIThirdPartyUtil.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
@@ -24,103 +26,99 @@
 #include "mozilla/StaticPrefs_urlclassifier.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/TaskQueue.h"
+#include "mozilla/dom/BlobURLProtocolHandler.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/dom/nsHTTPSOnlyUtils.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "mozilla/net/HttpBaseChannel.h"
+#include "mozilla/net/RedirectChannelRegistrar.h"
 #include "nsAboutProtocolUtils.h"
 #include "nsBufferedStreams.h"
 #include "nsCategoryCache.h"
+#include "nsChromeProtocolHandler.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
+#include "nsDataHandler.h"
 #include "nsEscape.h"
 #include "nsFileStreams.h"
 #include "nsHashKeys.h"
 #include "nsHttp.h"
-#include "nsMimeTypes.h"
+#include "nsHttpChannel.h"
+#include "nsHttpHandler.h"
 #include "nsIAuthPrompt.h"
 #include "nsIAuthPrompt2.h"
 #include "nsIAuthPromptAdapterFactory.h"
 #include "nsIBufferedStreams.h"
-#include "nsBufferedStreams.h"
+#include "nsICertOverrideService.h"
+#include "nsICertStorage.h"
 #include "nsIChannelEventSink.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIContentSniffer.h"
-#include "mozilla/dom/Document.h"
 #include "nsIDownloader.h"
+#include "nsIEnterprisePolicies.h"
 #include "nsIFileProtocolHandler.h"
 #include "nsIFileStreams.h"
 #include "nsIFileURL.h"
 #include "nsIIDNService.h"
+#include "nsIIncrementalStreamLoader.h"
 #include "nsIInputStreamChannel.h"
 #include "nsIInputStreamPump.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsILoadContext.h"
 #include "nsIMIMEHeaderParam.h"
+#include "nsINestedURI.h"
 #include "nsINode.h"
 #include "nsIObjectLoadingContent.h"
-#include "nsPersistentProperties.h"
 #include "nsIPrivateBrowsingChannel.h"
 #include "nsIPropertyBag2.h"
 #include "nsIProtocolProxyService.h"
-#include "mozilla/net/RedirectChannelRegistrar.h"
-#include "nsRequestObserverProxy.h"
+#include "nsIRedirectHistoryEntry.h"
+#include "nsIScriptError.h"
 #include "nsISensitiveInfoHiddenURI.h"
 #include "nsISimpleStreamListener.h"
+#include "nsISiteSecurityService.h"
 #include "nsISocketProvider.h"
 #include "nsIStandardURL.h"
 #include "nsIStreamLoader.h"
-#include "nsIIncrementalStreamLoader.h"
-#include "nsStringStream.h"
-#include "nsSyncStreamListener.h"
 #include "nsITextToSubURI.h"
 #include "nsIURIWithSpecialOrigin.h"
 #include "nsIViewSourceChannel.h"
 #include "nsInterfaceRequestorAgg.h"
-#include "nsINestedURI.h"
-#include "mozilla/dom/nsCSPUtils.h"
-#include "mozilla/dom/nsHTTPSOnlyUtils.h"
-#include "mozilla/dom/nsMixedContentBlocker.h"
-#include "mozilla/dom/BlobURLProtocolHandler.h"
-#include "mozilla/net/HttpBaseChannel.h"
-#include "nsHttpChannel.h"
-#include "nsIScriptError.h"
-#include "nsISiteSecurityService.h"
-#include "nsHttpHandler.h"
-#include "nsNSSComponent.h"
-#include "nsIRedirectHistoryEntry.h"
-#include "nsICertStorage.h"
-#include "nsICertOverrideService.h"
-#include "nsQueryObject.h"
-#include "mozIThirdPartyUtil.h"
-#include "../mime/nsMIMEHeaderParamImpl.h"
-#include "nsStandardURL.h"
-#include "DefaultURI.h"
-#include "nsChromeProtocolHandler.h"
-#include "nsJSProtocolHandler.h"
-#include "nsDataHandler.h"
-#include "mozilla/dom/BlobURLProtocolHandler.h"
-#include "nsStreamUtils.h"
-#include "nsSocketTransportService2.h"
-#include "nsViewSourceHandler.h"
 #include "nsJARURI.h"
+#include "nsJSProtocolHandler.h"
+#include "nsMimeTypes.h"
+#include "nsNSSComponent.h"
+#include "nsPersistentProperties.h"
+#include "nsQueryObject.h"
+#include "nsRequestObserverProxy.h"
+#include "nsSocketTransportService2.h"
+#include "nsStandardURL.h"
+#include "nsStreamUtils.h"
+#include "nsStringStream.h"
+#include "nsSyncStreamListener.h"
+#include "nsViewSourceHandler.h"
 #ifndef XP_IOS
 #  include "nsIconURI.h"
 #endif
-#include "nsAboutProtocolHandler.h"
-#include "nsResProtocolHandler.h"
+#include "DecoderTraits.h"
+#include "MediaContainerType.h"
+#include "imgLoader.h"
+#include "mozilla/dom/MediaList.h"
 #include "mozilla/net/CookieJarSettings.h"
-#include "mozilla/net/MozSrcProtocolHandler.h"
 #include "mozilla/net/ExtensionProtocolHandler.h"
 #include "mozilla/net/MozNewTabWallpaperProtocolHandler.h"
+#include "mozilla/net/MozSrcProtocolHandler.h"
 #include "mozilla/net/PageThumbProtocolHandler.h"
 #include "mozilla/net/SFV.h"
 #include "mozilla/net/SFVService.h"
+#include "nsAboutProtocolHandler.h"
+#include "nsCRT.h"
 #include "nsICookieService.h"
 #include "nsIXPConnect.h"
 #include "nsParserConstants.h"
-#include "nsCRT.h"
+#include "nsResProtocolHandler.h"
 #include "nsServiceManagerUtils.h"
-#include "mozilla/dom/MediaList.h"
-#include "MediaContainerType.h"
-#include "DecoderTraits.h"
-#include "imgLoader.h"
 
 #if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
 #  include "nsNewMailnewsURI.h"
@@ -428,21 +426,22 @@ nsresult NS_NewChannel(nsIChannel** outChannel, nsIURI* aUri,
                        nsIInterfaceRequestor* aCallbacks /* = nullptr */,
                        nsLoadFlags aLoadFlags /* = nsIRequest::LOAD_NORMAL */,
                        nsIIOService* aIoService /* = nullptr */,
-                       uint32_t aSandboxFlags /* = 0 */) {
+                       uint32_t aSandboxFlags /* = 0 */,
+                       uint64_t aAssociatedBrowsingContextID /* = 0 */) {
   AssertLoadingPrincipalAndClientInfoMatch(
       aLoadingPrincipal, aLoadingClientInfo, aContentPolicyType);
 
   Maybe<ClientInfo> loadingClientInfo;
   loadingClientInfo.emplace(aLoadingClientInfo);
 
-  return NS_NewChannelInternal(outChannel, aUri,
-                               nullptr,  // aLoadingNode,
-                               aLoadingPrincipal,
-                               nullptr,  // aTriggeringPrincipal
-                               loadingClientInfo, aController, aSecurityFlags,
-                               aContentPolicyType, aCookieJarSettings,
-                               aPerformanceStorage, aLoadGroup, aCallbacks,
-                               aLoadFlags, aIoService, aSandboxFlags);
+  return NS_NewChannelInternal(
+      outChannel, aUri,
+      nullptr,  // aLoadingNode,
+      aLoadingPrincipal,
+      nullptr,  // aTriggeringPrincipal
+      loadingClientInfo, aController, aSecurityFlags, aContentPolicyType,
+      aCookieJarSettings, aPerformanceStorage, aLoadGroup, aCallbacks,
+      aLoadFlags, aIoService, aSandboxFlags, aAssociatedBrowsingContextID);
 }
 
 nsresult NS_NewChannelInternal(
@@ -456,8 +455,8 @@ nsresult NS_NewChannelInternal(
     nsILoadGroup* aLoadGroup /* = nullptr */,
     nsIInterfaceRequestor* aCallbacks /* = nullptr */,
     nsLoadFlags aLoadFlags /* = nsIRequest::LOAD_NORMAL */,
-    nsIIOService* aIoService /* = nullptr */,
-    uint32_t aSandboxFlags /* = 0 */) {
+    nsIIOService* aIoService /* = nullptr */, uint32_t aSandboxFlags /* = 0 */,
+    uint64_t aAssociatedBrowsingContextID /* = 0 */) {
   NS_ENSURE_ARG_POINTER(outChannel);
 
   if (aContentPolicyType == nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD &&
@@ -473,7 +472,7 @@ nsresult NS_NewChannelInternal(
   rv = aIoService->NewChannelFromURIWithClientAndController(
       aUri, aLoadingNode, aLoadingPrincipal, aTriggeringPrincipal,
       aLoadingClientInfo, aController, aSecurityFlags, aContentPolicyType,
-      aSandboxFlags, getter_AddRefs(channel));
+      aSandboxFlags, aAssociatedBrowsingContextID, getter_AddRefs(channel));
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1276,7 +1275,7 @@ nsresult NS_ParseRequestContentType(const nsACString& rawContentType,
   bool hadCharset;
   rv = util->ParseRequestContentType(rawContentType, charset, &hadCharset,
                                      contentType);
-  if (NS_SUCCEEDED(rv) && hadCharset) contentCharset = charset;
+  if (NS_SUCCEEDED(rv) && hadCharset) contentCharset = std::move(charset);
   return rv;
 }
 
@@ -1291,7 +1290,7 @@ nsresult NS_ParseResponseContentType(const nsACString& rawContentType,
   bool hadCharset;
   rv = util->ParseResponseContentType(rawContentType, charset, &hadCharset,
                                       contentType);
-  if (NS_SUCCEEDED(rv) && hadCharset) contentCharset = charset;
+  if (NS_SUCCEEDED(rv) && hadCharset) contentCharset = std::move(charset);
   return rv;
 }
 
@@ -2950,8 +2949,9 @@ bool handleResultFunc(bool aAllowSTS, bool aIsStsHost) {
   return false;
 };
 // That function is a helper function of NS_ShouldSecureUpgrade to check if
-// CSP upgrade-insecure-requests, Mixed content auto upgrading or HTTPs-Only/-
-// First should upgrade the given request.
+// CSP upgrade-insecure-requests, Mixed content auto upgrading, HTTPs-Only/-
+// First, or an enterprise HttpsOnly site policy should upgrade the given
+// request.
 static bool ShouldSecureUpgradeNoHSTS(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
   // 2. CSP upgrade-insecure-requests
   if (aLoadInfo->GetUpgradeInsecureRequests()) {
@@ -2962,7 +2962,8 @@ static bool ShouldSecureUpgradeNoHSTS(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
     scheme.AppendLiteral("s");
     NS_ConvertUTF8toUTF16 reportSpec(aURI->GetSpecOrDefault());
     NS_ConvertUTF8toUTF16 reportScheme(scheme);
-    AutoTArray<nsString, 2> params = {reportSpec, reportScheme};
+    AutoTArray<nsString, 2> params = {std::move(reportSpec),
+                                      std::move(reportScheme)};
     uint64_t innerWindowId = aLoadInfo->GetInnerWindowID();
     CSP_LogLocalizedStr("upgradeInsecureRequest", params,
                         ""_ns,   // aSourceFile
@@ -2984,7 +2985,8 @@ static bool ShouldSecureUpgradeNoHSTS(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
     scheme.AppendLiteral("s");
     NS_ConvertUTF8toUTF16 reportSpec(aURI->GetSpecOrDefault());
     NS_ConvertUTF8toUTF16 reportScheme(scheme);
-    AutoTArray<nsString, 2> params = {reportSpec, reportScheme};
+    AutoTArray<nsString, 2> params = {std::move(reportSpec),
+                                      std::move(reportScheme)};
 
     nsAutoString localizedMsg;
     nsContentUtils::FormatLocalizedString(PropertiesFile::SECURITY_PROPERTIES,
@@ -3023,6 +3025,48 @@ static bool ShouldSecureUpgradeNoHSTS(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
     }
     return true;
   }
+
+  // 5. Enterprise policy HttpsOnly site policy.
+  // Use the top-level document URI so that subresources inherit the same
+  // HTTPS policy as their containing page rather than being checked
+  // independently.
+  const bool isHttpsOnlyByPolicy = [&]() {
+    nsCOMPtr<nsIEnterprisePolicies> policyService =
+        do_GetService("@mozilla.org/enterprisepolicies;1");
+    if (!policyService) {
+      return false;
+    }
+
+    int16_t status;
+    if (NS_FAILED(policyService->GetStatus(&status)) ||
+        status != nsIEnterprisePolicies::ACTIVE) {
+      return false;
+    }
+
+    nsCOMPtr<nsIURI> policyCheckURI;
+    nsCOMPtr<nsIPrincipal> topLevelPrincipal =
+        aLoadInfo->GetTopLevelPrincipal();
+
+    if (topLevelPrincipal) {
+      nsAutoCString siteOrigin;
+      if (NS_FAILED(topLevelPrincipal->GetSiteOriginNoSuffix(siteOrigin)) ||
+          NS_FAILED(NS_NewURI(getter_AddRefs(policyCheckURI), siteOrigin))) {
+        return false;
+      }
+    } else {
+      policyCheckURI = aURI;
+    }
+
+    bool isHttpAllowed = true;
+    return NS_SUCCEEDED(policyService->IsAllowedForURI(
+               "http"_ns, policyCheckURI, &isHttpAllowed)) &&
+           !isHttpAllowed;
+  }();
+
+  if (isHttpsOnlyByPolicy) {
+    return true;
+  }
+
   return false;
 }
 
@@ -3031,7 +3075,8 @@ static bool ShouldSecureUpgradeNoHSTS(nsIURI* aURI, nsILoadInfo* aLoadInfo) {
 // 2. CSP upgrade-insecure-requests
 // 3. Mixed content auto upgrading
 // 4. Https-Only / first
-// (5. Https RR - will be checked in nsHttpChannel)
+// 5. Enterprise policy HttpsOnly
+// (6. Https RR - will be checked in nsHttpChannel)
 nsresult NS_ShouldSecureUpgrade(
     nsIURI* aURI, nsILoadInfo* aLoadInfo, nsIPrincipal* aChannelResultPrincipal,
     bool aAllowSTS, const OriginAttributes& aOriginAttributes,
@@ -3541,7 +3586,7 @@ static bool Decode5987Format(nsAString& aEncoded) {
   rv = mimehdrpar->DecodeRFC5987Param(asciiValue, language, decoded);
   if (NS_FAILED(rv)) return false;
 
-  aEncoded = decoded;
+  aEncoded = std::move(decoded);
   return true;
 }
 
@@ -3740,7 +3785,7 @@ nsTArray<LinkHeader> ParseLinkHeader(const nsAString& aLinkData) {
             nsAutoString tmp;
             tmp = value;
             if (Decode5987Format(tmp)) {
-              titleStar = tmp;
+              titleStar = std::move(tmp);
               titleStar.CompressWhitespace();
             } else {
               // header value did not parse, throw it away
@@ -3778,9 +3823,9 @@ nsTArray<LinkHeader> ParseLinkHeader(const nsAString& aLinkData) {
   if (!header.mHref.IsEmpty() && !header.mRel.IsEmpty()) {
     if (!titleStar.IsEmpty()) {
       // prefer RFC 5987 variant over non-I18zed version
-      header.mTitle = titleStar;
+      header.mTitle = std::move(titleStar);
     }
-    linkHeaders.AppendElement(header);
+    linkHeaders.AppendElement(std::move(header));
   }
 
   return linkHeaders;
@@ -4129,6 +4174,12 @@ void CheckForBrokenChromeURL(nsILoadInfo* aLoadInfo, nsIURI* aURI) {
     return;
   }
 
+  // l10n coverage data (localization/<locale>/coverage.json) is loaded
+  // speculatively and is absent for en-US and untranslated locales.
+  if (StringEndsWith(filePath, "/coverage.json"_ns)) {
+    return;
+  }
+
   // Ignore fetches/xhrs, as they are frequently used in a way where
   // non-existence is OK (ie with fallbacks). This risks false negatives (ie
   // files that *should* be there but aren't) - which we accept for now.
@@ -4148,6 +4199,9 @@ void CheckForBrokenChromeURL(nsILoadInfo* aLoadInfo, nsIURI* aURI) {
   // info-pages.css and aboutLicense.css are not - bug 1808987
   if (StringEndsWith(spec, "info-pages.css"_ns) ||
       StringEndsWith(spec, "aboutLicense.css"_ns) ||
+      // about:certificates is missing styles: bug 2055889
+      StringEndsWith(spec, "in-content/common.css"_ns) ||
+      StringEndsWith(spec, "text-and-typography.css"_ns) ||
       // Error page CSS is also missing: bug 1810039
       StringEndsWith(spec, "aboutNetError.css"_ns) ||
       StringEndsWith(spec, "aboutHttpsOnlyError.css"_ns) ||

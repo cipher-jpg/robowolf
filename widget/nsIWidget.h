@@ -7,9 +7,10 @@
 
 #include <cmath>
 #include <cstdint>
-#include "imgIContainer.h"
+
 #include "ErrorList.h"
 #include "Units.h"
+#include "imgIContainer.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -21,11 +22,12 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/Matrix.h"
 #include "mozilla/gfx/Rect.h"
+#include "mozilla/image/Resolution.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/ZoomConstraints.h"
-#include "mozilla/image/Resolution.h"
 #include "mozilla/widget/IMEData.h"
+#include "mozilla/widget/InitData.h"
 #include "nsCOMPtr.h"
 #include "nsColor.h"
 #include "nsDebug.h"
@@ -41,7 +43,6 @@
 #include "nsTArray.h"
 #include "nsTHashMap.h"
 #include "nsWeakReference.h"
-#include "mozilla/widget/InitData.h"
 #include "nsXULAppAPI.h"
 
 // Windows specific constant indicating the maximum number of touch points the
@@ -313,7 +314,7 @@ namespace mozilla::widget {
  * the constraints.
  */
 struct SizeConstraints {
-  SizeConstraints() : mMaxSize(MOZ_WIDGET_MAX_SIZE, MOZ_WIDGET_MAX_SIZE) {}
+  SizeConstraints() = default;
 
   SizeConstraints(mozilla::DesktopIntSize aMinSize,
                   mozilla::DesktopIntSize aMaxSize)
@@ -327,7 +328,7 @@ struct SizeConstraints {
   }
 
   mozilla::DesktopIntSize mMinSize;
-  mozilla::DesktopIntSize mMaxSize;
+  mozilla::DesktopIntSize mMaxSize{MOZ_WIDGET_MAX_SIZE, MOZ_WIDGET_MAX_SIZE};
 };
 
 class MOZ_RAII AutoSynthesizedEventCallbackNotifier final {
@@ -1380,6 +1381,8 @@ class nsIWidget : public nsSupportsWeakReference {
   // Returns whether compositing should use an external surface size.
   virtual bool UseExternalCompositingSurface() const { return false; }
 
+  void SetIsTiled(bool);
+
   /**
    * Starts the OMTC compositor destruction sequence.
    *
@@ -2304,11 +2307,11 @@ class nsIWidget : public nsSupportsWeakReference {
   }
 
   /**
-   * NotifyCompositorScrollUpdate notify widget about an update to the
+   * NotifyCompositorScrollUpdates notify widget about an update to the
    * composited scroll offset and zoom
    */
-  virtual void NotifyCompositorScrollUpdate(
-      const mozilla::layers::CompositorScrollUpdate& aUpdate) {}
+  virtual void NotifyCompositorScrollUpdates(
+      const nsTArray<mozilla::layers::CompositorScrollUpdate>& aUpdates) {}
 
 #if defined(MOZ_WIDGET_ANDROID)
   /**

@@ -839,14 +839,22 @@ class PathMeta(type):
             assert isinstance(context, Context)
             if isinstance(value, Path):
                 context = value.context
+        # A (source, target_basename) tuple requests installation under a
+        # different base name than the source's own.
+        target_basename = None
         if not issubclass(cls, (SourcePath, ObjDirPath, AbsolutePath)):
+            if isinstance(value, tuple):
+                value, target_basename = value
             if value.startswith("!"):
                 cls = ObjDirPath
             elif value.startswith("%"):
                 cls = AbsolutePath
             else:
                 cls = SourcePath
-        return super().__call__(context, value)
+        path = super().__call__(context, value)
+        if target_basename is not None:
+            path._target_basename = target_basename
+        return path
 
 
 class Path(ContextDerivedValue, str, metaclass=PathMeta):
@@ -908,9 +916,11 @@ class Path(ContextDerivedValue, str, metaclass=PathMeta):
     def __hash__(self):
         return hash(self.full_path)
 
-    @functools.cached_property
+    @property
     def target_basename(self):
-        return mozpath.basename(self.full_path)
+        return getattr(self, "_target_basename", None) or mozpath.basename(
+            self.full_path
+        )
 
 
 class SourcePath(Path):
@@ -948,10 +958,10 @@ class SourcePath(Path):
 class RenamedSourcePath(SourcePath):
     """Like SourcePath, but with a different base name when installed.
 
-    The constructor takes a tuple of (source, target_basename).
-
-    This class is not meant to be exposed to moz.build sandboxes as of now,
-    and is not supported by the RecursiveMake backend.
+    The constructor takes a tuple of (source, target_basename). In moz.build
+    files the same effect is achieved by appending a (source, target_basename)
+    tuple to a ``*_FILES`` variable; this class is kept for direct internal
+    construction (e.g. from jar manifests).
     """
 
     def __new__(cls, context, value):
@@ -960,10 +970,6 @@ class RenamedSourcePath(SourcePath):
         self = super().__new__(cls, context, source)
         self._target_basename = target_basename
         return self
-
-    @property
-    def target_basename(self):
-        return self._target_basename
 
 
 class ObjDirPath(Path):
@@ -1139,9 +1145,14 @@ class Schedules:
 
 
 @functools.cache
-def ContextDerivedTypedHierarchicalStringList(type):
+def ContextDerivedTypedHierarchicalStringList(type, allow_renames=False):
     """Specialized HierarchicalStringList for use with ContextDerivedValue
-    types."""
+    types.
+
+    With ``allow_renames``, entries may also be ``(source, target_basename)``
+    tuples requesting installation under a different base name. Only the
+    variables whose backend honors this (``FINAL_TARGET_FILES`` and
+    ``OBJDIR_FILES``) enable it."""
 
     class _TypedListWithItems(ContextDerivedValue, HierarchicalStringList):
         __slots__ = ("_strings", "_children", "_context")
@@ -1158,6 +1169,18 @@ def ContextDerivedTypedHierarchicalStringList(type):
             if not child:
                 child = self._children[name] = _TypedListWithItems(self._context)
             return child
+
+        if allow_renames:
+
+            def _check_list(self, value):
+                if not isinstance(value, list):
+                    raise ValueError(f"Expected a list, not {value.__class__}")
+                for v in value:
+                    if not isinstance(v, (str, tuple)):
+                        raise ValueError(
+                            "Expected a list of strings or (source, target_basename) "
+                            f"tuples, not an element of {v.__class__}"
+                        )
 
     return _TypedListWithItems
 
@@ -1638,7 +1661,7 @@ VARIABLES = {
         """,
     ),
     "FINAL_TARGET_FILES": (
-        ContextDerivedTypedHierarchicalStringList(Path),
+        ContextDerivedTypedHierarchicalStringList(Path, allow_renames=True),
         list,
         """List of files to be installed into the application directory.
 
@@ -1722,6 +1745,7 @@ VARIABLES = {
 
         Refer to the documentation of ``GENERATED_FILES``; for the most part things work the same.
         The two major differences are:
+
         1. The function in the Python script will be passed an additional keyword argument `locale`
            which provides the locale in use, i.e. ``en-US``.
         2. The ``inputs`` list may contain paths to files that will be taken from the locale
@@ -1766,8 +1790,20 @@ VARIABLES = {
         package-name.mk).
         """,
     ),
+    "MACOS_BUNDLES": (
+        TypedList(dict),
+        list,
+        """macOS application bundles to assemble from a skeleton directory.
+
+        Use the ``MACOS_BUNDLE`` template rather than appending to this
+        directly. Each entry describes one ``.app`` bundle: a skeleton
+        directory copied into ``Contents``, an optional generated
+        ``Info.plist`` and ``InfoPlist.strings``, and binaries to install
+        into ``Contents/MacOS``.
+        """,
+    ),
     "OBJDIR_FILES": (
-        ContextDerivedTypedHierarchicalStringList(Path),
+        ContextDerivedTypedHierarchicalStringList(Path, allow_renames=True),
         list,
         """List of files to be installed anywhere in the objdir. Use sparingly.
 
@@ -2186,6 +2222,30 @@ VARIABLES = {
         see :ref:`jar_manifests`.
         """,
     ),
+    "LOCALE_PP_DEFINES": (
+        dict,
+        dict,
+        """Per-locale preprocessor defines applied when localized jar.mn
+        files are processed.
+
+        Each top-level key is the name of a define. Each value is a lookup
+        table that maps an ab_cd code or an fnmatch pattern to the value
+        the define should take for that locale.
+
+        Example:
+            LOCALE_PP_DEFINES = {
+                "ANDROID_MARKETPLACE_AB_CD": {
+                    "es*": "es-ES",
+                    "es-MX": "es-MX",
+                    "fr": "fr",
+                },
+            }
+
+        Exact ab_cd keys win over patterns. A locale that matches neither
+        leaves the define unset, so #ifdef branches in the jar.mn fall
+        through to their #else.
+        """,
+    ),
     # IDL Generation.
     "XPIDL_SOURCES": (
         ContextDerivedTypedList(SourcePath, StrictOrderingOnAppendList),
@@ -2444,6 +2504,7 @@ VARIABLES = {
             "no_unified": bool,
             "non_unified_sources": StrictOrderingOnAppendList,
             "action_overrides": dict,
+            "install_static_libs": list,
         }),
         list,
         """Defines a list of object directories handled by gyp configurations.
@@ -2452,6 +2513,7 @@ VARIABLES = {
         element of the list, GYP_DIRS may be accessed as a dictionary
         (GYP_DIRS[foo]). The object this returns has attributes that need to be
         set to further specify gyp processing:
+
             - input, gives the path to the root gyp configuration file for that
               object directory.
             - variables, a dictionary containing variables and values to pass
@@ -2468,8 +2530,13 @@ VARIABLES = {
               unification.
             - action_overrides, a dict of action_name to values of the `script`
               attribute to use for GENERATED_FILES for the specified action.
+            - install_static_libs, a list of gyp ``static_library`` target names
+              whose output should be installed to ``$(DIST)/lib``. Equivalent
+              to setting ``DIST_INSTALL = True`` on those targets, but selective
+              rather than affecting every target in the gyp directory.
 
-        Typical use looks like:
+        Typical use looks like::
+
             GYP_DIRS += ['foo', 'bar']
             GYP_DIRS['foo'].input = 'foo/foo.gyp'
             GYP_DIRS['foo'].variables = {
@@ -2725,10 +2792,12 @@ VARIABLES = {
         which subdirectory they should be exported to. For example,
         to export ``foo.py`` to ``_tests/foo``, append to
         ``TEST_HARNESS_FILES`` like so::
+
            TEST_HARNESS_FILES.foo += ['foo.py']
 
         Files from topsrcdir and the objdir can also be installed by prefixing
         the path(s) with a '/' character and a '!' character, respectively::
+
            TEST_HARNESS_FILES.path += ['/build/bar.py', '!quux.py']
         """,
     ),

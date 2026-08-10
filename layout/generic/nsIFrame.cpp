@@ -61,6 +61,7 @@
 #include "mozilla/dom/ElementInlines.h"
 #include "mozilla/dom/HTMLDetailsElement.h"
 #include "mozilla/dom/Selection.h"
+#include "mozilla/dom/Text.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
@@ -789,6 +790,57 @@ void nsIFrame::InitPrimaryFrame() {
   HandlePrimaryFrameStyleChange(nullptr);
 }
 
+// If `aFrame` is a generated content container (::before/::after/::marker/...)
+// whose content changed only in the text of its string items, rewrite the
+// existing generated text nodes in place instead of reconstructing the frame.
+// See nsStyleContent::CanUpdateGeneratedContentText and its usage.
+static void UpdateGeneratedContentTextIfNeeded(
+    nsIFrame* aFrame, const ComputedStyle* aOldComputedStyle) {
+  if (!aFrame->IsGeneratedContentFrame()) {
+    return;
+  }
+  // Update once per element, not per continuation.
+  if (aFrame->GetPrevContinuation()) {
+    return;
+  }
+  nsIContent* content = aFrame->GetContent();
+  if (!content || !content->IsRootOfNativeAnonymousSubtree()) {
+    return;
+  }
+
+  const auto* oldStyle = aOldComputedStyle->StyleContent();
+  const auto* newStyle = aFrame->StyleContent();
+  if (oldStyle->mContent == newStyle->mContent ||
+      !nsStyleContent::CanUpdateGeneratedContentText(*oldStyle, *newStyle)) {
+    return;
+  }
+
+  auto oldItems = oldStyle->NonAltContentItems();
+  auto newItems = newStyle->NonAltContentItems();
+  MOZ_ASSERT(oldItems.Length() == newItems.Length(),
+             "CanUpdateGeneratedContentText should guarantee equal lengths");
+  nsIContent* child = content->GetFirstChild();
+  for (size_t i = 0; i < newItems.Length(); i++) {
+    const auto& item = newItems[i];
+    const bool isString = item.IsString();
+    if (isString && item.AsString().AsString().IsEmpty()) {
+      // Empty strings have no associated content node.
+      continue;
+    }
+    MOZ_ASSERT(child,
+               "Mismatch between content items and generated content nodes?");
+    if (isString && item != oldItems[i]) {
+      MOZ_ASSERT(child->IsText(),
+                 "A non-empty string item should map to a text node");
+      child->AsText()->SetText(
+          NS_ConvertUTF8toUTF16(item.AsString().AsString()),
+          /* aNotify = */ true);
+    }
+    child = child->GetNextSibling();
+  }
+  MOZ_ASSERT(!child, "More generated content than content items.");
+}
+
 void nsIFrame::HandlePrimaryFrameStyleChange(ComputedStyle* aOldStyle) {
   const nsStyleDisplay* disp = StyleDisplay();
   const nsStyleDisplay* oldDisp =
@@ -870,10 +922,23 @@ void nsIFrame::HandlePrimaryFrameStyleChange(ComputedStyle* aOldStyle) {
   }
 
   const auto cv = disp->ContentVisibility(*this);
-  if (!oldDisp || oldDisp->ContentVisibility(*this) != cv) {
-    if (cv == StyleContentVisibility::Auto) {
+  const auto oldCv = oldDisp ? oldDisp->ContentVisibility(*this)
+                             : StyleContentVisibility::Visible;
+  if (!oldDisp || cv != oldCv) {
+    // 'content-visibility' has changed (or this is a new frame being
+    // initialized). Inform PresShell so it can update its bookkeeping
+    // about frames with particular content-visibility values:
+    // * Inform it of the new value (for the values that it cares about):
+    if (cv == StyleContentVisibility::Hidden) {
+      PresShell()->IncrementContentVisibilityHiddenCount();
+    } else if (cv == StyleContentVisibility::Auto) {
       PresShell()->RegisterContentVisibilityAutoFrame(this);
-    } else {
+    }
+
+    // * Inform it of the old value (for the values that it cares about):
+    if (oldCv == StyleContentVisibility::Hidden) {
+      PresShell()->DecrementContentVisibilityHiddenCount();
+    } else if (oldCv == StyleContentVisibility::Auto) {
       if (auto* element = Element::FromNodeOrNull(GetContent())) {
         element->ClearContentRelevancy();
       }
@@ -933,7 +998,10 @@ void nsIFrame::Destroy(DestroyContext& aContext) {
     if (disp->IsQueryContainer()) {
       pc->UnregisterContainerQueryFrame(this);
     }
-    if (disp->ContentVisibility(*this) == StyleContentVisibility::Auto) {
+    auto contentVisibility = disp->ContentVisibility(*this);
+    if (contentVisibility == StyleContentVisibility::Hidden) {
+      ps->DecrementContentVisibilityHiddenCount();
+    } else if (contentVisibility == StyleContentVisibility::Auto) {
       ps->UnregisterContentVisibilityAutoFrame(this);
     }
     // This needs to happen before we clear our Properties() table.
@@ -1260,17 +1328,18 @@ void nsIFrame::MarkNeedsDisplayItemRebuild() {
 // Subclass hook for style post processing
 /* virtual */
 void nsIFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
-#ifdef ACCESSIBILITY
-  // Don't notify for reconstructed frames here, since the frame is still being
-  // constructed at this point and so LocalAccessible::GetFrame() will return
-  // null. Style changes for reconstructed frames are handled in
-  // DocAccessible::PruneOrInsertSubtree.
   if (aOldComputedStyle) {
+#ifdef ACCESSIBILITY
+    // Don't notify for reconstructed frames here, since the frame is still
+    // being constructed at this point and so LocalAccessible::GetFrame() will
+    // return null. Style changes for reconstructed frames are handled in
+    // DocAccessible::PruneOrInsertSubtree.
     if (nsAccessibilityService* accService = GetAccService()) {
       accService->NotifyOfComputedStyleChange(PresShell(), mContent);
     }
-  }
 #endif
+    UpdateGeneratedContentTextIfNeeded(this, aOldComputedStyle);
+  }
 
   MaybeScheduleReflowSVGNonDisplayText(this);
 
@@ -1635,7 +1704,8 @@ nsIFrame::Sides nsIFrame::GetSkipSides() const {
 
   if (logicalSkip.IStart()) {
     if (writingMode.IsVertical()) {
-      skip |= SideBits::eTop;
+      skip |=
+          writingMode.IsInlineReversed() ? SideBits::eBottom : SideBits::eTop;
     } else {
       skip |= writingMode.IsBidiLTR() ? SideBits::eLeft : SideBits::eRight;
     }
@@ -1643,7 +1713,8 @@ nsIFrame::Sides nsIFrame::GetSkipSides() const {
 
   if (logicalSkip.IEnd()) {
     if (writingMode.IsVertical()) {
-      skip |= SideBits::eBottom;
+      skip |=
+          writingMode.IsInlineReversed() ? SideBits::eTop : SideBits::eBottom;
     } else {
       skip |= writingMode.IsBidiLTR() ? SideBits::eRight : SideBits::eLeft;
     }
@@ -2304,11 +2375,11 @@ static nsIFrame* GetActiveSelectionFrame(nsPresContext* aPresContext,
   return aFrame;
 }
 
-bool nsIFrame::ShouldHandleSelectionMovementEvents() {
+bool nsIFrame::ShouldHandleSelectionMovementEvents(ForSelectionStart aType) {
   if (GetDisplaySelection() == nsISelectionController::SELECTION_OFF) {
     return false;
   }
-  if (!IsSelectable()) {
+  if (UsedUserSelect(this, aType) == StyleUserSelect::None) {
     // Check whether style allows selection.
     return false;
   }
@@ -2758,11 +2829,12 @@ static void ApplyOverflowClipping(
     DisplayListClipState::AutoClipMultiple& aClipState) {
   nsRect clipRect;
   nsRectCornerRadii radii;
-  bool haveRadii =
-      aFrame->ComputeOverflowClipRectRelativeToSelf(aClipAxes, clipRect, radii);
+  nsMargin inset;
+  bool haveRadii = aFrame->ComputeOverflowClipRectRelativeToSelf(
+      aClipAxes, clipRect, radii, inset);
   aClipState.ClipContainingBlockDescendantsExtra(
       clipRect + aBuilder->ToReferenceFrame(aFrame),
-      haveRadii ? &radii : nullptr);
+      haveRadii ? &radii : nullptr, haveRadii ? &inset : nullptr);
 }
 
 static Sides ToSkipSides(PhysicalAxes aClipAxes) {
@@ -2780,7 +2852,7 @@ static Sides ToSkipSides(PhysicalAxes aClipAxes) {
 
 bool nsIFrame::ComputeOverflowClipRectRelativeToSelf(
     const PhysicalAxes aClipAxes, nsRect& aOutRect,
-    nsRectCornerRadii& aOutRadii) const {
+    nsRectCornerRadii& aOutRadii, nsMargin& aOutInset) const {
   // Only 'clip' is handled here (and 'hidden' for table frames, and any
   // non-'visible' value for blocks in a paginated context).
   // We allow 'clip' to apply to any kind of frame. This is required by
@@ -2789,6 +2861,7 @@ bool nsIFrame::ComputeOverflowClipRectRelativeToSelf(
   MOZ_ASSERT(ShouldApplyOverflowClipping(StyleDisplay()) == aClipAxes);
   auto boxMargin = OverflowClipMargin(aClipAxes, /* aAllowNegative = */ true);
   boxMargin.ApplySkipSides(GetSkipSides() | ToSkipSides(aClipAxes));
+  aOutInset = -boxMargin;
 
   aOutRect = nsRect(nsPoint(), GetSize());
   aOutRect.Inflate(boxMargin);
@@ -3421,8 +3494,9 @@ void nsIFrame::BuildDisplayListForStackingContext(
     if (shouldFlattenStickyItem) {
       stickyASR = aBuilder->CurrentActiveScrolledRoot();
     } else {
-      stickyASR = aBuilder->GetOrCreateActiveScrolledRootForSticky(
-          aBuilder->CurrentActiveScrolledRoot(), this);
+      stickyASR = aBuilder->GetOrCreateActiveScrolledRoot(
+          aBuilder->CurrentActiveScrolledRoot(), this,
+          ActiveScrolledRoot::ASRKind::Sticky);
       asrSetter.SetCurrentActiveScrolledRoot(stickyASR);
       stickyItemClipState.MaybeRemoveDisplayportClip();
     }
@@ -4261,14 +4335,15 @@ MOZ_NEVER_INLINE
 static void MaybeAddAccId(nsIFrame* aChildOrOutOfFlow,
                           nsDisplayListBuilder* aBuilder,
                           const nsDisplayListSet& aLists) {
-  auto [bcId, accId] = a11y::PdfStructTreeBuilder::GetAccId(aChildOrOutOfFlow);
-  if (!bcId) {
+  auto [innerWindowId, accId] =
+      a11y::PdfStructTreeBuilder::GetAccId(aChildOrOutOfFlow);
+  if (!innerWindowId) {
     return;
   }
   // When generating tagged PDF, associate this content with the correct
   // node in the structure tree.
   auto* item = MakeDisplayItem<nsDisplayAccessibleId>(
-      aBuilder, aChildOrOutOfFlow, bcId, accId);
+      aBuilder, aChildOrOutOfFlow, innerWindowId, accId);
   aLists.Content()->AppendToTop(item);
 }
 #endif
@@ -4291,7 +4366,7 @@ void nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder* aBuilder,
                           : nullptr;
   nsIFrame* childOrOutOfFlow =
       placeholder ? placeholder->GetOutOfFlowFrame() : child;
-  if (ShouldSkipFrame(aBuilder, childOrOutOfFlow)) {
+  if (!childOrOutOfFlow || ShouldSkipFrame(aBuilder, childOrOutOfFlow)) {
     return;
   }
 
@@ -4916,9 +4991,15 @@ static bool IsEditingHost(const nsIFrame* aFrame) {
   return content && content->IsEditingHost();
 }
 
-static StyleUserSelect UsedUserSelect(const nsIFrame* aFrame) {
+mozilla::StyleUserSelect nsIFrame::UsedUserSelect(
+    const nsIFrame* aFrame, nsIFrame::ForSelectionStart aType) {
+  return UsedUserSelectRecurse(aFrame, aType).valueOr(StyleUserSelect::Text);
+}
+
+Maybe<mozilla::StyleUserSelect> nsIFrame::UsedUserSelectRecurse(
+    const nsIFrame* aFrame, nsIFrame::ForSelectionStart aType) {
   if (aFrame->IsGeneratedContentFrame()) {
-    return StyleUserSelect::None;
+    return Some(StyleUserSelect::None);
   }
 
   // Per https://drafts.csswg.org/css-ui-4/#content-selection:
@@ -4945,20 +5026,37 @@ static StyleUserSelect UsedUserSelect(const nsIFrame* aFrame) {
     // We don't implement 'contain' itself, but we make 'text' behave as
     // 'contain' for contenteditable and <input> / <textarea> elements anyway so
     // this is ok.
-    return StyleUserSelect::Text;
+    return Some(StyleUserSelect::Text);
   }
 
   auto style = aFrame->Style()->UserSelect();
   if (style != StyleUserSelect::Auto) {
-    return style;
+    return Some(style);
   }
 
+  const auto IsButton = [](const nsIFrame* aFrame) {
+    const auto* content = aFrame->GetContent();
+    if (!content) {
+      return false;
+    }
+    return content->IsAnyOfHTMLElements(nsGkAtoms::button);
+  };
+
   auto* parent = nsLayoutUtils::GetParentOrPlaceholderFor(aFrame);
-  return parent ? UsedUserSelect(parent) : StyleUserSelect::Text;
+  const auto parentResult =
+      parent ? UsedUserSelectRecurse(parent, aType) : Nothing{};
+  if (parentResult.valueOr(StyleUserSelect::Auto) != StyleUserSelect::None &&
+      aType == nsIFrame::ForSelectionStart::Yes && IsButton(aFrame)) {
+    // If the parent did not force our hands, we want non-`contenteditable`
+    // buttons to be clickable without accidentally selecting the text within
+    // it, but still allow selection that originates outside of it.
+    return Some(StyleUserSelect::None);
+  }
+  return parentResult;
 }
 
 bool nsIFrame::IsSelectable(StyleUserSelect* aSelectStyle) const {
-  auto style = UsedUserSelect(this);
+  auto style = UsedUserSelect(this, ForSelectionStart::No);
   if (aSelectStyle) {
     *aSelectStyle = style;
   }
@@ -5082,7 +5180,7 @@ nsresult nsIFrame::MoveCaretToEventPoint(nsPresContext* aPresContext,
 
   // Check whether this frame should handle selection events. If not, don't
   // tell selection the mouse event even occurred.
-  if (!ShouldHandleSelectionMovementEvents()) {
+  if (!ShouldHandleSelectionMovementEvents(ForSelectionStart::Yes)) {
     return NS_OK;
   }
 
@@ -7741,6 +7839,19 @@ bool nsIFrame::IsHiddenByContentVisibilityOfInFlowParentForLayout() const {
 
 nsIFrame* nsIFrame::GetClosestContentVisibilityAncestor(
     const EnumSet<IncludeContentVisibility>& aInclude) const {
+  // Before we walk the frame tree: check PresShell bookkeeping to see if there
+  // exists *any* frame with a content-visibility value that matches aInclude.
+  mozilla::PresShell* ps = PresShell();
+  bool doesAnySuchFrameExist =
+      (aInclude.contains(IncludeContentVisibility::Hidden) &&
+       ps->HasContentVisibilityHiddenFrames()) ||
+      (aInclude.contains(IncludeContentVisibility::Auto) &&
+       ps->HasContentVisibilityAutoFrames());
+
+  if (!doesAnySuchFrameExist) {
+    return nullptr;
+  }
+
   auto* parent = GetInFlowParent();
   bool isAnonymousBlock = Style()->IsAnonBox() && parent &&
                           parent->HasAnyStateBits(NS_FRAME_OWNS_ANON_BOXES);

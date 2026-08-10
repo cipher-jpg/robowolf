@@ -4,10 +4,11 @@
 
 #include "MacIOSurface.h"
 #ifdef XP_MACOSX
-#  include <OpenGL/gl.h>
 #  include <OpenGL/CGLIOSurface.h>
+#  include <OpenGL/gl.h>
 #endif
 #include <QuartzCore/QuartzCore.h>
+
 #include "GLConsts.h"
 #ifdef XP_MACOSX
 #  include "GLContextCGL.h"
@@ -16,11 +17,11 @@
 #  include "GLContextEAGL.h"
 #endif
 #include "gfxMacUtils.h"
-#include "nsPrintfCString.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/gfx/Logging.h"
 #include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/gfx/Logging.h"
+#include "nsPrintfCString.h"
 
 using namespace mozilla;
 
@@ -588,35 +589,6 @@ ColorDepth MacIOSurface::GetColorDepth() const {
   return Nothing();
 }
 #endif
-
-/* static */ GLenum MacIOSurface::GetTextureTarget(
-    mozilla::gl::GLContext* aGL) {
-  switch (aGL->GetContextType()) {
-#ifdef XP_MACOSX
-    case mozilla::gl::GLContextType::CGL:
-      return LOCAL_GL_TEXTURE_RECTANGLE_ARB;
-
-    case mozilla::gl::GLContextType::EGL: {
-      auto* gle = gl::GLContextEGL::Cast(aGL);
-      const auto eglTarget = gle->GetBindToTextureTargetANGLE();
-
-      switch (eglTarget) {
-        case LOCAL_EGL_TEXTURE_2D:
-          return LOCAL_GL_TEXTURE_2D;
-        case LOCAL_EGL_TEXTURE_RECTANGLE_ANGLE:
-          return LOCAL_GL_TEXTURE_RECTANGLE_ARB;
-        default:
-          gfxCriticalErrorOnce()
-              << "Unexpected EGL_BIND_TO_TEXTURE_TARGET_ANGLE: "
-              << gfx::hexa(eglTarget);
-          return LOCAL_GL_TEXTURE_2D;
-      }
-    }
-#endif
-    default:
-      MOZ_CRASH("unimplemented");
-  }
-}
 
 bool MacIOSurface::BindTexImage(mozilla::gl::GLContext* aGL, size_t aPlane,
                                 mozilla::gfx::SurfaceFormat* aOutReadFormat) {

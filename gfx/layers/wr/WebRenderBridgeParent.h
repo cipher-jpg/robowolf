@@ -9,16 +9,16 @@
 
 #include "CompositableHost.h"  // for CompositableHost, ImageCompositeNotificationInfo
 #include "GLContextProvider.h"
+#include "WindowRenderer.h"
 #include "mozilla/DataMutex.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/layers/CompositableTransactionParent.h"
 #include "mozilla/layers/CompositorVsyncSchedulerOwner.h"
 #include "mozilla/layers/PWebRenderBridgeParent.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/webrender/WebRenderTypes.h"
 #include "mozilla/webrender/WebRenderAPI.h"
+#include "mozilla/webrender/WebRenderTypes.h"
 #include "nsTArrayForwardDeclare.h"
-#include "WindowRenderer.h"
 
 namespace mozilla {
 
@@ -267,6 +267,15 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   bool OwnsExternalImageId(const wr::ExternalImageId& aId) const {
     return static_cast<uint32_t>(wr::AsUint64(aId) >> 32) ==
            mLateInit->mIdNamespace.mHandle;
+  }
+
+  /**
+   * AnimationHelper::GetNextCompositorAnimationsId() encodes the child
+   * process PID in the upper 32 bits of the id, verify that this is as
+   * expected.
+   */
+  bool OwnsCompositorAnimationsId(uint64_t aId) const {
+    return (aId >> 32) == (uint64_t)OtherPid();
   }
 
   void FlushRendering(wr::RenderReasons aReasons, bool aBlocking);

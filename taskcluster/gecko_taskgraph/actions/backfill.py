@@ -134,6 +134,7 @@ def backfill_action(parameters, graph_config, input, task_group_id, task_id):
     This action takes a task ID and schedules it on previous pushes (via support action).
     When 'slices' is 0 (default), standard backfill is used (all pushes).
     When 'slices' > 0, the gap of missing pushes is detected and the mode is chosen automatically.
+
       - small gaps: standard backfill
       - large gaps: sliced backfill (exact pivot pushes at n/N+1, 2n/N+1, ... for slices=N).
 
@@ -165,7 +166,9 @@ def backfill_action(parameters, graph_config, input, task_group_id, task_id):
         strategy = "standard"
         pushes = get_pushes_from_params_input(parameters, input)
     else:
-        pushes = get_pushes_in_gap(parameters, input_for_action.get("label", ""))
+        pushes = get_pushes_in_gap(
+            parameters, input_for_action.get("label", ""), graph_config
+        )
         if len(pushes) < MIN_SLICE_GAP:
             strategy = "standard"
         else:
@@ -174,11 +177,14 @@ def backfill_action(parameters, graph_config, input, task_group_id, task_id):
     planned_pushes = plan_pushes_to_trigger(pushes, strategy, slices)
     failed = False
     logger.info(
-        "Backfill started: label=%s, strategy=%s, slices=%d, target_pushes=%s",
-        input_for_action.get("label", ""),
-        strategy,
-        slices,
-        planned_pushes,
+        "BACKFILL_STARTED: %s",
+        json.dumps({
+            "label": input_for_action.get("label", ""),
+            "strategy": strategy,
+            "slices": slices,
+            "scanned_push_count": len(pushes),
+            "target_pushes": planned_pushes,
+        }),
     )
     for i, push_id in enumerate(planned_pushes, 1):
         try:

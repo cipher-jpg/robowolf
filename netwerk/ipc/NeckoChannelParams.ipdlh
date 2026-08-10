@@ -160,7 +160,6 @@ struct LoadInfoArgs
   OriginAttributes            originAttributes;
   RedirectHistoryEntryInfo[]  redirectChainIncludingInternalRedirects;
   RedirectHistoryEntryInfo[]  redirectChain;
-  bool                        hasInjectedCookieForCookieBannerHandling;
   SchemelessInputType         schemelessInput;
   HTTPSUpgradeTelemetryType   httpsUpgradeTelemetry;
 
@@ -208,7 +207,6 @@ struct LoadInfoArgs
   RequestMode?                requestMode;
   bool                        isFromProcessingFrameAttributes;
   bool                        isMediaRequest;
-  bool                        isMediaInitialRequest;
   bool                        isFromObjectOrEmbed;
   CookieJarSettingsArgs       cookieJarSettings;
   uint32_t                    requestBlockingReason;
@@ -479,6 +477,7 @@ struct HttpConnectionInfoCloneArgs
   bool webTransport;
   uint64_t webTransportId;
   bool hasIPHintAddress;
+  bool http3Only;
   nsCString echConfig;
   bool happyEyeballsEnabled;
   ProxyInfoCloneArgs[] proxyInfo;

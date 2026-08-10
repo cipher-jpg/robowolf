@@ -194,7 +194,12 @@ class TabsListBase {
 
   _selectTab(tab) {
     if (this.gBrowser.selectedTab != tab) {
-      this.gBrowser.selectedTab = tab;
+      this.gBrowser.setSelectedTab(
+        tab,
+        this.gBrowser.TabMetrics.userTriggeredContext(
+          this.gBrowser.TabMetrics.METRIC_SOURCE.TAB_OVERFLOW_MENU
+        )
+      );
     } else {
       this.gBrowser.tabContainer._handleTabSelect();
     }
@@ -538,11 +543,14 @@ export class TabsPanel extends TabsListBase {
 
     if (tab.userContextId) {
       tab.classList.forEach(property => {
-        if (property.startsWith("identity-color")) {
+        if (
+          property.startsWith("identity-color") ||
+          property.startsWith("identity-icon")
+        ) {
           button.classList.add(property);
-          button.classList.add("all-tabs-container-indicator");
         }
       });
+      button.classList.add("all-tabs-container-indicator");
     }
 
     if (tab.group) {
@@ -597,15 +605,15 @@ export class TabsPanel extends TabsListBase {
 
     row.style.setProperty(
       "--tab-group-color",
-      `var(--tab-group-color-${group.color})`
+      `var(--tab-group-${group.color})`
     );
     row.style.setProperty(
       "--tab-group-color-invert",
-      `var(--tab-group-color-${group.color}-invert)`
+      `var(--tab-group-${group.color}-invert)`
     );
     row.style.setProperty(
       "--tab-group-color-pale",
-      `var(--tab-group-color-${group.color}-pale)`
+      `var(--tab-group-${group.color}-pale)`
     );
     row.style.setProperty(
       "--tab-group-background-color",
@@ -614,6 +622,7 @@ export class TabsPanel extends TabsListBase {
 
     let button = doc.createXULElement("toolbarbutton");
     button.setAttribute("context", "open-tab-group-context-menu");
+    button.dataset.tabGroupId = group.id;
     button.classList.add(
       "all-tabs-button",
       "all-tabs-group-button",

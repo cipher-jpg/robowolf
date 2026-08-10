@@ -18,11 +18,10 @@ use std::fmt::{self, Write};
 use style_traits::{CssStringWriter, CssWriter, ParseError, StyleParseErrorKind, ToCss};
 
 pub use crate::properties::font_face::{DescriptorId, DescriptorParser, Descriptors};
-pub use crate::values::computed::font::{FamilyName, FontStretch, FontStyle};
+pub use crate::values::computed::font::{FamilyName, FontStyle, FontWidth};
 pub use crate::values::specified::font::{
-    AbsoluteFontWeight, FontFeatureSettings, FontLanguageOverride,
-    FontStretch as SpecifiedFontStretch, FontVariationSettings, MetricsOverride,
-    SpecifiedFontStyle,
+    AbsoluteFontWeight, FontFeatureSettings, FontLanguageOverride, FontVariationSettings,
+    FontWidth as SpecifiedFontWidth, MetricsOverride, SpecifiedFontStyle,
 };
 
 /// A source for a font-face rule.
@@ -69,8 +68,9 @@ impl Parse for SourceList {
 
 /// Keywords for the font-face src descriptor's format() function.
 /// ('None' and 'Unknown' are for internal use in gfx, not exposed to CSS.)
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, Parse, PartialEq, ToCss, ToShmem)]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, MallocSizeOf, Parse, PartialEq, Serialize, ToCss, ToShmem,
+)]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum FontFaceSourceFormatKeyword {
@@ -89,8 +89,7 @@ pub enum FontFaceSourceFormatKeyword {
 
 /// Flags for the @font-face tech() function, indicating font technologies
 /// required by the resource.
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, ToShmem)]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, MallocSizeOf, PartialEq, Serialize, ToShmem)]
 #[repr(C)]
 pub struct FontFaceSourceTechFlags(u16);
 bitflags! {
@@ -236,8 +235,7 @@ pub enum FontFaceSourceListComponent {
     TechFlags(FontFaceSourceTechFlags),
 }
 
-#[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq, ToCss, ToShmem)]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
+#[derive(Clone, Debug, Deserialize, Eq, MallocSizeOf, PartialEq, Serialize, ToCss, ToShmem)]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum FontFaceSourceFormat {
@@ -284,9 +282,19 @@ impl ToCss for UrlSource {
 /// The font-display descriptor determines how a font face is displayed based
 /// on whether and when it is downloaded and ready to use.
 #[allow(missing_docs)]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[derive(
-    Clone, Copy, Debug, Eq, MallocSizeOf, Parse, PartialEq, ToComputedValue, ToCss, ToShmem,
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    Eq,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    Serialize,
+    ToComputedValue,
+    ToCss,
+    ToShmem,
 )]
 #[repr(u8)]
 pub enum FontDisplay {
@@ -334,13 +342,14 @@ macro_rules! impl_range {
 pub struct FontWeightRange(pub AbsoluteFontWeight, pub AbsoluteFontWeight);
 impl_range!(FontWeightRange, AbsoluteFontWeight);
 
-/// The computed representation of the above so Gecko can read them easily.
+/// The computed representation of the above so Gecko and Servo can read them easily.
 ///
 /// This one is needed because cbindgen doesn't know how to generate
 /// specified::Number.
 #[repr(C)]
 #[allow(missing_docs)]
-pub struct ComputedFontWeightRange(FontWeight, FontWeight);
+#[derive(Clone, Debug, Deserialize, Hash, MallocSizeOf, PartialEq, Serialize)]
+pub struct ComputedFontWeightRange(pub FontWeight, pub FontWeight);
 
 #[inline]
 fn sort_range<T: PartialOrd>(a: T, b: T) -> (T, T) {
@@ -359,35 +368,36 @@ impl FontWeightRange {
     }
 }
 
-/// The font-stretch descriptor:
+/// The font-width descriptor:
 ///
-/// https://drafts.csswg.org/css-fonts-4/#descdef-font-face-font-stretch
+/// https://drafts.csswg.org/css-fonts-4/#descdef-font-face-font-width
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
-pub struct FontStretchRange(pub SpecifiedFontStretch, pub SpecifiedFontStretch);
-impl_range!(FontStretchRange, SpecifiedFontStretch);
+pub struct FontWidthRange(pub SpecifiedFontWidth, pub SpecifiedFontWidth);
+impl_range!(FontWidthRange, SpecifiedFontWidth);
 
-/// The computed representation of the above, so that Gecko can read them
+/// The computed representation of the above, so that Gecko and Servo can read them
 /// easily.
 #[repr(C)]
 #[allow(missing_docs)]
-pub struct ComputedFontStretchRange(FontStretch, FontStretch);
+#[derive(Clone, Debug, Deserialize, Hash, MallocSizeOf, PartialEq, Serialize)]
+pub struct ComputedFontWidthRange(pub FontWidth, pub FontWidth);
 
-impl FontStretchRange {
-    /// Returns a computed font-stretch range, or None if any value contains a calc
+impl FontWidthRange {
+    /// Returns a computed font-width range, or None if any value contains a calc
     /// expression that cannot be resolved at parse time.
-    pub fn compute(&self) -> Option<ComputedFontStretchRange> {
-        fn compute_stretch(s: &SpecifiedFontStretch) -> Option<FontStretch> {
+    pub fn compute(&self) -> Option<ComputedFontWidthRange> {
+        fn compute_width(s: &SpecifiedFontWidth) -> Option<FontWidth> {
             match *s {
-                SpecifiedFontStretch::Keyword(ref kw) => Some(kw.compute()),
-                SpecifiedFontStretch::Stretch(ref p) => {
-                    Some(FontStretch::from_percentage(p.compute()?.0))
+                SpecifiedFontWidth::Keyword(ref kw) => Some(kw.compute()),
+                SpecifiedFontWidth::Width(ref p) => {
+                    Some(FontWidth::from_percentage(p.compute()?.0))
                 },
-                SpecifiedFontStretch::System(..) => unreachable!(),
+                SpecifiedFontWidth::System(..) => unreachable!(),
             }
         }
 
-        let (min, max) = sort_range(compute_stretch(&self.0)?, compute_stretch(&self.1)?);
-        Some(ComputedFontStretchRange(min, max))
+        let (min, max) = sort_range(compute_width(&self.0)?, compute_width(&self.1)?);
+        Some(ComputedFontWidthRange(min, max))
     }
 }
 
@@ -402,10 +412,11 @@ pub enum FontStyleRange {
 }
 
 /// The computed representation of the above, with angles in degrees stored as
-/// signed 8.8 fixed-point values, so that Gecko can read them easily.
+/// signed 8.8 fixed-point values, so that Gecko and Servo can read them easily.
 #[repr(C)]
 #[allow(missing_docs)]
-pub struct ComputedFontStyleRange(FontStyle, FontStyle);
+#[derive(Clone, Debug, Deserialize, Hash, MallocSizeOf, PartialEq, Serialize)]
+pub struct ComputedFontStyleRange(pub FontStyle, pub FontStyle);
 
 impl Parse for FontStyleRange {
     fn parse<'i, 't>(
@@ -536,10 +547,9 @@ impl Parse for Source {
         };
 
         // Parse optional tech()
-        let tech_flags = if static_prefs::pref!("layout.css.font-tech.enabled")
-            && input
-                .try_parse(|input| input.expect_function_matching("tech"))
-                .is_ok()
+        let tech_flags = if input
+            .try_parse(|input| input.expect_function_matching("tech"))
+            .is_ok()
         {
             input.parse_nested_block(|input| FontFaceSourceTechFlags::parse(context, input))?
         } else {

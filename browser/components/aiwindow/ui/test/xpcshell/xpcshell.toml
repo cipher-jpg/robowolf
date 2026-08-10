@@ -5,6 +5,8 @@ run-if = [
   "os != 'android'",
 ]
 
+["test_AutoTabGrouping.js"]
+
 ["test_ChatConversation.js"]
 
 ["test_ChatMessage.js"]
@@ -16,6 +18,10 @@ run-if = [
 ["test_ChatSwitchModel.js"]
 
 ["test_FeedbackModal.js"]
+
+["test_MonitorUIUtils.js"]
+
+["test_SmartWindowTelemetry.js"]
 
 ["test_TabManagementService.js"]
 

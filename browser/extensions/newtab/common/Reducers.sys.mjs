@@ -4,11 +4,22 @@
 
 import { actionTypes as at } from "resource://newtab/common/Actions.mjs";
 import { Dedupe } from "resource:///modules/Dedupe.sys.mjs";
+// Namespace import: a named import of an export missing on older train-hop
+// platforms is a link error; a namespace member is just undefined.
+import * as PlatformTopSitesConstants from "resource:///modules/topsites/constants.mjs";
 
 export {
   TOP_SITES_DEFAULT_ROWS,
   TOP_SITES_MAX_SITES_PER_ROW,
 } from "resource:///modules/topsites/constants.mjs";
+
+// @backward-compat { version 154 }
+// TOP_SITES_MAX_ROWS lands in platform constants.mjs in 154; until that reaches
+// Release it's absent on train-hop, so fall back to 4. At 154-Release: drop the
+// namespace import above, delete this shim, and add TOP_SITES_MAX_ROWS to the
+// re-export block above.
+export const TOP_SITES_MAX_ROWS =
+  PlatformTopSitesConstants.TOP_SITES_MAX_ROWS ?? 4;
 
 const dedupe = new Dedupe(site => site && site.url);
 
@@ -161,6 +172,17 @@ export const INITIAL_STATE = {
   },
   SectionsLayout: {
     configs: {},
+    orderings: {},
+  },
+  // Web notifications surfaced on newtab. Distinct from `Notifications` above,
+  // which is in-newtab toast UI state. `notifications` is the canonical
+  // id-keyed table; `byOrigin` is an id-only index. Fed by WebNotificationsFeed.
+  WebNotifications: {
+    initialized: false,
+    lastUpdated: null,
+    notifications: {},
+    byOrigin: {},
+    error: null,
   },
   Weather: {
     initialized: false,
@@ -179,6 +201,25 @@ export const INITIAL_STATE = {
     suggestedLocations: [],
   },
   // Widgets
+  Stocks: {
+    tickers: [],
+    lastUpdated: null,
+    error: false,
+  },
+  PictureOfTheDay: {
+    initialized: false,
+    lastUpdated: null,
+    imageUrl: "",
+    thumbnailUrl: "",
+    title: "",
+    description: "",
+    publishedDate: "",
+    sourceUrl: "",
+    author: "",
+    licenseLabel: "",
+    licenseUrl: "",
+    error: null,
+  },
   ListsWidget: {
     // value pointing to last selectled list
     selected: "taskList",
@@ -256,6 +297,20 @@ export const INITIAL_STATE = {
     // "sites where we blocked something"; see PrivacyFeed).
     sitesToday: 0,
     lastUpdated: null,
+    // Secondary-message decision chosen by PrivacyFeed's selector
+    // (Bug 2050954). variant: empty | blank | streak | tip. `category` is the
+    // message family (CATEGORY) so the UI can tell a celebration from an
+    // ordinary tip; `icon` is an icon key (see Privacy.jsx); `countArg` is the
+    // l10n plural/var arg.
+    variant: null,
+    messageId: null,
+    category: null,
+    icon: null,
+    countArg: null,
+    // SpecialMessageAction for the message's CTA button (null → no button).
+    cta: null,
+    // When set, the count readout shows "{countCeiling}+" (the daily-cap render).
+    countCeiling: null,
   },
 };
 
@@ -1067,7 +1122,11 @@ function Wallpapers(prevState = INITIAL_STATE.Wallpapers, action) {
 function SectionsLayout(prevState = INITIAL_STATE.SectionsLayout, action) {
   switch (action.type) {
     case at.SECTIONS_LAYOUT_UPDATE:
-      return { ...prevState, configs: action.data.configs };
+      return {
+        ...prevState,
+        configs: action.data.configs,
+        orderings: action.data.orderings ?? prevState.orderings,
+      };
     default:
       return prevState;
   }
@@ -1102,6 +1161,61 @@ function Notifications(prevState = INITIAL_STATE.Notifications, action) {
   }
 }
 
+/** Merges one notification into the id table and origin index. */
+function addWebNotification(prevState, notification) {
+  const { id, origin } = notification;
+  const originIds = prevState.byOrigin[origin] || [];
+  return {
+    ...prevState,
+    initialized: true,
+    notifications: { ...prevState.notifications, [id]: notification },
+    byOrigin: {
+      ...prevState.byOrigin,
+      [origin]: originIds.includes(id) ? originIds : [...originIds, id],
+    },
+  };
+}
+
+/** Drops a list of `{origin, id}` pairs from the id table and origin index. */
+function removeWebNotifications(prevState, removed) {
+  const notifications = { ...prevState.notifications };
+  const byOrigin = { ...prevState.byOrigin };
+  for (const { origin, id } of removed) {
+    delete notifications[id];
+    const remaining = (byOrigin[origin] || []).filter(
+      existing => existing !== id
+    );
+    if (remaining.length) {
+      byOrigin[origin] = remaining;
+    } else {
+      delete byOrigin[origin];
+    }
+  }
+  return { ...prevState, notifications, byOrigin };
+}
+
+function WebNotifications(prevState = INITIAL_STATE.WebNotifications, action) {
+  switch (action.type) {
+    case at.WEB_NOTIFICATIONS_UPDATED:
+      return {
+        ...prevState,
+        initialized: true,
+        lastUpdated: action.data.lastUpdated,
+        notifications: action.data.notifications,
+        byOrigin: action.data.byOrigin,
+        error: null,
+      };
+    case at.WEB_NOTIFICATIONS_ADDED:
+      return addWebNotification(prevState, action.data.notification);
+    case at.WEB_NOTIFICATIONS_REMOVED:
+      return removeWebNotifications(prevState, action.data.removed);
+    case at.WEB_NOTIFICATIONS_ERROR:
+      return { ...prevState, error: action.data };
+    default:
+      return prevState;
+  }
+}
+
 function Weather(prevState = INITIAL_STATE.Weather, action) {
   switch (action.type) {
     case at.WEATHER_UPDATE:
@@ -1126,14 +1240,38 @@ function Weather(prevState = INITIAL_STATE.Weather, action) {
   }
 }
 
+const PictureOfTheDay = (prevState = INITIAL_STATE.PictureOfTheDay, action) => {
+  switch (action.type) {
+    case at.PICTURE_OF_THE_DAY_UPDATE:
+      return {
+        ...prevState,
+        imageUrl: action.data.imageUrl ?? "",
+        thumbnailUrl: action.data.thumbnailUrl ?? "",
+        title: action.data.title ?? "",
+        description: action.data.description ?? "",
+        publishedDate: action.data.publishedDate ?? "",
+        sourceUrl: action.data.sourceUrl ?? "",
+        author: action.data.author ?? "",
+        licenseLabel: action.data.licenseLabel ?? "",
+        licenseUrl: action.data.licenseUrl ?? "",
+        lastUpdated: action.data.lastUpdated ?? null,
+        error: action.data.error ?? null,
+        initialized: true,
+      };
+    default:
+      return prevState;
+  }
+};
+
 function PrivacyWidget(prevState = INITIAL_STATE.PrivacyWidget, action) {
   switch (action.type) {
     case at.WIDGETS_PRIVACY_UPDATE:
+      // Merge whatever the feed sent: SYSTEM_TICK/INIT broadcast counts only
+      // (message fields absent → kept); NEW_TAB_INIT also carries the
+      // selector's message decision.
       return {
         ...prevState,
-        trackersToday: action.data.trackersToday,
-        sitesToday: action.data.sitesToday,
-        lastUpdated: action.data.lastUpdated,
+        ...action.data,
         initialized: true,
       };
     default:
@@ -1236,6 +1374,20 @@ function TimerWidget(prevState = INITIAL_STATE.TimerWidget, action) {
           startTime: null,
           isRunning: false,
         },
+      };
+    default:
+      return prevState;
+  }
+}
+
+function Stocks(prevState = INITIAL_STATE.Stocks, action) {
+  switch (action.type) {
+    case at.WIDGETS_STOCKS_UPDATE:
+      return {
+        ...prevState,
+        tickers: action.data.tickers,
+        lastUpdated: action.data.lastUpdated,
+        error: action.data.error ?? false,
       };
     default:
       return prevState;
@@ -1393,8 +1545,11 @@ export const reducers = {
   ListsWidget,
   Wallpapers,
   SectionsLayout,
+  WebNotifications,
   Weather,
+  Stocks,
   ExternalComponents,
   SportsWidget,
   PrivacyWidget,
+  PictureOfTheDay,
 };
